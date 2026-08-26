@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { filter, firstValueFrom } from 'rxjs';
@@ -42,14 +48,16 @@ export class A2aService {
     });
     if (!agent) throw new NotFoundException(`Agent ${agentId} not found`);
 
-    const skills: A2ASkill[] = ((agent as any).a2aSkills ?? []).map((s: any) => ({
-      id: s.id,
-      name: s.name,
-      description: s.description,
-      tags: s.tags ?? [],
-      inputModes: s.inputModes ?? ['text/plain'],
-      outputModes: s.outputModes ?? ['text/plain'],
-    }));
+    const skills: A2ASkill[] = ((agent as any).a2aSkills ?? []).map(
+      (s: any) => ({
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        tags: s.tags ?? [],
+        inputModes: s.inputModes ?? ['text/plain'],
+        outputModes: s.outputModes ?? ['text/plain'],
+      }),
+    );
 
     return {
       name: agent.name,
@@ -104,7 +112,12 @@ export class A2aService {
     await this.updateState(taskId, 'working');
 
     try {
-      const { text, artifacts } = await this.dispatchToAgent(params.agentId, params.message, taskId, params.callerId);
+      const { text, artifacts } = await this.dispatchToAgent(
+        params.agentId,
+        params.message,
+        taskId,
+        params.callerId,
+      );
 
       const outputMessage: A2AMessage = {
         role: 'agent',
@@ -113,39 +126,59 @@ export class A2aService {
         contextId: params.contextId,
       };
 
-      await this.db.update(schema.a2aTask)
+      await this.db
+        .update(schema.a2aTask)
         .set({
           state: 'completed',
           outputMessages: [outputMessage] as any,
-          artifacts: artifacts as any ?? null,
+          artifacts: (artifacts as any) ?? null,
           completedAt: new Date(),
           updatedAt: new Date(),
         } as any)
         .where(eq(schema.a2aTask.taskId, taskId));
 
-      this.emit(taskId, { type: 'task', task: await this.buildTaskResponse(taskId) });
+      this.emit(taskId, {
+        type: 'task',
+        task: await this.buildTaskResponse(taskId),
+      });
       this.emit(taskId, { type: 'close' });
 
       return this.buildTaskFromRow(
-        taskId, params.agentId, 'completed', params.contextId,
-        params.message, outputMessage, artifacts,
+        taskId,
+        params.agentId,
+        'completed',
+        params.contextId,
+        params.message,
+        outputMessage,
+        artifacts,
       );
     } catch (error: any) {
       this.logger.error(`A2A task ${taskId} failed: ${error.message}`);
-      await this.db.update(schema.a2aTask)
+      await this.db
+        .update(schema.a2aTask)
         .set({
           state: 'failed',
-          error: { code: RPC_ERRORS.INTERNAL_ERROR.code, message: error.message } as any,
+          error: {
+            code: RPC_ERRORS.INTERNAL_ERROR.code,
+            message: error.message,
+          } as any,
           completedAt: new Date(),
           updatedAt: new Date(),
         } as any)
         .where(eq(schema.a2aTask.taskId, taskId));
 
-      this.emit(taskId, { type: 'task', task: await this.buildTaskResponse(taskId) });
+      this.emit(taskId, {
+        type: 'task',
+        task: await this.buildTaskResponse(taskId),
+      });
       this.emit(taskId, { type: 'close' });
 
       return this.buildTaskFromRow(
-        taskId, params.agentId, 'failed', params.contextId, params.message,
+        taskId,
+        params.agentId,
+        'failed',
+        params.contextId,
+        params.message,
       );
     }
   }
@@ -153,7 +186,11 @@ export class A2aService {
   // ── tasks/sendSubscribe ────────────────────────────────────────────────────
 
   /** Terminal states — no more events will follow. */
-  private static readonly TERMINAL_STATES: A2ATaskState[] = ['completed', 'failed', 'canceled'];
+  private static readonly TERMINAL_STATES: A2ATaskState[] = [
+    'completed',
+    'failed',
+    'canceled',
+  ];
 
   /**
    * Create a task and start streaming updates to the caller.
@@ -189,9 +226,25 @@ export class A2aService {
           const task = await this.buildTaskResponse(taskId);
           const isFinal = true;
           if (task.artifacts?.length) {
-            yield { type: 'TaskArtifactUpdateEvent', data: { taskId, contextId: params.contextId, artifact: task.artifacts[0], final: isFinal } };
+            yield {
+              type: 'TaskArtifactUpdateEvent',
+              data: {
+                taskId,
+                contextId: params.contextId,
+                artifact: task.artifacts[0],
+                final: isFinal,
+              },
+            };
           }
-          yield { type: 'TaskStatusUpdateEvent', data: { taskId, contextId: params.contextId, status: task.status, final: isFinal } };
+          yield {
+            type: 'TaskStatusUpdateEvent',
+            data: {
+              taskId,
+              contextId: params.contextId,
+              status: task.status,
+              final: isFinal,
+            },
+          };
           return;
         }
       }
@@ -236,27 +289,55 @@ export class A2aService {
         }
         if (event.type === 'task') {
           const task: A2ATask = event.task;
-          const isFinal = A2aService.TERMINAL_STATES.includes(task.status.state);
+          const isFinal = A2aService.TERMINAL_STATES.includes(
+            task.status.state,
+          );
           if (task.artifacts?.length) {
-            yield { type: 'TaskArtifactUpdateEvent', data: { taskId, contextId: params.contextId, artifact: task.artifacts[0], final: isFinal } };
+            yield {
+              type: 'TaskArtifactUpdateEvent',
+              data: {
+                taskId,
+                contextId: params.contextId,
+                artifact: task.artifacts[0],
+                final: isFinal,
+              },
+            };
           }
-          yield { type: 'TaskStatusUpdateEvent', data: { taskId, contextId: params.contextId, status: task.status, final: isFinal } };
+          yield {
+            type: 'TaskStatusUpdateEvent',
+            data: {
+              taskId,
+              contextId: params.contextId,
+              status: task.status,
+              final: isFinal,
+            },
+          };
         }
       }
 
       if (!done) {
         // DB-polling fallback: if no in-memory event for STALL_TIMEOUT_MS, poll the DB directly
         if (Date.now() - lastEventAt > STALL_TIMEOUT_MS) {
-          const row = await this.db.query.a2aTask.findFirst({
-            where: (t: any) => eq(t.taskId, taskId),
-          } as any).catch(() => null);
+          const row = await this.db.query.a2aTask
+            .findFirst({
+              where: (t: any) => eq(t.taskId, taskId),
+            } as any)
+            .catch(() => null);
 
           if (row) {
             const state = (row as any).state as A2ATaskState;
             if (A2aService.TERMINAL_STATES.includes(state)) {
               const task = await this.buildTaskResponse(taskId);
               const isFinal = true;
-              yield { type: 'TaskStatusUpdateEvent', data: { taskId, contextId: params.contextId, status: task.status, final: isFinal } };
+              yield {
+                type: 'TaskStatusUpdateEvent',
+                data: {
+                  taskId,
+                  contextId: params.contextId,
+                  status: task.status,
+                  final: isFinal,
+                },
+              };
               this.unsubscribe(taskId, push);
               return;
             }
@@ -302,18 +383,31 @@ export class A2aService {
 
   // ── Push notification config ───────────────────────────────────────────────
 
-  async setPushNotificationConfig(taskId: string, config: PushNotificationConfig): Promise<void> {
-    await this.db.update(schema.a2aTask)
-      .set({ pushUrl: config.url, pushToken: config.token ?? null, updatedAt: new Date() } as any)
+  async setPushNotificationConfig(
+    taskId: string,
+    config: PushNotificationConfig,
+  ): Promise<void> {
+    await this.db
+      .update(schema.a2aTask)
+      .set({
+        pushUrl: config.url,
+        pushToken: config.token ?? null,
+        updatedAt: new Date(),
+      } as any)
       .where(eq(schema.a2aTask.taskId, taskId));
   }
 
-  async getPushNotificationConfig(taskId: string): Promise<PushNotificationConfig | null> {
+  async getPushNotificationConfig(
+    taskId: string,
+  ): Promise<PushNotificationConfig | null> {
     const row = await this.db.query.a2aTask.findFirst({
       where: (t: any) => eq(t.taskId, taskId),
     } as any);
     if (!row || !(row as any).pushUrl) return null;
-    return { url: (row as any).pushUrl, token: (row as any).pushToken ?? undefined };
+    return {
+      url: (row as any).pushUrl,
+      token: (row as any).pushToken ?? undefined,
+    };
   }
 
   // ── List tasks ─────────────────────────────────────────────────────────────
@@ -329,8 +423,12 @@ export class A2aService {
 
   // ── Internal helpers ───────────────────────────────────────────────────────
 
-  private async updateState(taskId: string, state: A2ATaskState): Promise<void> {
-    await this.db.update(schema.a2aTask)
+  private async updateState(
+    taskId: string,
+    state: A2ATaskState,
+  ): Promise<void> {
+    await this.db
+      .update(schema.a2aTask)
       .set({ state, updatedAt: new Date() } as any)
       .where(eq(schema.a2aTask.taskId, taskId));
   }
@@ -409,6 +507,25 @@ export class A2aService {
           // Fall back to agentId itself (self-triggered) when no caller is provided.
           initiator: callerId ?? agentId,
           stream: false,
+          provenanceContext: {
+            metadata: {
+              protocol: 'a2a',
+              a2aTaskId: taskId,
+              callerId,
+            },
+            lineage: {
+              schemaVersion: 1,
+              kind: 'delegation',
+              delegation: {
+                fromAgentId: callerId,
+                toAgentId: agentId,
+                role: 'a2a_responder',
+                architecture: 'a2a',
+                handoffPolicy: 'request_response',
+                contextPolicy: 'message',
+              },
+            },
+          },
         })
         .pipe(filter((event: any) => event.type === 'final')),
     );
@@ -431,7 +548,9 @@ export class A2aService {
       text = JSON.stringify(payload);
     }
 
-    this.logger.log(`A2A task ${taskId}: agent completed (${text.length} chars)`);
+    this.logger.log(
+      `A2A task ${taskId}: agent completed (${text.length} chars)`,
+    );
     return { text };
   }
 
@@ -444,12 +563,17 @@ export class A2aService {
 
   private unsubscribe(taskId: string, fn: (event: any) => void): void {
     this.subscribers.get(taskId)?.delete(fn);
-    if (this.subscribers.get(taskId)?.size === 0) this.subscribers.delete(taskId);
+    if (this.subscribers.get(taskId)?.size === 0)
+      this.subscribers.delete(taskId);
   }
 
   private emit(taskId: string, event: any): void {
     for (const fn of this.subscribers.get(taskId) ?? []) {
-      try { fn(event); } catch (e) { /* subscriber error — ignore */ }
+      try {
+        fn(event);
+      } catch (e) {
+        /* subscriber error — ignore */
+      }
     }
   }
 }

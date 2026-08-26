@@ -2074,18 +2074,18 @@ export const provenanceRun = pgTable(
     sessionId: uuid('session_id').references(() => session.sessionId, {
       onDelete: 'set null',
     }),
-    agentId: text('agent_id')
-      .notNull()
-      .references(() => agent.agentId, { onDelete: 'cascade' }),
+    agentId: text('agent_id').references(() => agent.agentId, {
+      onDelete: 'cascade',
+    }),
+    scopeType: text('scope_type').notNull().default('agent_run'),
+    scopeId: text('scope_id'),
     initiator: text('initiator'),
     workspaceId: text('workspace_id'),
     status: text('status').notNull().default('running'),
     captureMode: text('capture_mode').notNull().default('metadata'),
     provider: text('provider'),
     modelId: text('model_id'),
-    onchainRequested: pgBoolean('onchain_requested')
-      .notNull()
-      .default(false),
+    onchainRequested: pgBoolean('onchain_requested').notNull().default(false),
     eventCount: integer('event_count').notNull().default(0),
     droppedEventCount: integer('dropped_event_count').notNull().default(0),
     inputTokens: integer('input_tokens').notNull().default(0),
@@ -2120,6 +2120,11 @@ export const provenanceRun = pgTable(
     anchorStatusIdx: index('idx_provenance_run_anchor_status').on(
       table.anchorStatus,
       table.updatedAt,
+    ),
+    scopeStartedIdx: index('idx_provenance_run_scope_started').on(
+      table.scopeType,
+      table.scopeId,
+      table.startedAt,
     ),
   }),
 );
@@ -2178,6 +2183,10 @@ export const provenanceEvent = pgTable(
     sessionStartedIdx: index('idx_provenance_event_session_started').on(
       table.sessionId,
       table.startedAt,
+    ),
+    sessionCreatedIdx: index('idx_provenance_event_session_created').on(
+      table.sessionId,
+      table.createdAt,
     ),
     categoryIdx: index('idx_provenance_event_category').on(
       table.category,

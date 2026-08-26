@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -18,9 +19,18 @@ export class ProvenanceController {
   async sessionTrajectory(
     @Param('sessionId') sessionId: string,
     @Req() request: Request,
+    @Query('since') since?: string,
   ) {
     await this.assertSessionAccess(sessionId, request);
-    return { data: await this.provenance.getSessionTrajectory(sessionId) };
+    const parsedSince = since ? new Date(since) : undefined;
+    return {
+      data: await this.provenance.getSessionTrajectory(
+        sessionId,
+        parsedSince && Number.isFinite(parsedSince.getTime())
+          ? parsedSince
+          : undefined,
+      ),
+    };
   }
 
   @Get('traces/:traceId/bundle')
@@ -29,6 +39,33 @@ export class ProvenanceController {
     if (!run) throw new NotFoundException('Provenance trace not found');
     if (run.sessionId) await this.assertSessionAccess(run.sessionId, request);
     return { data: await this.provenance.buildBundle(traceId) };
+  }
+
+  @Get('scopes/:scopeType/:scopeId')
+  async scopeTrajectory(
+    @Param('scopeType') scopeType: string,
+    @Param('scopeId') scopeId: string,
+    @Req() request: Request,
+  ) {
+    const trajectory = await this.provenance.getScopeTrajectory(
+      scopeType,
+      scopeId,
+    );
+    const sessionId = trajectory.runs.find((run) => run.sessionId)?.sessionId;
+    if (sessionId) await this.assertSessionAccess(sessionId, request);
+    else {
+      const principal = (request as any).principal;
+      const owner = trajectory.runs.find((run) => run.initiator)?.initiator;
+      if (
+        principal?.principalType === 'user' &&
+        (!owner ||
+          owner.toLowerCase() !==
+            String(principal.principalId ?? '').toLowerCase())
+      ) {
+        throw new ForbiddenException('You do not own this provenance scope');
+      }
+    }
+    return { data: trajectory };
   }
 
   @Post('traces/:traceId/anchor')

@@ -387,6 +387,123 @@ interface RunParams {
         parameters: Record<string, unknown>;
     }>;
 }
+interface ProvenanceLineage {
+    schemaVersion: 1;
+    kind: "web_search" | "workflow" | "decision" | "delegation" | "library_retrieval" | "tool";
+    tool?: {
+        name: string;
+        provider?: string;
+        invocationId?: string;
+    };
+    query?: {
+        text: string;
+        sha256?: string;
+    };
+    sources?: Array<{
+        url: string;
+        domain: string;
+        title?: string;
+        rank?: number;
+        publishedAt?: string;
+        contentHash?: string;
+    }>;
+    workflow?: {
+        workflowId: string;
+        executionId?: string;
+        nodeId?: string;
+        nodeType?: string;
+        version?: string | number;
+        definitionHash?: string;
+        parentExecutionId?: string;
+    };
+    decision?: {
+        type: "condition" | "human_approval" | "policy" | "routing";
+        outcome: string | boolean;
+        rule?: string;
+        alternatives?: string[];
+    };
+    delegation?: {
+        fromAgentId?: string;
+        toAgentId: string;
+        role?: string;
+        architecture?: string;
+        handoffPolicy?: string;
+        contextPolicy?: string;
+    };
+    library?: {
+        query: string;
+        algorithm: "hybrid" | "semantic" | "lexical";
+        semanticWeight?: number;
+        lexicalWeight?: number;
+        results: Array<{
+            itemId: string;
+            name?: string;
+            kind?: string;
+            sourceSessionId?: string;
+            sourceUri?: string;
+            sourceType?: string;
+            contentHash?: string;
+            chunkIndex?: number;
+            score: number;
+            percentageMatch: number;
+            rank: number;
+        }>;
+    };
+}
+interface ProvenanceRun {
+    traceId: string;
+    sessionId?: string;
+    agentId?: string;
+    scopeType: string;
+    scopeId?: string;
+    status: string;
+    captureMode: "metadata" | "full";
+    provider?: string;
+    modelId?: string;
+    startedAt: string;
+    endedAt?: string;
+    durationMs?: number;
+    bundleHash?: string;
+    anchorStatus?: string;
+    anchorRef?: string;
+}
+interface ProvenanceEvent {
+    eventId: string;
+    traceId: string;
+    sequence: number;
+    category: string;
+    eventType: string;
+    name: string;
+    status: string;
+    summary?: string;
+    contentHash?: string;
+    durationMs?: number;
+    metadata?: {
+        lineage?: ProvenanceLineage;
+        [key: string]: unknown;
+    };
+    startedAt: string;
+    endedAt?: string;
+}
+interface ProvenanceTrajectory {
+    sessionId?: string;
+    scopeType?: string;
+    scopeId?: string;
+    runs: ProvenanceRun[];
+    events: ProvenanceEvent[];
+    summary: {
+        runs: number;
+        events: number;
+        modelCalls: number;
+        toolCalls: number;
+        durationMs: number;
+        inputTokens: number;
+        outputTokens: number;
+        cachedTokens: number;
+        costUsd: number;
+        droppedEvents: number;
+    };
+}
 interface ChatMessage {
     role: "user" | "assistant" | "system" | "tool";
     content: string | Array<{
@@ -1664,6 +1781,23 @@ declare class CommonsClient {
     };
     get run(): {
         once: (params: RunParams) => Promise<any>;
+    };
+    get provenance(): {
+        session: (sessionId: string) => Promise<{
+            data: ProvenanceTrajectory;
+        }>;
+        scope: (scopeType: string, scopeId: string) => Promise<{
+            data: ProvenanceTrajectory;
+        }>;
+        bundle: (traceId: string) => Promise<{
+            data: Record<string, unknown>;
+        }>;
+        anchor: (traceId: string) => Promise<{
+            data: {
+                traceId: string;
+                status: string;
+            };
+        }>;
     };
     get workflows(): {
         create: (params: {

@@ -114,8 +114,8 @@ export class LibraryService {
         sessionTitle:
           item.sourceSessionId &&
           (!filters.agentId || item.sourceAgentId === filters.agentId)
-          ? (titleBySession.get(item.sourceSessionId) ?? 'Untitled chat')
-          : null,
+            ? (titleBySession.get(item.sourceSessionId) ?? 'Untitled chat')
+            : null,
         previewUrl:
           (await this.files.createPreviewUrl(item.itemId, {
             ownerId: principal.principalId,
@@ -432,6 +432,9 @@ export class LibraryService {
         kind: schema.libraryItem.kind,
         mimeType: schema.libraryItem.mimeType,
         sourceSessionId: schema.libraryItem.sourceSessionId,
+        sourceType: schema.libraryItem.source,
+        contentHash: schema.libraryItem.sha256,
+        itemMetadata: schema.libraryItem.metadata,
         chunkIndex: schema.libraryChunk.chunkIndex,
         excerpt: schema.libraryChunk.content,
         score,
@@ -459,8 +462,14 @@ export class LibraryService {
       )
       .orderBy(desc(score))
       .limit(clamp(input.limit ?? 8, 1, 20));
-    return rows.map((row) => ({
+    return rows.map(({ itemMetadata, ...row }) => ({
       ...row,
+      sourceUri:
+        typeof itemMetadata?.sourceUrl === 'string'
+          ? itemMetadata.sourceUrl
+          : typeof itemMetadata?.url === 'string'
+            ? itemMetadata.url
+            : undefined,
       excerpt: row.excerpt.slice(0, 1_200),
     }));
   }

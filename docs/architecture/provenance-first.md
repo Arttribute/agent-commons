@@ -15,6 +15,10 @@ The chat hot path never waits on provenance storage or ProvenanceKit.
 - On-chain anchoring is off by default, separately environment-gated, and must be
   requested by the user. Content stays off-chain; the sink receives an EAA
   bundle digest.
+- Human-in-the-loop events identify the requester, authenticated reviewer,
+  alternatives, decision, reason and timing. Approval/permission tokens are
+  excluded before both hashing and storage; completed approval actions are
+  attributed to the human reviewer rather than the agent that requested them.
 
 ## Runtime path
 

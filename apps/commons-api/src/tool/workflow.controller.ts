@@ -17,7 +17,7 @@ import { Request } from 'express';
 import { Observable } from 'rxjs';
 import { WorkflowService } from './workflow.service';
 import { WorkflowExecutorService } from './workflow-executor.service';
-import { OwnerGuard, OwnerOnly, Public } from '~/modules/auth';
+import { OwnerGuard, OwnerOnly, Public, resolveCallerId } from '~/modules/auth';
 
 /**
  * WorkflowController
@@ -347,6 +347,7 @@ export class WorkflowController {
     @Param('id') workflowId: string,
     @Param('executionId') executionId: string,
     @Body() body: { approvalToken: string; approvalData?: Record<string, any> },
+    @Req() req: Request,
   ) {
     if (!body.approvalToken)
       throw new BadRequestException('approvalToken is required');
@@ -355,6 +356,10 @@ export class WorkflowController {
       body.approvalToken,
       body.approvalData,
       workflowId,
+      {
+        id: resolveCallerId(req),
+        type: (req as any).principal?.principalType ?? 'human',
+      },
     );
     return { success: true, executionId, action: 'approved' };
   }
@@ -370,6 +375,7 @@ export class WorkflowController {
     @Param('id') workflowId: string,
     @Param('executionId') executionId: string,
     @Body() body: { approvalToken: string; reason?: string },
+    @Req() req: Request,
   ) {
     if (!body.approvalToken)
       throw new BadRequestException('approvalToken is required');
@@ -378,6 +384,10 @@ export class WorkflowController {
       body.approvalToken,
       body.reason,
       workflowId,
+      {
+        id: resolveCallerId(req),
+        type: (req as any).principal?.principalType ?? 'human',
+      },
     );
     return { success: true, executionId, action: 'rejected' };
   }

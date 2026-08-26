@@ -16,10 +16,88 @@ export type ProvenanceEventCategory =
   | 'system'
   | 'error';
 
+export interface ProvenanceSourceReference {
+  url: string;
+  domain: string;
+  title?: string;
+  rank?: number;
+  publishedAt?: string;
+  contentHash?: string;
+}
+
+export interface ProvenanceLineageMetadata {
+  schemaVersion: 1;
+  kind:
+    | 'web_search'
+    | 'workflow'
+    | 'decision'
+    | 'delegation'
+    | 'library_retrieval'
+    | 'tool';
+  tool?: { name: string; provider?: string; invocationId?: string };
+  query?: { text: string; sha256?: string };
+  sources?: ProvenanceSourceReference[];
+  workflow?: {
+    workflowId: string;
+    executionId?: string;
+    nodeId?: string;
+    nodeType?: string;
+    version?: number | string;
+    definitionHash?: string;
+    parentExecutionId?: string;
+  };
+  decision?: {
+    type: 'condition' | 'human_approval' | 'policy' | 'routing';
+    outcome: string | boolean;
+    rule?: string;
+    alternatives?: string[];
+    /** Safe, reportable human-in-the-loop context. Approval credentials are forbidden. */
+    approval?: {
+      requesterId?: string;
+      reviewerId?: string;
+      reviewerType?: 'human' | 'agent' | 'service';
+      prompt?: string;
+      questionIds?: string[];
+      responseFieldNames?: string[];
+      responseHash?: string;
+      reason?: string;
+    };
+  };
+  delegation?: {
+    fromAgentId?: string;
+    toAgentId: string;
+    role?: string;
+    architecture?: string;
+    handoffPolicy?: string;
+    contextPolicy?: string;
+  };
+  library?: {
+    query: string;
+    algorithm: 'hybrid' | 'semantic' | 'lexical';
+    semanticWeight?: number;
+    lexicalWeight?: number;
+    results: Array<{
+      itemId: string;
+      name?: string;
+      kind?: string;
+      sourceSessionId?: string;
+      sourceUri?: string;
+      sourceType?: string;
+      contentHash?: string;
+      chunkIndex?: number;
+      score: number;
+      percentageMatch: number;
+      rank: number;
+    }>;
+  };
+}
+
 export interface StartProvenanceRunInput {
   traceId: string;
-  sessionId: string;
-  agentId: string;
+  sessionId?: string;
+  agentId?: string;
+  scopeType?: 'agent_run' | 'workflow' | 'task' | 'cli' | 'sdk' | string;
+  scopeId?: string;
   initiator?: string;
   workspaceId?: string;
   provider: string;
@@ -27,6 +105,7 @@ export interface StartProvenanceRunInput {
   options?: ProvenanceRunOptions;
   input?: unknown;
   metadata?: Record<string, unknown>;
+  lineage?: ProvenanceLineageMetadata;
 }
 
 export interface RecordProvenanceEventInput {
@@ -49,6 +128,14 @@ export interface RecordProvenanceEventInput {
   cachedTokens?: number;
   costUsd?: number;
   metadata?: Record<string, unknown>;
+  /** Principal responsible for this event. Defaults to the run's agent/runtime. */
+  performedBy?: {
+    type: 'human' | 'agent' | 'service' | 'runtime';
+    id?: string;
+    role?: string;
+  };
+  /** Typed, user-visible lineage. Never include credentials or private reasoning. */
+  lineage?: ProvenanceLineageMetadata;
 }
 
 export interface FinishProvenanceRunInput {

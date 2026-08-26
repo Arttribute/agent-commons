@@ -778,6 +778,11 @@ export class AgentService implements OnModuleInit {
     reasoningEffort?: string;
     /** Per-run provenance policy. Defaults to metadata-only and off-chain. */
     provenance?: ProvenanceRunOptions;
+    /** Internal/public caller context used to join delegated and A2A runs. */
+    provenanceContext?: {
+      lineage?: import('../provenance/provenance.types').ProvenanceLineageMetadata;
+      metadata?: Record<string, unknown>;
+    };
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
@@ -1013,7 +1018,9 @@ export class AgentService implements OnModuleInit {
               parentSessionId,
               reasoningEffort: effectiveModel.reasoningEffort,
               attachmentCount: props.attachments?.length ?? 0,
+              ...props.provenanceContext?.metadata,
             },
+            lineage: props.provenanceContext?.lineage,
           });
 
           const billingOwnerId = agent.ownerUserId ?? agent.owner;
@@ -1349,7 +1356,8 @@ export class AgentService implements OnModuleInit {
                   phase: 'commentary',
                   status: 'completed',
                   spanId: runId,
-                  summary: 'Model step completed; provider did not report token usage',
+                  summary:
+                    'Model step completed; provider did not report token usage',
                   payload: runId ? llmRunInputs.get(runId) : undefined,
                   result,
                   durationMs,

@@ -58,7 +58,9 @@ describe('ProvenanceService', () => {
       reasoning: '[not captured]',
       answer: 'disclosed answer',
     });
-    expect(JSON.stringify(event?.contentHash)).not.toContain('private chain of thought');
+    expect(JSON.stringify(event?.contentHash)).not.toContain(
+      'private chain of thought',
+    );
   });
 
   it('records an unavailable request without invoking an on-chain sink', () => {
@@ -74,6 +76,140 @@ describe('ProvenanceService', () => {
     expect(run).toMatchObject({
       onchainRequested: true,
       anchorStatus: 'unavailable',
+    });
+  });
+
+  it('keeps web query, provider and canonical ranked sources in metadata mode', () => {
+    const service = createService();
+    const traceId = '00000000-0000-4000-8000-000000000007';
+    service.startRun({
+      ...runBase,
+      traceId,
+      agentId: '00000000-0000-4000-8000-000000000008',
+    });
+    service.recordEvent(traceId, {
+      category: 'tool',
+      eventType: 'tool.execute',
+      name: 'webSearch',
+      spanId: 'call-1',
+      payload: JSON.stringify({ query: 'source transparency' }),
+      result: {
+        query: 'source transparency',
+        provider: 'brave',
+        results: [
+          {
+            title: 'Example',
+            url: 'https://www.example.com/article#section',
+            description: 'Evidence',
+          },
+        ],
+      },
+    });
+    const event = queueOf(service)
+      .filter((item) => item.kind === 'event')
+      .at(-1)?.value;
+    expect(event?.metadata.lineage).toMatchObject({
+      kind: 'web_search',
+      query: { text: 'source transparency' },
+      tool: { name: 'webSearch', provider: 'brave', invocationId: 'call-1' },
+      sources: [
+        {
+          url: 'https://www.example.com/article',
+          domain: 'example.com',
+          title: 'Example',
+          rank: 1,
+        },
+      ],
+    });
+  });
+
+  it('records explainable library similarity percentages and origins', () => {
+    const service = createService();
+    const traceId = '00000000-0000-4000-8000-000000000009';
+    service.startRun({
+      ...runBase,
+      traceId,
+      agentId: '00000000-0000-4000-8000-000000000010',
+    });
+    service.recordEvent(traceId, {
+      category: 'tool',
+      eventType: 'tool.execute',
+      name: 'searchLibraryArtifacts',
+      payload: JSON.stringify({ query: 'brand guide' }),
+      result: [
+        {
+          itemId: 'item-1',
+          name: 'Brand Guide',
+          score: 0.87654,
+          sourceType: 'upload',
+          sourceUri: 'https://example.com/brand.pdf',
+          contentHash: 'sha256:abc',
+        },
+      ],
+    });
+    const event = queueOf(service)
+      .filter((item) => item.kind === 'event')
+      .at(-1)?.value;
+    expect(event?.metadata.lineage.library).toMatchObject({
+      query: 'brand guide',
+      algorithm: 'hybrid',
+      semanticWeight: 0.75,
+      lexicalWeight: 0.25,
+      results: [
+        {
+          itemId: 'item-1',
+          percentageMatch: 87.65,
+          rank: 1,
+          sourceType: 'upload',
+          contentHash: 'sha256:abc',
+        },
+      ],
+    });
+  });
+
+  it('attributes human approvals without persisting approval credentials', () => {
+    const service = createService();
+    const traceId = '00000000-0000-4000-8000-000000000011';
+    service.startRun({
+      ...runBase,
+      traceId,
+      agentId: '00000000-0000-4000-8000-000000000012',
+      initiator: 'reviewer@example.com',
+      options: { mode: 'full' },
+    });
+    service.recordEvent(traceId, {
+      category: 'tool',
+      eventType: 'tool.execute',
+      name: 'request_user_input',
+      payload: {
+        approvalToken: 'never-store-this',
+        questions: [
+          {
+            id: 'deploy',
+            question: 'Deploy this change?',
+            options: [{ label: 'Approve' }, { label: 'Reject' }],
+          },
+        ],
+      },
+      result: { approved: true, answers: { deploy: 'Approve' } },
+    });
+
+    const event = queueOf(service)
+      .filter((item) => item.kind === 'event')
+      .at(-1)?.value;
+    const serialized = JSON.stringify(event);
+    expect(serialized).not.toContain('never-store-this');
+    expect(event?.payload.approvalToken).toBe('[redacted]');
+    expect(event?.eaaAction.performedBy).toBe('human:reviewer@example.com');
+    expect(event?.metadata.lineage.decision).toMatchObject({
+      type: 'human_approval',
+      outcome: true,
+      approval: {
+        reviewerId: 'reviewer@example.com',
+        reviewerType: 'human',
+        prompt: 'Deploy this change?',
+        questionIds: ['deploy'],
+      },
     });
   });
 });

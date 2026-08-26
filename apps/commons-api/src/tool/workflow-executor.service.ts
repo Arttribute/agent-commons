@@ -1,7 +1,13 @@
-import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Optional,
+  forwardRef,
+  Inject,
+} from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import * as vm from 'vm';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import { lastValueFrom } from 'rxjs';
 import { DatabaseService } from '../modules/database';
 import { ToolLoaderService } from './tool-loader.service';
@@ -20,6 +26,8 @@ import { normalizeToolOutput, WorkflowValue } from './workflow-value';
 import { isAppIntegrationToolId, isUuid } from './app-tool.util';
 import { ToolInvocationService } from './tool-invocation.service';
 import * as schema from '../../models/schema';
+import { ProvenanceService } from '../provenance';
+import type { ProvenanceLineageMetadata } from '../provenance/provenance.types';
 
 interface NodeExecutionContext {
   nodeId: string;
@@ -72,6 +80,7 @@ class HumanApprovalPauseError extends Error {
 @Injectable()
 export class WorkflowExecutorService {
   private readonly logger = new Logger(WorkflowExecutorService.name);
+  private readonly workflowTraces = new Map<string, string>();
 
   constructor(
     private readonly db: DatabaseService,
@@ -86,6 +95,7 @@ export class WorkflowExecutorService {
     @Inject(forwardRef(() => ExternalRuntimeService))
     private readonly externalRuntime: ExternalRuntimeService,
     private readonly toolInvocation: ToolInvocationService,
+    @Optional() private readonly provenance?: ProvenanceService,
   ) {}
 
   // ── Public: start a new execution ─────────────────────────────────────────
@@ -124,6 +134,22 @@ export class WorkflowExecutorService {
         nodeResults: {},
       })
       .returning();
+
+    this.startWorkflowProvenance({
+      executionId: execution.executionId,
+      workflowId,
+      workflowName: workflow.name,
+      workflowVersion: workflow.version ?? undefined,
+      definition: workflow.definition,
+      agentId,
+      sessionId,
+      userId,
+      inputData,
+      parentExecutionId:
+        typeof inputData?.__parentExecutionId === 'string'
+          ? inputData.__parentExecutionId
+          : undefined,
+    });
 
     this.logger.log(
       `Started workflow execution ${execution.executionId} for workflow ${workflowId}`,
@@ -189,6 +215,10 @@ export class WorkflowExecutorService {
     approvalToken: string,
     approvalData?: Record<string, any>,
     workflowId?: string,
+    reviewer?: {
+      id?: string;
+      type?: 'user' | 'agent' | 'service';
+    },
   ): Promise<void> {
     const execution = await this.db.query.workflowExecution.findFirst({
       where: (e) => eq(e.executionId, executionId),
@@ -232,6 +262,60 @@ export class WorkflowExecutorService {
     };
 
     const workflow = (execution as any).workflow;
+    const approvalPrompt = this.humanApprovalPrompt(
+      workflow?.definition,
+      pausedAtNode,
+    );
+    const responseFieldNames = Object.keys(approvalData ?? {}).slice(0, 50);
+    const responseHash = approvalData
+      ? `sha256:${createHash('sha256')
+          .update(JSON.stringify({ responseFieldNames }))
+          .digest('hex')}`
+      : undefined;
+    this.ensureResumedWorkflowProvenance(
+      execution,
+      (execution as any).workflow?.ownerId,
+    );
+    this.recordWorkflowEvent(executionId, {
+      category: 'system',
+      eventType: 'workflow.decision.human_approval',
+      name: 'Human approval',
+      summary: 'A reviewer approved the workflow continuation',
+      result: { approved: true, responseFieldNames, responseHash },
+      performedBy: {
+        type:
+          reviewer?.type === 'user' || !reviewer?.type
+            ? 'human'
+            : reviewer.type,
+        id: reviewer?.id,
+        role: 'workflow reviewer',
+      },
+      lineage: {
+        schemaVersion: 1,
+        kind: 'decision',
+        workflow: {
+          workflowId: execution.workflowId,
+          executionId,
+          nodeId: pausedAtNode,
+        },
+        decision: {
+          type: 'human_approval',
+          outcome: true,
+          alternatives: ['approve', 'reject'],
+          approval: {
+            requesterId: execution.agentId ?? undefined,
+            reviewerId: reviewer?.id,
+            reviewerType:
+              reviewer?.type === 'user' || !reviewer?.type
+                ? 'human'
+                : reviewer.type,
+            prompt: approvalPrompt,
+            responseFieldNames,
+            responseHash,
+          },
+        },
+      },
+    });
     this.executeGraphWalker(
       executionId,
       workflow.definition,
@@ -261,9 +345,14 @@ export class WorkflowExecutorService {
     approvalToken: string,
     reason?: string,
     workflowId?: string,
+    reviewer?: {
+      id?: string;
+      type?: 'user' | 'agent' | 'service';
+    },
   ): Promise<void> {
     const execution = await this.db.query.workflowExecution.findFirst({
       where: (e) => eq(e.executionId, executionId),
+      with: { workflow: true },
     });
     if (!execution) throw new Error(`Execution ${executionId} not found`);
     if (workflowId && execution.workflowId !== workflowId) {
@@ -280,6 +369,8 @@ export class WorkflowExecutorService {
       throw new Error('Invalid approval token');
     }
 
+    const pausedAtNode: string | undefined = (execution as any).pausedAtNode;
+
     await this.db
       .update(schema.workflowExecution)
       .set({
@@ -289,6 +380,52 @@ export class WorkflowExecutorService {
         approvalToken: null as any,
       })
       .where(eq(schema.workflowExecution.executionId, executionId));
+    this.ensureResumedWorkflowProvenance(execution);
+    this.recordWorkflowEvent(executionId, {
+      category: 'system',
+      eventType: 'workflow.decision.human_approval',
+      name: 'Human rejection',
+      status: 'failed',
+      summary: reason ?? 'A reviewer rejected the workflow continuation',
+      result: { approved: false, reason },
+      performedBy: {
+        type:
+          reviewer?.type === 'user' || !reviewer?.type
+            ? 'human'
+            : reviewer.type,
+        id: reviewer?.id,
+        role: 'workflow reviewer',
+      },
+      lineage: {
+        schemaVersion: 1,
+        kind: 'decision',
+        workflow: {
+          workflowId: execution.workflowId,
+          executionId,
+          nodeId: pausedAtNode,
+          nodeType: 'human_approval',
+        },
+        decision: {
+          type: 'human_approval',
+          outcome: false,
+          alternatives: ['approve', 'reject'],
+          approval: {
+            requesterId: execution.agentId ?? undefined,
+            reviewerId: reviewer?.id,
+            reviewerType:
+              reviewer?.type === 'user' || !reviewer?.type
+                ? 'human'
+                : reviewer.type,
+            prompt: this.humanApprovalPrompt(
+              (execution as any).workflow?.definition,
+              pausedAtNode,
+            ),
+            reason,
+          },
+        },
+      },
+    });
+    this.finishWorkflowProvenance(executionId, 'failed', undefined, reason);
   }
 
   // ── Core: dynamic graph walker ─────────────────────────────────────────────
@@ -471,6 +608,48 @@ export class WorkflowExecutorService {
         let fatalError: Error | null = null;
         for (const result of results) {
           const resultNode = nodes.find((n: any) => n.id === result.nodeId);
+          const lineage = this.workflowNodeLineage({
+            executionId,
+            workflowId: definition.workflowId,
+            node: resultNode,
+            result,
+            agentId,
+          });
+          this.recordWorkflowEvent(executionId, {
+            category:
+              resultNode?.type === 'condition' ||
+              resultNode?.type === 'human_approval'
+                ? 'system'
+                : 'tool',
+            eventType: `workflow.node.${resultNode?.type ?? 'tool'}`,
+            name:
+              resultNode?.label ??
+              resultNode?.toolName ??
+              resultNode?.config?.toolName ??
+              resultNode?.type ??
+              result.nodeId,
+            status:
+              result.status === 'success'
+                ? 'completed'
+                : result.status === 'error'
+                  ? 'failed'
+                  : 'cancelled',
+            spanId: `${executionId}:${result.nodeId}`,
+            summary:
+              result.status === 'success'
+                ? `Workflow node ${result.nodeId} completed`
+                : (result.error ??
+                  `Workflow node ${result.nodeId} ${result.status}`),
+            result: result.output ?? result.error,
+            durationMs: result.duration,
+            startedAt: new Date(Date.now() - result.duration),
+            endedAt: new Date(),
+            lineage,
+            metadata: {
+              workflow: lineage.workflow,
+              nodeStatus: result.status,
+            },
+          });
           nodeResults[result.nodeId] = { ...result };
           // Additive: derive presentation envelopes for the results interpreter.
           if (result.status === 'success' && result.output !== undefined) {
@@ -604,6 +783,7 @@ export class WorkflowExecutorService {
         `Workflow execution ${executionId} completed in ${Date.now() - startTime}ms ` +
           `(${completedNodes.size} node(s), ${skippedNodes.size} skipped)`,
       );
+      this.finishWorkflowProvenance(executionId, 'completed', finalOutput);
     } catch (error: any) {
       if (error instanceof HumanApprovalPauseError) {
         // Persist pause state then stop — execution will resume via approveExecution()
@@ -617,6 +797,32 @@ export class WorkflowExecutorService {
         this.logger.log(
           `Workflow execution ${executionId} paused at node ${error.nodeId} awaiting approval`,
         );
+        this.recordWorkflowEvent(executionId, {
+          category: 'system',
+          eventType: 'workflow.decision.awaiting_approval',
+          name: 'Awaiting human approval',
+          status: 'queued',
+          summary: error.prompt ?? `Paused at node ${error.nodeId}`,
+          lineage: {
+            schemaVersion: 1,
+            kind: 'decision',
+            workflow: {
+              workflowId: definition.workflowId,
+              executionId,
+              nodeId: error.nodeId,
+              nodeType: 'human_approval',
+            },
+            decision: {
+              type: 'human_approval',
+              outcome: 'pending',
+              alternatives: ['approve', 'reject'],
+              approval: {
+                requesterId: agentId,
+                prompt: error.prompt,
+              },
+            },
+          },
+        });
         return;
       }
       await this.db
@@ -631,7 +837,169 @@ export class WorkflowExecutorService {
       this.logger.error(
         `Workflow execution ${executionId} failed: ${error.message}`,
       );
+      this.finishWorkflowProvenance(
+        executionId,
+        'failed',
+        undefined,
+        error.message,
+      );
     }
+  }
+
+  private startWorkflowProvenance(input: {
+    executionId: string;
+    workflowId: string;
+    workflowName?: string;
+    workflowVersion?: string;
+    definition: unknown;
+    agentId?: string;
+    sessionId?: string;
+    userId?: string;
+    inputData?: Record<string, any>;
+    parentExecutionId?: string;
+  }) {
+    const traceId = randomUUID();
+    const definitionHash = `sha256:${createHash('sha256')
+      .update(JSON.stringify(input.definition ?? null))
+      .digest('hex')}`;
+    const started = this.provenance?.startRun({
+      traceId,
+      sessionId: input.sessionId,
+      agentId: input.agentId,
+      initiator: input.userId,
+      provider: 'agent-commons',
+      modelId: 'workflow-engine',
+      scopeType: 'workflow',
+      scopeId: input.executionId,
+      input: input.inputData,
+      metadata: {
+        workflowId: input.workflowId,
+        workflowName: input.workflowName,
+        workflowVersion: input.workflowVersion,
+        definitionHash,
+        parentExecutionId: input.parentExecutionId,
+      },
+    });
+    if (!started) return;
+    this.workflowTraces.set(input.executionId, traceId);
+    this.recordWorkflowEvent(input.executionId, {
+      category: 'system',
+      eventType: 'workflow.start',
+      name: input.workflowName ?? 'Workflow execution',
+      status: 'running',
+      summary: `Started workflow ${input.workflowId}`,
+      lineage: {
+        schemaVersion: 1,
+        kind: 'workflow',
+        workflow: {
+          workflowId: input.workflowId,
+          executionId: input.executionId,
+          version: input.workflowVersion,
+          definitionHash,
+          parentExecutionId: input.parentExecutionId,
+        },
+      },
+    });
+  }
+
+  private ensureResumedWorkflowProvenance(execution: any, userId?: string) {
+    if (this.workflowTraces.has(execution.executionId)) return;
+    this.startWorkflowProvenance({
+      executionId: execution.executionId,
+      workflowId: execution.workflowId,
+      workflowName: execution.workflow?.name,
+      workflowVersion: execution.workflow?.version,
+      definition: execution.workflow?.definition ?? {},
+      agentId: execution.agentId ?? undefined,
+      sessionId: execution.sessionId ?? undefined,
+      userId,
+      inputData: (execution.inputData as Record<string, any>) ?? {},
+    });
+  }
+
+  private recordWorkflowEvent(
+    executionId: string,
+    event: Parameters<ProvenanceService['recordEvent']>[1],
+  ) {
+    const traceId = this.workflowTraces.get(executionId);
+    if (traceId) this.provenance?.recordEvent(traceId, event);
+  }
+
+  private humanApprovalPrompt(
+    definition: any,
+    nodeId?: string,
+  ): string | undefined {
+    const node = Array.isArray(definition?.nodes)
+      ? definition.nodes.find((candidate: any) => candidate?.id === nodeId)
+      : undefined;
+    const prompt =
+      node?.data?.config?.prompt ?? node?.data?.prompt ?? node?.config?.prompt;
+    return typeof prompt === 'string' ? prompt.slice(0, 2_000) : undefined;
+  }
+
+  private finishWorkflowProvenance(
+    executionId: string,
+    status: 'completed' | 'failed' | 'cancelled',
+    output?: unknown,
+    error?: string,
+  ) {
+    const traceId = this.workflowTraces.get(executionId);
+    if (!traceId) return;
+    this.provenance?.finishRun(traceId, { status, output, error });
+    this.workflowTraces.delete(executionId);
+  }
+
+  private workflowNodeLineage(input: {
+    executionId: string;
+    workflowId: string;
+    node: any;
+    result: NodeExecutionResult;
+    agentId?: string;
+  }): ProvenanceLineageMetadata {
+    const workflow = {
+      workflowId: input.workflowId,
+      executionId: input.executionId,
+      nodeId: input.result.nodeId,
+      nodeType: input.node?.type ?? 'tool',
+    };
+    if (input.node?.type === 'condition') {
+      return {
+        schemaVersion: 1,
+        kind: 'decision',
+        workflow,
+        decision: {
+          type: 'condition',
+          outcome: Boolean(input.result.output?.result),
+          rule: input.result.output?.expression,
+          alternatives: ['true', 'false'],
+        },
+      };
+    }
+    if (input.node?.type === 'agent_processor') {
+      const config = input.node.config ?? {};
+      return {
+        schemaVersion: 1,
+        kind: 'delegation',
+        workflow,
+        delegation: {
+          fromAgentId: input.agentId,
+          toAgentId: config.agentId ?? input.agentId ?? 'unknown',
+          role: config.role ?? 'specialist',
+          architecture: config.architecture ?? 'sequential',
+          handoffPolicy: config.handoffPolicy ?? 'on_success',
+          contextPolicy: config.contextPolicy ?? 'shared',
+        },
+      };
+    }
+    return {
+      schemaVersion: 1,
+      kind: 'workflow',
+      tool:
+        input.node?.toolName || input.node?.config?.toolName
+          ? { name: input.node.toolName ?? input.node.config.toolName }
+          : undefined,
+      workflow,
+    };
   }
 
   // ── Node dispatch ──────────────────────────────────────────────────────────
@@ -1170,7 +1538,10 @@ export class WorkflowExecutorService {
       // "service:op" toolId that has no row, but their toolName maps to a real
       // DB tool (with an OAuth apiSpec). Resolve those — and any node that only
       // supplied a toolName — by name, exactly like the agent runtime does.
-      if (!tool && (context.toolName || isAppIntegrationToolId(context.toolId))) {
+      if (
+        !tool &&
+        (context.toolName || isAppIntegrationToolId(context.toolId))
+      ) {
         const lookupName = context.toolName ?? context.toolId!;
         try {
           tool = await this.toolService.getToolByName(lookupName);
