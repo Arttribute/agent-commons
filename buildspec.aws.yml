@@ -41,10 +41,15 @@ phases:
       - |
         scan_status=""
         for attempt in $(seq 1 60); do
+          # Ask ECR to project the response before it reaches the shell. A full
+          # enhanced-scan document can contain thousands of findings and exceed
+          # the OS argv limit when passed to jq.
           if ! scan_json=$(aws ecr describe-image-scan-findings \
             --repository-name "$ECR_REPOSITORY" \
             --image-id imageTag="$IMAGE_TAG" \
-            --region "$AWS_REGION" 2>&1); then
+            --region "$AWS_REGION" \
+            --query '{status:imageScanStatus.status,description:imageScanStatus.description,critical:imageScanFindings.findingSeverityCounts.CRITICAL}' \
+            --output json 2>&1); then
             if grep -Eq 'ScanNotFoundException|ImageNotFoundException' <<<"$scan_json"; then
               sleep 5
               continue
@@ -52,16 +57,16 @@ phases:
             printf '%s\n' "$scan_json" >&2
             exit 1
           fi
-          scan_status=$(jq -r '.imageScanStatus.status // empty' <<<"$scan_json")
+          scan_status=$(jq -r '.status // empty' <<<"$scan_json")
           if [ "$scan_status" = "COMPLETE" ]; then break; fi
           if [ "$scan_status" = "FAILED" ]; then
-            jq -r '.imageScanStatus.description' <<<"$scan_json" >&2
+            jq -r '.description' <<<"$scan_json" >&2
             exit 1
           fi
           sleep 5
         done
         test "$scan_status" = "COMPLETE"
-        critical=$(jq -r '.imageScanFindings.findingSeverityCounts.CRITICAL // 0' <<<"$scan_json")
+        critical=$(jq -r '.critical // 0' <<<"$scan_json")
         test "$critical" -eq 0
       - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker build --platform linux/amd64 -f infra/searxng/Dockerfile -t "$SEARCH_IMAGE_URI" infra/searxng; fi
       - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker push "$SEARCH_IMAGE_URI"; fi
