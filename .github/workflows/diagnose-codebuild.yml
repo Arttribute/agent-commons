@@ -149,11 +149,6 @@ jobs:
                   # API image and capture the real error through the diagnostic
                   # S3 channel. The GitHub deploy role intentionally cannot read
                   # CodeBuild's CloudWatch stream.
-                  image_tag=$(aws ecr describe-images \
-                    --repository-name "$ECR_REPOSITORY" \
-                    --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[?contains(@, `-search`) == `false`] | [0]' \
-                    --output text)
-                  image_uri="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${image_tag}"
                   aws ecr get-login-password --region "$AWS_REGION" | \
                     docker login --username AWS --password-stdin \
                       "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com" >/dev/null
@@ -165,7 +160,7 @@ jobs:
                     -e POSTGRES_USER="$(jq -r .POSTGRES_USER <<<"$available_secret_json")" \
                     -e POSTGRES_PASSWORD="$(jq -r .POSTGRES_PASSWORD <<<"$available_secret_json")" \
                     -e POSTGRES_SSL="$(jq -r '.POSTGRES_SSL // "disable"' <<<"$available_secret_json")" \
-                    "$image_uri" node scripts/migrate.mjs > /tmp/migration-probe.log 2>&1
+                    "$TARGET_IMAGE_URI" node scripts/migrate.mjs > /tmp/migration-probe.log 2>&1
                   migration_exit=$?
                   set -e
                   jq -n \
@@ -182,12 +177,20 @@ jobs:
           YAML
           )
 
+          resolved_source=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].resolvedSourceVersion' --output text)
+          build_number=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].buildNumber' --output text)
+          account_id=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].environment.environmentVariables[?name==`AWS_ACCOUNT_ID`].value | [0]' --output text)
+          repository=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].environment.environmentVariables[?name==`ECR_REPOSITORY`].value | [0]' --output text)
+          target_image_uri="${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/${repository}:${resolved_source}-${build_number}"
+
           environment_overrides=$(jq -nc \
             --arg putUrl "$put_url" \
             --arg stackName "$STACK_NAME" \
+            --arg targetImageUri "$target_image_uri" \
             '[
               {name:"DIAGNOSTIC_PUT_URL", value:$putUrl, type:"PLAINTEXT"},
-              {name:"STACK_NAME", value:$stackName, type:"PLAINTEXT"}
+              {name:"STACK_NAME", value:$stackName, type:"PLAINTEXT"},
+              {name:"TARGET_IMAGE_URI", value:$targetImageUri, type:"PLAINTEXT"}
             ]')
 
           diagnostic_build_id=$(aws codebuild start-build \
