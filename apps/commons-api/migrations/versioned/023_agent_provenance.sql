@@ -37,7 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_provenance_run_anchor_status
   ON provenance_run(anchor_status, updated_at);
 
 CREATE TABLE IF NOT EXISTS provenance_event (
-  event_id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  event_id uuid PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   trace_id uuid NOT NULL REFERENCES provenance_run(trace_id) ON DELETE CASCADE,
   session_id uuid REFERENCES session(session_id) ON DELETE SET NULL,
   sequence integer NOT NULL,
