@@ -436,6 +436,7 @@ export class LibraryService {
         contentHash: schema.libraryItem.sha256,
         itemMetadata: schema.libraryItem.metadata,
         chunkIndex: schema.libraryChunk.chunkIndex,
+        embeddingModel: schema.libraryChunk.embeddingModel,
         excerpt: schema.libraryChunk.content,
         score,
       })

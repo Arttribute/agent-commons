@@ -17,6 +17,7 @@ The **Sources** view is designed for everyone: it lists the websites used, the s
 - Library retrieval: original item/session/source, content hash, ranking, hybrid search weights, normalized score, and human-readable percentage match.
 - Models and tools: provider/model, token usage, cost, duration, status, inputs/outputs commitments, and correlation spans.
 - Human approvals: the requesting agent or workflow, authenticated reviewer, prompt/question IDs, available choices, approve/reject outcome, reason, response field names, timing, and a safe response commitment.
+- Embeddings: content hash, model, dimensions, normalization version, computing system, and a deterministic cache key. Vectors are not placed in the report.
 
 Private chain-of-thought is never recorded. Credential-shaped fields—including approval and permission tokens—are redacted before hashing or persistence. Approval response values remain subject to the selected capture mode; the default report uses field names and a safe commitment rather than exposing the values.
 
@@ -33,6 +34,10 @@ await commons.run.once({
 ```
 
 On-chain anchoring is a separate opt-in. Agent Commons keeps the useful report off-chain and submits only the verifiable bundle commitment when the environment and user both enable anchoring.
+
+## Shared embeddings with ProvenanceKit
+
+Agent Commons and ProvenanceKit use a compute-once, index-where-needed contract. An embedding is reusable only when the content hash, model/version, dimensions, and normalization version all match. The receiving system may retain its own permission-scoped index, but it imports the verified vector instead of recomputing it. Missing, incompatible, or untrusted embeddings fall back to the configured local provider. This keeps both systems independently pluggable while avoiding duplicate inference.
 
 ## SDK reports and export
 

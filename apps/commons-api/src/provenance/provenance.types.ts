@@ -76,6 +76,13 @@ export interface ProvenanceLineageMetadata {
     algorithm: 'hybrid' | 'semantic' | 'lexical';
     semanticWeight?: number;
     lexicalWeight?: number;
+    embedding?: {
+      model: string;
+      dimensions: number;
+      normalizationVersion: string;
+      computedBy: 'agent-commons' | 'provenancekit' | 'external';
+      vectorIncluded: false;
+    };
     results: Array<{
       itemId: string;
       name?: string;
@@ -84,6 +91,8 @@ export interface ProvenanceLineageMetadata {
       sourceUri?: string;
       sourceType?: string;
       contentHash?: string;
+      embeddingModel?: string;
+      embeddingCacheKey?: string;
       chunkIndex?: number;
       score: number;
       percentageMatch: number;

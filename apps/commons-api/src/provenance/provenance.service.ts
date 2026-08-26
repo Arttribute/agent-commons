@@ -281,6 +281,9 @@ function deriveToolLineage(
         ? output.results
         : [];
     const query = String(input?.query ?? '').trim();
+    const defaultEmbeddingModel =
+      process.env.ARTIFACT_EMBEDDING_MODEL || 'text-embedding-3-small';
+    const normalizationVersion = 'agent-commons-library-v1';
     return {
       schemaVersion: 1,
       kind: 'library_retrieval',
@@ -290,8 +293,21 @@ function deriveToolLineage(
         algorithm: 'hybrid',
         semanticWeight: 0.75,
         lexicalWeight: 0.25,
+        embedding: {
+          model: defaultEmbeddingModel,
+          dimensions: 1536,
+          normalizationVersion,
+          computedBy: 'agent-commons',
+          vectorIncluded: false,
+        },
         results: rows.slice(0, 50).map((row: any, index: number) => {
           const score = Number(row?.score ?? 0);
+          const embeddingModel = row?.embeddingModel ?? defaultEmbeddingModel;
+          const embeddingCacheKey = row?.contentHash
+            ? sha256(
+                `${row.contentHash}:${embeddingModel}:1536:${normalizationVersion}`,
+              )
+            : undefined;
           return {
             itemId: String(row?.itemId ?? 'unknown'),
             name: row?.name,
@@ -300,6 +316,8 @@ function deriveToolLineage(
             sourceUri: row?.sourceUri,
             sourceType: row?.sourceType,
             contentHash: row?.contentHash,
+            embeddingModel,
+            embeddingCacheKey,
             chunkIndex: row?.chunkIndex,
             score: Number.isFinite(score) ? score : 0,
             percentageMatch: Number.isFinite(score)

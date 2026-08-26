@@ -49,12 +49,14 @@ type Lineage = {
   };
   library?: {
     query?: string;
+    embedding?: { model?: string; dimensions?: number; computedBy?: string };
     results?: Array<{
       itemId: string;
       name?: string;
       percentageMatch?: number;
       rank?: number;
       sourceUri?: string;
+      embeddingModel?: string;
     }>;
   };
   workflow?: {
@@ -490,8 +492,11 @@ function SimpleReport({ events }: { events: Event[] }) {
       ? [event.metadata.lineage.delegation]
       : [],
   );
-  const libraryMatches = events.flatMap(
-    (event) => event.metadata?.lineage?.library?.results ?? [],
+  const libraryMatches = events.flatMap((event) =>
+    (event.metadata?.lineage?.library?.results ?? []).map((result) => ({
+      ...result,
+      embedding: event.metadata?.lineage?.library?.embedding,
+    })),
   );
   const decisions = events.flatMap((event) =>
     event.metadata?.lineage?.decision
@@ -625,6 +630,9 @@ function SimpleReport({ events }: { events: Event[] }) {
                 </div>
                 <div className="text-xs text-muted-foreground">
                   Match #{item.rank ?? index + 1}
+                  {item.embeddingModel || item.embedding?.model
+                    ? ` · ${item.embeddingModel ?? item.embedding?.model}`
+                    : ""}
                 </div>
               </div>
               <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-600">
