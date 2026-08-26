@@ -75,6 +75,7 @@ import {
   CopilotUiContext,
 } from './copilot-platform-guide';
 import { SkillService } from '~/skill/skill.service';
+import { ProvenanceService, ProvenanceRunOptions } from '~/provenance';
 import { durableRole, restoreSessionMessages } from '~/session/session-history';
 import { filterPlatformToolsForAgent } from './copilot-tool-policy';
 
@@ -211,6 +212,7 @@ export class AgentService implements OnModuleInit {
     private filesService: FilesService,
     private computerService: ComputerService,
     private skillService: SkillService,
+    private provenanceService: ProvenanceService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
     @Inject(forwardRef(() => TaskExecutionService))
     private taskExecution: TaskExecutionService,
@@ -774,6 +776,8 @@ export class AgentService implements OnModuleInit {
     };
     /** User-selected thinking depth for this turn; overrides the adaptive hint. */
     reasoningEffort?: string;
+    /** Per-run provenance policy. Defaults to metadata-only and off-chain. */
+    provenance?: ProvenanceRunOptions;
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
@@ -813,6 +817,15 @@ export class AgentService implements OnModuleInit {
           detail?: string,
           payload?: Record<string, any>,
         ) => {
+          this.provenanceService.recordEvent(traceId, {
+            category: 'system',
+            eventType: `status.${stage}`,
+            name: message,
+            phase: 'commentary',
+            status,
+            summary: detail ?? message,
+            payload,
+          });
           if (!stream) return;
           subscriber.next({
             type: 'status',
@@ -984,6 +997,24 @@ export class AgentService implements OnModuleInit {
             props.reasoningEffort,
           );
           if (requestedEffort) effectiveModel.reasoningEffort = requestedEffort;
+
+          this.provenanceService.startRun({
+            traceId,
+            sessionId: currentSessionId,
+            agentId,
+            initiator,
+            workspaceId: props.workspaceId ?? agent.workspaceId ?? undefined,
+            provider: effectiveModel.provider,
+            modelId: effectiveModel.modelId,
+            options: props.provenance,
+            input: props.messages?.filter((message) => message.role === 'user'),
+            metadata: {
+              spaceId,
+              parentSessionId,
+              reasoningEffort: effectiveModel.reasoningEffort,
+              attachmentCount: props.attachments?.length ?? 0,
+            },
+          });
 
           const billingOwnerId = agent.ownerUserId ?? agent.owner;
           if (
@@ -1182,6 +1213,12 @@ export class AgentService implements OnModuleInit {
           }[] = [];
           const executedCalls: any[] = [];
           const llmRunStartedAt = new Map<string, number>();
+          const llmRunInputs = new Map<string, unknown>();
+          const toolRunStartedAt = new Map<string, number>();
+          const toolRunInputs = new Map<
+            string,
+            { name: string; input: unknown; parentRunId?: string }
+          >();
           const usageContext = {
             provider: effectiveModel.provider,
             modelId: effectiveModel.modelId,
@@ -1208,7 +1245,10 @@ export class AgentService implements OnModuleInit {
                 maxOutputTokens: effectiveModel.maxTokens,
                 isByok: usageContext.isByok,
               });
-              if (runId) llmRunStartedAt.set(runId, performance.now());
+              if (runId) {
+                llmRunStartedAt.set(runId, performance.now());
+                llmRunInputs.set(runId, _prompts);
+              }
               emitStatus('model', 'running', 'Thinking');
             },
             handleLLMNewToken: async (token: string) => {
@@ -1221,7 +1261,20 @@ export class AgentService implements OnModuleInit {
                 });
               }
             },
-            handleToolStart: async (tool: any, input: string) => {
+            handleToolStart: async (
+              tool: any,
+              input: string,
+              runId: string,
+              parentRunId?: string,
+            ) => {
+              if (runId) {
+                toolRunStartedAt.set(runId, performance.now());
+                toolRunInputs.set(runId, {
+                  name: tool.name ?? 'tool',
+                  input,
+                  parentRunId,
+                });
+              }
               subscriber.next({
                 type: 'toolStart',
                 phase: 'commentary',
@@ -1231,7 +1284,40 @@ export class AgentService implements OnModuleInit {
                 timestamp: new Date().toISOString(),
               });
             },
-            handleToolEnd: async (output: any) => {
+            handleToolEnd: async (
+              output: any,
+              runId: string,
+              parentRunId?: string,
+            ) => {
+              const started = runId ? toolRunStartedAt.get(runId) : undefined;
+              const detail = runId ? toolRunInputs.get(runId) : undefined;
+              const durationMs =
+                started !== undefined
+                  ? Math.round(performance.now() - started)
+                  : undefined;
+              this.provenanceService.recordEvent(traceId, {
+                category: 'tool',
+                eventType: 'tool.execute',
+                name: detail?.name ?? 'Tool call',
+                phase: 'commentary',
+                status: 'completed',
+                spanId: runId,
+                parentSpanId: parentRunId ?? detail?.parentRunId,
+                summary: `${detail?.name ?? 'Tool'} completed`,
+                payload: detail?.input,
+                result: output,
+                content: output,
+                startedAt:
+                  durationMs !== undefined
+                    ? new Date(Date.now() - durationMs)
+                    : undefined,
+                endedAt: new Date(),
+                durationMs,
+              });
+              if (runId) {
+                toolRunStartedAt.delete(runId);
+                toolRunInputs.delete(runId);
+              }
               subscriber.next({
                 type: 'toolEnd',
                 phase: 'commentary',
@@ -1256,6 +1342,24 @@ export class AgentService implements OnModuleInit {
               );
 
               if (!usage) {
+                this.provenanceService.recordEvent(traceId, {
+                  category: 'model',
+                  eventType: 'gen_ai.chat',
+                  name: effectiveModel.modelId,
+                  phase: 'commentary',
+                  status: 'completed',
+                  spanId: runId,
+                  summary: 'Model step completed; provider did not report token usage',
+                  payload: runId ? llmRunInputs.get(runId) : undefined,
+                  result,
+                  durationMs,
+                  startedAt:
+                    durationMs !== undefined
+                      ? new Date(Date.now() - durationMs)
+                      : undefined,
+                  endedAt: new Date(),
+                });
+                if (runId) llmRunInputs.delete(runId);
                 console.log(
                   JSON.stringify({
                     level: 'warn',
@@ -1284,6 +1388,30 @@ export class AgentService implements OnModuleInit {
               usageTotals.outputTokens += usage.outputTokens;
               usageTotals.cachedTokens += usage.cachedTokens;
               usageTotals.costUsd += costUsd;
+
+              this.provenanceService.recordEvent(traceId, {
+                category: 'model',
+                eventType: 'gen_ai.chat',
+                name: effectiveModel.modelId,
+                phase: 'commentary',
+                status: 'completed',
+                spanId: runId,
+                summary: `${usage.totalTokens} tokens`,
+                payload: runId ? llmRunInputs.get(runId) : undefined,
+                result,
+                durationMs,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                cachedTokens: usage.cachedTokens,
+                costUsd,
+                startedAt:
+                  durationMs !== undefined
+                    ? new Date(Date.now() - durationMs)
+                    : undefined,
+                endedAt: new Date(),
+                metadata: { usageSource: usage.source },
+              });
+              if (runId) llmRunInputs.delete(runId);
 
               await this.usageService.record({
                 agentId,
@@ -2623,6 +2751,16 @@ export class AgentService implements OnModuleInit {
             tools: toolUsage,
           });
 
+          this.provenanceService.finishRun(traceId, {
+            status: 'completed',
+            output: finalText,
+            durationMs: Math.round(performance.now() - tStart),
+            inputTokens: usageTotals.inputTokens,
+            outputTokens: usageTotals.outputTokens,
+            cachedTokens: usageTotals.cachedTokens,
+            costUsd: usageTotals.costUsd,
+          });
+
           if (!stream) {
             subscriber.next({
               type: 'final',
@@ -2682,6 +2820,12 @@ export class AgentService implements OnModuleInit {
           clearInterval(keepalive);
           unsubscribeProgress();
           const message = err instanceof Error ? err.message : String(err);
+          this.provenanceService.finishRun(traceId, {
+            status: 'failed',
+            output: { error: message },
+            durationMs: Math.round(performance.now() - tStart),
+            error: message,
+          });
           if (stream) {
             subscriber.next({
               type: 'error',

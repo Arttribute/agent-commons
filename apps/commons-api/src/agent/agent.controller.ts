@@ -40,6 +40,7 @@ import { RuntimeManagementService } from './runtime/runtime-management.service';
 import { normalizeRuntimeType } from './runtime/runtime.types';
 import { CopilotUiContext } from './copilot-platform-guide';
 import { CommonToolService } from '~/tool/tools/common-tool.service';
+import type { ProvenanceRunOptions } from '~/provenance';
 
 interface RunBody {
   agentId: string;
@@ -62,6 +63,8 @@ interface RunBody {
   };
   /** User-selected thinking depth for this turn (none|minimal|low|medium|high|xhigh). */
   reasoningEffort?: string;
+  /** Privacy and anchoring policy for this run. Metadata-only is the default. */
+  provenance?: ProvenanceRunOptions;
 }
 
 @Controller({ version: '1', path: 'agents' })

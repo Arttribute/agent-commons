@@ -2060,6 +2060,132 @@ export const usageEvent = pgTable('usage_event', {
     .notNull(),
 });
 
+/* ───────────────────────  AGENT PROVENANCE  ─────────────────────── */
+
+/**
+ * One durable trajectory per top-level agent invocation. The trace id is the
+ * same id already emitted by runAgent(), so usage, logs, SSE events and
+ * provenance can be correlated without another lookup.
+ */
+export const provenanceRun = pgTable(
+  'provenance_run',
+  {
+    traceId: uuid('trace_id').primaryKey(),
+    sessionId: uuid('session_id').references(() => session.sessionId, {
+      onDelete: 'set null',
+    }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agent.agentId, { onDelete: 'cascade' }),
+    initiator: text('initiator'),
+    workspaceId: text('workspace_id'),
+    status: text('status').notNull().default('running'),
+    captureMode: text('capture_mode').notNull().default('metadata'),
+    provider: text('provider'),
+    modelId: text('model_id'),
+    onchainRequested: pgBoolean('onchain_requested')
+      .notNull()
+      .default(false),
+    eventCount: integer('event_count').notNull().default(0),
+    droppedEventCount: integer('dropped_event_count').notNull().default(0),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    cachedTokens: integer('cached_tokens').notNull().default(0),
+    costUsd: real('cost_usd').notNull().default(0),
+    durationMs: integer('duration_ms'),
+    bundleHash: text('bundle_hash'),
+    anchorProvider: text('anchor_provider'),
+    anchorStatus: text('anchor_status').notNull().default('not_requested'),
+    anchorRef: text('anchor_ref'),
+    anchorMetadata: jsonb('anchor_metadata').$type<Record<string, any>>(),
+    metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    sessionStartedIdx: index('idx_provenance_run_session_started').on(
+      table.sessionId,
+      table.startedAt,
+    ),
+    agentStartedIdx: index('idx_provenance_run_agent_started').on(
+      table.agentId,
+      table.startedAt,
+    ),
+    anchorStatusIdx: index('idx_provenance_run_anchor_status').on(
+      table.anchorStatus,
+      table.updatedAt,
+    ),
+  }),
+);
+
+/**
+ * Append-only facts within a run. Payload/result are deliberately nullable:
+ * metadata capture stores hashes, sizes and safe summaries while full capture
+ * is an explicit user choice.
+ */
+export const provenanceEvent = pgTable(
+  'provenance_event',
+  {
+    eventId: uuid('event_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    traceId: uuid('trace_id')
+      .notNull()
+      .references(() => provenanceRun.traceId, { onDelete: 'cascade' }),
+    sessionId: uuid('session_id').references(() => session.sessionId, {
+      onDelete: 'set null',
+    }),
+    sequence: integer('sequence').notNull(),
+    category: text('category').notNull(),
+    eventType: text('event_type').notNull(),
+    name: text('name').notNull(),
+    phase: text('phase'),
+    status: text('status').notNull().default('completed'),
+    spanId: text('span_id'),
+    parentSpanId: text('parent_span_id'),
+    summary: text('summary'),
+    payload: jsonb('payload').$type<Record<string, any>>(),
+    result: jsonb('result').$type<Record<string, any>>(),
+    contentHash: text('content_hash'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    cachedTokens: integer('cached_tokens'),
+    costUsd: real('cost_usd'),
+    durationMs: integer('duration_ms'),
+    eaaAction: jsonb('eaa_action').$type<Record<string, any>>(),
+    metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    traceSequenceUnique: uniqueIndex('uq_provenance_event_trace_sequence').on(
+      table.traceId,
+      table.sequence,
+    ),
+    traceStartedIdx: index('idx_provenance_event_trace_started').on(
+      table.traceId,
+      table.startedAt,
+    ),
+    sessionStartedIdx: index('idx_provenance_event_session_started').on(
+      table.sessionId,
+      table.startedAt,
+    ),
+    categoryIdx: index('idx_provenance_event_category').on(
+      table.category,
+      table.startedAt,
+    ),
+  }),
+);
+
 /* ─────────────────────────  RELATIONS  ───────────────────────── */
 
 // session

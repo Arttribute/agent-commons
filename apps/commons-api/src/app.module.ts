@@ -32,6 +32,7 @@ import { AudioModule } from './audio';
 import { CodeProjectModule } from './code-project';
 import { CapabilityProviderModule } from './provider';
 import { UiPluginModule } from './ui-plugin';
+import { ProvenanceModule } from './provenance';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { UiPluginModule } from './ui-plugin';
     EncryptionModule,
     ModelProviderModule, // Global model provider factory
     PinataModule,
+    ProvenanceModule,
 
     // Feature modules
     AgentModule,

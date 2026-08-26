@@ -24,6 +24,7 @@ import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { useAgentContext } from "@/context/AgentContext";
 import { ArtifactSurface } from "@/components/artifacts/artifact-surface";
 import type { ArtifactRef } from "@/lib/artifacts";
+import { TrajectoryView } from "@/components/provenance/trajectory-view";
 
 interface Message {
   role: string;
@@ -80,6 +81,7 @@ interface SessionInterfaceImprovedProps {
   conversationAddon?: React.ReactNode;
   uiContext?: Record<string, unknown>;
   externalPrompt?: ExternalComposerPrompt | null;
+  viewMode?: "chat" | "trajectory";
 }
 
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
@@ -144,6 +146,7 @@ export default function SessionInterfaceImproved({
   conversationAddon,
   uiContext,
   externalPrompt,
+  viewMode = "chat",
 }: SessionInterfaceImprovedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -457,6 +460,11 @@ export default function SessionInterfaceImproved({
           </div>
         ) : (
           computerButton
+        )}
+        {viewMode === "trajectory" && (
+          <div className="absolute inset-x-0 bottom-0 top-12 z-20 bg-page">
+            <TrajectoryView sessionId={sessionId} />
+          </div>
         )}
         {showCenteredEmptyState ? (
           <div className="min-h-0 flex-1 overflow-y-auto">

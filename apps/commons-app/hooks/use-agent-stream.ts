@@ -65,6 +65,10 @@ export function useAgentStream(
       };
       /** Per-turn thinking depth chosen in the composer; omit for auto. */
       reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+      provenance?: {
+        mode: "off" | "metadata" | "full";
+        onchain?: boolean;
+      };
     }) => {
       setStreaming(true);
       setError(null);

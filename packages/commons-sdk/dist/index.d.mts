@@ -361,6 +361,11 @@ interface RunParams {
     agentId: string;
     messages: ChatMessage[];
     sessionId?: string;
+    /** Per-run provenance policy. Metadata capture is the platform default; on-chain anchoring is always explicit. */
+    provenance?: {
+        mode?: "off" | "metadata" | "full";
+        onchain?: boolean;
+    };
     initiatorId?: string;
     computerRequest?: {
         enabled: boolean;

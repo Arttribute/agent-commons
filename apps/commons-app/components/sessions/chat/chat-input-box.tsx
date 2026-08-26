@@ -14,6 +14,7 @@ import {
   Mic,
   Monitor,
   Plus,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { useAgentContext } from "@/context/AgentContext";
@@ -26,9 +27,19 @@ import { ArtifactIcon } from "@/components/artifacts/artifact-icon";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuCheckboxItem,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  readProvenancePreferences,
+  writeProvenancePreferences,
+  type ProvenancePreferences,
+} from "@/lib/provenance-preferences";
 import {
   LibraryPickerDialog,
   type LibraryPickerItem,
@@ -120,10 +131,23 @@ export default function ChatInputBox({
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("auto");
+  const [provenance, setProvenance] = useState<ProvenancePreferences>({
+    mode: "metadata",
+    onchain: false,
+  });
   const [outOfCredits, setOutOfCredits] = useState(false);
   // Narrow surfaces (the copilot side panel) get the short one-line notice.
   const containerRef = useRef<HTMLDivElement>(null);
   const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    setProvenance(readProvenancePreferences());
+  }, []);
+
+  const updateProvenance = (next: ProvenancePreferences) => {
+    setProvenance(next);
+    writeProvenancePreferences(next);
+  };
+
   useEffect(() => {
     const node = containerRef.current;
     if (!node || typeof ResizeObserver === "undefined") return;
@@ -522,6 +546,7 @@ export default function ChatInputBox({
       })),
       computerRequest,
       reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
+      provenance,
     });
   };
 
@@ -850,6 +875,90 @@ export default function ChatInputBox({
                       <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
                     )}
                   </button>
+                )}
+                {!isLaunchMode && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={!!isLoading}
+                        title="Provenance capture"
+                        aria-label="Provenance capture"
+                        className={cn(
+                          "relative rounded-lg p-1.5 transition-colors disabled:opacity-40",
+                          provenance.mode === "off"
+                            ? "text-muted-foreground/60 hover:bg-muted"
+                            : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+                        )}
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                        {provenance.onchain && (
+                          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-violet-500" />
+                        )}
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" side="top" className="w-72">
+                      <DropdownMenuLabel>
+                        <span className="block text-sm">Provenance</span>
+                        <span className="block text-xs font-normal text-muted-foreground">
+                          Applies to new runs in this browser
+                        </span>
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuRadioGroup
+                        value={provenance.mode}
+                        onValueChange={(mode) =>
+                          updateProvenance({
+                            ...provenance,
+                            mode: mode as ProvenancePreferences["mode"],
+                          })
+                        }
+                      >
+                        <DropdownMenuRadioItem value="metadata">
+                          <span>
+                            <span className="block">Metadata only</span>
+                            <span className="block text-xs text-muted-foreground">
+                              Hashes, timing, tools and usage · recommended
+                            </span>
+                          </span>
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="full">
+                          <span>
+                            <span className="block">Full disclosure</span>
+                            <span className="block text-xs text-muted-foreground">
+                              Also stores redacted payloads and results
+                            </span>
+                          </span>
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="off">
+                          <span>
+                            <span className="block">Off</span>
+                            <span className="block text-xs text-muted-foreground">
+                              Do not create a trajectory for new runs
+                            </span>
+                          </span>
+                        </DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuCheckboxItem
+                        checked={provenance.onchain}
+                        onCheckedChange={(checked) =>
+                          updateProvenance({
+                            ...provenance,
+                            onchain: checked === true,
+                          })
+                        }
+                        disabled={provenance.mode === "off"}
+                      >
+                        <span>
+                          <span className="block">Request on-chain anchor</span>
+                          <span className="block text-xs text-muted-foreground">
+                            Optional; one digest per completed run
+                          </span>
+                        </span>
+                      </DropdownMenuCheckboxItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
             )}
