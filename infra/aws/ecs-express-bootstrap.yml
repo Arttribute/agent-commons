@@ -49,7 +49,7 @@ Resources:
       RepositoryName: agent-commons/commons-api
       ImageScanningConfiguration:
         ScanOnPush: true
-      ImageTagMutability: MUTABLE
+      ImageTagMutability: IMMUTABLE
       LifecyclePolicy:
         LifecyclePolicyText: |
           {
@@ -296,9 +296,12 @@ Resources:
                 Action:
                   - ecr:BatchCheckLayerAvailability
                   - ecr:CompleteLayerUpload
+                  - ecr:DescribeImages
+                  - ecr:DescribeImageScanFindings
                   - ecr:GetDownloadUrlForLayer
                   - ecr:InitiateLayerUpload
                   - ecr:PutImage
+                  - ecr:StartImageScan
                   - ecr:UploadLayerPart
                 Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${SharedEcrRepositoryName}
               - Effect: Allow

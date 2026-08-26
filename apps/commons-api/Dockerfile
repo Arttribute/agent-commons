@@ -21,55 +21,28 @@ RUN pnpm --filter commons-api build \
     && pnpm --filter commons-api deploy --prod --ignore-scripts /deploy \
     && cp -r apps/commons-api/dist /deploy/dist
 
-FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS runtime
+FROM cgr.dev/chainguard/node:latest-dev AS runtime
 
 # Chromium and its runtime libraries are required by the web capture service.
-RUN apt-get update && apt-get install -y \
+USER root
+RUN apk add --no-cache \
     chromium \
-    chromium-sandbox \
     ffmpeg \
-    fonts-liberation \
-    fonts-noto-color-emoji \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libatspi2.0-0 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libx11-6 \
-    libxcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    libxshmfence1 \
-    xdg-utils \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+    font-liberation \
+    font-noto-emoji
 
 WORKDIR /app
 
 ENV NODE_ENV=production \
     PORT=8080 \
-    HOME=/home/commons \
+    HOME=/home/node \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     CHROME_PATH=/usr/bin/chromium \
     PUPPETEER_CACHE_DIR=/tmp/.cache
 
-RUN groupadd --gid 10001 commons \
-    && useradd --uid 10001 --gid commons --create-home --home-dir /home/commons --shell /usr/sbin/nologin commons \
-    && mkdir -p /tmp/.cache \
-    && chown -R commons:commons /tmp/.cache /home/commons
+RUN mkdir -p /tmp/.cache /home/node \
+    && chown -R node:node /tmp/.cache /home/node /app
 
 COPY --from=build /deploy ./
 COPY --from=build /workspace/apps/commons-api/migrations ./migrations
@@ -77,8 +50,9 @@ COPY --from=build /workspace/apps/commons-api/migrations ./migrations
 COPY --from=build /workspace/apps/commons-api/scripts ./scripts
 COPY --from=build /workspace/apps/commons-api/platform-skills ./platform-skills
 
-USER commons
+USER node
 
 EXPOSE 8080
 
-CMD ["node", "dist/nest/src/main.js"]
+ENTRYPOINT ["node"]
+CMD ["dist/nest/src/main.js"]

@@ -17,14 +17,46 @@ phases:
       - export WEB_SEARCH_PROVIDER
       - if [ -z "${APP_ORIGIN:-}" ]; then if [ "$ENVIRONMENT" = "production" ]; then APP_ORIGIN=https://www.agentcommons.io; else APP_ORIGIN=https://staging.agentcommons.io; fi; fi
       - export APP_ORIGIN
-      - IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}-${CODEBUILD_BUILD_NUMBER}"
+      - IMAGE_TAG="${ENVIRONMENT}-${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}-${CODEBUILD_BUILD_NUMBER}"
       - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
       - SEARCH_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}-search"
       - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
   build:
     commands:
+      - corepack enable && corepack prepare pnpm@9.15.3 --activate
+      - pnpm install --filter commons-api... --frozen-lockfile
+      - >-
+        pnpm --filter commons-api test -- --runInBand --forceExit
+        src/provenance/provenance.service.spec.ts
+        src/tool/workflow-executor.service.spec.ts
+        src/tool/workflow-hitl.integration.spec.ts
       - docker build --platform linux/amd64 -f apps/commons-api/Dockerfile -t "$IMAGE_URI" .
       - docker push "$IMAGE_URI"
+      - |
+        scan_status=""
+        for attempt in $(seq 1 60); do
+          if ! scan_json=$(aws ecr describe-image-scan-findings \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-id imageTag="$IMAGE_TAG" \
+            --region "$AWS_REGION" 2>&1); then
+            if grep -Eq 'ScanNotFoundException|ImageNotFoundException' <<<"$scan_json"; then
+              sleep 5
+              continue
+            fi
+            printf '%s\n' "$scan_json" >&2
+            exit 1
+          fi
+          scan_status=$(jq -r '.imageScanStatus.status // empty' <<<"$scan_json")
+          if [ "$scan_status" = "COMPLETE" ]; then break; fi
+          if [ "$scan_status" = "FAILED" ]; then
+            jq -r '.imageScanStatus.description' <<<"$scan_json" >&2
+            exit 1
+          fi
+          sleep 5
+        done
+        test "$scan_status" = "COMPLETE"
+        critical=$(jq -r '.imageScanFindings.findingSeverityCounts.CRITICAL // 0' <<<"$scan_json")
+        test "$critical" -eq 0
       - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker build --platform linux/amd64 -f infra/searxng/Dockerfile -t "$SEARCH_IMAGE_URI" infra/searxng; fi
       - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker push "$SEARCH_IMAGE_URI"; fi
   post_build:
