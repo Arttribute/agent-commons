@@ -2926,10 +2926,20 @@ async function uploadToCommonsLibrary(assets, principalId, workspaceId) {
       `Commons Library upload failed (${response.status}): ${detail}`,
     );
   }
-  const byName = new Map(payload.data.map((item) => [item.name, item]));
+  const byName = new Map(
+    payload.data.flatMap((item) => {
+      const names = [item.name, item.filename, item.originalName].filter(
+        (value) => typeof value === "string" && value.trim(),
+      );
+      return names.map((name) => [name, item]);
+    }),
+  );
   const result = new Map();
-  for (const asset of assets) {
-    const item = byName.get(asset.name);
+  for (const [index, asset] of assets.entries()) {
+    // The Commons API historically omitted the original name from some upload
+    // responses. It preserves multipart order, so index is a safe compatibility
+    // fallback when the response cannot be keyed by filename.
+    const item = byName.get(asset.name) || payload.data[index];
     if (!item?.fileId) {
       throw new Error(`${asset.name} was not returned by Commons Library.`);
     }
