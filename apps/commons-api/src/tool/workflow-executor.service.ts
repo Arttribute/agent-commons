@@ -349,9 +349,13 @@ export class WorkflowExecutorService {
         },
       },
     });
+    const resumedDefinition = {
+      ...(workflow.definition as Record<string, unknown>),
+      workflowId: execution.workflowId,
+    };
     this.executeGraphWalker(
       executionId,
-      workflow.definition,
+      resumedDefinition,
       execution.agentId ?? undefined,
       undefined,
       (execution.inputData as Record<string, any>) || {},
@@ -802,9 +806,15 @@ export class WorkflowExecutorService {
         .where(eq(schema.workflowExecution.executionId, executionId));
 
       // Update workflow execution stats
-      const wf = await this.db.query.workflow.findFirst({
-        where: (w) => eq(w.workflowId, definition.workflowId ?? ''),
-      });
+      const completedWorkflowId =
+        typeof definition.workflowId === 'string' && definition.workflowId
+          ? definition.workflowId
+          : undefined;
+      const wf = completedWorkflowId
+        ? await this.db.query.workflow.findFirst({
+            where: (w) => eq(w.workflowId, completedWorkflowId),
+          })
+        : undefined;
       if (wf) {
         await this.db
           .update(schema.workflow)
