@@ -19,9 +19,16 @@ const dryRun = process.argv.includes("--dry-run");
 const force = process.argv.includes("--force");
 const captureMode = process.argv.includes("--capture");
 const expandMode = process.argv.includes("--expand");
+const secureMode = process.argv.includes("--secure");
 const previewDir = argument("preview-dir");
 let cachedPdfTools;
-const inputs = captureMode || expandMode
+const inputs = secureMode
+  ? {
+      deck: requiredArgument("deck"),
+      workbook: requiredArgument("workbook"),
+      vault: requiredArgument("vault"),
+    }
+  : captureMode || expandMode
   ? {
       deck: requiredArgument("deck"),
       workbook: requiredArgument("workbook"),
@@ -38,7 +45,187 @@ if (!dryRun && !process.env.MONGODB_URI) {
   throw new Error("MONGODB_URI is required.");
 }
 
-await (expandMode ? expandMain() : captureMode ? captureMain() : main());
+await (secureMode
+  ? secureMain()
+  : expandMode
+    ? expandMain()
+    : captureMode
+      ? captureMain()
+      : main());
+
+async function secureMain() {
+  const workDir = await mkdtemp(path.join(os.tmpdir(), "quick-wins-secure-"));
+  try {
+    const [assets, vault] = await Promise.all([
+      prepareSecureAssets(inputs, workDir),
+      inspectSecureVault(inputs.vault),
+    ]);
+    if (dryRun) {
+      console.log(
+        JSON.stringify({
+          dryRun,
+          mode: "secure",
+          files: Object.values(assets).map((asset) => ({
+            name: asset.name,
+            bytes: asset.bytes.length,
+            pages: asset.pages.length,
+          })),
+          vault: {
+            name: path.basename(inputs.vault),
+            files: vault.files.length,
+            bytes: vault.bytes.length,
+          },
+          activities: createSecureActivities(
+            "preview-material",
+            "preview-workspace",
+          ).length,
+          minutes: createSecureActivities(
+            "preview-material",
+            "preview-workspace",
+          ).reduce(
+            (total, activity) => total + (activity.estimatedMinutes || 0),
+            0,
+          ),
+        }),
+      );
+      return;
+    }
+
+    await mongoose.connect(process.env.MONGODB_URI);
+    try {
+      const db = mongoose.connection.db;
+      if (!db) throw new Error("MongoDB connection is unavailable.");
+      const [owner, course] = await Promise.all([
+        db.collection("users").findOne({ email: ownerEmail }),
+        db.collection("courses").findOne({ slug }),
+      ]);
+      if (!owner) throw new Error(`Owner not found: ${ownerEmail}`);
+      if (!course) throw new Error(`Course not found: ${slug}`);
+      if (!owner.identityUserId) {
+        throw new Error(`${ownerEmail} is not connected to Commons Identity.`);
+      }
+      const session = await db.collection("livesessions").findOne({
+        courseId: course._id,
+      });
+      if (!session)
+        throw new Error("AI Quick Wins live programme was not found.");
+
+      const now = new Date();
+      const commonsFiles = await uploadToCommonsLibrary(
+        Object.values(assets),
+        owner.identityUserId,
+        owner.identityWorkspaceId,
+      );
+      const bucket = new mongo.GridFSBucket(db, {
+        bucketName: "courseMaterials",
+      });
+      const materialByKey = {};
+      for (const asset of Object.values(assets)) {
+        materialByKey[asset.key] = await syncMaterial({
+          db,
+          bucket,
+          course,
+          owner,
+          principalId: owner.identityUserId,
+          asset,
+          commonsFile: commonsFiles.get(asset.key),
+          now,
+        });
+      }
+      const workspace = await ensureSecureLabWorkspace({
+        db,
+        course,
+        owner,
+        vault,
+        now,
+      });
+
+      const retainedActivities = (session.activities || []).filter(
+        (activity) => !activity.id.startsWith("secure-"),
+      );
+      const secureActivities = createSecureActivities(
+        String(materialByKey.secureDeck._id),
+        String(workspace._id),
+      );
+      const activities = [...retainedActivities, ...secureActivities];
+      const retainedParts = (session.parts || []).filter(
+        (part) => part.id !== "secure",
+      );
+      const securePart = {
+        id: "secure",
+        title: "Day 4 · Secure",
+        description:
+          "Build the company brain, bound what can reach it, define verification and human-only work, agree the policy, and assign the next ninety days.",
+        status: "closed",
+        pace: "facilitator",
+        activityIds: secureActivities.map((activity) => activity.id),
+      };
+      const parts = [...retainedParts, securePart];
+
+      await Promise.all([
+        db.collection("livesessions").updateOne(
+          { _id: session._id },
+          {
+            $set: {
+              title: "AI Quick Wins for Leaders · Live programme",
+              description:
+                "One live programme for Discover, Capture, Expand, and Secure. Educators can open any combination of sessions and choose the pace for each.",
+              activities,
+              parts,
+              updatedAt: now,
+            },
+            $inc: { stateVersion: 1 },
+          },
+        ),
+        db.collection("courses").updateOne(
+          { _id: course._id },
+          {
+            $set: {
+              "modules.3.lessons.0.description":
+                "Build a portable company brain, reduce its blast radius, assign verification modes and human-only boundaries, draft the one-page AI policy, and leave with named owners and a ninety-day plan.",
+              updatedAt: now,
+            },
+          },
+        ),
+      ]);
+
+      console.log(
+        JSON.stringify(
+          {
+            courseId: String(course._id),
+            liveSessionId: String(session._id),
+            joinCode: session.joinCode,
+            retainedActivities: retainedActivities.length,
+            secureActivities: secureActivities.length,
+            secureMinutes: secureActivities.reduce(
+              (total, activity) =>
+                total + (activity.estimatedMinutes || 0),
+              0,
+            ),
+            parts,
+            workspace: {
+              id: String(workspace._id),
+              title: workspace.title,
+              files: workspace.files.length,
+            },
+            materials: Object.fromEntries(
+              Object.entries(materialByKey).map(([key, value]) => [
+                key,
+                { id: String(value._id), name: value.name },
+              ]),
+            ),
+          },
+          null,
+          2,
+        ),
+      );
+    } finally {
+      await mongoose.disconnect();
+    }
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+}
 
 async function expandMain() {
   const workDir = await mkdtemp(path.join(os.tmpdir(), "quick-wins-expand-"));
@@ -1467,6 +1654,373 @@ function createCaptureActivities(materialId) {
   ];
 }
 
+function createSecureActivities(materialId, labWorkspaceId) {
+  const field = (id, label, type = "short_text", extra = {}) => ({
+    id,
+    label,
+    type,
+    required: false,
+    ...extra,
+  });
+  const base = (id, title, prompt, slide, minutes, extra = {}) => ({
+    id,
+    type: "content",
+    title,
+    prompt,
+    materialId,
+    materialStartSlide: slide,
+    estimatedMinutes: minutes,
+    status: "draft",
+    required: false,
+    randomizeOptions: false,
+    showResults: false,
+    points: 0,
+    options: [],
+    ...extra,
+  });
+  const worksheet = (
+    id,
+    title,
+    prompt,
+    slide,
+    minutes,
+    worksheetFields,
+    extra = {},
+  ) => ({
+    ...base(id, title, prompt, slide, minutes),
+    type: "worksheet",
+    required: true,
+    worksheetFields,
+    ...extra,
+  });
+
+  return [
+    base(
+      "secure-welcome",
+      "Secure: build it, bound it, carry it",
+      "Reconnect the four programme verbs and make tonight's contract explicit: build the brain, make the system safe to leave running, and assign what happens next.",
+      3,
+      5,
+      {
+        facilitatorNotes:
+          "Keep earlier sessions open if learners need their chosen task, task file, run log, harness, or company-brain map.",
+      },
+    ),
+    worksheet(
+      "secure-baseline",
+      "Where everyone got to",
+      "Record what is actually running, what broke or stopped you, and your current rung from prompt to company brain.",
+      6,
+      10,
+      [
+        field("running", "What is running now?", "long_text", {
+          required: true,
+          section: "Honest baseline",
+        }),
+        field("ran-alone", "Did it run without you this week?", "short_text", {
+          required: true,
+          section: "Honest baseline",
+        }),
+        field("broke", "What broke, or what stopped you?", "long_text", {
+          required: true,
+          section: "Honest baseline",
+        }),
+        field("rung", "Your rung tonight", "scale", {
+          required: true,
+          min: 0,
+          max: 6,
+          lowLabel: "0 · Prompt",
+          highLabel: "6 · Company brain",
+          section: "Ninety-day baseline",
+        }),
+        field(
+          "ninety-day-target",
+          "The rung I want to report in ninety days",
+          "scale",
+          {
+            min: 0,
+            max: 6,
+            lowLabel: "0 · Prompt",
+            highLabel: "6 · Company brain",
+            section: "Ninety-day baseline",
+          },
+        ),
+      ],
+      {
+        facilitatorNotes:
+          "Use ninety seconds each. This is a baseline, not a performance review.",
+      },
+    ),
+    base(
+      "secure-brain-demo",
+      "A company brain is a folder—with provenance and shelf life",
+      "Demonstrate the Northwind vault as ordinary text files, then show retrieval, conflicts, stale facts, commitments, and a governed write-back.",
+      12,
+      15,
+      {
+        labWorkspaceId,
+        labEntryPath: "00-how-this-works/demo-questions.md",
+        instructions:
+          "Open the supplied Northwind demo vault alongside the slides. Watch what each question proves and why source, owner, verified, and review-by change the answer.",
+        facilitatorNotes:
+          "Use the seven demo questions, then turn the raw management meeting note into a decision note. Call out that the assistant just wrote to organisational memory.",
+      },
+    ),
+    worksheet(
+      "secure-build-brain",
+      "Build your AI Brain v0",
+      "Create the portable structure, carry over the rules and template, write three real notes, and test one question only those notes can answer.",
+      16,
+      20,
+      [
+        field("vault-location", "Where my brain vault lives", "long_text", {
+          required: true,
+          section: "Set up",
+        }),
+        field("structure", "Folder structure copied", "short_text", {
+          required: true,
+          section: "Set up",
+          placeholder: "Done / blocked — and what is blocking me",
+        }),
+        field("rules", "Rules file and note template copied", "short_text", {
+          required: true,
+          section: "Set up",
+        }),
+        field("definition", "The definition I wrote", "long_text", {
+          required: true,
+          section: "Three real notes",
+        }),
+        field("decision", "The decision I wrote", "long_text", {
+          required: true,
+          section: "Three real notes",
+        }),
+        field(
+          "relationship",
+          "The client, supplier, or commitment I wrote",
+          "long_text",
+          { required: true, section: "Three real notes" },
+        ),
+        field("source-owner", "How each note records source and owner", "long_text", {
+          required: true,
+          section: "Governance",
+        }),
+        field("verified-review", "Verified and review-by dates", "long_text", {
+          required: true,
+          section: "Governance",
+        }),
+        field("test-question", "The question only these notes can answer", "long_text", {
+          required: true,
+          section: "Test",
+        }),
+        field("test-answer", "What happened when I asked it", "long_text", {
+          required: true,
+          section: "Test",
+        }),
+      ],
+      {
+        labWorkspaceId,
+        labEntryPath: "README.md",
+        instructions:
+          "Use the demo vault as a pattern, not as your organisation's content. Start with structure and three real facts; this is not a migration project.",
+        successCriteria:
+          "The vault contains a definition, decision, relationship or commitment, governance metadata, and a test question grounded in those notes.",
+      },
+    ),
+    base(
+      "secure-blast-concept",
+      "Blast radius: everything it can reach",
+      "Separate requested work from reachable capability, and use the three documented cases to see how broad access compounds across a plan.",
+      27,
+      5,
+      {
+        facilitatorNotes:
+          "Keep the examples concrete: read content can become instructions, trusted extensions inherit access, and a well-intentioned agent can still act outside the intended boundary.",
+      },
+    ),
+    worksheet(
+      "secure-blast-controls",
+      "Cut the blast radius",
+      "Apply all four controls to your own setup and remove one unnecessary reach before moving on.",
+      9,
+      15,
+      [
+        field("automation", "The automation or brain this protects", "long_text", {
+          required: true,
+          section: "Your boundary",
+        }),
+        field("reachable", "Everything it can currently reach", "long_text", {
+          required: true,
+          section: "Your boundary",
+        }),
+        field("one-folder", "The one-folder scope", "long_text", {
+          required: true,
+          section: "Four controls",
+        }),
+        field("draft-merge", "Where agents draft and which named human merges", "long_text", {
+          required: true,
+          section: "Four controls",
+        }),
+        field("identity", "Its separate identity and permissions", "long_text", {
+          required: true,
+          section: "Four controls",
+        }),
+        field("tested-stop", "How it stops, who can stop it, and how long that takes", "long_text", {
+          required: true,
+          section: "Four controls",
+        }),
+        field("remove-tonight", "The one thing I am removing tonight", "long_text", {
+          required: true,
+          section: "Action",
+        }),
+      ],
+      {
+        successCriteria:
+          "The learner names the reachable scope, draft/merge boundary, identity, tested stop, and one concrete permission or path removed.",
+      },
+    ),
+    worksheet(
+      "secure-verification",
+      "Assign the right verification gate",
+      "Classify your work by impact and reversibility, then name the exact evidence and person used at the gate.",
+      32,
+      10,
+      [
+        field("let-run", "Let it run and log it: which work belongs here?", "long_text", {
+          section: "Four modes",
+        }),
+        field("spot-check", "Spot check a sample: which work and what sample?", "long_text", {
+          section: "Four modes",
+        }),
+        field("review-before", "Review before it goes: which work and who approves?", "long_text", {
+          section: "Four modes",
+        }),
+        field("person-decides", "A person decides: which work and who owns it?", "long_text", {
+          section: "Four modes",
+        }),
+        field("my-mode", "My workflow's verification mode", "short_text", {
+          required: true,
+          section: "My gate",
+        }),
+        field("raw-evidence", "The raw action or evidence the checker must inspect", "long_text", {
+          required: true,
+          section: "My gate",
+        }),
+        field("named-checker", "The checker, by name", "short_text", {
+          required: true,
+          section: "My gate",
+        }),
+      ],
+      {
+        instructions:
+          "Do not verify an agent's summary with the same summary. Name the raw transaction, source record, file, or sample the person will inspect.",
+      },
+    ),
+    worksheet(
+      "secure-human-only",
+      "The human-only list",
+      "Decide which work must remain human because of risk, ownership, relationship, or the meaning created by a person doing it.",
+      21,
+      8,
+      [
+        field("agree", "Items from the proposed list we agree are human-only", "long_text", {
+          required: true,
+        }),
+        field("strike", "Items we would strike, and why", "long_text"),
+        field("add", "What this organisation must add", "long_text", {
+          required: true,
+        }),
+        field("my-boundary", "One thing I will not automate that I might have three weeks ago", "long_text", {
+          required: true,
+        }),
+      ],
+      {
+        facilitatorNotes:
+          "Expect disagreement. Capture the room's actual boundary rather than forcing consensus around every suggested item.",
+      },
+    ),
+    worksheet(
+      "secure-policy",
+      "Draft the one-page AI policy",
+      "Write the operational agreement this room can use tomorrow: specific tools, data, human boundaries, gates, ownership, register, incident path, and review.",
+      8,
+      12,
+      [
+        field("scope", "1. Scope: what this policy covers", "long_text", { required: true }),
+        field("tools", "2. Approved tools", "long_text", { required: true }),
+        field("data-never", "3. Data that never goes into any AI system", "long_text", { required: true }),
+        field("data-care", "4. What may be used, with care", "long_text", { required: true }),
+        field("human-only", "5. The human-only list", "long_text", { required: true }),
+        field("verification", "6. Verification modes and classification", "long_text", { required: true }),
+        field("attribution", "7. Ownership, logging, and disclosure minimums", "long_text", { required: true }),
+        field("register", "8. The automation register and its owner", "long_text", { required: true }),
+        field("incident", "9. Incident procedure: who, how fast, what stops", "long_text", { required: true }),
+        field("review", "10. Policy owner and review date", "long_text", { required: true }),
+        field("insists", "11. Anything else this room insists on", "long_text"),
+        field("signoff", "12. Signed off by, and date", "long_text", { required: true }),
+      ],
+      {
+        successCriteria:
+          "The policy is specific enough to follow under time pressure and has a named owner, incident path, and review date.",
+      },
+    ),
+    worksheet(
+      "secure-owners-plan",
+      "Owners, dates, and the next ninety days",
+      "Put names and dates against the shared brain, library, register, policy, first safe connection, and your own outcome measure.",
+      18,
+      15,
+      [
+        field("brain-owner", "The brain owner, review owner, and first monthly review", "long_text", { required: true, section: "Shared commitments" }),
+        field("library-owner", "The skills and tasks library owner", "long_text", { required: true, section: "Shared commitments" }),
+        field("register-owner", "The automation register and permissions-review owner", "long_text", { required: true, section: "Shared commitments" }),
+        field("policy-owner", "The policy circulation owner and quarterly review date", "long_text", { required: true, section: "Shared commitments" }),
+        field("first-system", "The first system to be safely connected, owner, and date", "long_text", { required: true, section: "Shared commitments" }),
+        field("workflow", "My workflow and rung tonight", "long_text", { required: true, section: "My ninety-day plan" }),
+        field("mode-owner", "Its verification mode, and me as named owner", "long_text", { required: true, section: "My ninety-day plan" }),
+        field("number-90", "The number I will report in ninety days", "long_text", { required: true, section: "My ninety-day plan" }),
+        field("number-now", "What that number is today", "long_text", { required: true, section: "My ninety-day plan" }),
+        field("not-automate", "One thing I will not automate", "long_text", { required: true, section: "My ninety-day plan" }),
+      ],
+      {
+        instructions:
+          "A commitment nobody can find was never made. Use named people and dates, then circulate the record within 48 hours.",
+      },
+    ),
+    worksheet(
+      "secure-feedback",
+      "Tell us the truth",
+      "Give specific programme feedback that the facilitators can act on and use to shape the next cohort.",
+      31,
+      4,
+      [
+        field("changed", "What actually changed for you?", "long_text", { required: true }),
+        field("weakest", "What was weakest?", "long_text", { required: true }),
+        field("missing", "What is still missing?", "long_text", { required: true }),
+        field("recommend", "Would you recommend it, and to whom?", "long_text", { required: true }),
+        field("tell-next", "What would you tell someone considering the next cohort?", "long_text"),
+        field("quote", "May we quote this response? Yes or no", "short_text"),
+      ],
+    ),
+    worksheet(
+      "secure-close",
+      "Back to the wall",
+      "Return to the outcome you named at the beginning, say whether the programme delivered it, and name the help you still need.",
+      19,
+      1,
+      [
+        field("original-outcome", "What I wanted to walk out with", "long_text", { required: true }),
+        field("did-we", "Did we do it?", "short_text", { required: true }),
+        field("starting-advice", "What I would tell someone starting this programme", "long_text", { required: true }),
+        field("help", "What I still need help with", "long_text"),
+      ],
+      {
+        facilitatorNotes:
+          "Read each learner's original sentence back if you have it. A no is useful evidence, not a failure to smooth over.",
+      },
+    ),
+  ];
+}
+
 function createExpandActivities(materialId) {
   const field = (id, label, type = "short_text", extra = {}) => ({
     id,
@@ -1879,6 +2433,180 @@ function createExpandActivities(materialId) {
       },
     ),
   ];
+}
+
+async function prepareSecureAssets(source, workDir) {
+  const deckBytes = await readFile(source.deck);
+  const deckPdf = await convertToPdf(source.deck, workDir, "secure-deck");
+  const workbookPdf = await readFile(source.workbook);
+  return {
+    secureDeck: {
+      key: "secureDeck",
+      name: path.basename(source.deck),
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      kind: "presentation",
+      visibility: "course",
+      bytes: deckBytes,
+      pages: await renderPdfPages(deckPdf),
+      textPreview: await extractPresentationText(deckBytes),
+      aliases: ["Session 4 Secure Slides.pptx"],
+    },
+    secureWorkbookPdf: {
+      key: "secureWorkbookPdf",
+      name: "Session 4 Participant Workbook.pdf",
+      mimeType: "application/pdf",
+      kind: "pdf",
+      visibility: "course",
+      bytes: workbookPdf,
+      pages: [],
+      textPreview: await extractPdfText(workbookPdf),
+    },
+  };
+}
+
+async function inspectSecureVault(sourcePath) {
+  const bytes = await readFile(sourcePath);
+  const archive = await JSZip.loadAsync(bytes, { checkCRC32: true });
+  const entries = Object.values(archive.files).filter(
+    (entry) =>
+      !entry.dir &&
+      !entry.name.startsWith("__MACOSX/") &&
+      !entry.name.endsWith("/.DS_Store"),
+  );
+  const roots = new Set(entries.map((entry) => entry.name.split("/")[0]));
+  const commonRoot =
+    roots.size === 1 && entries.every((entry) => entry.name.includes("/"))
+      ? [...roots][0]
+      : undefined;
+  const files = [];
+  for (const entry of entries) {
+    const relativePath = commonRoot
+      ? entry.name.slice(commonRoot.length + 1)
+      : entry.name;
+    if (
+      !relativePath ||
+      relativePath.startsWith("/") ||
+      relativePath.split("/").some((segment) => segment === "..")
+    ) {
+      throw new Error(`Unsafe path in demo vault: ${entry.name}`);
+    }
+    const fileBytes = Buffer.from(await entry.async("uint8array"));
+    files.push({
+      path: relativePath,
+      name: path.posix.basename(relativePath),
+      bytes: fileBytes,
+      mimeType: mimeForSecureVault(relativePath),
+    });
+  }
+  return {
+    bytes,
+    sourceFileName: path.basename(sourcePath),
+    files,
+  };
+}
+
+async function ensureSecureLabWorkspace({
+  db,
+  course,
+  owner,
+  vault,
+  now,
+}) {
+  const title = "Northwind Coffee · Company Brain demo vault";
+  const existing = await db.collection("labworkspaces").findOne({
+    courseId: course._id,
+    title,
+  });
+  if (existing) return existing;
+
+  const bucket = new mongo.GridFSBucket(db, { bucketName: "labWorkspaces" });
+  const uploadedIds = [];
+  try {
+    const sourcePackGridFsId = await upload(
+      bucket,
+      vault.bytes,
+      vault.sourceFileName,
+      "application/zip",
+    );
+    uploadedIds.push(sourcePackGridFsId);
+    const learnerPackGridFsId = await upload(
+      bucket,
+      vault.bytes,
+      vault.sourceFileName.replace(/\.zip$/i, "-learner.zip"),
+      "application/zip",
+    );
+    uploadedIds.push(learnerPackGridFsId);
+    const files = [];
+    for (const file of vault.files) {
+      const gridFsId = await upload(
+        bucket,
+        file.bytes,
+        file.name,
+        file.mimeType,
+      );
+      uploadedIds.push(gridFsId);
+      const editable =
+        (file.mimeType.startsWith("text/") || /\.(md|json|ya?ml)$/i.test(file.path)) &&
+        file.bytes.length <= 250 * 1024;
+      files.push({
+        id: crypto.randomUUID(),
+        path: file.path,
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.bytes.length,
+        audience: "learner",
+        purpose: secureVaultPurpose(file.path),
+        editable,
+        preview: editable ? file.bytes.toString("utf8") : undefined,
+        gridFsId,
+      });
+    }
+    const document = {
+      courseId: course._id,
+      courseSlug: slug,
+      ownerUserId: owner._id,
+      title,
+      description:
+        "A portable example company brain made from governed Markdown notes: definitions, decisions, buyers, commitments, people, procedures, suppliers, review queues, and safe write-back examples.",
+      instructions:
+        "Start with README.md and 00-how-this-works/how-this-brain-works.md. Use the demo questions during the facilitator demonstration, then copy the structure—not Northwind's facts—into your own vault.",
+      visibility: "course",
+      sourceFileName: vault.sourceFileName,
+      sourcePackGridFsId,
+      sourcePackSize: vault.bytes.length,
+      learnerPackGridFsId,
+      learnerPackSize: vault.bytes.length,
+      files,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const inserted = await db.collection("labworkspaces").insertOne(document);
+    return { _id: inserted.insertedId, ...document };
+  } catch (error) {
+    await Promise.allSettled(uploadedIds.map((id) => bucket.delete(id)));
+    throw error;
+  }
+}
+
+function mimeForSecureVault(filePath) {
+  if (/\.md$/i.test(filePath)) return "text/markdown";
+  if (/\.txt$/i.test(filePath)) return "text/plain";
+  if (/\.json$/i.test(filePath)) return "application/json";
+  if (/\.csv$/i.test(filePath)) return "text/csv";
+  return "application/octet-stream";
+}
+
+function secureVaultPurpose(filePath) {
+  if (filePath === "README.md") return "Start here and understand the demo vault.";
+  if (filePath.includes("demo-questions"))
+    return "Questions used in the live company-brain demonstration.";
+  if (filePath.includes("safety")) return "Rules for safe retrieval and write-back.";
+  if (filePath.includes("note-template"))
+    return "Template learners copy into their own governed vault.";
+  if (filePath.includes("inbox/"))
+    return "Raw information used to demonstrate governed write-back.";
+  return "Example company-brain note.";
 }
 
 async function prepareExpandAssets(source, workDir) {
