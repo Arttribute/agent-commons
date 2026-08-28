@@ -290,6 +290,71 @@ describe('ProvenanceService', () => {
     });
   });
 
+  it('records graph-aware Knowledge Space retrieval without storing vectors', () => {
+    const service = createService();
+    const traceId = '00000000-0000-4000-8000-000000000030';
+    service.startRun({
+      ...runBase,
+      traceId,
+      agentId: '00000000-0000-4000-8000-000000000031',
+    });
+    service.recordEvent(traceId, {
+      category: 'tool',
+      eventType: 'tool.execute',
+      name: 'searchKnowledge',
+      spanId: 'knowledge-call-1',
+      payload: { query: 'approved launch decision' },
+      result: {
+        query: 'approved launch decision',
+        algorithm: 'hybrid_graph',
+        results: [
+          {
+            spaceId: 'space-1',
+            documentId: 'document-1',
+            path: 'Decisions/Launch.md',
+            title: 'Launch decision',
+            heading: 'Approval',
+            contentHash: 'sha256:knowledge',
+            revision: 4,
+            score: 0.91,
+            rank: 1,
+            matchedBy: ['semantic', 'graph'],
+          },
+        ],
+      },
+    });
+
+    const event = queueOf(service)
+      .filter((item) => item.kind === 'event')
+      .at(-1)?.value;
+    expect(event?.metadata.lineage).toMatchObject({
+      kind: 'knowledge_retrieval',
+      tool: { name: 'searchKnowledge', invocationId: 'knowledge-call-1' },
+      knowledge: {
+        query: 'approved launch decision',
+        algorithm: 'hybrid_graph',
+        semanticWeight: 0.68,
+        lexicalWeight: 0.22,
+        graphExpansion: true,
+        embedding: {
+          dimensions: 1536,
+          vectorIncluded: false,
+          normalizationVersion: 'agent-commons-knowledge-v1',
+        },
+        results: [
+          {
+            spaceId: 'space-1',
+            documentId: 'document-1',
+            heading: 'Approval',
+            percentageMatch: 91,
+            matchedBy: ['semantic', 'graph'],
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(event)).not.toContain('embeddingVector');
+  });
+
   it('attributes human approvals without persisting approval credentials', () => {
     const service = createService();
     const traceId = '00000000-0000-4000-8000-000000000011';

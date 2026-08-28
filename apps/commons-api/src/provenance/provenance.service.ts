@@ -330,6 +330,67 @@ function deriveToolLineage(
     };
   }
 
+  if (
+    normalized.includes('searchknowledge') ||
+    normalized.includes('searchbrain')
+  ) {
+    const envelope = asRecord(output?.result) ?? output;
+    const rows = Array.isArray(envelope?.results) ? envelope.results : [];
+    const query = String(envelope?.query ?? input?.query ?? '').trim();
+    const embeddingModel =
+      process.env.BRAIN_EMBEDDING_MODEL ||
+      process.env.ARTIFACT_EMBEDDING_MODEL ||
+      'text-embedding-3-small';
+    return {
+      schemaVersion: 1,
+      kind: 'knowledge_retrieval',
+      tool: { name: toolName, invocationId: event.spanId },
+      knowledge: {
+        query,
+        algorithm:
+          envelope?.algorithm === 'lexical' ||
+          envelope?.algorithm === 'semantic' ||
+          envelope?.algorithm === 'graph'
+            ? envelope.algorithm
+            : 'hybrid_graph',
+        semanticWeight: 0.68,
+        lexicalWeight: 0.22,
+        graphExpansion: true,
+        embedding: {
+          model: embeddingModel,
+          dimensions: 1536,
+          normalizationVersion: 'agent-commons-knowledge-v1',
+          computedBy: 'agent-commons',
+          vectorIncluded: false,
+        },
+        results: rows.slice(0, 50).map((row: any, index: number) => {
+          const score = Number(row?.score ?? 0);
+          return {
+            spaceId: String(row?.spaceId ?? 'unknown'),
+            documentId: String(row?.documentId ?? 'unknown'),
+            path: row?.path,
+            title: row?.title,
+            heading: row?.heading,
+            contentHash: row?.contentHash,
+            revision: row?.revision,
+            embeddingModel: row?.embeddingModel,
+            chunkIndex: row?.chunkIndex,
+            score: Number.isFinite(score) ? score : 0,
+            percentageMatch: Number.isFinite(Number(row?.percentageMatch))
+              ? Number(row.percentageMatch)
+              : Number.isFinite(score)
+                ? Math.round(Math.max(0, Math.min(1, score)) * 10_000) / 100
+                : 0,
+            rank: Number(row?.rank ?? index + 1),
+            matchedBy: Array.isArray(row?.matchedBy)
+              ? row.matchedBy.map(String).slice(0, 10)
+              : undefined,
+          };
+        }),
+      },
+    };
+  }
+
   if (normalized.includes('runworkflow')) {
     return {
       schemaVersion: 1,

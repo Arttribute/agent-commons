@@ -47,6 +47,7 @@ import {
   type UiPluginPermission,
   type UiPluginSurface,
 } from '~/ui-plugin';
+import { BrainService } from '~/brain';
 
 type ToolExecutionMetadata = {
   agentId?: string;
@@ -467,6 +468,40 @@ export interface CommonTool {
     agentId: string;
     sessionId?: string;
   }): Promise<any[]>;
+
+  /** List the Markdown Knowledge Spaces this agent can use and its access level. */
+  listKnowledgeSpaces(props: { agentId: string }): Promise<any[]>;
+
+  /**
+   * Search this agent's connected Knowledge Spaces. Retrieval combines
+   * semantic similarity, exact text, headings, and explicitly linked notes.
+   */
+  searchKnowledge(props: {
+    query: string;
+    spaceIds?: string[];
+    limit?: number;
+    agentId: string;
+  }): Promise<any>;
+
+  /** Read a complete Markdown note, including links and backlinks. */
+  readKnowledgeDocument(props: {
+    documentId: string;
+    agentId: string;
+  }): Promise<any>;
+
+  /**
+   * Create or update a Markdown note. Omit spaceId when creating to use the
+   * agent's default Commons Brain. Supply expectedRevision for safe updates.
+   */
+  writeKnowledgeDocument(props: {
+    spaceId?: string;
+    documentId?: string;
+    path: string;
+    title?: string;
+    content: string;
+    expectedRevision?: number;
+    agentId: string;
+  }): Promise<any>;
 
   /**
    * Create an .xlsx spreadsheet and store it as an agent file attachment.
@@ -890,6 +925,7 @@ export class CommonToolService {
     private usage: UsageService,
     private capabilityProviders: CapabilityProviderService,
     private uiPlugins: UiPluginService,
+    private brains: BrainService,
   ) {}
 
   private async capabilityOwner(agentId: string) {
@@ -1547,6 +1583,82 @@ export class CommonToolService {
       query: props.query,
       limit: props.limit,
     });
+  }
+
+  async listKnowledgeSpaces(
+    props: { agentId: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    await this.brains.ensureDefaultForAgent(agentId);
+    return this.brains.listSpaces({
+      principalId: agentId,
+      principalType: 'agent',
+    });
+  }
+
+  async searchKnowledge(
+    props: {
+      query: string;
+      spaceIds?: string[];
+      limit?: number;
+      agentId: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    await this.brains.ensureDefaultForAgent(agentId);
+    return this.brains.search(
+      { principalId: agentId, principalType: 'agent' },
+      {
+        query: props.query,
+        spaceIds: props.spaceIds,
+        limit: props.limit,
+      },
+      { traceId: metadata?.runId },
+    );
+  }
+
+  async readKnowledgeDocument(
+    props: { documentId: string; agentId: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    await this.brains.ensureDefaultForAgent(agentId);
+    return this.brains.getDocument(props.documentId, {
+      principalId: agentId,
+      principalType: 'agent',
+    });
+  }
+
+  async writeKnowledgeDocument(
+    props: {
+      spaceId?: string;
+      documentId?: string;
+      path: string;
+      title?: string;
+      content: string;
+      expectedRevision?: number;
+      agentId: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const defaultSpace = props.spaceId
+      ? undefined
+      : await this.brains.defaultWritableSpaceForAgent(agentId);
+    return this.brains.writeDocument(
+      props.spaceId ?? defaultSpace!.spaceId,
+      { principalId: agentId, principalType: 'agent' },
+      {
+        documentId: props.documentId,
+        path: props.path,
+        title: props.title,
+        content: props.content,
+        expectedRevision: props.expectedRevision,
+      },
+      { traceId: metadata?.runId },
+    );
   }
 
   async createSpreadsheetFile(props: {

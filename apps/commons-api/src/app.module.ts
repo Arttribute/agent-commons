@@ -33,6 +33,7 @@ import { CodeProjectModule } from './code-project';
 import { CapabilityProviderModule } from './provider';
 import { UiPluginModule } from './ui-plugin';
 import { ProvenanceModule } from './provenance';
+import { BrainModule } from './brain';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { ProvenanceModule } from './provenance';
     ModelProviderModule, // Global model provider factory
     PinataModule,
     ProvenanceModule,
+    BrainModule,
 
     // Feature modules
     AgentModule,

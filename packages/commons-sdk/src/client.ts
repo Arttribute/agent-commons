@@ -73,6 +73,14 @@ import {
   LibraryItem,
   LibraryGrant,
   LibraryShareLink,
+  KnowledgePermission,
+  KnowledgeProviderDefinition,
+  KnowledgeProviderId,
+  KnowledgeSpace,
+  KnowledgeGrant,
+  KnowledgeDocument,
+  KnowledgeGraph,
+  KnowledgeSearchResult,
   Space,
   SpaceMember,
   SpaceMessage,
@@ -2201,6 +2209,158 @@ export class CommonsClient {
           "GET",
           `/v1/shared/artifacts/${encodeURIComponent(token)}`,
         ),
+    };
+  }
+
+  // ── Knowledge Spaces ────────────────────────────────────────────────────
+
+  get knowledge() {
+    const spacePath = (spaceId: string) =>
+      `/v1/brains/${encodeURIComponent(spaceId)}`;
+    const documentPath = (spaceId: string, documentId: string) =>
+      `${spacePath(spaceId)}/documents/${encodeURIComponent(documentId)}`;
+    return {
+      providers: (): Promise<{ data: KnowledgeProviderDefinition[] }> =>
+        this.request("GET", "/v1/brains/providers"),
+
+      listSpaces: (): Promise<{ data: KnowledgeSpace[] }> =>
+        this.request("GET", "/v1/brains"),
+
+      createSpace: (params: {
+        name: string;
+        description?: string;
+        provider?: KnowledgeProviderId;
+        providerConfig?: Record<string, unknown>;
+        color?: string;
+        allAgents?: boolean;
+        agentIds?: string[];
+      }): Promise<{ data: KnowledgeSpace }> =>
+        this.request("POST", "/v1/brains", params),
+
+      getSpace: (spaceId: string): Promise<{ data: KnowledgeSpace }> =>
+        this.request("GET", spacePath(spaceId)),
+
+      updateSpace: (
+        spaceId: string,
+        params: {
+          name?: string;
+          description?: string;
+          color?: string;
+          autoGrantNewAgents?: boolean;
+          status?: "active" | "disconnected";
+          providerConfig?: Record<string, unknown>;
+        },
+      ): Promise<{ data: KnowledgeSpace }> =>
+        this.request("PATCH", spacePath(spaceId), params),
+
+      deleteSpace: (spaceId: string): Promise<{ deleted: boolean }> =>
+        this.request("DELETE", spacePath(spaceId)),
+
+      grant: (
+        spaceId: string,
+        params: {
+          subjectType: "user" | "agent" | "workspace";
+          subjectId: string;
+          permission?: KnowledgePermission;
+          autoRetrieve?: boolean;
+        },
+      ): Promise<{ data: KnowledgeGrant }> =>
+        this.request("POST", `${spacePath(spaceId)}/grants`, params),
+
+      revokeGrant: (
+        spaceId: string,
+        grantId: string,
+      ): Promise<{ revoked: boolean }> =>
+        this.request(
+          "DELETE",
+          `${spacePath(spaceId)}/grants/${encodeURIComponent(grantId)}`,
+        ),
+
+      listDocuments: (
+        spaceId: string,
+        options?: { query?: string; includeContent?: boolean; limit?: number },
+      ): Promise<{ data: KnowledgeDocument[] }> => {
+        const query = new URLSearchParams();
+        if (options?.query) query.set("query", options.query);
+        if (options?.includeContent !== undefined)
+          query.set("includeContent", String(options.includeContent));
+        if (options?.limit !== undefined)
+          query.set("limit", String(options.limit));
+        return this.request(
+          "GET",
+          `${spacePath(spaceId)}/documents${query.size ? `?${query}` : ""}`,
+        );
+      },
+
+      getDocument: (
+        spaceId: string,
+        documentId: string,
+      ): Promise<{ data: KnowledgeDocument }> =>
+        this.request("GET", documentPath(spaceId, documentId)),
+
+      createDocument: (
+        spaceId: string,
+        params: { path: string; title?: string; content: string },
+      ): Promise<{ data: KnowledgeDocument }> =>
+        this.request("POST", `${spacePath(spaceId)}/documents`, params),
+
+      updateDocument: (
+        spaceId: string,
+        documentId: string,
+        params: {
+          path: string;
+          title?: string;
+          content: string;
+          expectedRevision?: number;
+        },
+      ): Promise<{ data: KnowledgeDocument }> =>
+        this.request("PATCH", documentPath(spaceId, documentId), params),
+
+      deleteDocument: (
+        spaceId: string,
+        documentId: string,
+      ): Promise<{ deleted: boolean }> =>
+        this.request("DELETE", documentPath(spaceId, documentId)),
+
+      importMarkdown: (
+        spaceId: string,
+        documents: Array<{
+          path: string;
+          title?: string;
+          content: string;
+          modifiedAt?: string;
+        }>,
+      ): Promise<{
+        data: {
+          created: number;
+          updated: number;
+          unchanged: number;
+          remoteKept: number;
+          failed: Array<{ path: string; error: string }>;
+        };
+      }> => this.request("POST", `${spacePath(spaceId)}/import`, { documents }),
+
+      graph: (spaceId: string): Promise<{ data: KnowledgeGraph }> =>
+        this.request("GET", `${spacePath(spaceId)}/graph`),
+
+      search: (params: {
+        query: string;
+        spaceIds?: string[];
+        limit?: number;
+      }): Promise<{
+        data: {
+          query: string;
+          algorithm: "hybrid_graph";
+          results: KnowledgeSearchResult[];
+        };
+      }> => {
+        const query = new URLSearchParams({ query: params.query });
+        if (params.spaceIds?.length)
+          query.set("spaceIds", params.spaceIds.join(","));
+        if (params.limit !== undefined)
+          query.set("limit", String(params.limit));
+        return this.request("GET", `/v1/brains/search?${query}`);
+      },
     };
   }
 

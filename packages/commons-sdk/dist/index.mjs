@@ -1100,6 +1100,50 @@ var CommonsClient = class {
       )
     };
   }
+  // ── Knowledge Spaces ────────────────────────────────────────────────────
+  get knowledge() {
+    const spacePath = (spaceId) => `/v1/brains/${encodeURIComponent(spaceId)}`;
+    const documentPath = (spaceId, documentId) => `${spacePath(spaceId)}/documents/${encodeURIComponent(documentId)}`;
+    return {
+      providers: () => this.request("GET", "/v1/brains/providers"),
+      listSpaces: () => this.request("GET", "/v1/brains"),
+      createSpace: (params) => this.request("POST", "/v1/brains", params),
+      getSpace: (spaceId) => this.request("GET", spacePath(spaceId)),
+      updateSpace: (spaceId, params) => this.request("PATCH", spacePath(spaceId), params),
+      deleteSpace: (spaceId) => this.request("DELETE", spacePath(spaceId)),
+      grant: (spaceId, params) => this.request("POST", `${spacePath(spaceId)}/grants`, params),
+      revokeGrant: (spaceId, grantId) => this.request(
+        "DELETE",
+        `${spacePath(spaceId)}/grants/${encodeURIComponent(grantId)}`
+      ),
+      listDocuments: (spaceId, options) => {
+        const query = new URLSearchParams();
+        if (options?.query) query.set("query", options.query);
+        if (options?.includeContent !== void 0)
+          query.set("includeContent", String(options.includeContent));
+        if (options?.limit !== void 0)
+          query.set("limit", String(options.limit));
+        return this.request(
+          "GET",
+          `${spacePath(spaceId)}/documents${query.size ? `?${query}` : ""}`
+        );
+      },
+      getDocument: (spaceId, documentId) => this.request("GET", documentPath(spaceId, documentId)),
+      createDocument: (spaceId, params) => this.request("POST", `${spacePath(spaceId)}/documents`, params),
+      updateDocument: (spaceId, documentId, params) => this.request("PATCH", documentPath(spaceId, documentId), params),
+      deleteDocument: (spaceId, documentId) => this.request("DELETE", documentPath(spaceId, documentId)),
+      importMarkdown: (spaceId, documents) => this.request("POST", `${spacePath(spaceId)}/import`, { documents }),
+      graph: (spaceId) => this.request("GET", `${spacePath(spaceId)}/graph`),
+      search: (params) => {
+        const query = new URLSearchParams({ query: params.query });
+        if (params.spaceIds?.length)
+          query.set("spaceIds", params.spaceIds.join(","));
+        if (params.limit !== void 0)
+          query.set("limit", String(params.limit));
+        return this.request("GET", `/v1/brains/search?${query}`);
+      }
+    };
+  }
   // ── Spaces, projects, and goals ──────────────────────────────────────────
   get spaces() {
     return {

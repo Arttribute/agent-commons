@@ -621,6 +621,54 @@ describe("client.provenance", () => {
   });
 });
 
+describe("client.knowledge", () => {
+  it("searches selected spaces with encoded hybrid retrieval parameters", async () => {
+    const fetch = makeFetch({
+      data: { query: "launch plan", algorithm: "hybrid_graph", results: [] },
+    });
+    await makeClient(fetch).knowledge.search({
+      query: "launch plan",
+      spaceIds: ["space/one", "space two"],
+      limit: 6,
+    });
+    expect(fetch.mock.calls[0][0]).toBe(
+      "http://api.test/v1/brains/search?query=launch+plan&spaceIds=space%2Fone%2Cspace+two&limit=6",
+    );
+  });
+
+  it("writes a revision-safe Markdown document", async () => {
+    const fetch = makeFetch({ data: {} });
+    await makeClient(fetch).knowledge.updateDocument("space/one", "note/one", {
+      path: "Projects/Launch.md",
+      content: "# Launch",
+      expectedRevision: 3,
+    });
+    expect(fetch.mock.calls[0][0]).toBe(
+      "http://api.test/v1/brains/space%2Fone/documents/note%2Fone",
+    );
+    expect(fetch.mock.calls[0][1].method).toBe("PATCH");
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({
+      path: "Projects/Launch.md",
+      expectedRevision: 3,
+    });
+  });
+
+  it("imports portable Markdown notes", async () => {
+    const fetch = makeFetch({
+      data: { created: 1, updated: 0, unchanged: 0, failed: [] },
+    });
+    await makeClient(fetch).knowledge.importMarkdown("space-1", [
+      { path: "Decisions/Choice.md", content: "# Choice" },
+    ]);
+    expect(fetch.mock.calls[0][0]).toBe(
+      "http://api.test/v1/brains/space-1/import",
+    );
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      documents: [{ path: "Decisions/Choice.md", content: "# Choice" }],
+    });
+  });
+});
+
 // ── memory ────────────────────────────────────────────────────────────────────
 
 describe("client.memory", () => {

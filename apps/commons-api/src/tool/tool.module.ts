@@ -27,6 +27,7 @@ import { CodeProjectModule } from '~/code-project';
 import { UsageModule } from '~/modules/usage';
 import { CapabilityProviderModule } from '~/provider';
 import { UiPluginModule } from '~/ui-plugin';
+import { BrainModule } from '~/brain';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { UiPluginModule } from '~/ui-plugin';
     OAuthModule,
     CapabilityProviderModule,
     UiPluginModule,
+    BrainModule,
   ],
   controllers: [
     ToolController,

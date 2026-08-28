@@ -33,6 +33,7 @@ export interface ProvenanceLineageMetadata {
     | 'decision'
     | 'delegation'
     | 'library_retrieval'
+    | 'knowledge_retrieval'
     | 'tool';
   tool?: { name: string; provider?: string; invocationId?: string };
   query?: { text: string; sha256?: string };
@@ -98,6 +99,35 @@ export interface ProvenanceLineageMetadata {
       score: number;
       percentageMatch: number;
       rank: number;
+    }>;
+  };
+  knowledge?: {
+    query: string;
+    algorithm: 'hybrid_graph' | 'semantic' | 'lexical' | 'graph';
+    semanticWeight?: number;
+    lexicalWeight?: number;
+    graphExpansion?: boolean;
+    embedding?: {
+      model: string;
+      dimensions: number;
+      normalizationVersion: string;
+      computedBy: 'agent-commons' | 'external';
+      vectorIncluded: false;
+    };
+    results: Array<{
+      spaceId: string;
+      documentId: string;
+      path?: string;
+      title?: string;
+      heading?: string;
+      contentHash?: string;
+      revision?: number;
+      embeddingModel?: string;
+      chunkIndex?: number;
+      score: number;
+      percentageMatch: number;
+      rank: number;
+      matchedBy?: string[];
     }>;
   };
 }

@@ -484,6 +484,7 @@ export interface ProvenanceLineage {
     | "decision"
     | "delegation"
     | "library_retrieval"
+    | "knowledge_retrieval"
     | "tool";
   tool?: { name: string; provider?: string; invocationId?: string };
   query?: { text: string; sha256?: string };
@@ -537,6 +538,154 @@ export interface ProvenanceLineage {
       rank: number;
     }>;
   };
+  knowledge?: {
+    query: string;
+    algorithm: "hybrid_graph" | "semantic" | "lexical" | "graph";
+    semanticWeight?: number;
+    lexicalWeight?: number;
+    graphExpansion?: boolean;
+    embedding?: {
+      model: string;
+      dimensions: number;
+      normalizationVersion: string;
+      computedBy: "agent-commons" | "external";
+      vectorIncluded: false;
+    };
+    results: Array<{
+      spaceId: string;
+      documentId: string;
+      path: string;
+      title?: string;
+      heading?: string;
+      contentHash?: string;
+      revision?: number;
+      chunkIndex?: number;
+      score: number;
+      percentageMatch: number;
+      rank: number;
+      embeddingModel?: string;
+      matchedBy?: string[];
+    }>;
+  };
+}
+
+// ─── Knowledge Spaces ───────────────────────────────────────────────────────
+
+export type KnowledgePermission = "read" | "write" | "manage";
+export type KnowledgeProviderId = "native" | "browser_filesystem";
+
+export interface KnowledgeProviderDefinition {
+  id: KnowledgeProviderId;
+  name: string;
+  description: string;
+  capabilities: {
+    editable: boolean;
+    import: boolean;
+    clientSync: boolean;
+  };
+}
+
+export interface KnowledgeGrant {
+  grantId: string;
+  spaceId: string;
+  subjectType: "user" | "agent" | "workspace";
+  subjectId: string;
+  permission: KnowledgePermission;
+  autoRetrieve: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeSpace {
+  spaceId: string;
+  name: string;
+  description?: string | null;
+  provider: KnowledgeProviderId;
+  providerConfig: Record<string, unknown>;
+  providerDefinition?: KnowledgeProviderDefinition;
+  color: string;
+  status: "active" | "disconnected";
+  isDefault: boolean;
+  autoGrantNewAgents: boolean;
+  permission: KnowledgePermission;
+  counts: { documents: number; links: number };
+  grants?: KnowledgeGrant[];
+  workspaceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeLink {
+  linkId: string;
+  relation: "wikilink" | "markdown" | "frontmatter";
+  documentId?: string | null;
+  title?: string | null;
+  path?: string | null;
+  targetPath?: string;
+  label?: string | null;
+}
+
+export interface KnowledgeDocument {
+  documentId: string;
+  spaceId: string;
+  path: string;
+  title: string;
+  content?: string;
+  contentHash: string;
+  revision: number;
+  frontmatter: Record<string, unknown>;
+  tags: string[];
+  providerDocumentId?: string | null;
+  providerRevision?: string | null;
+  createdByType: string;
+  createdById: string;
+  updatedByType: string;
+  updatedById: string;
+  outgoing?: KnowledgeLink[];
+  backlinks?: KnowledgeLink[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeGraph {
+  nodes: Array<{
+    id: string;
+    title: string;
+    path: string;
+    folder: string;
+    tags: string[];
+    degree: number;
+    updatedAt: string;
+  }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string | null;
+    targetPath: string;
+    relation: string;
+    resolved: boolean;
+  }>;
+}
+
+export interface KnowledgeSearchResult {
+  spaceId: string;
+  documentId: string;
+  path: string;
+  title: string;
+  contentHash: string;
+  revision: number;
+  tags: string[];
+  chunkIndex: number;
+  heading?: string | null;
+  excerpt: string;
+  embeddingModel?: string | null;
+  semantic: number;
+  lexical: number;
+  graphBoost: number;
+  score: number;
+  rank: number;
+  percentageMatch: number;
+  matchedBy: string[];
 }
 
 export interface ProvenanceRun {

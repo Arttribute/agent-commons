@@ -933,6 +933,230 @@ export const libraryAuditEvent = pgTable(
   }),
 );
 
+/* ─────────────────────────  KNOWLEDGE SPACES  ───────────────────────── */
+
+/**
+ * A human-and-agent editable Markdown knowledge boundary. "Knowledge Space"
+ * is the product term; providers keep the storage/sync implementation
+ * replaceable without changing grants, graph indexing, or agent tools.
+ */
+export const knowledgeSpace = pgTable(
+  'knowledge_space',
+  {
+    spaceId: uuid('space_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    ownerUserId: text('owner_user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    name: text('name').notNull(),
+    description: text('description'),
+    provider: text('provider').default('native').notNull(),
+    providerConfig: jsonb('provider_config')
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    color: text('color').default('teal').notNull(),
+    status: text('status').default('active').notNull(),
+    isDefault: pgBoolean('is_default').default(false).notNull(),
+    autoGrantNewAgents: pgBoolean('auto_grant_new_agents')
+      .default(false)
+      .notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    ownerIdx: index('idx_knowledge_space_owner').on(
+      table.ownerUserId,
+      table.updatedAt,
+    ),
+    workspaceIdx: index('idx_knowledge_space_workspace').on(
+      table.workspaceId,
+      table.updatedAt,
+    ),
+  }),
+);
+
+/** Explicit subject grants are the enterprise-ready authorization seam. */
+export const knowledgeSpaceGrant = pgTable(
+  'knowledge_space_grant',
+  {
+    grantId: uuid('grant_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => knowledgeSpace.spaceId, { onDelete: 'cascade' }),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
+    permission: text('permission').default('read').notNull(),
+    autoRetrieve: pgBoolean('auto_retrieve').default(true).notNull(),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    subjectIdx: index('idx_knowledge_space_grant_subject').on(
+      table.subjectType,
+      table.subjectId,
+    ),
+    uniqueSubject: uniqueIndex('idx_knowledge_space_grant_unique').on(
+      table.spaceId,
+      table.subjectType,
+      table.subjectId,
+    ),
+  }),
+);
+
+/** Canonical mutable Markdown document. Folder structure lives in `path`. */
+export const knowledgeDocument = pgTable(
+  'knowledge_document',
+  {
+    documentId: uuid('document_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => knowledgeSpace.spaceId, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    title: text('title').notNull(),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    revision: integer('revision').default(1).notNull(),
+    frontmatter: jsonb('frontmatter')
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    tags: text('tags')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
+    providerDocumentId: text('provider_document_id'),
+    providerRevision: text('provider_revision'),
+    createdByType: text('created_by_type').default('user').notNull(),
+    createdById: text('created_by_id').notNull(),
+    updatedByType: text('updated_by_type').default('user').notNull(),
+    updatedById: text('updated_by_id').notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    spaceUpdatedIdx: index('idx_knowledge_document_space_updated').on(
+      table.spaceId,
+      table.updatedAt,
+    ),
+    hashIdx: index('idx_knowledge_document_hash').on(
+      table.spaceId,
+      table.contentHash,
+    ),
+  }),
+);
+
+/** Full snapshots make human/agent edits reversible and inspectable. */
+export const knowledgeDocumentRevision = pgTable(
+  'knowledge_document_revision',
+  {
+    revisionId: uuid('revision_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => knowledgeDocument.documentId, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    path: text('path').notNull(),
+    title: text('title').notNull(),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id').notNull(),
+    provenanceTraceId: uuid('provenance_trace_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    documentRevisionIdx: uniqueIndex(
+      'idx_knowledge_document_revision_unique',
+    ).on(table.documentId, table.revision),
+  }),
+);
+
+/** Explicit wikilinks/Markdown links form the inspectable graph. */
+export const knowledgeLink = pgTable(
+  'knowledge_link',
+  {
+    linkId: uuid('link_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => knowledgeSpace.spaceId, { onDelete: 'cascade' }),
+    fromDocumentId: uuid('from_document_id')
+      .notNull()
+      .references(() => knowledgeDocument.documentId, { onDelete: 'cascade' }),
+    toDocumentId: uuid('to_document_id').references(
+      () => knowledgeDocument.documentId,
+      { onDelete: 'set null' },
+    ),
+    targetPath: text('target_path').notNull(),
+    label: text('label'),
+    relation: text('relation').default('wikilink').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    fromIdx: index('idx_knowledge_link_from').on(table.fromDocumentId),
+    toIdx: index('idx_knowledge_link_to').on(table.toDocumentId),
+    spaceIdx: index('idx_knowledge_link_space').on(table.spaceId),
+  }),
+);
+
+/** Heading-aware citeable units used by lexical, vector, and graph retrieval. */
+export const knowledgeChunk = pgTable(
+  'knowledge_chunk',
+  {
+    chunkId: uuid('chunk_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => knowledgeDocument.documentId, { onDelete: 'cascade' }),
+    chunkIndex: integer('chunk_index').notNull(),
+    heading: text('heading'),
+    content: text('content').notNull(),
+    tokenCount: integer('token_count').notNull(),
+    embedding: vector('embedding', { dimensions: 1536 }),
+    embeddingModel: text('embedding_model'),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    documentChunkIdx: uniqueIndex('idx_knowledge_chunk_position').on(
+      table.documentId,
+      table.chunkIndex,
+    ),
+  }),
+);
+
 /* ─────────────────────────  GOAL (DEPRECATED - TO BE REMOVED)  ───────────────────────── */
 // DEPRECATED: Goals abstraction is being removed. Tasks now handle everything directly.
 // This table will be dropped in the next migration.

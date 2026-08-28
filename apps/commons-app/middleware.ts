@@ -33,5 +33,6 @@ export const config = {
     "/logs/:path*",
     "/usage/:path*",
     "/library/:path*",
+    "/brains/:path*",
   ],
 };
