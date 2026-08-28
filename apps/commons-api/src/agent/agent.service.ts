@@ -1221,11 +1221,6 @@ export class AgentService implements OnModuleInit {
           const executedCalls: any[] = [];
           const llmRunStartedAt = new Map<string, number>();
           const llmRunInputs = new Map<string, unknown>();
-          const toolRunStartedAt = new Map<string, number>();
-          const toolRunInputs = new Map<
-            string,
-            { name: string; input: unknown; parentRunId?: string }
-          >();
           const usageContext = {
             provider: effectiveModel.provider,
             modelId: effectiveModel.modelId,
@@ -1267,71 +1262,6 @@ export class AgentService implements OnModuleInit {
                   timestamp: new Date().toISOString(),
                 });
               }
-            },
-            handleToolStart: async (
-              tool: any,
-              input: string,
-              runId: string,
-              parentRunId?: string,
-            ) => {
-              if (runId) {
-                toolRunStartedAt.set(runId, performance.now());
-                toolRunInputs.set(runId, {
-                  name: tool.name ?? 'tool',
-                  input,
-                  parentRunId,
-                });
-              }
-              subscriber.next({
-                type: 'toolStart',
-                phase: 'commentary',
-                toolName: tool.name,
-                input,
-                sessionId: currentSessionId,
-                timestamp: new Date().toISOString(),
-              });
-            },
-            handleToolEnd: async (
-              output: any,
-              runId: string,
-              parentRunId?: string,
-            ) => {
-              const started = runId ? toolRunStartedAt.get(runId) : undefined;
-              const detail = runId ? toolRunInputs.get(runId) : undefined;
-              const durationMs =
-                started !== undefined
-                  ? Math.round(performance.now() - started)
-                  : undefined;
-              this.provenanceService.recordEvent(traceId, {
-                category: 'tool',
-                eventType: 'tool.execute',
-                name: detail?.name ?? 'Tool call',
-                phase: 'commentary',
-                status: 'completed',
-                spanId: runId,
-                parentSpanId: parentRunId ?? detail?.parentRunId,
-                summary: `${detail?.name ?? 'Tool'} completed`,
-                payload: detail?.input,
-                result: output,
-                content: output,
-                startedAt:
-                  durationMs !== undefined
-                    ? new Date(Date.now() - durationMs)
-                    : undefined,
-                endedAt: new Date(),
-                durationMs,
-              });
-              if (runId) {
-                toolRunStartedAt.delete(runId);
-                toolRunInputs.delete(runId);
-              }
-              subscriber.next({
-                type: 'toolEnd',
-                phase: 'commentary',
-                output,
-                sessionId: currentSessionId,
-                timestamp: new Date().toISOString(),
-              });
             },
             /** Structured trace log — parseable by log aggregators (CloudWatch, Datadog, etc.) */
             handleLLMEnd: async (result: any, runId: string) => {
@@ -1693,6 +1623,16 @@ export class AgentService implements OnModuleInit {
               async (args, config) => {
                 const fn = config.toolCall?.name ?? 'unknown';
                 const t0 = performance.now();
+                const startedAt = new Date();
+                subscriber.next({
+                  type: 'toolStart',
+                  phase: 'commentary',
+                  toolName: fn,
+                  input: args,
+                  toolCallId: config.toolCall?.id,
+                  sessionId: currentSessionId,
+                  timestamp: startedAt.toISOString(),
+                });
                 const got_ = await got;
                 let data: any;
                 let status: 'success' | 'error' = 'success';
@@ -1758,17 +1698,18 @@ export class AgentService implements OnModuleInit {
                   };
                 }
 
+                const durationMs = Math.round(performance.now() - t0);
                 toolUsage.push({
                   name: fn,
                   status,
-                  duration: performance.now() - t0,
+                  duration: durationMs,
                 });
 
                 const callObj = {
                   role: 'tool',
                   name: fn,
                   status,
-                  duration: performance.now() - t0,
+                  duration: durationMs,
                   args,
                   result: data,
                   toolCallId: config.toolCall?.id,
@@ -1776,6 +1717,33 @@ export class AgentService implements OnModuleInit {
                 };
 
                 executedCalls.push(callObj);
+
+                const failureMessage =
+                  status === 'error' && typeof data?.error === 'string'
+                    ? data.error
+                    : undefined;
+                this.provenanceService.recordEvent(traceId, {
+                  category: 'tool',
+                  eventType: 'tool.execute',
+                  name: fn,
+                  phase: 'commentary',
+                  status: status === 'success' ? 'completed' : 'failed',
+                  spanId: config.toolCall?.id,
+                  summary:
+                    status === 'success'
+                      ? `${fn} completed`
+                      : `${fn} failed${failureMessage ? `: ${failureMessage}` : ''}`,
+                  payload: args,
+                  result: data,
+                  content: data,
+                  startedAt,
+                  endedAt: new Date(),
+                  durationMs,
+                  metadata: {
+                    transport: 'internal_http',
+                    reconstructed: false,
+                  },
+                });
 
                 subscriber.next({
                   type: 'tool',

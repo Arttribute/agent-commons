@@ -123,6 +123,119 @@ describe('ProvenanceService', () => {
     });
   });
 
+  it('reconstructs disclosed tool calls and visible messages for older session trajectories', async () => {
+    const traceId = '00000000-0000-4000-8000-000000000020';
+    const sessionId = '00000000-0000-4000-8000-000000000021';
+    const startedAt = new Date('2026-08-28T12:00:00.000Z');
+    const createdAt = new Date('2026-08-28T12:00:03.000Z');
+    const service = new ProvenanceService({
+      query: {
+        provenanceRun: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue([
+              { traceId, sessionId, startedAt, durationMs: 3_000 },
+            ]),
+        },
+        provenanceEvent: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              eventId: 'input-1',
+              traceId,
+              sessionId,
+              sequence: 1,
+              category: 'input',
+              eventType: 'user.message',
+              startedAt,
+              createdAt,
+            },
+            {
+              eventId: 'output-1',
+              traceId,
+              sessionId,
+              sequence: 2,
+              category: 'output',
+              eventType: 'assistant.message',
+              startedAt: createdAt,
+              createdAt,
+            },
+          ]),
+        },
+        session: {
+          findFirst: jest.fn().mockResolvedValue({
+            history: [
+              {
+                role: 'human',
+                content: 'Find the official model docs',
+                timestamp: startedAt.toISOString(),
+              },
+              {
+                role: 'ai',
+                content: 'Here is the official source.',
+                timestamp: createdAt.toISOString(),
+                metadata: {
+                  toolCalls: [
+                    {
+                      name: 'webSearch',
+                      status: 'success',
+                      duration: 800,
+                      toolCallId: 'call-web-1',
+                      args: { query: 'official model docs' },
+                      result: {
+                        provider: 'searxng',
+                        query: 'official model docs',
+                        results: [
+                          {
+                            title: 'Official docs',
+                            url: 'https://example.com/models',
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        },
+      },
+    } as never);
+
+    const trajectory = await service.getSessionTrajectory(sessionId);
+
+    expect(trajectory.summary.toolCalls).toBe(1);
+    expect(
+      trajectory.events.find((event) => event.eventType === 'user.message'),
+    ).toMatchObject({ displayContent: 'Find the official model docs' });
+    expect(
+      trajectory.events.find(
+        (event) => event.eventType === 'assistant.message',
+      ),
+    ).toMatchObject({ displayContent: 'Here is the official source.' });
+    expect(
+      trajectory.events.find((event) => event.category === 'tool'),
+    ).toMatchObject({
+      name: 'webSearch',
+      status: 'completed',
+      spanId: 'call-web-1',
+      metadata: {
+        reconstructedFrom: 'session_history',
+        lineage: {
+          kind: 'web_search',
+          query: { text: 'official model docs' },
+          tool: { name: 'webSearch', provider: 'searxng' },
+          sources: [
+            {
+              title: 'Official docs',
+              url: 'https://example.com/models',
+              domain: 'example.com',
+            },
+          ],
+        },
+      },
+    });
+  });
+
   it('records explainable library similarity percentages and origins', () => {
     const service = createService();
     const traceId = '00000000-0000-4000-8000-000000000009';

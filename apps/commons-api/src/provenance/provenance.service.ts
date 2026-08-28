@@ -351,6 +351,138 @@ function deriveToolLineage(
   };
 }
 
+/**
+ * Older native-agent runs persisted tool disclosures in session history but
+ * missed the equivalent provenance callback. Reconcile that already-visible
+ * data at read time so historical trajectories remain complete. New runs
+ * persist native tool events and therefore do not need this fallback.
+ */
+function reconcileSessionHistory(
+  runs: Array<Record<string, any>>,
+  persistedEvents: Array<Record<string, any>>,
+  history: Array<Record<string, any>>,
+) {
+  const events = persistedEvents.map((event) => ({ ...event }));
+  const userMessages = history.filter((entry) =>
+    ['human', 'user'].includes(String(entry?.role).toLowerCase()),
+  );
+  const assistantMessages = history.filter((entry) => {
+    if (!['ai', 'assistant'].includes(String(entry?.role).toLowerCase()))
+      return false;
+    const hasContent =
+      typeof entry?.content === 'string' && entry.content.trim().length > 0;
+    return hasContent || Array.isArray(entry?.metadata?.toolCalls);
+  });
+
+  runs.forEach((run, runIndex) => {
+    const traceId = run.traceId;
+    const userMessage = userMessages[runIndex];
+    const assistantMessage = assistantMessages[runIndex];
+    const inputEvent = events.find(
+      (event) =>
+        event.traceId === traceId && event.eventType === 'user.message',
+    );
+    if (inputEvent && typeof userMessage?.content === 'string') {
+      inputEvent.displayContent = userMessage.content;
+    }
+    const outputEvent = events.find(
+      (event) =>
+        event.traceId === traceId && event.eventType === 'assistant.message',
+    );
+    if (outputEvent && typeof assistantMessage?.content === 'string') {
+      outputEvent.displayContent = assistantMessage.content;
+    }
+
+    const existingTools = events.filter(
+      (event) => event.traceId === traceId && event.category === 'tool',
+    );
+    const disclosedCalls = Array.isArray(assistantMessage?.metadata?.toolCalls)
+      ? assistantMessage.metadata.toolCalls
+      : [];
+    disclosedCalls.forEach((call: Record<string, any>, callIndex: number) => {
+      const invocationId =
+        typeof call.toolCallId === 'string' ? call.toolCallId : undefined;
+      const existing = existingTools.find(
+        (event) =>
+          (invocationId && event.spanId === invocationId) ||
+          (!invocationId && event.name === call.name),
+      );
+      if (existing) {
+        existing.disclosedPayload = sanitize(call.args);
+        existing.disclosedResult = sanitize(call.result);
+        return;
+      }
+      const durationMs = Number.isFinite(Number(call.duration))
+        ? Math.max(0, Math.round(Number(call.duration)))
+        : undefined;
+      const endedAt = new Date(
+        assistantMessage?.timestamp ?? run.endedAt ?? run.startedAt,
+      );
+      const startedAt = durationMs
+        ? new Date(endedAt.getTime() - durationMs)
+        : endedAt;
+      const failed = ['error', 'failed'].includes(
+        String(call.status).toLowerCase(),
+      );
+      const failureMessage =
+        failed && typeof call.result?.error === 'string'
+          ? call.result.error
+          : undefined;
+      const synthetic: Record<string, any> = {
+        eventId: `session-history:${traceId}:${invocationId ?? callIndex}`,
+        traceId,
+        sessionId: run.sessionId,
+        sequence:
+          Math.max(
+            0,
+            ...events
+              .filter((event) => event.traceId === traceId)
+              .map((event) => Number(event.sequence) || 0),
+          ) +
+          callIndex +
+          1,
+        category: 'tool',
+        eventType: 'tool.execute',
+        name: call.name ?? 'Tool call',
+        phase: 'commentary',
+        status: failed ? 'failed' : 'completed',
+        spanId: invocationId,
+        summary: failed
+          ? `${call.name ?? 'Tool'} failed${failureMessage ? `: ${failureMessage}` : ''}`
+          : `${call.name ?? 'Tool'} completed`,
+        payload: sanitize(call.args),
+        result: sanitize(call.result),
+        contentHash: sha256(sanitize(call.result)),
+        durationMs,
+        startedAt,
+        endedAt,
+        createdAt: endedAt,
+        metadata: {
+          reconstructedFrom: 'session_history',
+        },
+      };
+      const lineage = deriveToolLineage({
+        category: 'tool',
+        eventType: 'tool.execute',
+        name: synthetic.name,
+        status: synthetic.status,
+        spanId: invocationId,
+        payload: call.args,
+        result: call.result,
+      });
+      if (lineage) synthetic.metadata.lineage = sanitize(lineage);
+      events.push(synthetic);
+    });
+  });
+
+  return events.sort(
+    (left, right) =>
+      new Date(left.startedAt).getTime() -
+        new Date(right.startedAt).getTime() ||
+      Number(left.sequence ?? 0) - Number(right.sequence ?? 0),
+  );
+}
+
 @Injectable()
 export class ProvenanceService implements OnApplicationShutdown {
   private readonly logger = new Logger(ProvenanceService.name);
@@ -631,7 +763,7 @@ export class ProvenanceService implements OnApplicationShutdown {
         summary: this.summarize([], []),
       };
     }
-    const events = await this.db.query.provenanceEvent.findMany({
+    const persistedEvents = await this.db.query.provenanceEvent.findMany({
       where: since
         ? and(
             eq(schema.provenanceEvent.sessionId, sessionId),
@@ -643,12 +775,27 @@ export class ProvenanceService implements OnApplicationShutdown {
         asc(schema.provenanceEvent.sequence),
       ],
     });
+    const sessionRecord = !since
+      ? await this.db.query.session.findFirst({
+          where: eq(schema.session.sessionId, sessionId),
+          columns: { history: true },
+        })
+      : undefined;
+    const events = sessionRecord?.history
+      ? reconcileSessionHistory(
+          runs as Array<Record<string, any>>,
+          persistedEvents as Array<Record<string, any>>,
+          sessionRecord.history as Array<Record<string, any>>,
+        )
+      : persistedEvents;
     return {
       sessionId,
       runs,
       events,
       incremental: Boolean(since),
-      cursor: events.at(-1)?.createdAt?.toISOString() ?? since?.toISOString(),
+      cursor:
+        persistedEvents.at(-1)?.createdAt?.toISOString() ??
+        since?.toISOString(),
       summary: this.summarize(runs, events),
     };
   }

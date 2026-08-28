@@ -74,10 +74,10 @@ type Lineage = {
       reviewerId?: string;
       reviewerType?: string;
       prompt?: string;
-    responseFieldNames?: string[];
-    responseHash?: string;
-    note?: string;
-    reason?: string;
+      responseFieldNames?: string[];
+      responseHash?: string;
+      note?: string;
+      reason?: string;
     };
   };
 };
@@ -103,6 +103,11 @@ type Event = {
   cachedTokens?: number;
   costUsd?: number;
   contentHash?: string;
+  /** Content already disclosed in the owning session; not part of the bundle. */
+  displayContent?: string;
+  /** Tool data already disclosed to the session owner; not part of the bundle. */
+  disclosedPayload?: unknown;
+  disclosedResult?: unknown;
 };
 type Trajectory = {
   sessionId?: string;
@@ -152,6 +157,10 @@ const ms = (value?: number) =>
     : value >= 1000
       ? `${(value / 1000).toFixed(1)}s`
       : `${Math.round(value)}ms`;
+const eventPreview = (event: Event) =>
+  event.displayContent?.trim()
+    ? event.displayContent.trim().replace(/\s+/g, " ")
+    : (event.summary ?? event.eventType);
 
 type TrajectoryViewProps =
   | { sessionId: string; scopeType?: never; scopeId?: never }
@@ -170,16 +179,14 @@ export function TrajectoryView({
   const cursor = useRef<string | undefined>(undefined);
   const load = useCallback(async () => {
     const supportsIncremental = Boolean(sessionId);
-    const suffix = supportsIncremental && cursor.current
-      ? `?since=${encodeURIComponent(cursor.current)}`
-      : "";
+    const suffix =
+      supportsIncremental && cursor.current
+        ? `?since=${encodeURIComponent(cursor.current)}`
+        : "";
     const endpoint = sessionId
       ? `/api/provenance/sessions/${encodeURIComponent(sessionId)}`
       : `/api/provenance/scopes/${encodeURIComponent(scopeType!)}/${encodeURIComponent(scopeId!)}`;
-    const response = await fetch(
-      `${endpoint}${suffix}`,
-      { cache: "no-store" },
-    );
+    const response = await fetch(`${endpoint}${suffix}`, { cache: "no-store" });
     const body = await response.json().catch(() => ({}));
     if (!response.ok)
       throw new Error(body.error || "Could not load provenance");
@@ -376,7 +383,9 @@ export function TrajectoryView({
                         onClick={() => setSelected(event)}
                         className={cn(
                           "absolute h-3 rounded-sm opacity-85 transition-opacity hover:opacity-100",
-                          colors[event.category],
+                          event.status === "failed"
+                            ? colors.error
+                            : colors[event.category],
                         )}
                         style={{
                           left: `${Math.min(start, 99)}%`,
@@ -416,7 +425,9 @@ export function TrajectoryView({
                     <span
                       className={cn(
                         "w-fit rounded px-1.5 py-0.5 text-[10px] font-semibold text-white",
-                        colors[event.category],
+                        event.status === "failed"
+                          ? colors.error
+                          : colors[event.category],
                       )}
                     >
                       {labels[event.category]}
@@ -426,7 +437,7 @@ export function TrajectoryView({
                         {event.name ?? event.eventType}
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {event.summary ?? event.eventType}
+                        {eventPreview(event)}
                       </span>
                     </span>
                     <span className="text-xs tabular-nums text-muted-foreground">
@@ -445,7 +456,9 @@ export function TrajectoryView({
             <span
               className={cn(
                 "mr-2 rounded px-1.5 py-0.5 text-[10px] font-semibold text-white",
-                colors[selected.category],
+                selected.status === "failed"
+                  ? colors.error
+                  : colors[selected.category],
               )}
             >
               {labels[selected.category]}
@@ -482,11 +495,27 @@ export function TrajectoryView({
                 </dd>
               </dl>
             </section>
-            {selected.payload != null && (
-              <Json title="Payload" value={selected.payload} />
+            {selected.displayContent?.trim() && (
+              <section>
+                <h3 className="mb-2 font-semibold">
+                  {selected.category === "input" ? "Message" : "Visible output"}
+                </h3>
+                <div className="whitespace-pre-wrap rounded-md bg-muted/50 p-3 text-sm leading-5 text-foreground">
+                  {selected.displayContent}
+                </div>
+              </section>
             )}
-            {selected.result != null && (
-              <Json title="Result" value={selected.result} />
+            {(selected.disclosedPayload ?? selected.payload) != null && (
+              <Json
+                title="Invocation"
+                value={selected.disclosedPayload ?? selected.payload}
+              />
+            )}
+            {(selected.disclosedResult ?? selected.result) != null && (
+              <Json
+                title="Result"
+                value={selected.disclosedResult ?? selected.result}
+              />
             )}
             <Json title="EAA action" value={selected.eaaAction} />
           </div>
@@ -497,6 +526,9 @@ export function TrajectoryView({
 }
 
 function SimpleReport({ events }: { events: Event[] }) {
+  const narrative = events.filter((event) =>
+    ["input", "tool", "output", "error"].includes(event.category),
+  );
   const searches = events.filter(
     (event) => event.metadata?.lineage?.kind === "web_search",
   );
@@ -555,6 +587,46 @@ function SimpleReport({ events }: { events: Event[] }) {
             value={libraryMatches.length}
           />
         </div>
+        <ReportSection
+          title="How this session ran"
+          empty="No user, tool, or output events were recorded."
+        >
+          {narrative.map((event) => (
+            <div
+              key={event.eventId}
+              className={cn(
+                "rounded-lg border bg-background p-3",
+                event.status === "failed"
+                  ? "border-destructive/40"
+                  : "border-border",
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "rounded px-1.5 py-0.5 text-[10px] font-semibold text-white",
+                    event.status === "failed"
+                      ? colors.error
+                      : colors[event.category],
+                  )}
+                >
+                  {labels[event.category]}
+                </span>
+                <span className="text-sm font-medium">
+                  {event.name ?? event.eventType}
+                </span>
+                <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                  {event.status} · {ms(event.durationMs)}
+                </span>
+              </div>
+              <div className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
+                {event.displayContent?.trim() ||
+                  event.summary ||
+                  event.eventType}
+              </div>
+            </div>
+          ))}
+        </ReportSection>
         <ReportSection
           title="Web research"
           empty="No web sources were used in this session."
