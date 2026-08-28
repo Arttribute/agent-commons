@@ -739,7 +739,7 @@ export class ProvenanceService implements OnApplicationShutdown {
             ? 'human'
             : prefix === 'agent'
               ? 'ai'
-              : 'other',
+              : 'ext:agentcommons:runtime',
         name: parts.join(':') || actorId,
       });
       knownEntityIds.add(actorId);

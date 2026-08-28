@@ -222,4 +222,46 @@ describe('ProvenanceService', () => {
       },
     });
   });
+
+  it('namespaces runtime actor roles for ProvenanceKit validation', async () => {
+    const traceId = '00000000-0000-4000-8000-000000000013';
+    const startedAt = new Date('2026-08-28T00:00:00.000Z');
+    const service = new ProvenanceService({
+      query: {
+        provenanceRun: {
+          findFirst: jest.fn().mockResolvedValue({
+            traceId,
+            scopeType: 'workflow',
+            scopeId: 'execution-1',
+            initiator: 'reviewer@example.com',
+            captureMode: 'metadata',
+            status: 'completed',
+          }),
+        },
+        provenanceEvent: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              category: 'system',
+              contentHash: 'sha256:runtime-event',
+              startedAt,
+              eaaAction: {
+                id: `urn:agentcommons:event:${traceId}:1`,
+                type: 'verify',
+                performedBy: 'workflow:execution-1',
+                timestamp: startedAt.toISOString(),
+                inputs: [],
+                outputs: [],
+              },
+            },
+          ]),
+        },
+      },
+    } as never);
+
+    const bundle = await service.buildBundle(traceId);
+
+    expect(
+      bundle.entities.find((entity) => entity.id === 'workflow:execution-1'),
+    ).toMatchObject({ role: 'ext:agentcommons:runtime' });
+  });
 });
