@@ -632,7 +632,7 @@ describe("client.knowledge", () => {
       limit: 6,
     });
     expect(fetch.mock.calls[0][0]).toBe(
-      "http://api.test/v1/brains/search?query=launch+plan&spaceIds=space%2Fone%2Cspace+two&limit=6",
+      "http://api.test/v1/knowledge/search?query=launch+plan&spaceIds=space%2Fone%2Cspace+two&limit=6",
     );
   });
 
@@ -644,7 +644,7 @@ describe("client.knowledge", () => {
       expectedRevision: 3,
     });
     expect(fetch.mock.calls[0][0]).toBe(
-      "http://api.test/v1/brains/space%2Fone/documents/note%2Fone",
+      "http://api.test/v1/knowledge/space%2Fone/documents/note%2Fone",
     );
     expect(fetch.mock.calls[0][1].method).toBe("PATCH");
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({
@@ -661,7 +661,7 @@ describe("client.knowledge", () => {
       { path: "Decisions/Choice.md", content: "# Choice" },
     ]);
     expect(fetch.mock.calls[0][0]).toBe(
-      "http://api.test/v1/brains/space-1/import",
+      "http://api.test/v1/knowledge/space-1/import",
     );
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
       documents: [{ path: "Decisions/Choice.md", content: "# Choice" }],

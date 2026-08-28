@@ -7,7 +7,7 @@ async function forward(request: NextRequest) {
   if (!user) return response;
   const query = request.nextUrl.searchParams.toString();
   const body = request.method === "POST" ? await request.json() : undefined;
-  return proxyBackend(`/v1/brains${query ? `?${query}` : ""}`, {
+  return proxyBackend(`/v1/knowledge${query ? `?${query}` : ""}`, {
     method: request.method as "GET" | "POST",
     body,
   });

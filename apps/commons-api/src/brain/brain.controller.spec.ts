@@ -1,7 +1,14 @@
 import type { Request } from 'express';
-import { principalFrom } from './brain.controller';
+import { PATH_METADATA } from '@nestjs/common/constants';
+import { BrainController, principalFrom } from './brain.controller';
 
 describe('Knowledge controller identity boundary', () => {
+  it('exposes only the knowledge API route', () => {
+    expect(Reflect.getMetadata(PATH_METADATA, BrainController)).toBe(
+      'knowledge',
+    );
+  });
+
   it('treats authenticated app-proxy delegation as the signed-in user', () => {
     const request = {
       principal: {

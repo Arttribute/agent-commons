@@ -32,6 +32,18 @@ The design follows three evidence-backed constraints:
    The first release combines lexical ranking, semantic similarity, title
    matching, and bounded one-hop graph expansion. It does not invent an opaque
    LLM entity graph.
+4. Google Cloud's Open Knowledge Format (OKF) v0.2 standardizes the portable
+   layer we need: Markdown concepts with YAML frontmatter, normal Markdown
+   links, bundle-relative paths, optional `index.md`/`log.md`, and first-class
+   provenance, trust, freshness, lifecycle, and attested-computation metadata.
+   Knowledge Spaces are permissive OKF consumers and produce conformant new
+   notes without rejecting ordinary Obsidian Markdown.
+5. Karpathy's LLM Wiki is an operating pattern rather than a storage protocol:
+   immutable raw sources, a persistent agent-maintained synthesis wiki, and an
+   evolving instruction/schema document, exercised through ingest, query, and
+   lint loops. Agent Commons supplies the shared files, retrieval, revision,
+   graph, and provenance substrate; agent instructions and provider plugins own
+   the domain-specific compilation workflow.
 
 Primary references:
 
@@ -42,11 +54,44 @@ Primary references:
 - [Microsoft GraphRAG](https://www.microsoft.com/en-us/research/publication/from-local-to-global-a-graph-rag-approach-to-query-focused-summarization/)
 - [HybridRAG](https://arxiv.org/abs/2408.04948)
 - [HippoRAG](https://arxiv.org/abs/2405.14831)
+- [Open Knowledge Format v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md)
+- [Google Cloud's OKF announcement](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing/)
+- [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
+
+## Open format and workflow compatibility
+
+The public API is consistently rooted at `/v1/knowledge`; the authenticated
+Next.js proxy is rooted at `/api/knowledge`. “Brain” is product language only
+and never appears in an API route.
+
+Knowledge Space documents expose an `okf` analysis alongside their original
+content and parsed frontmatter. The analysis identifies concept, index, and log
+documents; reports v0.2 conformance issues; derives the advisory trust tier;
+and surfaces lifecycle status, freshness, producers, verifiers, and source
+count. Unknown frontmatter keys are preserved. A missing `type` or malformed
+frontmatter makes a document non-conformant but never makes it unreadable.
+
+OKF source, computation, executor, and attester paths participate in the same
+inspectable graph as Markdown links. Agent Commons does not execute an OKF
+attested computation merely because a document describes one. Execution and
+deterministic receipt verification belong behind a separately authorized
+capability provider; until that exists, the contract remains portable metadata.
+
+The format and the maintenance workflow intentionally remain separate:
+
+| Concern            | Open Knowledge Format                                    | Karpathy LLM Wiki                            | Agent Commons                                                                        |
+| ------------------ | -------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Interchange        | Versioned Markdown/frontmatter bundle                    | Informal Markdown convention                 | Reads generic Markdown; creates and analyzes OKF v0.2                                |
+| Knowledge identity | Bundle-relative concept path                             | Interlinked wiki page                        | Stable document ID plus portable path                                                |
+| Provenance/trust   | `sources`, `generated`, `verified`, freshness and status | Human review and source summaries            | Preserves OKF fields and attaches every retrieval/edit to provenance traces          |
+| Maintenance        | Deliberately does not prescribe a runtime                | Ingest, query, lint                          | Agent tools plus replaceable providers; workflow instructions remain domain-specific |
+| Retrieval          | Deliberately unspecified                                 | Index first, search as scale grows           | Heading chunks, lexical/vector ranking, and bounded graph expansion                  |
+| Collaboration      | Git/directory distribution                               | Primarily one human and one maintainer agent | Revision-safe multi-agent grants, browser folders, and future workspace subjects     |
 
 ## Capability seam
 
 ```text
-REST / SDK / browser / static agent tools
+REST / SDK / browser / static agent tools (`/v1/knowledge`)
                   │
               BrainService
        ┌──────────┼───────────┐

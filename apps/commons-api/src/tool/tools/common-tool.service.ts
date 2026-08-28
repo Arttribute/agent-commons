@@ -491,7 +491,9 @@ export interface CommonTool {
 
   /**
    * Create or update a Markdown note. Omit spaceId when creating to use the
-   * agent's default Commons Brain. Supply expectedRevision for safe updates.
+   * agent's default Commons Brain. New concepts should use Open Knowledge
+   * Format v0.2 frontmatter with at least a non-empty type. Preserve unknown
+   * frontmatter fields. Supply expectedRevision for safe updates.
    */
   writeKnowledgeDocument(props: {
     spaceId?: string;

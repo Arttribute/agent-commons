@@ -1131,12 +1131,12 @@ var CommonsClient = class {
   }
   // ── Knowledge Spaces ────────────────────────────────────────────────────
   get knowledge() {
-    const spacePath = (spaceId) => `/v1/brains/${encodeURIComponent(spaceId)}`;
+    const spacePath = (spaceId) => `/v1/knowledge/${encodeURIComponent(spaceId)}`;
     const documentPath = (spaceId, documentId) => `${spacePath(spaceId)}/documents/${encodeURIComponent(documentId)}`;
     return {
-      providers: () => this.request("GET", "/v1/brains/providers"),
-      listSpaces: () => this.request("GET", "/v1/brains"),
-      createSpace: (params) => this.request("POST", "/v1/brains", params),
+      providers: () => this.request("GET", "/v1/knowledge/providers"),
+      listSpaces: () => this.request("GET", "/v1/knowledge"),
+      createSpace: (params) => this.request("POST", "/v1/knowledge", params),
       getSpace: (spaceId) => this.request("GET", spacePath(spaceId)),
       updateSpace: (spaceId, params) => this.request("PATCH", spacePath(spaceId), params),
       deleteSpace: (spaceId) => this.request("DELETE", spacePath(spaceId)),
@@ -1169,7 +1169,7 @@ var CommonsClient = class {
           query.set("spaceIds", params.spaceIds.join(","));
         if (params.limit !== void 0)
           query.set("limit", String(params.limit));
-        return this.request("GET", `/v1/brains/search?${query}`);
+        return this.request("GET", `/v1/knowledge/search?${query}`);
       }
     };
   }

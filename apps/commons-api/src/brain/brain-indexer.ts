@@ -1,9 +1,33 @@
 import { posix } from 'node:path';
+import { JSON_SCHEMA, load } from 'js-yaml';
 
 export type ParsedKnowledgeLink = {
   target: string;
   label?: string;
   relation: 'wikilink' | 'markdown' | 'frontmatter';
+};
+
+export type OkfTrustTier =
+  | 'unverified'
+  | 'machine-confirmed'
+  | 'human-reviewed';
+
+export type OkfDocumentAnalysis = {
+  version: '0.2';
+  kind: 'concept' | 'index' | 'log';
+  conceptId?: string;
+  conformant: boolean;
+  issues: string[];
+  type?: string;
+  description?: string;
+  resource?: string;
+  status?: 'draft' | 'stable' | 'deprecated';
+  staleAfter?: string;
+  isStale: boolean;
+  trustTier: OkfTrustTier;
+  generatedBy?: string;
+  verifiedBy: string[];
+  sourceCount: number;
 };
 
 export function decideFilesystemMerge(input: {
@@ -46,11 +70,128 @@ export function titleFromPath(path: string) {
   return posix.basename(path, posix.extname(path)).replace(/[-_]+/g, ' ');
 }
 
-export function parseMarkdownDocument(content: string) {
-  const { frontmatter, body } = parseFrontmatter(content);
+export function parseMarkdownDocument(content: string, path = 'note.md') {
+  const { frontmatter, body, error } = parseFrontmatter(content);
   const tags = collectTags(frontmatter, body);
   const links = collectLinks(body, frontmatter);
-  return { frontmatter, tags, links, body };
+  const okf = analyzeOkfDocument(path, frontmatter, body, error);
+  return { frontmatter, tags, links, body, okf };
+}
+
+/**
+ * Read-only OKF v0.2 analysis. Generic Markdown remains valid Knowledge Space
+ * content; this metadata tells callers whether a document is portable as an
+ * Open Knowledge Format concept without locking the store to that standard.
+ */
+export function analyzeOkfDocument(
+  path: string,
+  frontmatter: Record<string, unknown>,
+  body: string,
+  parseError?: string,
+  now = new Date(),
+): OkfDocumentAnalysis {
+  const filename = posix.basename(path);
+  const kind =
+    filename === 'index.md'
+      ? 'index'
+      : filename === 'log.md'
+        ? 'log'
+        : 'concept';
+  const issues: string[] = [];
+  if (parseError) issues.push(`Invalid YAML frontmatter: ${parseError}`);
+
+  if (kind === 'concept') {
+    if (!nonEmptyString(frontmatter.type)) {
+      issues.push('Concept documents require a non-empty type field');
+    }
+  } else if (kind === 'index') {
+    const keys = Object.keys(frontmatter);
+    const atBundleRoot = !path.includes('/');
+    if (
+      keys.length &&
+      (!atBundleRoot || keys.some((key) => key !== 'okf_version'))
+    ) {
+      issues.push(
+        'index.md must not contain frontmatter except okf_version at the bundle root',
+      );
+    }
+  } else {
+    if (Object.keys(frontmatter).length) {
+      issues.push('log.md must not contain frontmatter');
+    }
+    for (const match of body.matchAll(/^##\s+(.+)\s*$/gm)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(match[1].trim())) {
+        issues.push('log.md level-two headings must use YYYY-MM-DD dates');
+        break;
+      }
+    }
+  }
+
+  const generated = asRecord(frontmatter.generated);
+  if (generated && !nonEmptyString(generated.by)) {
+    issues.push('generated.by is required when generated is present');
+  }
+  const verified = normalizeRecords(frontmatter.verified);
+  if (
+    frontmatter.verified !== undefined &&
+    (!verified.length || verified.some((entry) => !nonEmptyString(entry.by)))
+  ) {
+    issues.push('Every verified entry requires a by actor');
+  }
+  const verifiedBy = verified
+    .map((entry) => stringValue(entry.by))
+    .filter((value): value is string => Boolean(value));
+  const trustTier: OkfTrustTier = verifiedBy.some((actor) =>
+    actor.startsWith('human:'),
+  )
+    ? 'human-reviewed'
+    : verifiedBy.length
+      ? 'machine-confirmed'
+      : 'unverified';
+
+  const sources = normalizeRecords(frontmatter.sources);
+  if (
+    frontmatter.sources !== undefined &&
+    (!sources.length ||
+      sources.some((source) => !nonEmptyString(source.resource)))
+  ) {
+    issues.push('Every sources entry requires a resource');
+  }
+  const statusValue = stringValue(frontmatter.status) ?? 'stable';
+  const status = ['draft', 'stable', 'deprecated'].includes(statusValue)
+    ? (statusValue as 'draft' | 'stable' | 'deprecated')
+    : undefined;
+  if (!status) issues.push('status must be draft, stable, or deprecated');
+
+  const staleAfter = dateTimeValue(frontmatter.stale_after);
+  if (frontmatter.stale_after !== undefined && !staleAfter) {
+    issues.push('stale_after must be an ISO 8601 datetime with a UTC offset');
+  }
+  if (stringValue(frontmatter.type) === 'Attested Computation') {
+    if (!nonEmptyString(frontmatter.runtime)) {
+      issues.push('Attested Computation concepts require runtime');
+    }
+  }
+
+  return {
+    version: '0.2',
+    kind,
+    ...(kind === 'concept'
+      ? { conceptId: normalizeDocumentPath(path).replace(/\.md$/i, '') }
+      : {}),
+    conformant: !issues.length,
+    issues,
+    type: stringValue(frontmatter.type),
+    description: stringValue(frontmatter.description),
+    resource: stringValue(frontmatter.resource),
+    status,
+    staleAfter,
+    isStale: Boolean(staleAfter && now.getTime() >= Date.parse(staleAfter)),
+    trustTier,
+    generatedBy: generated ? stringValue(generated.by) : undefined,
+    verifiedBy,
+    sourceCount: sources.length,
+  };
 }
 
 export function chunkMarkdown(
@@ -182,50 +323,49 @@ function parseFrontmatter(content: string) {
   if (!/^---\s*\r?\n/.test(content)) {
     return { frontmatter: {} as Record<string, unknown>, body: content };
   }
-  const end = content.indexOf('\n---', 4);
-  if (end < 0) {
-    return { frontmatter: {} as Record<string, unknown>, body: content };
+  const boundary = /^---\s*$/gm;
+  boundary.lastIndex = content.indexOf('\n') + 1;
+  const closing = boundary.exec(content);
+  if (!closing) {
+    return {
+      frontmatter: {} as Record<string, unknown>,
+      body: content,
+      error: 'missing closing --- delimiter',
+    };
   }
-  const raw = content.slice(content.indexOf('\n') + 1, end);
-  const frontmatter: Record<string, unknown> = {};
-  let listKey: string | undefined;
-  for (const sourceLine of raw.split(/\r?\n/)) {
-    const line = sourceLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    const listItem = /^-\s+(.+)$/.exec(line);
-    if (listItem && listKey) {
-      const list = Array.isArray(frontmatter[listKey])
-        ? (frontmatter[listKey] as unknown[])
-        : [];
-      list.push(parseScalar(listItem[1]));
-      frontmatter[listKey] = list;
-      continue;
+  const raw = content.slice(content.indexOf('\n') + 1, closing.index);
+  const bodyStart = content.indexOf('\n', closing.index + closing[0].length);
+  const body = bodyStart >= 0 ? content.slice(bodyStart + 1) : '';
+  try {
+    const parsed = load(raw, {
+      schema: JSON_SCHEMA,
+      json: true,
+      maxAliases: 100,
+      maxDepth: 50,
+      maxTotalMergeKeys: 1_000,
+    });
+    if (parsed === undefined || parsed === null)
+      return { frontmatter: {}, body };
+    if (!asRecord(parsed)) {
+      return {
+        frontmatter: {} as Record<string, unknown>,
+        body,
+        error: 'frontmatter must be a YAML mapping',
+      };
     }
-    const pair = /^([\w.-]+):\s*(.*)$/.exec(line);
-    if (!pair) continue;
-    listKey = pair[1];
-    frontmatter[listKey] = pair[2] ? parseScalar(pair[2]) : [];
+    const frontmatter = JSON.parse(JSON.stringify(parsed)) as Record<
+      string,
+      unknown
+    >;
+    return { frontmatter, body };
+  } catch (error) {
+    return {
+      frontmatter: {} as Record<string, unknown>,
+      body,
+      error:
+        error instanceof Error ? error.message.split('\n')[0] : 'invalid YAML',
+    };
   }
-  const bodyStart = content.indexOf('\n', end + 1);
-  return {
-    frontmatter,
-    body: bodyStart >= 0 ? content.slice(bodyStart + 1) : '',
-  };
-}
-
-function parseScalar(value: string): unknown {
-  const trimmed = value.trim().replace(/^['"]|['"]$/g, '');
-  if (/^\[(?!\[).*\]$/.test(trimmed)) {
-    return trimmed
-      .slice(1, -1)
-      .split(',')
-      .map((item) => item.trim().replace(/^['"]|['"]$/g, ''))
-      .filter(Boolean);
-  }
-  if (trimmed === 'true') return true;
-  if (trimmed === 'false') return false;
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-  return trimmed;
 }
 
 function collectTags(frontmatter: Record<string, unknown>, body: string) {
@@ -264,12 +404,66 @@ function collectLinks(content: string, frontmatter: Record<string, unknown>) {
       });
     }
   }
+  const addResource = (value: unknown, label?: string) => {
+    const target = stringValue(value);
+    if (
+      !target ||
+      /^[a-z][a-z\d+.-]*:/i.test(target) ||
+      (!target.startsWith('/') &&
+        !target.startsWith('./') &&
+        !target.startsWith('../') &&
+        !target.toLowerCase().endsWith('.md'))
+    )
+      return;
+    add({ target, label, relation: 'frontmatter' });
+  };
+  addResource(frontmatter.resource);
+  addResource(frontmatter.computation);
+  for (const source of normalizeRecords(frontmatter.sources)) {
+    addResource(
+      source.resource,
+      stringValue(source.title) ?? stringValue(source.id),
+    );
+  }
+  addResource(asRecord(frontmatter.executor)?.resource);
+  addResource(asRecord(frontmatter.attester)?.resource);
   return links.slice(0, 500);
 }
 
 function asStrings(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(asStrings);
   return typeof value === 'string' && value.trim() ? [value.trim()] : [];
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function normalizeRecords(value: unknown): Record<string, unknown>[] {
+  const values = Array.isArray(value)
+    ? value
+    : value === undefined
+      ? []
+      : [value];
+  return values
+    .map(asRecord)
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function nonEmptyString(value: unknown) {
+  return Boolean(stringValue(value));
+}
+
+function dateTimeValue(value: unknown) {
+  const candidate = stringValue(value);
+  if (!candidate || !/(?:Z|[+-]\d{2}:\d{2})$/.test(candidate)) return undefined;
+  return Number.isNaN(Date.parse(candidate)) ? undefined : candidate;
 }
 
 function safelyDecode(value: string) {

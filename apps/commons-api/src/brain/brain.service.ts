@@ -46,6 +46,10 @@ const PERMISSION_RANK: Record<KnowledgePermission, number> = {
   manage: 3,
 };
 const DEFAULT_WELCOME = `---
+type: Guide
+title: Welcome to your Commons Brain
+description: Start here to organize portable knowledge for people and agents.
+status: stable
 tags:
   - start-here
 ---
@@ -421,7 +425,7 @@ export class BrainService {
       throw new NotFoundException('Knowledge document not found');
     }
     const title = (input.title?.trim() || titleFromPath(path)).slice(0, 240);
-    const parsed = parseMarkdownDocument(input.content);
+    const parsed = parseMarkdownDocument(input.content, path);
     const contentHash = sha256(input.content);
     const trace = options.traceId
       ? { traceId: options.traceId, owned: false }
@@ -908,7 +912,7 @@ export class BrainService {
         and(eq(table.spaceId, space!.spaceId), isNull(table.deletedAt)),
     });
     if (!welcome) {
-      const parsed = parseMarkdownDocument(DEFAULT_WELCOME);
+      const parsed = parseMarkdownDocument(DEFAULT_WELCOME, 'Welcome.md');
       try {
         const document = await this.providers.resolve(space.provider).write({
           spaceId: space.spaceId,
@@ -1127,7 +1131,8 @@ export class BrainService {
     const aliasMap = buildDocumentAliasMap(documents);
     const links: Array<typeof schema.knowledgeLink.$inferInsert> = [];
     for (const document of documents) {
-      for (const link of parseMarkdownDocument(document.content).links) {
+      for (const link of parseMarkdownDocument(document.content, document.path)
+        .links) {
         const resolvedPath = resolveLinkPath(document.path, link.target);
         const direct = resolvedPath
           ? aliasMap.get(normalizeKnowledgeAlias(resolvedPath))
@@ -1337,6 +1342,7 @@ export class BrainService {
     document: typeof schema.knowledgeDocument.$inferSelect,
     includeContent = false,
   ) {
+    const okf = parseMarkdownDocument(document.content, document.path).okf;
     return {
       documentId: document.documentId,
       spaceId: document.spaceId,
@@ -1346,6 +1352,7 @@ export class BrainService {
       contentHash: document.contentHash,
       revision: document.revision,
       frontmatter: document.frontmatter ?? {},
+      okf,
       tags: document.tags,
       providerDocumentId: document.providerDocumentId,
       providerRevision: document.providerRevision,

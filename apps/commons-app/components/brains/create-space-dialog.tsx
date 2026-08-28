@@ -54,7 +54,7 @@ export function CreateSpaceDialog({
     try {
       let folder: Awaited<ReturnType<typeof chooseMarkdownFolder>> | undefined;
       if (mode === "browser_filesystem") folder = await chooseMarkdownFolder();
-      const response = await fetch("/api/brains", {
+      const response = await fetch("/api/knowledge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -72,11 +72,14 @@ export function CreateSpaceDialog({
       if (folder) {
         rememberMarkdownFolder(space.spaceId, folder.handle);
         if (folder.documents.length) {
-          const imported = await fetch(`/api/brains/${space.spaceId}/import`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ documents: folder.documents }),
-          });
+          const imported = await fetch(
+            `/api/knowledge/${space.spaceId}/import`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ documents: folder.documents }),
+            },
+          );
           const importPayload = await imported.json();
           if (!imported.ok) {
             throw new Error(

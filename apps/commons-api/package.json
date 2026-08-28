@@ -84,6 +84,7 @@
     "graphql-request": "^7.1.2",
     "helmet": "^8.2.0",
     "jose": "^6.2.2",
+    "js-yaml": "^5.2.1",
     "jszip": "^3.10.1",
     "langchain": "^1.2.34",
     "lodash": "^4.17.21",

@@ -44,7 +44,7 @@ export function SpaceAccessDialog({
 
   async function load() {
     if (!space) return;
-    const response = await fetch(`/api/brains/${space.spaceId}`, {
+    const response = await fetch(`/api/knowledge/${space.spaceId}`, {
       cache: "no-store",
     });
     const payload = await response.json();
@@ -79,14 +79,14 @@ export function SpaceAccessDialog({
       const response =
         permission === "none" && existing
           ? await fetch(
-              `/api/brains/${detail.spaceId}/grants/${existing.grantId}`,
+              `/api/knowledge/${detail.spaceId}/grants/${existing.grantId}`,
               {
                 method: "DELETE",
               },
             )
           : permission === "none"
             ? null
-            : await fetch(`/api/brains/${detail.spaceId}/grants`, {
+            : await fetch(`/api/knowledge/${detail.spaceId}/grants`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -116,7 +116,7 @@ export function SpaceAccessDialog({
     if (!detail) return;
     setBusy("future");
     try {
-      const response = await fetch(`/api/brains/${detail.spaceId}`, {
+      const response = await fetch(`/api/knowledge/${detail.spaceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ autoGrantNewAgents: checked }),

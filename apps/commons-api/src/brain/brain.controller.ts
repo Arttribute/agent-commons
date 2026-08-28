@@ -19,7 +19,7 @@ import type {
   KnowledgeProviderId,
 } from './brain.types';
 
-@Controller({ version: '1', path: 'brains' })
+@Controller({ version: '1', path: 'knowledge' })
 export class BrainController {
   constructor(private readonly brains: BrainService) {}
 

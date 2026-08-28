@@ -2216,15 +2216,15 @@ export class CommonsClient {
 
   get knowledge() {
     const spacePath = (spaceId: string) =>
-      `/v1/brains/${encodeURIComponent(spaceId)}`;
+      `/v1/knowledge/${encodeURIComponent(spaceId)}`;
     const documentPath = (spaceId: string, documentId: string) =>
       `${spacePath(spaceId)}/documents/${encodeURIComponent(documentId)}`;
     return {
       providers: (): Promise<{ data: KnowledgeProviderDefinition[] }> =>
-        this.request("GET", "/v1/brains/providers"),
+        this.request("GET", "/v1/knowledge/providers"),
 
       listSpaces: (): Promise<{ data: KnowledgeSpace[] }> =>
-        this.request("GET", "/v1/brains"),
+        this.request("GET", "/v1/knowledge"),
 
       createSpace: (params: {
         name: string;
@@ -2235,7 +2235,7 @@ export class CommonsClient {
         allAgents?: boolean;
         agentIds?: string[];
       }): Promise<{ data: KnowledgeSpace }> =>
-        this.request("POST", "/v1/brains", params),
+        this.request("POST", "/v1/knowledge", params),
 
       getSpace: (spaceId: string): Promise<{ data: KnowledgeSpace }> =>
         this.request("GET", spacePath(spaceId)),
@@ -2359,7 +2359,7 @@ export class CommonsClient {
           query.set("spaceIds", params.spaceIds.join(","));
         if (params.limit !== undefined)
           query.set("limit", String(params.limit));
-        return this.request("GET", `/v1/brains/search?${query}`);
+        return this.request("GET", `/v1/knowledge/search?${query}`);
       },
     };
   }

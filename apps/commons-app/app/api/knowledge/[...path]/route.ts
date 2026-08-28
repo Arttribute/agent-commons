@@ -14,7 +14,7 @@ async function forward(request: NextRequest, context: Context) {
     body = await request.json().catch(() => ({}));
   }
   return proxyBackend(
-    `/v1/brains/${path.map(encodeURIComponent).join("/")}${query ? `?${query}` : ""}`,
+    `/v1/knowledge/${path.map(encodeURIComponent).join("/")}${query ? `?${query}` : ""}`,
     {
       method: request.method as "GET" | "POST" | "PATCH" | "DELETE",
       body,

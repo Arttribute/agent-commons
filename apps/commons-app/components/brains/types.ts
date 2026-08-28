@@ -42,6 +42,23 @@ export type KnowledgeDocument = {
   content?: string;
   revision: number;
   frontmatter?: Record<string, unknown>;
+  okf?: {
+    version: "0.2";
+    kind: "concept" | "index" | "log";
+    conceptId?: string;
+    conformant: boolean;
+    issues: string[];
+    type?: string;
+    description?: string;
+    resource?: string;
+    status?: "draft" | "stable" | "deprecated";
+    staleAfter?: string;
+    isStale: boolean;
+    trustTier: "unverified" | "machine-confirmed" | "human-reviewed";
+    generatedBy?: string;
+    verifiedBy: string[];
+    sourceCount: number;
+  };
   tags: string[];
   contentHash: string;
   createdAt: string;

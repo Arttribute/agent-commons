@@ -128,7 +128,7 @@ export function KnowledgeSpacesView() {
   const canManage = activeSpace?.permission === "manage";
 
   const loadSpaces = useCallback(async () => {
-    const response = await fetch("/api/brains", { cache: "no-store" });
+    const response = await fetch("/api/knowledge", { cache: "no-store" });
     const payload = await response.json();
     if (!response.ok)
       throw new Error(apiMessage(payload, "Could not load knowledge"));
@@ -160,7 +160,7 @@ export function KnowledgeSpacesView() {
     if (!nextSpaceId) return;
     setDocumentsLoading(true);
     try {
-      const response = await fetch(`/api/brains/${nextSpaceId}/documents`, {
+      const response = await fetch(`/api/knowledge/${nextSpaceId}/documents`, {
         cache: "no-store",
       });
       const payload = await response.json();
@@ -182,7 +182,7 @@ export function KnowledgeSpacesView() {
 
   const loadGraph = useCallback(async (nextSpaceId: string) => {
     if (!nextSpaceId) return;
-    const response = await fetch(`/api/brains/${nextSpaceId}/graph`, {
+    const response = await fetch(`/api/knowledge/${nextSpaceId}/graph`, {
       cache: "no-store",
     });
     const payload = await response.json();
@@ -205,7 +205,7 @@ export function KnowledgeSpacesView() {
       return;
     }
     let cancelled = false;
-    fetch(`/api/brains/${spaceId}/documents/${documentId}`, {
+    fetch(`/api/knowledge/${spaceId}/documents/${documentId}`, {
       cache: "no-store",
     })
       .then(async (response) => {
@@ -245,7 +245,7 @@ export function KnowledgeSpacesView() {
     setError("");
     try {
       const response = await fetch(
-        `/api/brains/${activeSpace.spaceId}/documents/${document.documentId}`,
+        `/api/knowledge/${activeSpace.spaceId}/documents/${document.documentId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -328,7 +328,7 @@ export function KnowledgeSpacesView() {
       try {
         const params = new URLSearchParams({ query, limit: "8" });
         if (spaceId) params.set("spaceIds", spaceId);
-        const response = await fetch(`/api/brains/search?${params}`, {
+        const response = await fetch(`/api/knowledge/search?${params}`, {
           cache: "no-store",
         });
         const payload = await response.json();
@@ -350,9 +350,9 @@ export function KnowledgeSpacesView() {
 
   async function createNote(input: { path: string; title: string }) {
     if (!activeSpace) return;
-    const content = `# ${input.title}\n\n`;
+    const content = `---\ntype: Note\ntitle: ${JSON.stringify(input.title)}\nstatus: draft\n---\n\n# ${input.title}\n\n`;
     const response = await fetch(
-      `/api/brains/${activeSpace.spaceId}/documents`,
+      `/api/knowledge/${activeSpace.spaceId}/documents`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -402,7 +402,7 @@ export function KnowledgeSpacesView() {
       );
     }
     const response = await fetch(
-      `/api/brains/${activeSpace.spaceId}/documents/${document.documentId}`,
+      `/api/knowledge/${activeSpace.spaceId}/documents/${document.documentId}`,
       { method: "DELETE" },
     );
     if (!response.ok) {
@@ -437,7 +437,7 @@ export function KnowledgeSpacesView() {
         rememberMarkdownFolder(activeSpace.spaceId, selected.handle);
       }
       const response = await fetch(
-        `/api/brains/${activeSpace.spaceId}/import`,
+        `/api/knowledge/${activeSpace.spaceId}/import`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1135,6 +1135,50 @@ function Inspector({
                 </div>
               </div>
               <div>
+                <InspectorHeading icon={BookOpen} title="Knowledge format" />
+                <div className="mt-2 rounded-lg border bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-xs font-medium">
+                      {document.okf?.type ||
+                        (document.okf?.kind === "index"
+                          ? "Directory index"
+                          : document.okf?.kind === "log"
+                            ? "Update log"
+                            : "Markdown note")}
+                    </p>
+                    <Badge
+                      variant="secondary"
+                      className={cn(
+                        "shrink-0 font-normal",
+                        document.okf?.conformant && "bg-teal-50 text-teal-800",
+                      )}
+                    >
+                      {document.okf?.conformant ? "OKF 0.2" : "Markdown"}
+                    </Badge>
+                  </div>
+                  {document.okf && (
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                      <span>{formatTrustTier(document.okf.trustTier)}</span>
+                      <span>{document.okf.status || "stable"}</span>
+                      {document.okf.sourceCount > 0 && (
+                        <span>
+                          {document.okf.sourceCount} source
+                          {document.okf.sourceCount === 1 ? "" : "s"}
+                        </span>
+                      )}
+                      {document.okf.isStale && (
+                        <span className="text-amber-700">stale</span>
+                      )}
+                    </div>
+                  )}
+                  {document.okf && !document.okf.conformant && (
+                    <p className="mt-2 text-[11px] leading-4 text-amber-700">
+                      {document.okf.issues[0]}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div>
                 <InspectorHeading icon={Clock3} title="Details" />
                 <dl className="mt-2 space-y-2 text-xs">
                   <div className="flex justify-between gap-3">
@@ -1147,7 +1191,7 @@ function Inspector({
                   </div>
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted-foreground">Format</dt>
-                    <dd>Markdown</dd>
+                    <dd>{document.okf?.conformant ? "OKF 0.2" : "Markdown"}</dd>
                   </div>
                 </dl>
               </div>
@@ -1453,6 +1497,14 @@ function relativeDate(value: string) {
   if (Math.abs(seconds) < 86_400)
     return formatter.format(Math.round(seconds / 3_600), "hour");
   return formatter.format(Math.round(seconds / 86_400), "day");
+}
+
+function formatTrustTier(
+  value: NonNullable<KnowledgeDocument["okf"]>["trustTier"],
+) {
+  if (value === "human-reviewed") return "Human reviewed";
+  if (value === "machine-confirmed") return "Machine confirmed";
+  return "Unverified";
 }
 
 function apiMessage(payload: any, fallback: string) {

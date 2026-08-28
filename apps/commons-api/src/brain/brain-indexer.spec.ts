@@ -62,6 +62,110 @@ Status is #active.
     );
   });
 
+  it('parses nested OKF v0.2 provenance, trust, and lifecycle metadata', () => {
+    const parsed = parseMarkdownDocument(
+      `---
+type: Metric
+title: Weekly active users
+description: Active users in the trailing seven-day window.
+status: stable
+stale_after: 2027-01-01T00:00:00Z
+generated: { by: knowledge_compiler/v1, at: 2026-08-28T12:00:00Z }
+verified:
+  - { by: process:metrics-nightly, at: 2026-08-28T13:00:00Z }
+  - { by: human:amina, at: 2026-08-28T14:00:00Z }
+sources:
+  - id: metric-policy
+    resource: /Reference/Metric policy.md
+    title: Metric policy
+    author: team:data
+---
+# Definition
+
+See [the computation](/Computations/WAU.md).[^metric-policy]
+`,
+      'Metrics/Weekly active users.md',
+    );
+
+    expect(parsed.frontmatter.sources).toEqual([
+      expect.objectContaining({
+        id: 'metric-policy',
+        resource: '/Reference/Metric policy.md',
+      }),
+    ]);
+    expect(parsed.okf).toMatchObject({
+      version: '0.2',
+      kind: 'concept',
+      conceptId: 'Metrics/Weekly active users',
+      conformant: true,
+      type: 'Metric',
+      status: 'stable',
+      trustTier: 'human-reviewed',
+      sourceCount: 1,
+      isStale: false,
+    });
+    expect(parsed.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: '/Reference/Metric policy.md',
+          relation: 'frontmatter',
+        }),
+        expect.objectContaining({
+          target: '/Computations/WAU.md',
+          relation: 'markdown',
+        }),
+      ]),
+    );
+  });
+
+  it('keeps generic Markdown readable while explaining OKF incompatibility', () => {
+    const markdown = parseMarkdownDocument('# Plain note', 'Notes/Plain.md');
+    expect(markdown.okf).toMatchObject({
+      conformant: false,
+      issues: ['Concept documents require a non-empty type field'],
+    });
+
+    const malformed = parseMarkdownDocument(
+      '---\ntype: [broken\n---\n# Note',
+      'Notes/Broken.md',
+    );
+    expect(malformed.body).toBe('# Note');
+    expect(malformed.okf.conformant).toBe(false);
+    expect(malformed.okf.issues[0]).toMatch(/Invalid YAML frontmatter/);
+  });
+
+  it('recognizes OKF index and log reserved documents', () => {
+    expect(
+      parseMarkdownDocument('---\nokf_version: "0.2"\n---\n# Index', 'index.md')
+        .okf,
+    ).toMatchObject({ kind: 'index', conformant: true });
+    expect(
+      parseMarkdownDocument(
+        '# Update log\n\n## Recently\n* Added note',
+        'log.md',
+      ).okf,
+    ).toMatchObject({
+      kind: 'log',
+      conformant: false,
+      issues: ['log.md level-two headings must use YYYY-MM-DD dates'],
+    });
+  });
+
+  it('does not turn an OKF source scope descriptor into a broken graph link', () => {
+    const parsed = parseMarkdownDocument(
+      `---
+type: Dataset
+sources:
+  - resource: all queries in BigQuery project acme
+---
+# Dataset
+`,
+      'Data/Dataset.md',
+    );
+    expect(parsed.okf.conformant).toBe(true);
+    expect(parsed.links).toEqual([]);
+  });
+
   it('resolves relative links while retaining Obsidian-style aliases', () => {
     expect(resolveLinkPath('Projects/Launch/Overview.md', '../Brief')).toBe(
       'Projects/Brief.md',
