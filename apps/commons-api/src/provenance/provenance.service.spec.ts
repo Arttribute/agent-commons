@@ -261,7 +261,7 @@ describe('ProvenanceService', () => {
     const bundle = await service.buildBundle(traceId);
 
     expect(
-      bundle.entities.find((entity) => entity.id === 'workflow:execution-1'),
+      bundle.entities?.find((entity) => entity.id === 'workflow:execution-1'),
     ).toMatchObject({ role: 'ext:agentcommons:runtime' });
   });
 });
