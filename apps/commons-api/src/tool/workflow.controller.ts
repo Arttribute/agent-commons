@@ -356,10 +356,7 @@ export class WorkflowController {
       body.approvalToken,
       body.approvalData,
       workflowId,
-      {
-        id: resolveCallerId(req),
-        type: (req as any).principal?.principalType ?? 'human',
-      },
+      this.resolveReviewer(req),
     );
     return { success: true, executionId, action: 'approved' };
   }
@@ -384,10 +381,7 @@ export class WorkflowController {
       body.approvalToken,
       body.reason,
       workflowId,
-      {
-        id: resolveCallerId(req),
-        type: (req as any).principal?.principalType ?? 'human',
-      },
+      this.resolveReviewer(req),
     );
     return { success: true, executionId, action: 'rejected' };
   }
@@ -509,5 +503,25 @@ export class WorkflowController {
     }
     const resolvedHost = Array.isArray(host) ? host[0] : host;
     return `${proto}://${resolvedHost}/v1/workflows/webhooks/${token}`;
+  }
+
+  private resolveReviewer(req: Request): {
+    id?: string;
+    type: 'user' | 'agent' | 'service';
+  } {
+    const principalType = (req as any).principal?.principalType;
+    const delegatedUser =
+      req.headers['x-owner-id'] ?? req.headers['x-initiator'];
+    return {
+      id: resolveCallerId(req),
+      type:
+        principalType === 'service' && delegatedUser
+          ? 'user'
+          : principalType === 'agent'
+            ? 'agent'
+            : principalType === 'service'
+              ? 'service'
+              : 'user',
+    };
   }
 }
