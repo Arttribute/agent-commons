@@ -247,7 +247,7 @@ describe('ProvenanceService', () => {
               eaaAction: {
                 id: `urn:agentcommons:event:${traceId}:1`,
                 type: 'verify',
-                performedBy: 'workflow:execution-1',
+                performedBy: 'service:reviewer@example.com',
                 timestamp: startedAt.toISOString(),
                 inputs: [],
                 outputs: [],
@@ -261,7 +261,9 @@ describe('ProvenanceService', () => {
     const bundle = await service.buildBundle(traceId);
 
     expect(
-      bundle.entities?.find((entity) => entity.id === 'workflow:execution-1'),
+      bundle.entities?.find(
+        (entity) => entity.id === 'service:reviewer@example.com',
+      ),
     ).toMatchObject({ role: 'ext:agentcommons:runtime' });
   });
 });
