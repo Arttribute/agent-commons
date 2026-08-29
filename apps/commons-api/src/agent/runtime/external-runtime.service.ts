@@ -24,6 +24,7 @@ export type RuntimeRunInput = {
   parentSessionId?: string;
   stream?: boolean;
   attachments?: Array<{ fileId: string }>;
+  knowledgeSpaceIds?: string[];
 };
 
 @Injectable()
@@ -206,8 +207,16 @@ export class ExternalRuntimeService {
               },
             );
           }
+          const selectedKnowledgeSpaceIds = validKnowledgeSpaceIds(
+            props.knowledgeSpaceIds,
+          );
           const instruction = [
             userText,
+            selectedKnowledgeSpaceIds.length
+              ? `The user explicitly referenced these Agent Commons Knowledge Space IDs for this turn: ${JSON.stringify(
+                  selectedKnowledgeSpaceIds,
+                )}. Use the platform Knowledge tools with these exact spaceIds before answering when stored context is relevant.`
+              : '',
             memoryBlock,
             sharedMemoryBlock,
             skillsBlock,
@@ -518,7 +527,9 @@ export class ExternalRuntimeService {
       .slice(0, 25)
       .map(
         (skill) =>
-          `- ${skill.name} (slug: ${skill.slug})${skill.description ? ` — ${skill.description}` : ''}`,
+          `- ${skill.name} (slug: ${skill.slug})${
+            skill.description ? ` — ${skill.description}` : ''
+          }`,
       );
     return [
       '## Agent skills',
@@ -575,4 +586,16 @@ export class ExternalRuntimeService {
       return `Waiting for ${status.slice(12).replace(/_/g, ' ')}`;
     return status ? status.replace(/_/g, ' ') : 'Agent runtime is working';
   }
+}
+
+function validKnowledgeSpaceIds(values?: string[]) {
+  return [
+    ...new Set(
+      (values ?? [])
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter((value) => /^[a-zA-Z0-9_-]{1,160}$/.test(value))
+        .slice(0, 20),
+    ),
+  ];
 }

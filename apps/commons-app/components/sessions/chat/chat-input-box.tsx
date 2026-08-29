@@ -13,6 +13,7 @@ import {
   Loader2,
   Mic,
   Monitor,
+  Network,
   Plus,
   ShieldCheck,
   X,
@@ -33,6 +34,9 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -72,6 +76,13 @@ type UploadedAttachment = {
 type ComputerConfigState = {
   enabled?: boolean;
   allowUserSelect?: boolean;
+};
+
+type KnowledgeSpaceOption = {
+  spaceId: string;
+  name: string;
+  permission?: "read" | "write" | "manage";
+  counts?: { documents?: number };
 };
 
 export type ExternalComposerPrompt = {
@@ -129,6 +140,11 @@ export default function ChatInputBox({
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [knowledgeSpaces, setKnowledgeSpaces] = useState<
+    KnowledgeSpaceOption[]
+  >([]);
+  const [knowledgeSpaceIds, setKnowledgeSpaceIds] = useState<string[]>([]);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("auto");
   const [provenance, setProvenance] = useState<ProvenancePreferences>({
@@ -142,6 +158,30 @@ export default function ChatInputBox({
   useEffect(() => {
     setProvenance(readProvenancePreferences());
   }, []);
+
+  useEffect(() => {
+    if (isLaunchMode || !userId) return;
+    let cancelled = false;
+    setKnowledgeLoading(true);
+    fetch("/api/knowledge", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || cancelled) return;
+        const spaces = Array.isArray(payload?.data) ? payload.data : [];
+        setKnowledgeSpaces(spaces);
+        setKnowledgeSpaceIds((current) =>
+          current.filter((id) =>
+            spaces.some((space: KnowledgeSpaceOption) => space.spaceId === id),
+          ),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setKnowledgeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLaunchMode, userId]);
 
   const updateProvenance = (next: ProvenancePreferences) => {
     setProvenance(next);
@@ -217,7 +257,9 @@ export default function ChatInputBox({
       }
     },
     onToolStart: (toolName, input) => {
-      const activityId = `tool:${toolName || "tool"}:${++activitySequenceRef.current}`;
+      const activityId = `tool:${
+        toolName || "tool"
+      }:${++activitySequenceRef.current}`;
       const queue = runningToolActivitiesRef.current.get(toolName) ?? [];
       runningToolActivitiesRef.current.set(toolName, [...queue, activityId]);
       const parsedArgs = safeParseArgs(input);
@@ -374,7 +416,9 @@ export default function ChatInputBox({
     },
     onAgentStep: (event) => {
       upsertStreamingActivity({
-        id: `agent-step:${event.payload?.stepId ?? ++activitySequenceRef.current}`,
+        id: `agent-step:${
+          event.payload?.stepId ?? ++activitySequenceRef.current
+        }`,
         kind: "status",
         stage: "agent_step",
         title:
@@ -507,6 +551,7 @@ export default function ChatInputBox({
       sizeBytes: attachment.sizeBytes,
       textPreview: attachment.textPreview,
     }));
+    const selectedKnowledgeSpaceIds = [...knowledgeSpaceIds];
     setInputText("");
     setOutOfCredits(false);
     previewUrlsRef.current.forEach((previewUrl) =>
@@ -514,6 +559,7 @@ export default function ChatInputBox({
     );
     previewUrlsRef.current.clear();
     setAttachments([]);
+    setKnowledgeSpaceIds([]);
     accumulatedRef.current = "";
     runningToolActivitiesRef.current.clear();
     activityArgsRef.current.clear();
@@ -523,7 +569,11 @@ export default function ChatInputBox({
     addMessage({
       role: "human",
       content: userMessage,
-      metadata: { attachments: messageAttachments, computerRequest },
+      metadata: {
+        attachments: messageAttachments,
+        computerRequest,
+        knowledgeSpaceIds: selectedKnowledgeSpaceIds,
+      },
       timestamp: new Date().toISOString(),
     });
 
@@ -545,6 +595,7 @@ export default function ChatInputBox({
         fileId: attachment.fileId,
       })),
       computerRequest,
+      knowledgeSpaceIds: selectedKnowledgeSpaceIds,
       reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
       provenance,
     });
@@ -797,6 +848,37 @@ export default function ChatInputBox({
           ))}
         </div>
       )}
+      {knowledgeSpaceIds.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+          {knowledgeSpaceIds.map((spaceId) => {
+            const space = knowledgeSpaces.find(
+              (candidate) => candidate.spaceId === spaceId,
+            );
+            if (!space) return null;
+            return (
+              <span
+                key={spaceId}
+                className="flex max-w-full items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-2 py-1 text-xs text-teal-900"
+              >
+                <Network className="h-3.5 w-3.5 shrink-0" />
+                <span className="max-w-44 truncate">{space.name}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setKnowledgeSpaceIds((current) =>
+                      current.filter((id) => id !== spaceId),
+                    )
+                  }
+                  className="rounded p-0.5 text-teal-700 hover:bg-teal-100"
+                  aria-label={`Remove ${space.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      )}
       {voice.state !== "idle" ? (
         <VoiceRecorderPanel
           state={voice.state}
@@ -840,7 +922,11 @@ export default function ChatInputBox({
                       <Plus className="h-4 w-4" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="top" className="w-52">
+                  <DropdownMenuContent
+                    align="start"
+                    side="top"
+                    className="w-52"
+                  >
                     <DropdownMenuItem onSelect={openFilePicker}>
                       <HardDriveUpload className="mr-2 h-4 w-4" />
                       Upload from device
@@ -849,6 +935,64 @@ export default function ChatInputBox({
                       <LibraryBig className="mr-2 h-4 w-4" />
                       Choose from Library
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <Network className="mr-2 h-4 w-4" />
+                        Reference Knowledge
+                        {knowledgeSpaceIds.length > 0 && (
+                          <span className="ml-auto mr-1 text-xs text-teal-700">
+                            {knowledgeSpaceIds.length}
+                          </span>
+                        )}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-64">
+                        <DropdownMenuLabel>
+                          <span className="block text-sm">
+                            Knowledge Spaces
+                          </span>
+                          <span className="block text-[11px] font-normal text-muted-foreground">
+                            Use selected spaces for this message
+                          </span>
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {knowledgeSpaces.map((space) => (
+                          <DropdownMenuCheckboxItem
+                            key={space.spaceId}
+                            checked={knowledgeSpaceIds.includes(space.spaceId)}
+                            onCheckedChange={(checked) =>
+                              setKnowledgeSpaceIds((current) =>
+                                checked
+                                  ? [...new Set([...current, space.spaceId])]
+                                  : current.filter(
+                                      (id) => id !== space.spaceId,
+                                    ),
+                              )
+                            }
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate">
+                                {space.name}
+                              </span>
+                              <span className="block text-[11px] text-muted-foreground">
+                                {space.counts?.documents || 0} notes
+                              </span>
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                        {knowledgeLoading && (
+                          <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Loading spaces
+                          </div>
+                        )}
+                        {!knowledgeLoading && !knowledgeSpaces.length && (
+                          <p className="px-2 py-3 text-xs text-muted-foreground">
+                            No Knowledge Spaces available
+                          </p>
+                        )}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 {canUseComputer && (
@@ -897,7 +1041,11 @@ export default function ChatInputBox({
                         )}
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" side="top" className="w-72">
+                    <DropdownMenuContent
+                      align="start"
+                      side="top"
+                      className="w-72"
+                    >
                       <DropdownMenuLabel>
                         <span className="block text-sm">Provenance</span>
                         <span className="block text-xs font-normal text-muted-foreground">
@@ -1088,8 +1236,8 @@ function AttachmentChip({
           {attachment.status === "uploading"
             ? "Uploading..."
             : attachment.status === "error"
-              ? attachment.error || "Upload failed"
-              : formatBytes(attachment.sizeBytes)}
+            ? attachment.error || "Upload failed"
+            : formatBytes(attachment.sizeBytes)}
         </span>
       </span>
       {attachment.status === "uploading" && (
@@ -1131,7 +1279,9 @@ function statusEventToActivity(event: StreamEvent) {
   }
   const status = normalizeActivityStatus(event.status);
   return {
-    id: `status:${stage}:${event.payload?.taskId ?? event.payload?.computerId ?? ""}`,
+    id: `status:${stage}:${
+      event.payload?.taskId ?? event.payload?.computerId ?? ""
+    }`,
     kind: stageToActivityKind(stage),
     stage,
     title: event.message ?? titleFromStage(stage, status),
@@ -1155,8 +1305,8 @@ function toolProgressEventToActivity(event: StreamEvent) {
     status === "failed"
       ? "failed"
       : status === "completed"
-        ? "completed"
-        : "running";
+      ? "completed"
+      : "running";
   return {
     id: progressActivityIdForEvent(event),
     kind:
@@ -1184,7 +1334,9 @@ function progressActivityIdForEvent(event: StreamEvent) {
     event.payload?.progressId ??
     event.payload?.commonOsMessageId ??
     event.payload?.computerId ??
-    `${event.toolName ?? event.tool ?? event.name ?? "tool"}:${event.stage ?? "progress"}`;
+    `${event.toolName ?? event.tool ?? event.name ?? "tool"}:${
+      event.stage ?? "progress"
+    }`;
   return `tool-progress:${key}`;
 }
 

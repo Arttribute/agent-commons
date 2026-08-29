@@ -18,6 +18,9 @@ describe('Knowledge Markdown indexer', () => {
         'Projects/Launch plan.md',
       );
       expect(titleFromPath('Projects/launch-plan.md')).toBe('launch plan');
+      expect(normalizeDocumentPath('Projects/Overview\\.md')).toBe(
+        'Projects/Overview.md',
+      );
     });
 
     it.each(['../secret.md', 'Projects/../../secret', '%2e%2e/secret'])(
@@ -69,6 +72,17 @@ Status is #active.
         }),
       ]),
     );
+  });
+
+  it('recovers wikilinks escaped by a visual Markdown serializer', () => {
+    const parsed = parseMarkdownDocument(
+      String.raw`See \[\[30-decisions/2026-08-24-minimum-lot-size\]\].`,
+    );
+    expect(parsed.links).toContainEqual({
+      target: '30-decisions/2026-08-24-minimum-lot-size',
+      label: undefined,
+      relation: 'wikilink',
+    });
   });
 
   it('parses nested OKF v0.2 provenance, trust, and lifecycle metadata', () => {

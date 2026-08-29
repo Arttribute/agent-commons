@@ -76,6 +76,10 @@ import type {
   KnowledgeSearchResult,
   KnowledgeSpace,
 } from "./types";
+import {
+  knowledgeFileName,
+  normalizeKnowledgePathInput,
+} from "./knowledge-path";
 
 const KnowledgeGraphView = dynamic(
   () => import("./knowledge-graph").then((module) => module.KnowledgeGraphView),
@@ -107,9 +111,14 @@ export function KnowledgeSpacesView() {
   const [editorMode, setEditorMode] = useState<EditorMode>("visual");
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [draft, setDraft] = useState("");
-  const [draftTitle, setDraftTitle] = useState("");
   const [draftPath, setDraftPath] = useState("");
   const draftRef = useRef({ content: "", title: "", path: "" });
+  const documentRef = useRef<KnowledgeDocument | null>(null);
+  const activeSpaceRef = useRef<KnowledgeSpace | null>(null);
+  const canEditRef = useRef(false);
+  const dirtyRef = useRef(false);
+  const saveInFlightRef = useRef<Promise<boolean> | null>(null);
+  const saveAgainRef = useRef(false);
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [loading, setLoading] = useState(true);
@@ -139,10 +148,13 @@ export function KnowledgeSpacesView() {
     connectedFolderIds.has(activeSpace.spaceId);
   const canEdit = Boolean(canWrite && sourceConnected);
   const canManage = activeSpace?.permission === "manage";
+  documentRef.current = document;
+  activeSpaceRef.current = activeSpace;
+  canEditRef.current = canEdit;
 
   const loadSpaces = useCallback(async () => {
     const response = await fetch("/api/knowledge", { cache: "no-store" });
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     if (!response.ok)
       throw new Error(apiMessage(payload, "Could not load knowledge"));
     const next = Array.isArray(payload.data) ? payload.data : [];
@@ -176,7 +188,7 @@ export function KnowledgeSpacesView() {
       const response = await fetch(`/api/knowledge/${nextSpaceId}/documents`, {
         cache: "no-store",
       });
-      const payload = await response.json();
+      const payload = await readApiPayload(response);
       if (!response.ok)
         throw new Error(apiMessage(payload, "Could not load notes"));
       const next = Array.isArray(payload.data) ? payload.data : [];
@@ -198,7 +210,7 @@ export function KnowledgeSpacesView() {
     const response = await fetch(`/api/knowledge/${nextSpaceId}/graph`, {
       cache: "no-store",
     });
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     if (response.ok) setGraph(payload.data || { nodes: [], edges: [] });
   }, []);
 
@@ -207,7 +219,7 @@ export function KnowledgeSpacesView() {
     const response = await fetch(`/api/knowledge/${nextSpaceId}/folders`, {
       cache: "no-store",
     });
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     if (!response.ok)
       throw new Error(apiMessage(payload, "Could not load folders"));
     setFolders(Array.isArray(payload.data) ? payload.data : []);
@@ -242,20 +254,21 @@ export function KnowledgeSpacesView() {
       cache: "no-store",
     })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readApiPayload(response);
         if (!response.ok)
           throw new Error(apiMessage(payload, "Could not open note"));
         if (cancelled) return;
         const next = payload.data as KnowledgeDocument;
+        documentRef.current = next;
         setDocument(next);
         setDraft(next.content || "");
-        setDraftTitle(next.title);
         setDraftPath(next.path);
         draftRef.current = {
           content: next.content || "",
           title: next.title,
           path: next.path,
         };
+        dirtyRef.current = false;
         setDirty(false);
         setSaveState("idle");
       })
@@ -272,75 +285,109 @@ export function KnowledgeSpacesView() {
   }, [documentId, spaceId]);
 
   const saveDocument = useCallback(async () => {
-    if (!dirty) return true;
-    if (!document || !activeSpace || !canEdit) return false;
-    const captured = { ...draftRef.current };
-    setSaveState("saving");
-    setError("");
-    try {
-      const response = await fetch(
-        `/api/knowledge/${activeSpace.spaceId}/documents/${document.documentId}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            path: captured.path,
-            title: captured.title,
-            content: captured.content,
-            expectedRevision: document.revision,
-            providerRevision:
-              activeSpace.provider === "browser_filesystem"
-                ? new Date().toISOString()
-                : undefined,
-          }),
-        },
-      );
-      const payload = await response.json();
-      if (!response.ok)
-        throw new Error(apiMessage(payload, "Could not save note"));
-      const saved = payload.data as KnowledgeDocument;
-      setDocument(saved);
-      setDocuments((items) =>
-        items
-          .map((item) =>
-            item.documentId === saved.documentId
-              ? { ...item, ...saved, content: undefined }
-              : item,
-          )
-          .sort((left, right) => left.path.localeCompare(right.path)),
-      );
-      if (activeSpace.provider === "browser_filesystem") {
-        await writeConnectedNote(
-          activeSpace.spaceId,
-          saved.path,
-          captured.content,
-        );
-        if (document.path !== saved.path) {
-          await removeConnectedNote(activeSpace.spaceId, document.path).catch(
-            () => false,
+    if (saveInFlightRef.current) {
+      saveAgainRef.current = true;
+      return saveInFlightRef.current;
+    }
+
+    const run = async () => {
+      let succeeded = true;
+      do {
+        saveAgainRef.current = false;
+        if (!dirtyRef.current) break;
+        const currentDocument = documentRef.current;
+        const currentSpace = activeSpaceRef.current;
+        if (!currentDocument || !currentSpace || !canEditRef.current) {
+          return false;
+        }
+        const captured = { ...draftRef.current };
+        setSaveState("saving");
+        setError("");
+        try {
+          const response = await fetch(
+            `/api/knowledge/${currentSpace.spaceId}/documents/${currentDocument.documentId}`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                path: normalizeKnowledgePathInput(captured.path),
+                title: captured.title,
+                content: captured.content,
+                expectedRevision: currentDocument.revision,
+                providerRevision:
+                  currentSpace.provider === "browser_filesystem"
+                    ? new Date().toISOString()
+                    : undefined,
+              }),
+            },
+          );
+          const payload = await readApiPayload(response);
+          if (!response.ok)
+            throw new Error(apiMessage(payload, "Could not save note"));
+          const saved = payload.data as KnowledgeDocument;
+          documentRef.current = saved;
+          setDocument(saved);
+          setDocuments((items) =>
+            items
+              .map((item) =>
+                item.documentId === saved.documentId
+                  ? { ...item, ...saved, content: undefined }
+                  : item,
+              )
+              .sort((left, right) => left.path.localeCompare(right.path)),
+          );
+          if (currentSpace.provider === "browser_filesystem") {
+            await writeConnectedNote(
+              currentSpace.spaceId,
+              saved.path,
+              captured.content,
+            );
+            if (currentDocument.path !== saved.path) {
+              await removeConnectedNote(
+                currentSpace.spaceId,
+                currentDocument.path,
+              ).catch(() => false);
+            }
+          }
+          const unchanged =
+            draftRef.current.content === captured.content &&
+            draftRef.current.title === captured.title &&
+            draftRef.current.path === captured.path;
+          if (unchanged) {
+            dirtyRef.current = false;
+            setDirty(false);
+          } else {
+            saveAgainRef.current = true;
+          }
+          setSaveState("saved");
+          void loadGraph(currentSpace.spaceId);
+        } catch (cause) {
+          succeeded = false;
+          setSaveState("error");
+          setError(
+            cause instanceof Error ? cause.message : "Could not save note",
           );
         }
+      } while (succeeded && (saveAgainRef.current || dirtyRef.current));
+      return succeeded;
+    };
+
+    const operation = run();
+    saveInFlightRef.current = operation;
+    try {
+      return await operation;
+    } finally {
+      if (saveInFlightRef.current === operation) {
+        saveInFlightRef.current = null;
       }
-      const unchanged =
-        draftRef.current.content === captured.content &&
-        draftRef.current.title === captured.title &&
-        draftRef.current.path === captured.path;
-      if (unchanged) setDirty(false);
-      setSaveState("saved");
-      void loadGraph(activeSpace.spaceId);
-      return true;
-    } catch (cause) {
-      setSaveState("error");
-      setError(cause instanceof Error ? cause.message : "Could not save note");
-      return false;
     }
-  }, [activeSpace, canEdit, dirty, document, loadGraph]);
+  }, [loadGraph]);
 
   useEffect(() => {
     if (!dirty) return;
-    const timer = window.setTimeout(() => void saveDocument(), 900);
+    const timer = window.setTimeout(() => void saveDocument(), 1_200);
     return () => window.clearTimeout(timer);
-  }, [dirty, draft, draftPath, draftTitle, saveDocument]);
+  }, [dirty, draft, saveDocument]);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -367,7 +414,7 @@ export function KnowledgeSpacesView() {
         const response = await fetch(`/api/knowledge/search?${params}`, {
           cache: "no-store",
         });
-        const payload = await response.json();
+        const payload = await readApiPayload(response);
         setSearchResults(response.ok ? payload.data?.results || [] : []);
       } finally {
         setSearching(false);
@@ -376,11 +423,10 @@ export function KnowledgeSpacesView() {
     return () => window.clearTimeout(timer);
   }, [search, spaceId]);
 
-  function updateDraft(kind: "content" | "title" | "path", value: string) {
-    draftRef.current = { ...draftRef.current, [kind]: value };
-    if (kind === "content") setDraft(value);
-    if (kind === "title") setDraftTitle(value);
-    if (kind === "path") setDraftPath(value);
+  function updateDraft(value: string) {
+    draftRef.current = { ...draftRef.current, content: value };
+    setDraft(value);
+    dirtyRef.current = true;
     setDirty(true);
   }
 
@@ -389,7 +435,9 @@ export function KnowledgeSpacesView() {
     if (!sourceConnected) {
       throw new Error("Reconnect this folder before creating a note.");
     }
-    const content = `---\ntype: Note\ntitle: ${JSON.stringify(input.title)}\nstatus: draft\n---\n\n# ${input.title}\n\n`;
+    const content = `---\ntype: Note\ntitle: ${JSON.stringify(
+      input.title,
+    )}\nstatus: draft\n---\n\n# ${input.title}\n\n`;
     const response = await fetch(
       `/api/knowledge/${activeSpace.spaceId}/documents`,
       {
@@ -405,7 +453,7 @@ export function KnowledgeSpacesView() {
         }),
       },
     );
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     if (!response.ok)
       throw new Error(apiMessage(payload, "Could not create note"));
     const created = payload.data as KnowledgeDocument;
@@ -455,7 +503,7 @@ export function KnowledgeSpacesView() {
       `/api/knowledge/${target.spaceId}/documents/${target.documentId}`,
       { cache: "no-store" },
     );
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     if (!response.ok)
       throw new Error(apiMessage(payload, "Could not open note"));
     return payload.data as KnowledgeDocument;
@@ -467,19 +515,20 @@ export function KnowledgeSpacesView() {
       `/api/knowledge/${activeSpace.spaceId}/documents/${documentId}`,
       { cache: "no-store" },
     );
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     if (!response.ok)
       throw new Error(apiMessage(payload, "Could not refresh note"));
     const next = payload.data as KnowledgeDocument;
+    documentRef.current = next;
     setDocument(next);
     setDraft(next.content || "");
-    setDraftTitle(next.title);
     setDraftPath(next.path);
     draftRef.current = {
       content: next.content || "",
       title: next.title,
       path: next.path,
     };
+    dirtyRef.current = false;
     setDirty(false);
   }
 
@@ -488,11 +537,15 @@ export function KnowledgeSpacesView() {
     nextPath: string,
     nextTitle = target.title,
   ) {
+    nextPath = normalizeKnowledgePathInput(nextPath);
     if (!activeSpace || nextPath === target.path) return;
     setError("");
     const selectedTarget = target.documentId === document?.documentId;
     const hadUnsavedChanges = selectedTarget && dirty;
-    if (selectedTarget) setDirty(false);
+    if (selectedTarget) {
+      dirtyRef.current = false;
+      setDirty(false);
+    }
     try {
       const detail = await documentDetail(target);
       let movedLocal = false;
@@ -526,7 +579,7 @@ export function KnowledgeSpacesView() {
           }),
         },
       );
-      const payload = await response.json();
+      const payload = await readApiPayload(response);
       if (!response.ok) {
         if (movedLocal) {
           await moveConnectedEntry(
@@ -540,19 +593,23 @@ export function KnowledgeSpacesView() {
       }
       if (target.documentId === document?.documentId) {
         const saved = payload.data as KnowledgeDocument;
+        documentRef.current = saved;
         setDocument(saved);
         setDraftPath(saved.path);
-        setDraftTitle(saved.title);
         draftRef.current = {
           ...draftRef.current,
           path: saved.path,
           title: saved.title,
         };
+        dirtyRef.current = false;
         setDirty(false);
       }
       await refreshActiveSpace();
     } catch (cause) {
-      if (hadUnsavedChanges) setDirty(true);
+      if (hadUnsavedChanges) {
+        dirtyRef.current = true;
+        setDirty(true);
+      }
       setError(cause instanceof Error ? cause.message : "Could not move note");
     }
   }
@@ -564,7 +621,7 @@ export function KnowledgeSpacesView() {
     const name = cleanEntryName(requestedName).replace(/\.md$/i, "");
     if (!name) return;
     const parent = parentPath(target.path);
-    await updateDocumentPath(target, joinPath(parent, `${name}.md`), name);
+    await updateDocumentPath(target, joinPath(parent, `${name}.md`));
   }
 
   async function moveDocument(
@@ -600,7 +657,7 @@ export function KnowledgeSpacesView() {
           body: JSON.stringify({ path }),
         },
       );
-      const payload = await response.json();
+      const payload = await readApiPayload(response);
       if (!response.ok) {
         if (createdLocally) {
           await removeConnectedFolder(activeSpace.spaceId, path).catch(
@@ -654,7 +711,7 @@ export function KnowledgeSpacesView() {
           body: JSON.stringify({ path: nextPath }),
         },
       );
-      const payload = await response.json();
+      const payload = await readApiPayload(response);
       if (!response.ok) {
         if (movedLocal) {
           await moveConnectedEntry(
@@ -706,7 +763,7 @@ export function KnowledgeSpacesView() {
         `/api/knowledge/${activeSpace.spaceId}/folders/${target.folderId}`,
         { method: "DELETE" },
       );
-      const payload = await response.json().catch(() => null);
+      const payload = await readApiPayload(response);
       if (!response.ok)
         throw new Error(apiMessage(payload, "Could not delete folder"));
       if (
@@ -735,7 +792,10 @@ export function KnowledgeSpacesView() {
     if (!target || !activeSpace) return;
     if (
       !window.confirm(
-        `Delete “${target.title}”? Its revision history remains in provenance.`,
+        `Delete “${knowledgeFileName(
+          target.path,
+          true,
+        )}”? Its revision history remains in provenance.`,
       )
     )
       return;
@@ -754,7 +814,7 @@ export function KnowledgeSpacesView() {
           `/api/knowledge/${activeSpace.spaceId}/documents/${target.documentId}`,
           { cache: "no-store" },
         );
-        const payload = await detail.json();
+        const payload = await readApiPayload(detail);
         sourceContent = payload?.data?.content || "";
       }
       removedLocal = await removeConnectedNote(
@@ -812,19 +872,25 @@ export function KnowledgeSpacesView() {
           }),
         },
       );
-      const payload = await response.json();
+      const payload = await readApiPayload(response);
       if (!response.ok)
         throw new Error(apiMessage(payload, "Could not import folder"));
       const result = payload.data;
       setNotice(
-        `Folder synced: ${result.created} created, ${result.updated} updated, ${result.unchanged} unchanged${result.folders ? `, ${result.folders} folders ready` : ""}${result.remoteKept ? `, ${result.remoteKept} newer agent edits kept` : ""}${result.failed?.length ? `, ${result.failed.length} conflicts need review` : ""}.`,
+        `Folder synced: ${result.created} created, ${result.updated} updated, ${
+          result.unchanged
+        } unchanged${
+          result.folders ? `, ${result.folders} folders ready` : ""
+        }${
+          result.remoteKept
+            ? `, ${result.remoteKept} newer agent edits kept`
+            : ""
+        }${
+          result.failed?.length
+            ? `, ${result.failed.length} conflicts need review`
+            : ""
+        }.`,
       );
-      await Promise.all([
-        loadDocuments(activeSpace.spaceId),
-        loadFolders(activeSpace.spaceId),
-        loadGraph(activeSpace.spaceId),
-        loadSpaces(),
-      ]);
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) {
         setError(
@@ -832,14 +898,41 @@ export function KnowledgeSpacesView() {
         );
       }
     } finally {
+      if (activeSpace) {
+        await refreshActiveSpace().catch(() => undefined);
+      }
       setSyncing(false);
     }
+  }
+
+  async function selectDocument(nextDocumentId: string, nextView = view) {
+    if (nextDocumentId === documentId) {
+      setView(nextView);
+      return;
+    }
+    if (dirtyRef.current && !(await saveDocument())) return;
+    setDocumentId(nextDocumentId);
+    setView(nextView);
+  }
+
+  async function selectSpace(nextSpaceId: string) {
+    if (nextSpaceId === spaceId) return;
+    if (dirtyRef.current && !(await saveDocument())) return;
+    setSpaceId(nextSpaceId);
   }
 
   async function selectSearchResult(result: KnowledgeSearchResult) {
     setSearch("");
     setSearchResults([]);
-    if (result.spaceId !== spaceId) setSpaceId(result.spaceId);
+    if (dirtyRef.current && !(await saveDocument())) return;
+    if (result.spaceId !== spaceId) {
+      setSpaceId(result.spaceId);
+      await Promise.all([
+        loadDocuments(result.spaceId),
+        loadFolders(result.spaceId),
+        loadGraph(result.spaceId),
+      ]);
+    }
     setDocumentId(result.documentId);
     setView("notes");
   }
@@ -929,7 +1022,11 @@ export function KnowledgeSpacesView() {
                         </span>
                         <span className="block truncate text-[11px] text-muted-foreground">
                           {activeSpace
-                            ? `${activeSpace.counts?.documents || 0} notes · ${activeSpace.provider === "native" ? "Commons native" : "Connected folder"}`
+                            ? `${activeSpace.counts?.documents || 0} notes · ${
+                                activeSpace.provider === "native"
+                                  ? "Commons native"
+                                  : "Connected folder"
+                              }`
                             : "Select a space"}
                         </span>
                       </span>
@@ -940,7 +1037,7 @@ export function KnowledgeSpacesView() {
                     {spaces.map((space) => (
                       <DropdownMenuItem
                         key={space.spaceId}
-                        onClick={() => setSpaceId(space.spaceId)}
+                        onClick={() => void selectSpace(space.spaceId)}
                         className="gap-2"
                       >
                         <span className="h-2 w-2 rounded-full bg-teal-400" />
@@ -1003,8 +1100,7 @@ export function KnowledgeSpacesView() {
                     selectedId={documentId}
                     canWrite={canEdit}
                     onSelect={(id) => {
-                      setDocumentId(id);
-                      setView("notes");
+                      void selectDocument(id, "notes");
                     }}
                     onCreateFolder={(parent) => {
                       setNewFolderParent(parent);
@@ -1098,36 +1194,19 @@ export function KnowledgeSpacesView() {
                     <KnowledgeGraphView
                       graph={graph}
                       selectedId={documentId}
-                      onSelect={setDocumentId}
+                      onSelect={(id) => void selectDocument(id, "graph")}
                       onOpen={(id) => {
-                        setDocumentId(id);
-                        setView("notes");
+                        void selectDocument(id, "notes");
                       }}
                     />
                   ) : document ? (
                     <div className="flex h-full w-full flex-col bg-page">
-                      <div className="flex shrink-0 items-start justify-between gap-4 border-b border-stone-200/80 bg-white px-6 py-4">
-                        <div className="min-w-0 flex-1">
-                          <input
-                            value={draftTitle}
-                            onChange={(event) =>
-                              updateDraft("title", event.target.value)
-                            }
-                            disabled={!canEdit}
-                            className="w-full bg-transparent text-2xl font-semibold tracking-tight outline-none placeholder:text-stone-300 disabled:text-stone-900"
-                            placeholder="Untitled note"
-                          />
-                          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                            <FileText className="h-3.5 w-3.5" />
-                            <input
-                              value={draftPath}
-                              onChange={(event) =>
-                                updateDraft("path", event.target.value)
-                              }
-                              disabled={!canEdit}
-                              className="min-w-0 flex-1 bg-transparent font-mono text-[11px] outline-none disabled:text-muted-foreground"
-                            />
-                          </div>
+                      <div className="flex min-h-14 shrink-0 items-center justify-between gap-4 border-b border-stone-200/80 bg-white px-6 py-3">
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <FileText className="h-4 w-4 shrink-0 text-stone-500" />
+                          <span className="truncate font-mono text-xs text-stone-700">
+                            {draftPath}
+                          </span>
                         </div>
                         <div className="flex items-center gap-1">
                           <div className="mr-1 flex rounded-md bg-stone-100 p-0.5">
@@ -1186,18 +1265,18 @@ export function KnowledgeSpacesView() {
                       {editorMode === "visual" ? (
                         <RichMarkdownEditor
                           value={draft}
-                          onChange={(value) => updateDraft("content", value)}
+                          onChange={updateDraft}
                           editable={canEdit}
                           documentPath={draftPath}
                           documents={documents}
-                          onOpenDocument={setDocumentId}
+                          onOpenDocument={(id) =>
+                            void selectDocument(id, "notes")
+                          }
                         />
                       ) : (
                         <textarea
                           value={draft}
-                          onChange={(event) =>
-                            updateDraft("content", event.target.value)
-                          }
+                          onChange={(event) => updateDraft(event.target.value)}
                           readOnly={!canEdit}
                           spellCheck
                           className="min-h-0 flex-1 resize-none border-0 bg-page px-6 py-6 font-mono text-[13px] leading-7 text-stone-800 outline-none placeholder:text-stone-300 sm:px-8"
@@ -1221,8 +1300,7 @@ export function KnowledgeSpacesView() {
                     view={view}
                     documents={documents}
                     onSelect={(id) => {
-                      setDocumentId(id);
-                      setView("notes");
+                      void selectDocument(id, "notes");
                     }}
                     onAccess={() => setAccessOpen(true)}
                   />
@@ -1307,7 +1385,7 @@ function Inspector({
               {selectedNode && (
                 <div className="rounded-lg border bg-white p-3">
                   <p className="truncate text-sm font-medium">
-                    {selectedNode.title}
+                    {knowledgeFileName(selectedNode.path)}
                   </p>
                   <p className="mt-1 truncate text-[11px] text-muted-foreground">
                     {selectedNode.path}
@@ -1382,8 +1460,8 @@ function Inspector({
                         (document.okf?.kind === "index"
                           ? "Directory index"
                           : document.okf?.kind === "log"
-                            ? "Update log"
-                            : "Markdown note")}
+                          ? "Update log"
+                          : "Markdown note")}
                     </p>
                     <Badge
                       variant="secondary"
@@ -1498,7 +1576,11 @@ function LinkList({
           onClick={() => link.documentId && onSelect(link.documentId)}
           className="block w-full truncate rounded-md px-2 py-1.5 text-left text-xs text-stone-600 hover:bg-white disabled:cursor-default"
         >
-          {link.title || link.targetPath || "Unresolved note"}
+          {link.path
+            ? knowledgeFileName(link.path)
+            : link.targetPath
+            ? knowledgeFileName(link.targetPath)
+            : "Unresolved note"}
         </button>
       ))}
       {!links.length && (
@@ -1583,7 +1665,9 @@ function SearchResults({
           className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-stone-50"
         >
           <span className="flex items-center justify-between gap-2">
-            <span className="truncate text-sm font-medium">{result.title}</span>
+            <span className="truncate text-sm font-medium">
+              {knowledgeFileName(result.path)}
+            </span>
             <span className="shrink-0 text-[10px] text-muted-foreground">
               {Math.round(Math.min(1, result.score) * 100)}%
             </span>
@@ -1615,13 +1699,11 @@ function NewNoteDialog({
   onOpenChange: (open: boolean) => void;
   onCreate: (input: { path: string; title: string }) => Promise<void>;
 }) {
-  const [title, setTitle] = useState("");
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     if (open) {
-      setTitle("");
       setPath("Untitled.md");
       setError("");
     }
@@ -1630,11 +1712,11 @@ function NewNoteDialog({
     setBusy(true);
     setError("");
     try {
-      const finalTitle =
-        title.trim() ||
-        path.split("/").pop()?.replace(/\.md$/i, "") ||
-        "Untitled";
-      await onCreate({ title: finalTitle, path });
+      const normalizedPath = normalizeKnowledgePathInput(path);
+      await onCreate({
+        title: knowledgeFileName(normalizedPath),
+        path: normalizedPath,
+      });
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Could not create note",
@@ -1654,22 +1736,20 @@ function NewNoteDialog({
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="note-title">Title</Label>
-            <Input
-              id="note-title"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Untitled note"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="note-path">Path</Label>
+            <Label htmlFor="note-path">File path</Label>
             <Input
               id="note-path"
+              autoFocus
               value={path}
               onChange={(event) => setPath(event.target.value)}
               className="font-mono text-xs"
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void submit();
+              }}
             />
+            <p className="text-xs text-muted-foreground">
+              Include folders if needed, for example Projects/Launch plan.md.
+            </p>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
@@ -1768,7 +1848,7 @@ function NewFolderDialog({
 }
 
 function cleanEntryName(value: string) {
-  return value
+  return normalizeKnowledgePathInput(value)
     .trim()
     .replace(/[\\/]+/g, "-")
     .replace(/^\.+|\.+$/g, "");
@@ -1811,4 +1891,19 @@ function formatTrustTier(
 function apiMessage(payload: any, fallback: string) {
   const message = payload?.message || payload?.error;
   return Array.isArray(message) ? message.join(", ") : message || fallback;
+}
+
+async function readApiPayload(response: Response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      error:
+        text.length > 300
+          ? `${text.slice(0, 300).trim()}…`
+          : text.trim() || response.statusText,
+    };
+  }
 }

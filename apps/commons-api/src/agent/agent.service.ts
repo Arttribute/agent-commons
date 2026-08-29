@@ -113,7 +113,7 @@ const COMMONS_COPILOT_STARTERS = [
 ];
 const COMMONS_COPILOT_INSTRUCTIONS = `You are Commons Copilot, the user's native guide and co-creator inside Agent Commons. You understand the web Studio, API, SDK, and agc CLI, and help users create, inspect, test, and manage agents, tools, skills, tasks, workflows, spaces, and code projects.
 
-For platform management, inspect current resources before proposing changes. Use the typed proposal tool matching the resource the user requested. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. When the user asks about their brain, knowledge, memory, company context, policies, decisions, people, projects, or facts they expect you to remember, use listKnowledgeSpaces and searchKnowledge before general resource inspection. Omit spaceIds for the user's configured automatic routing; pass explicit spaceIds only when the user selects or names a particular space. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.
+For platform management, inspect current resources before proposing changes. Use the typed proposal tool matching the resource the user requested. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. When the user asks about their brain, knowledge, memory, company context, policies, decisions, people, projects, or facts they expect you to remember, use listKnowledgeSpaces and searchKnowledge before general resource inspection. Omit spaceIds for the user's configured automatic routing; pass explicit spaceIds only when the user selects or names a particular space. Knowledge document paths are their canonical identities; frontmatter titles are descriptive metadata. Create internal note connections as portable [[path/to/note]] wikilinks and preserve existing ordinary Markdown links when editing imported notes. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.
 
 ${COMMONS_COPILOT_OPERATING_GUIDE}`;
 
@@ -753,6 +753,8 @@ export class AgentService implements OnModuleInit {
     cliContext?: string;
     /** Untrusted browser page hint; Commons Copilot re-verifies it server-side. */
     uiContext?: CopilotUiContext;
+    /** Knowledge Spaces explicitly selected by the user for this turn. */
+    knowledgeSpaceIds?: string[];
     /**
      * Dynamic CLI tool catalog sent by the caller's own daemon/CLI process.
      * When present, this fully replaces the hardcoded CLI tool list below —
@@ -1732,7 +1734,9 @@ export class AgentService implements OnModuleInit {
                   summary:
                     status === 'success'
                       ? `${fn} completed`
-                      : `${fn} failed${failureMessage ? `: ${failureMessage}` : ''}`,
+                      : `${fn} failed${
+                          failureMessage ? `: ${failureMessage}` : ''
+                        }`,
                   payload: args,
                   result: data,
                   content: data,
@@ -2253,6 +2257,25 @@ export class AgentService implements OnModuleInit {
                       `## Commons Copilot context\nLive context lookup failed: ${error.message}`,
                   )
               : '';
+          const selectedKnowledgeSpaceIds = [
+            ...new Set(
+              (props.knowledgeSpaceIds ?? [])
+                .filter((value): value is string => typeof value === 'string')
+                .map((value) => value.trim())
+                .filter((value) => /^[a-zA-Z0-9_-]{1,160}$/.test(value))
+                .slice(0, 20),
+            ),
+          ];
+          const knowledgeSelectionBlock = selectedKnowledgeSpaceIds.length
+            ? [
+                '## USER-SELECTED KNOWLEDGE',
+                'The user explicitly referenced Knowledge Spaces for this turn.',
+                `Use searchKnowledge with spaceIds ${JSON.stringify(
+                  selectedKnowledgeSpaceIds,
+                )} before answering whenever the request depends on stored context.`,
+                'This is a manual route for this turn. Do not silently replace it with other Knowledge Spaces.',
+              ].join('\n')
+            : '';
 
           // Build the extra content to append to the system prompt (memory + CLI context)
           const computerSelectionDetail = computerUnavailable
@@ -2285,6 +2308,7 @@ export class AgentService implements OnModuleInit {
 
           const extraSystemContent = [
             memoryBlock,
+            knowledgeSelectionBlock,
             copilotContext,
             props.cliContext,
             computerSelectionBlock,

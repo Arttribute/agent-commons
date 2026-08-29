@@ -63,6 +63,8 @@ export function useAgentStream(
       computerRequest?: {
         enabled: boolean;
       };
+      /** Knowledge Spaces explicitly referenced for this turn. */
+      knowledgeSpaceIds?: string[];
       /** Per-turn thinking depth chosen in the composer; omit for auto. */
       reasoningEffort?: "low" | "medium" | "high" | "xhigh";
       provenance?: {

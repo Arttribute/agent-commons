@@ -46,6 +46,7 @@ const PERMISSION_RANK: Record<KnowledgePermission, number> = {
   write: 2,
   manage: 3,
 };
+const KNOWLEDGE_LINK_INDEX_VERSION = 2;
 const DEFAULT_STARTER_DOCUMENTS = [
   {
     path: 'Welcome.md',
@@ -773,6 +774,9 @@ export class BrainService {
       traceId?: string;
       deferGraph?: boolean;
       deferFolders?: boolean;
+      deferIndex?: boolean;
+      deferTouch?: boolean;
+      deferDocumentDetail?: boolean;
     } = {},
   ) {
     const { space } = await this.requireSpace(spaceId, principal, 'write');
@@ -829,12 +833,12 @@ export class BrainService {
         providerDocumentId: input.providerDocumentId,
         providerRevision: input.providerRevision,
       });
-      await this.indexDocument(document);
+      if (!options.deferIndex) await this.indexDocument(document);
       if (!options.deferFolders) {
         await this.ensureFolderRows(spaceId, principal, [document.path]);
       }
       if (!options.deferGraph) await this.rebuildLinks(spaceId);
-      await this.touchSpace(spaceId);
+      if (!options.deferTouch) await this.touchSpace(spaceId);
       if (trace.owned) {
         this.provenance.recordEvent(trace.traceId, {
           category: 'tool',
@@ -856,7 +860,9 @@ export class BrainService {
           },
         });
       }
-      return this.getDocument(document.documentId, principal);
+      return options.deferDocumentDetail
+        ? this.publicDocument(document, true)
+        : this.getDocument(document.documentId, principal);
     } catch (error) {
       if (trace.owned) {
         this.provenance.finishRun(trace.traceId, {
@@ -917,6 +923,7 @@ export class BrainService {
       folders: 0,
       failed: [] as any[],
     };
+    const changedDocumentIds: string[] = [];
     for (const candidate of documents) {
       try {
         const path = normalizeDocumentPath(candidate.path);
@@ -962,7 +969,7 @@ export class BrainService {
             );
           }
         }
-        await this.writeDocument(
+        const written = await this.writeDocument(
           spaceId,
           principal,
           {
@@ -973,8 +980,16 @@ export class BrainService {
             expectedRevision: existing?.revision,
             providerRevision: candidate.modifiedAt,
           },
-          { traceId: trace.traceId, deferGraph: true },
+          {
+            traceId: trace.traceId,
+            deferGraph: true,
+            deferFolders: true,
+            deferIndex: true,
+            deferTouch: true,
+            deferDocumentDetail: true,
+          },
         );
+        changedDocumentIds.push(written.documentId);
         if (existing) result.updated += 1;
         else result.created += 1;
       } catch (error) {
@@ -989,7 +1004,14 @@ export class BrainService {
       ...normalizedFolders.map((path) => `${path}/placeholder.md`),
     ]);
     result.folders = normalizedFolders.length;
+    if (changedDocumentIds.length) {
+      const changedDocuments = await this.db.query.knowledgeDocument.findMany({
+        where: (table) => inArray(table.documentId, changedDocumentIds),
+      });
+      await this.indexDocuments(changedDocuments);
+    }
     await this.rebuildLinks(spaceId);
+    await this.touchSpace(spaceId);
     this.provenance.recordEvent(trace.traceId, {
       category: 'tool',
       eventType: 'knowledge.documents.imported',
@@ -1048,7 +1070,18 @@ export class BrainService {
   }
 
   async graph(spaceId: string, principal: KnowledgePrincipal) {
-    await this.requireSpace(spaceId, principal, 'read');
+    const { space } = await this.requireSpace(spaceId, principal, 'read');
+    const providerConfig = (space.providerConfig ?? {}) as Record<
+      string,
+      unknown
+    >;
+    if (
+      providerConfig.knowledgeLinkIndexVersion !== KNOWLEDGE_LINK_INDEX_VERSION
+    ) {
+      // Repair links written by older visual serializers which escaped [[...]].
+      // The version marker keeps subsequent graph reads read-only and cheap.
+      await this.rebuildLinks(spaceId);
+    }
     const [documents, links] = await Promise.all([
       this.db.query.knowledgeDocument.findMany({
         where: (table) =>
@@ -1114,10 +1147,15 @@ export class BrainService {
     }
     const embedding = await this.embedQuery(query);
     const semantic = embedding
-      ? sql<number>`coalesce(1 - (${cosineDistance(schema.knowledgeChunk.embedding, embedding)}), 0)`
+      ? sql<number>`coalesce(1 - (${cosineDistance(
+          schema.knowledgeChunk.embedding,
+          embedding,
+        )}), 0)`
       : sql<number>`0`;
     const lexical = sql<number>`ts_rank_cd(to_tsvector('english', ${schema.knowledgeChunk.content}), websearch_to_tsquery('english', ${query}))`;
-    const titleBoost = sql<number>`CASE WHEN ${schema.knowledgeDocument.title} ILIKE ${`%${escapeLike(query)}%`} THEN 0.15 ELSE 0 END`;
+    const titleBoost = sql<number>`CASE WHEN ${
+      schema.knowledgeDocument.title
+    } ILIKE ${`%${escapeLike(query)}%`} THEN 0.15 ELSE 0 END`;
     const score = embedding
       ? sql<number>`(${semantic} * 0.68) + (least(${lexical}, 1) * 0.22) + ${titleBoost}`
       : sql<number>`(least(${lexical}, 1) * 0.85) + ${titleBoost}`;
@@ -1539,8 +1577,12 @@ export class BrainService {
       sql<boolean>`EXISTS (
         SELECT 1 FROM knowledge_space_grant knowledge_access
         WHERE knowledge_access.space_id = ${table.spaceId}
-          AND knowledge_access.subject_type = ${principal.principalType === 'agent' ? 'agent' : 'user'}
-          AND lower(knowledge_access.subject_id) = lower(${principal.principalId})
+          AND knowledge_access.subject_type = ${
+            principal.principalType === 'agent' ? 'agent' : 'user'
+          }
+          AND lower(knowledge_access.subject_id) = lower(${
+            principal.principalId
+          })
       )`,
       principal.workspaceId
         ? sql<boolean>`EXISTS (
@@ -1638,31 +1680,53 @@ export class BrainService {
   private async indexDocument(
     document: typeof schema.knowledgeDocument.$inferSelect,
   ) {
-    const chunks = chunkMarkdown(document.title, document.content);
-    const embeddings = await this.embedChunks(
-      chunks.map((chunk) => chunk.content),
-    );
-    await this.db
-      .delete(schema.knowledgeChunk)
-      .where(eq(schema.knowledgeChunk.documentId, document.documentId));
-    if (!chunks.length) return;
-    const model = embeddings
-      ? process.env.BRAIN_EMBEDDING_MODEL ||
-        process.env.ARTIFACT_EMBEDDING_MODEL ||
-        'text-embedding-3-small'
-      : null;
-    await this.db.insert(schema.knowledgeChunk).values(
-      chunks.map((chunk, index) => ({
-        documentId: document.documentId,
-        chunkIndex: chunk.chunkIndex,
-        heading: chunk.heading,
-        content: chunk.content,
-        tokenCount: chunk.tokenCount,
-        embedding: embeddings?.[index],
-        embeddingModel: model,
-        metadata: { path: document.path, revision: document.revision },
+    await this.indexDocuments([document]);
+  }
+
+  private async indexDocuments(
+    documents: Array<typeof schema.knowledgeDocument.$inferSelect>,
+  ) {
+    if (!documents.length) return;
+    const pending = documents.flatMap((document) =>
+      chunkMarkdown(document.title, document.content).map((chunk) => ({
+        document,
+        chunk,
       })),
     );
+    const embeddings: Array<number[] | undefined> = [];
+    for (let offset = 0; offset < pending.length; offset += 64) {
+      const batch = pending.slice(offset, offset + 64);
+      const batchEmbeddings = await this.embedChunks(
+        batch.map(({ chunk }) => chunk.content),
+      );
+      embeddings.push(...batch.map((_, index) => batchEmbeddings?.[index]));
+    }
+    await this.db.delete(schema.knowledgeChunk).where(
+      inArray(
+        schema.knowledgeChunk.documentId,
+        documents.map((document) => document.documentId),
+      ),
+    );
+    if (!pending.length) return;
+    const model =
+      process.env.BRAIN_EMBEDDING_MODEL ||
+      process.env.ARTIFACT_EMBEDDING_MODEL ||
+      'text-embedding-3-small';
+    const rows = pending.map(({ document, chunk }, index) => ({
+      documentId: document.documentId,
+      chunkIndex: chunk.chunkIndex,
+      heading: chunk.heading,
+      content: chunk.content,
+      tokenCount: chunk.tokenCount,
+      embedding: embeddings[index],
+      embeddingModel: embeddings[index] ? model : null,
+      metadata: { path: document.path, revision: document.revision },
+    }));
+    for (let offset = 0; offset < rows.length; offset += 250) {
+      await this.db
+        .insert(schema.knowledgeChunk)
+        .values(rows.slice(offset, offset + 250));
+    }
   }
 
   private async rebuildLinks(spaceId: string) {
@@ -1696,6 +1760,24 @@ export class BrainService {
       .delete(schema.knowledgeLink)
       .where(eq(schema.knowledgeLink.spaceId, spaceId));
     if (links.length) await this.db.insert(schema.knowledgeLink).values(links);
+    const currentSpace = await this.db.query.knowledgeSpace.findFirst({
+      columns: { providerConfig: true },
+      where: (table) => eq(table.spaceId, spaceId),
+    });
+    if (
+      currentSpace?.providerConfig?.knowledgeLinkIndexVersion !==
+      KNOWLEDGE_LINK_INDEX_VERSION
+    ) {
+      await this.db
+        .update(schema.knowledgeSpace)
+        .set({
+          providerConfig: {
+            ...(currentSpace?.providerConfig ?? {}),
+            knowledgeLinkIndexVersion: KNOWLEDGE_LINK_INDEX_VERSION,
+          },
+        })
+        .where(eq(schema.knowledgeSpace.spaceId, spaceId));
+    }
   }
 
   private async expandGraphNeighbors(
@@ -1786,15 +1868,18 @@ export class BrainService {
       return null;
     }
     try {
-      const response = await this.openAI.embeddings.create({
-        model:
-          process.env.BRAIN_EMBEDDING_MODEL ||
-          process.env.ARTIFACT_EMBEDDING_MODEL ||
-          'text-embedding-3-small',
-        input: chunks,
-        dimensions: 1536,
-        encoding_format: 'float',
-      });
+      const response = await this.openAI.embeddings.create(
+        {
+          model:
+            process.env.BRAIN_EMBEDDING_MODEL ||
+            process.env.ARTIFACT_EMBEDDING_MODEL ||
+            'text-embedding-3-small',
+          input: chunks,
+          dimensions: 1536,
+          encoding_format: 'float',
+        },
+        { timeout: 12_000, maxRetries: 0 },
+      );
       return response.data.map((item) => item.embedding);
     } catch {
       return null;

@@ -11,6 +11,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import type { AgentItem } from "@/hooks/agents/use-agents";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -93,17 +94,17 @@ export function SpaceAccessDialog({
               { method: "DELETE" },
             )
           : permission === "none"
-            ? null
-            : await fetch(`/api/knowledge/${detail.spaceId}/grants`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  subjectType: "agent",
-                  subjectId: agentId,
-                  permission,
-                  autoRetrieve: autoRetrieve ?? existing?.autoRetrieve ?? true,
-                }),
-              });
+          ? null
+          : await fetch(`/api/knowledge/${detail.spaceId}/grants`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                subjectType: "agent",
+                subjectId: agentId,
+                permission,
+                autoRetrieve: autoRetrieve ?? existing?.autoRetrieve ?? true,
+              }),
+            });
       if (response && !response.ok) {
         const payload = await response.json();
         throw new Error(
@@ -226,9 +227,11 @@ export function SpaceAccessDialog({
                     className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center"
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-stone-100 text-xs font-semibold text-stone-600">
-                        {(agent.name || "A").slice(0, 1).toUpperCase()}
-                      </span>
+                      <AgentAvatar
+                        name={agent.name}
+                        src={agent.avatar}
+                        size={36}
+                      />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">
                           {agent.name || "Untitled agent"}
@@ -283,7 +286,9 @@ export function SpaceAccessDialog({
                                 checked,
                               )
                             }
-                            aria-label={`Automatic retrieval for ${agent.name || "agent"}`}
+                            aria-label={`Automatic retrieval for ${
+                              agent.name || "agent"
+                            }`}
                           />
                         </label>
                       </div>

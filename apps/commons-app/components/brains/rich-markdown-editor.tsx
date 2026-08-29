@@ -45,12 +45,22 @@ import {
   type LibraryPickerItem,
 } from "@/components/sessions/chat/library-picker-dialog";
 import type { KnowledgeDocument } from "./types";
+import { knowledgeFileName, knowledgeLinkTarget } from "./knowledge-path";
 
 type UploadedAsset = {
   itemId: string;
   name: string;
   mimeType: string;
   kind: string;
+};
+
+type WikiSuggestion = {
+  from: number;
+  to: number;
+  query: string;
+  index: number;
+  left: number;
+  top: number;
 };
 
 export function RichMarkdownEditor({
@@ -69,16 +79,78 @@ export function RichMarkdownEditor({
   onOpenDocument?: (documentId: string) => void;
 }) {
   const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
   const uploadRef = useRef<HTMLInputElement>(null);
+  const editorSurfaceRef = useRef<HTMLDivElement>(null);
+  const documentsRef = useRef(documents);
+  const documentPathRef = useRef(documentPath);
+  const editableRef = useRef(editable);
+  const onOpenDocumentRef = useRef(onOpenDocument);
+  const wikiSuggestionRef = useRef<WikiSuggestion | null>(null);
+  const insertWikiLinkRef = useRef<(item: KnowledgeDocument) => void>(() => {});
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteQuery, setNoteQuery] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [wikiSuggestion, setWikiSuggestion] = useState<WikiSuggestion | null>(
+    null,
+  );
 
   useEffect(() => {
     valueRef.current = value;
-  }, [value]);
+    onChangeRef.current = onChange;
+  }, [onChange, value]);
+
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
+
+  useEffect(() => {
+    documentPathRef.current = documentPath;
+    editableRef.current = editable;
+    onOpenDocumentRef.current = onOpenDocument;
+    setWikiSuggestion(null);
+  }, [documentPath, editable, onOpenDocument]);
+
+  useEffect(() => {
+    wikiSuggestionRef.current = wikiSuggestion;
+  }, [wikiSuggestion]);
+
+  const refreshWikiSuggestion = useCallback((target: any) => {
+    if (!editableRef.current || !target?.state?.selection?.empty) {
+      setWikiSuggestion(null);
+      return;
+    }
+    const { $from } = target.state.selection;
+    const before = $from.parent.textBetween(
+      0,
+      $from.parentOffset,
+      "\n",
+      "\ufffc",
+    );
+    const match = /\[\[([^\]\n]*)$/.exec(before);
+    if (!match) {
+      setWikiSuggestion(null);
+      return;
+    }
+    const surface = editorSurfaceRef.current;
+    if (!surface) return;
+    const coords = target.view.coordsAtPos(target.state.selection.from);
+    const bounds = surface.getBoundingClientRect();
+    const from = target.state.selection.from - match[0].length;
+    setWikiSuggestion((current) => ({
+      from,
+      to: target.state.selection.from,
+      query: match[1] || "",
+      index:
+        current?.from === from && current.query === (match[1] || "")
+          ? current.index
+          : 0,
+      left: Math.max(8, coords.left - bounds.left + surface.scrollLeft),
+      top: coords.bottom - bounds.top + surface.scrollTop + 6,
+    }));
+  }, []);
 
   const uploadAndInsertRef = useRef<
     (files: File[], target?: ReturnType<typeof useEditor>) => Promise<void>
@@ -87,7 +159,7 @@ export function RichMarkdownEditor({
   const editor = useEditor({
     immediatelyRender: false,
     editable,
-    content: splitMarkdown(value).body,
+    content: wikilinksToEditorMarkdown(splitMarkdown(value).body),
     contentType: "markdown",
     extensions: [
       StarterKit.configure({
@@ -95,6 +167,7 @@ export function RichMarkdownEditor({
           openOnClick: false,
           enableClickSelection: true,
           defaultProtocol: "https",
+          protocols: ["knowledge"],
           HTMLAttributes: {
             class:
               "font-medium text-teal-700 underline decoration-teal-300 underline-offset-2",
@@ -135,9 +208,16 @@ export function RichMarkdownEditor({
     ],
     onUpdate({ editor: target }) {
       const current = splitMarkdown(valueRef.current);
-      const next = joinMarkdown(current.frontmatter, target.getMarkdown());
+      const next = joinMarkdown(
+        current.frontmatter,
+        editorMarkdownToWikilinks(target.getMarkdown()),
+      );
       valueRef.current = next;
-      onChange(next);
+      onChangeRef.current(next);
+      refreshWikiSuggestion(target);
+    },
+    onSelectionUpdate({ editor: target }) {
+      refreshWikiSuggestion(target);
     },
     editorProps: {
       attributes: {
@@ -149,20 +229,63 @@ export function RichMarkdownEditor({
         click(_view, event) {
           const anchor = (event.target as HTMLElement | null)?.closest("a");
           const href = anchor?.getAttribute("href");
-          if (!href || !onOpenDocument) return false;
-          const path = resolveMarkdownPath(documentPath, href);
-          if (!path) return false;
-          const target = documents.find(
-            (item) =>
-              item.path.toLowerCase() === path.toLowerCase() ||
-              item.path.replace(/\.md$/i, "").toLowerCase() ===
-                path.replace(/\.md$/i, "").toLowerCase(),
-          );
+          if (!href || !onOpenDocumentRef.current) return false;
+          const target = href.startsWith("knowledge:")
+            ? findKnowledgeDocument(
+                documentsRef.current,
+                decodeKnowledgeHref(href),
+                documentPathRef.current,
+              )
+            : documentsRef.current.find((item) => {
+                const path = resolveMarkdownPath(documentPathRef.current, href);
+                return (
+                  item.path.toLowerCase() === path.toLowerCase() ||
+                  item.path.replace(/\.md$/i, "").toLowerCase() ===
+                    path.replace(/\.md$/i, "").toLowerCase()
+                );
+              });
           if (!target) return false;
           event.preventDefault();
-          onOpenDocument(target.documentId);
+          onOpenDocumentRef.current(target.documentId);
           return true;
         },
+      },
+      handleKeyDown(_view, event) {
+        const suggestion = wikiSuggestionRef.current;
+        if (!suggestion) return false;
+        const matches = matchingKnowledgeDocuments(
+          documentsRef.current,
+          documentPathRef.current,
+          suggestion.query,
+        );
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const direction = event.key === "ArrowDown" ? 1 : -1;
+          setWikiSuggestion((current) =>
+            current
+              ? {
+                  ...current,
+                  index:
+                    (current.index + direction + Math.max(1, matches.length)) %
+                    Math.max(1, matches.length),
+                }
+              : null,
+          );
+          return true;
+        }
+        if ((event.key === "Enter" || event.key === "Tab") && matches.length) {
+          event.preventDefault();
+          insertWikiLinkRef.current(
+            matches[Math.min(suggestion.index, matches.length - 1)],
+          );
+          return true;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setWikiSuggestion(null);
+          return true;
+        }
+        return false;
       },
     },
   });
@@ -174,8 +297,9 @@ export function RichMarkdownEditor({
   useEffect(() => {
     if (!editor) return;
     const nextBody = splitMarkdown(value).body.trim();
-    if (editor.getMarkdown().trim() === nextBody) return;
-    editor.commands.setContent(nextBody, {
+    if (editorMarkdownToWikilinks(editor.getMarkdown()).trim() === nextBody)
+      return;
+    editor.commands.setContent(wikilinksToEditorMarkdown(nextBody), {
       contentType: "markdown",
       emitUpdate: false,
     });
@@ -196,8 +320,8 @@ export function RichMarkdownEditor({
           const prefix = asset.mimeType.startsWith("audio/")
             ? "Listen to"
             : asset.mimeType.startsWith("video/")
-              ? "Watch"
-              : "Open";
+            ? "Watch"
+            : "Open";
           target
             .chain()
             .focus()
@@ -271,20 +395,30 @@ export function RichMarkdownEditor({
 
   function insertNoteLink(item: KnowledgeDocument) {
     if (!editor) return;
-    const href = relativeMarkdownPath(documentPath, item.path);
-    editor
-      .chain()
-      .focus()
+    const target = knowledgeLinkTarget(item.path);
+    const suggestion = wikiSuggestionRef.current;
+    const chain = editor.chain().focus();
+    if (suggestion)
+      chain.deleteRange({ from: suggestion.from, to: suggestion.to });
+    chain
       .insertContent({
         type: "text",
-        text: item.title,
-        marks: [{ type: "link", attrs: { href } }],
+        text: knowledgeFileName(item.path),
+        marks: [
+          {
+            type: "link",
+            attrs: { href: `knowledge:${encodeURIComponent(target)}` },
+          },
+        ],
       })
       .insertContent(" ")
       .run();
+    setWikiSuggestion(null);
     setNoteOpen(false);
     setNoteQuery("");
   }
+
+  insertWikiLinkRef.current = insertNoteLink;
 
   if (!editor) {
     return (
@@ -294,17 +428,20 @@ export function RichMarkdownEditor({
     );
   }
 
-  const matchingNotes = documents
-    .filter((item) => item.path !== documentPath)
-    .filter((item) => {
-      const query = noteQuery.trim().toLowerCase();
-      return (
-        !query ||
-        item.title.toLowerCase().includes(query) ||
-        item.path.toLowerCase().includes(query)
-      );
-    })
-    .slice(0, 100);
+  const matchingNotes = matchingKnowledgeDocuments(
+    documents,
+    documentPath,
+    noteQuery,
+    100,
+  );
+  const inlineMatches = wikiSuggestion
+    ? matchingKnowledgeDocuments(
+        documents,
+        documentPath,
+        wikiSuggestion.query,
+        8,
+      )
+    : [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-page">
@@ -461,8 +598,49 @@ export function RichMarkdownEditor({
           {uploadError}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={editorSurfaceRef}
+        className="relative min-h-0 flex-1 overflow-y-auto"
+      >
         <EditorContent editor={editor} className="min-h-full" />
+        {wikiSuggestion && (
+          <div
+            className="absolute z-30 w-[min(340px,calc(100%-16px))] overflow-hidden rounded-xl border border-stone-200 bg-white p-1.5 shadow-floating"
+            style={{ left: wikiSuggestion.left, top: wikiSuggestion.top }}
+          >
+            <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-stone-400">
+              Link a note
+            </p>
+            {inlineMatches.map((item, index) => (
+              <button
+                key={item.documentId}
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertNoteLink(item)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left",
+                  index === wikiSuggestion.index
+                    ? "bg-teal-50 text-teal-950"
+                    : "hover:bg-stone-50",
+                )}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">
+                    {knowledgeFileName(item.path)}
+                  </span>
+                  <span className="block truncate text-[11px] text-stone-500">
+                    {item.path}
+                  </span>
+                </span>
+              </button>
+            ))}
+            {!inlineMatches.length && (
+              <p className="px-2 py-3 text-xs text-stone-500">
+                No matching notes
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <LibraryPickerDialog
@@ -476,7 +654,7 @@ export function RichMarkdownEditor({
           <DialogHeader className="border-b px-5 py-4 pr-12">
             <DialogTitle>Link to a note</DialogTitle>
             <DialogDescription>
-              Insert a portable Markdown link and connect the knowledge graph.
+              Insert a portable wikilink and connect the knowledge graph.
             </DialogDescription>
           </DialogHeader>
           <div className="border-b p-4">
@@ -497,7 +675,7 @@ export function RichMarkdownEditor({
                   className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-stone-50"
                 >
                   <span className="block truncate text-sm font-medium">
-                    {item.title}
+                    {knowledgeFileName(item.path)}
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-stone-500">
                     {item.path}
@@ -575,18 +753,6 @@ function joinMarkdown(frontmatter: string, body: string) {
   return frontmatter ? `${frontmatter.trimEnd()}\n\n${body.trimStart()}` : body;
 }
 
-function relativeMarkdownPath(fromPath: string, targetPath: string) {
-  const from = fromPath.replace(/\\/g, "/").split("/");
-  from.pop();
-  const target = targetPath.replace(/\\/g, "/").split("/");
-  while (from.length && target.length && from[0] === target[0]) {
-    from.shift();
-    target.shift();
-  }
-  const path = [...from.map(() => ".."), ...target].join("/");
-  return path.startsWith(".") ? path : `./${path}`;
-}
-
 function resolveMarkdownPath(fromPath: string, href: string) {
   let clean: string;
   try {
@@ -607,4 +773,109 @@ function resolveMarkdownPath(fromPath: string, href: string) {
   }
   const path = base.join("/");
   return /\.md$/i.test(path) ? path : `${path}.md`;
+}
+
+function wikilinksToEditorMarkdown(markdown: string) {
+  return markdown
+    .replace(/\\\[\\\[([^\]\n]+)\\\]\\\]/g, "[[$1]]")
+    .replace(/(?<!!)\[\[([^\]\n]+)\]\]/g, (_match, raw) => {
+      const [rawTarget = "", ...labelParts] = String(raw).split("|");
+      const target = rawTarget.trim();
+      if (!target) return _match;
+      const label =
+        labelParts.join("|").trim() ||
+        target.split(/[\\/]/).pop()?.replace(/\.md$/i, "") ||
+        target;
+      return `[${label.replace(/\]/g, "\\]")}](knowledge:${encodeURIComponent(
+        target,
+      )})`;
+    });
+}
+
+function editorMarkdownToWikilinks(markdown: string) {
+  return markdown
+    .replace(
+      /\[([^\]]+)\]\(knowledge:([^\s)]+)\)/g,
+      (_match, rawLabel, rawTarget) => {
+        let target: string;
+        try {
+          target = decodeURIComponent(String(rawTarget));
+        } catch {
+          target = String(rawTarget);
+        }
+        const label = String(rawLabel).replace(/\\\]/g, "]").trim();
+        const defaultLabel =
+          target.split(/[\\/]/).pop()?.replace(/\.md$/i, "") || target;
+        return label === defaultLabel
+          ? `[[${target}]]`
+          : `[[${target}|${label}]]`;
+      },
+    )
+    .replace(/\\\[\\\[([^\]\n]+)\\\]\\\]/g, "[[$1]]");
+}
+
+function decodeKnowledgeHref(href: string) {
+  const encoded = href.slice("knowledge:".length);
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return encoded;
+  }
+}
+
+function findKnowledgeDocument(
+  documents: KnowledgeDocument[],
+  rawTarget: string,
+  fromPath: string,
+) {
+  const target = knowledgeLinkTarget(
+    rawTarget.split("#")[0] || "",
+  ).toLowerCase();
+  if (!target) return undefined;
+  const exact = documents.find(
+    (item) => knowledgeLinkTarget(item.path).toLowerCase() === target,
+  );
+  if (exact) return exact;
+  const localPath = knowledgeLinkTarget(
+    `${fromPath
+      .replace(/\\/g, "/")
+      .split("/")
+      .slice(0, -1)
+      .join("/")}/${target}`,
+  ).toLowerCase();
+  const local = documents.find(
+    (item) => knowledgeLinkTarget(item.path).toLowerCase() === localPath,
+  );
+  if (local) return local;
+  const aliases = documents.filter((item) => {
+    const file = knowledgeFileName(item.path).toLowerCase();
+    return file === target || item.title.toLowerCase() === target;
+  });
+  return aliases.length === 1 ? aliases[0] : undefined;
+}
+
+function matchingKnowledgeDocuments(
+  documents: KnowledgeDocument[],
+  currentPath: string,
+  rawQuery: string,
+  limit = 8,
+) {
+  const query = rawQuery.trim().toLowerCase();
+  return documents
+    .filter((item) => item.path !== currentPath)
+    .filter(
+      (item) =>
+        !query ||
+        knowledgeFileName(item.path).toLowerCase().includes(query) ||
+        item.path.toLowerCase().includes(query) ||
+        item.title.toLowerCase().includes(query),
+    )
+    .sort((left, right) => {
+      const leftName = knowledgeFileName(left.path).toLowerCase();
+      const rightName = knowledgeFileName(right.path).toLowerCase();
+      const leftExact = query && leftName === query ? 1 : 0;
+      const rightExact = query && rightName === query ? 1 : 0;
+      return rightExact - leftExact || leftName.localeCompare(rightName);
+    })
+    .slice(0, limit);
 }

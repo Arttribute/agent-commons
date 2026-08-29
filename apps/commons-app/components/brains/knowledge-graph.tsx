@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Focus, Minus, Plus, RotateCcw } from "lucide-react";
 import type { KnowledgeGraph } from "./types";
+import { knowledgeFileName } from "./knowledge-path";
 
 type GraphNode = KnowledgeGraph["nodes"][number] & {
   x: number;
@@ -130,8 +131,8 @@ export function KnowledgeGraphView({
         (active
           ? 6.3
           : hovering
-            ? 5.2
-            : 3.5 + Math.min(2.2, node.degree * 0.18)) /
+          ? 5.2
+          : 3.5 + Math.min(2.2, node.degree * 0.18)) /
         Math.sqrt(transform.scale);
       context.beginPath();
       context.arc(node.x, node.y, radius, 0, Math.PI * 2);
@@ -151,11 +152,13 @@ export function KnowledgeGraphView({
       context.shadowBlur = 0;
       const alpha = related ? (active || hovering ? 1 : 0.98) : 0.5;
       context.fillStyle = `rgba(30, 41, 59, ${alpha})`;
-      context.font = `${active ? 600 : 400} ${11 / labelScale}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
+      context.font = `${active ? 600 : 400} ${
+        11 / labelScale
+      }px ui-sans-serif, system-ui, -apple-system, sans-serif`;
       context.textAlign = "center";
       context.textBaseline = "top";
       context.fillText(
-        truncateLabel(node.title, transform.scale),
+        truncateLabel(knowledgeFileName(node.path), transform.scale),
         node.x,
         node.y + radius + 4 / transform.scale,
       );
@@ -216,13 +219,17 @@ export function KnowledgeGraphView({
 
   useEffect(() => {
     setReady(false);
+    const cloudRadius = graphCloudRadius(graph.nodes.length);
     nodesRef.current = graph.nodes.map((node, index) => {
       const angle = seededAngle(node.id, index);
-      const radius = 42 + Math.sqrt(index + 1) * 31;
+      const radialProgress = Math.sqrt(
+        (index + 0.65) / Math.max(1, graph.nodes.length),
+      );
+      const radius = cloudRadius * (0.16 + radialProgress * 0.84);
       return {
         ...node,
         x: Math.cos(angle) * radius,
-        y: Math.sin(angle) * radius * 0.72,
+        y: Math.sin(angle) * radius,
         vx: 0,
         vy: 0,
       };
@@ -490,6 +497,7 @@ function seededAngle(value: string, index: number) {
 function stepGraphLayout(nodes: GraphNode[], edges: KnowledgeGraph["edges"]) {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const repulsion = nodes.length > 260 ? 1150 : 1750;
+  const cloudRadius = graphCloudRadius(nodes.length);
   for (let left = 0; left < nodes.length; left += 1) {
     const a = nodes[left];
     for (let right = left + 1; right < nodes.length; right += 1) {
@@ -522,13 +530,24 @@ function stepGraphLayout(nodes: GraphNode[], edges: KnowledgeGraph["edges"]) {
     target.vy -= (dy / distance) * force;
   }
   for (const node of nodes) {
-    node.vx += -node.x * 0.0008;
-    node.vy += -node.y * 0.0008;
+    const distanceFromCenter = Math.max(1, Math.hypot(node.x, node.y));
+    const overflow = Math.max(0, distanceFromCenter - cloudRadius);
+    node.vx += -node.x * 0.00055;
+    node.vy += -node.y * 0.00055;
+    if (overflow > 0) {
+      const boundaryForce = Math.min(1.8, overflow * 0.012);
+      node.vx -= (node.x / distanceFromCenter) * boundaryForce;
+      node.vy -= (node.y / distanceFromCenter) * boundaryForce;
+    }
     node.vx *= 0.86;
     node.vy *= 0.86;
     node.x += node.vx;
     node.y += node.vy;
   }
+}
+
+function graphCloudRadius(nodeCount: number) {
+  return Math.max(150, 82 + Math.sqrt(Math.max(1, nodeCount)) * 34);
 }
 
 function truncateLabel(value: string, scale: number) {

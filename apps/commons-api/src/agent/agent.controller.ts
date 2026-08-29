@@ -48,6 +48,8 @@ interface RunBody {
   sessionId?: string;
   cliContext?: string;
   uiContext?: CopilotUiContext;
+  /** Knowledge Spaces explicitly selected by the user for this turn. */
+  knowledgeSpaceIds?: string[];
   cliTools?: Array<{
     name: string;
     description: string;
@@ -411,7 +413,9 @@ export class AgentController {
       throw new BadRequestException('Failed to upload profile image');
     }
 
-    const url = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+    const url = `https://${
+      process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'
+    }/ipfs/${cid}`;
     const updated = await this.agent.updateAgent(agentId, { avatar: url });
     if (!updated) {
       throw new BadRequestException('Unable to update agent profile image');

@@ -31,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { knowledgeFileName } from "./knowledge-path";
 import type { KnowledgeDocument, KnowledgeFolder } from "./types";
 
 type TreeNode = {
@@ -205,7 +206,7 @@ function TreeLevel({
     a.name.localeCompare(b.name),
   );
   const childDocuments = [...node.documents].sort((a, b) =>
-    a.title.localeCompare(b.title),
+    knowledgeFileName(a.path).localeCompare(knowledgeFileName(b.path)),
   );
   return (
     <div className="space-y-0.5">
@@ -398,13 +399,14 @@ function DocumentRow({
   onSelect: () => void;
   onDelete: () => void;
 }) {
+  const displayName = knowledgeFileName(document.path);
   const drag = useDraggable({
     id: `drag-document:${document.documentId}`,
     disabled: !canWrite,
     data: {
       kind: "document",
       id: document.documentId,
-      label: document.title,
+      label: displayName,
     },
   });
   return (
@@ -421,7 +423,7 @@ function DocumentRow({
         type="button"
         {...drag.listeners}
         className="mr-0.5 grid h-6 w-4 shrink-0 cursor-grab place-items-center text-stone-300 opacity-0 group-hover:opacity-100 active:cursor-grabbing"
-        aria-label={`Drag ${document.title}`}
+        aria-label={`Drag ${displayName}`}
       >
         <GripVertical className="h-3 w-3" />
       </button>
@@ -447,7 +449,7 @@ function DocumentRow({
             onCancel={() => setEditing(undefined)}
           />
         ) : (
-          <span className="truncate">{document.title}</span>
+          <span className="truncate">{displayName}</span>
         )}
       </button>
       {canWrite && !editing && (
@@ -606,5 +608,5 @@ function buildTree(folders: KnowledgeFolder[], documents: KnowledgeDocument[]) {
 }
 
 function fileName(path: string) {
-  return path.split("/").pop()?.replace(/\.md$/i, "") || "Untitled";
+  return knowledgeFileName(path);
 }

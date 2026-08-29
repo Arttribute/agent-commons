@@ -50,7 +50,11 @@ export function decideFilesystemMerge(input: {
 }
 
 export function normalizeDocumentPath(value: string) {
-  const decoded = safelyDecode(value.trim()).replace(/\\/g, '/');
+  const decoded = safelyDecode(value.trim())
+    // Markdown serializers may escape punctuation in a displayed filename.
+    // Treat those escapes as punctuation, while retaining Windows separators.
+    .replace(/\\([.!()[\]{}#*_`~-])/g, '$1')
+    .replace(/\\/g, '/');
   if (!decoded) throw new Error('Document path is required');
   if (decoded.includes('\0')) throw new Error('Document path is invalid');
   const pieces = decoded
@@ -246,7 +250,9 @@ export function chunkMarkdown(
     tokenCount: number;
   }> = [];
   for (const section of sections) {
-    const prefix = `# ${title}${section.heading ? `\n\nContext: ${section.heading}` : ''}\n\n`;
+    const prefix = `# ${title}${
+      section.heading ? `\n\nContext: ${section.heading}` : ''
+    }\n\n`;
     const available = Math.max(600, targetChars - prefix.length);
     let cursor = 0;
     while (cursor < section.text.length) {
@@ -404,11 +410,12 @@ function collectLinks(content: string, frontmatter: Record<string, unknown>) {
     seen.add(key);
     links.push(link);
   };
-  for (const match of content.matchAll(/!?\[\[([^\]]+)\]\]/g)) {
+  const linkSource = content.replace(/\\\[\\\[([^\]\n]+)\\\]\\\]/g, '[[$1]]');
+  for (const match of linkSource.matchAll(/!?\[\[([^\]]+)\]\]/g)) {
     const [target = '', label] = match[1].split('|', 2);
     add({ target: target.trim(), label: label?.trim(), relation: 'wikilink' });
   }
-  for (const match of content.matchAll(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g)) {
+  for (const match of linkSource.matchAll(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g)) {
     const target = match[2].trim();
     if (/^[a-z][a-z\d+.-]*:/i.test(target) || target.startsWith('#')) continue;
     add({ target, label: match[1].trim(), relation: 'markdown' });
