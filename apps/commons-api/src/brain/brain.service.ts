@@ -27,6 +27,7 @@ import {
   chunkMarkdown,
   decideFilesystemMerge,
   normalizeDocumentPath,
+  normalizeFolderPath,
   normalizeKnowledgeAlias,
   parseMarkdownDocument,
   resolveLinkPath,
@@ -45,33 +46,107 @@ const PERMISSION_RANK: Record<KnowledgePermission, number> = {
   write: 2,
   manage: 3,
 };
-const DEFAULT_WELCOME = `---
+const DEFAULT_STARTER_DOCUMENTS = [
+  {
+    path: 'Welcome.md',
+    title: 'Welcome to your Common Brain',
+    content: `---
 type: Guide
-title: Welcome to your Commons Brain
-description: Start here to organize portable knowledge for people and agents.
+title: Welcome to your Common Brain
+description: A shared, growing memory for you and every Agent Commons agent.
 status: stable
 tags:
   - start-here
 ---
-# Welcome to your Commons Brain
+# Welcome to your Common Brain
 
-This Knowledge Space is shared context for you and your agents. Everything is portable Markdown, organized in folders and connected with links.
+This is the shared memory that grows with you across Agent Commons. You and your agents can add useful context, connect decisions, and carry learning from one task into the next.
 
-## Start here
+## A simple rhythm
 
-- Create a note or connect an existing Markdown folder.
-- Link ideas with double brackets, for example [[Projects/First project]].
-- Ask any Commons agent to search, read, or update this space.
+1. Capture useful facts and unfinished thoughts in [[Inbox/README|Inbox]].
+2. Move durable context into projects, decisions, people, or reference folders.
+3. Link related notes so retrieval can follow the reasoning, not only matching words.
+4. Review agent-written notes before promoting them from draft to stable.
 
-## A useful structure
+## What belongs here
 
-- **Projects/** for active outcomes
-- **Decisions/** for durable choices and their reasoning
-- **People/** for relationship context
-- **Reference/** for long-lived source material
+- preferences and context you want agents to remember
+- project goals, constraints, status, and hand-offs
+- decisions with their reasoning and sources
+- reusable procedures, research, people, and terminology
 
-Only grant agents and people the access they need. Every human and agent edit is revisioned and connected to Commons provenance.
-`;
+Start with [[Templates/Knowledge note|the knowledge note template]]. Every edit is revisioned and connected to Commons provenance.
+`,
+  },
+  {
+    path: 'Inbox/README.md',
+    title: 'Inbox',
+    content: `---
+type: Guide
+title: Inbox
+description: A low-friction landing place for knowledge that still needs organizing.
+status: stable
+tags:
+  - start-here
+---
+# Inbox
+
+Capture first; organize when the value is clear. Agents may draft notes here automatically, but should include why the information matters and where it came from.
+
+During review, move durable notes into a project or topic folder, connect them to related notes, and mark verified knowledge as stable.
+`,
+  },
+  {
+    path: 'Decisions/README.md',
+    title: 'Decision memory',
+    content: `---
+type: Guide
+title: Decision memory
+description: How to preserve important choices and their reasoning.
+status: stable
+tags:
+  - start-here
+  - decisions
+---
+# Decision memory
+
+Create one note per meaningful decision. Record the context, options considered, final choice, owner, date, and sources. When a choice changes, add a new decision and link to the one it supersedes instead of erasing history.
+`,
+  },
+  {
+    path: 'Templates/Knowledge note.md',
+    title: 'Knowledge note template',
+    content: `---
+type: Template
+title: Knowledge note template
+description: Copy this structure when adding durable knowledge.
+status: stable
+tags:
+  - template
+---
+# Clear, specific title
+
+## What we know
+
+Write the durable fact, decision, or procedure in plain language.
+
+## Why it matters
+
+Explain when a person or agent should retrieve this note.
+
+## Sources and ownership
+
+- Source: add a URL, file, conversation, or related note
+- Owner: name the person responsible for keeping this current
+- Review: add a date when time-sensitive knowledge should be checked again
+
+## Related
+
+Link the notes that provide context or depend on this knowledge.
+`,
+  },
+] as const;
 
 @Injectable()
 export class BrainService {
@@ -103,11 +178,12 @@ export class BrainService {
     });
     return Promise.all(
       spaces.map(async (space) => {
-        const [permission, counts] = await Promise.all([
+        const [permission, counts, autoRetrieve] = await Promise.all([
           this.effectivePermission(space, principal),
           this.spaceCounts(space.spaceId),
+          this.automaticRetrievalForSpace(space.spaceId, principal),
         ]);
-        return this.publicSpace(space, permission, counts);
+        return this.publicSpace(space, permission, counts, autoRetrieve);
       }),
     );
   }
@@ -222,7 +298,7 @@ export class BrainService {
     const { space } = await this.requireSpace(spaceId, principal, 'manage');
     if (space.isDefault) {
       throw new BadRequestException(
-        'The default Commons Brain cannot be deleted. Rename it or create another space.',
+        'The default Common Brain cannot be deleted. Rename it or create another space.',
       );
     }
     await this.db
@@ -304,6 +380,305 @@ export class BrainService {
       grantId,
     });
     return { revoked: true };
+  }
+
+  async listFolders(spaceId: string, principal: KnowledgePrincipal) {
+    await this.requireSpace(spaceId, principal, 'read');
+    const folders = await this.db.query.knowledgeFolder.findMany({
+      where: (table) =>
+        and(eq(table.spaceId, spaceId), isNull(table.deletedAt)),
+      orderBy: (table) => [table.path],
+    });
+    return folders.map((folder) => this.publicFolder(folder));
+  }
+
+  async createFolder(
+    spaceId: string,
+    principal: KnowledgePrincipal,
+    requestedPath: string,
+  ) {
+    const { space } = await this.requireSpace(spaceId, principal, 'write');
+    let path: string;
+    try {
+      path = normalizeFolderPath(requestedPath);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Invalid folder path',
+      );
+    }
+    await this.ensureFolderRows(spaceId, principal, [`${path}/placeholder.md`]);
+    const folder = await this.db.query.knowledgeFolder.findFirst({
+      where: (table) =>
+        and(
+          eq(table.spaceId, spaceId),
+          sql<boolean>`lower(${table.path}) = lower(${path})`,
+          isNull(table.deletedAt),
+        ),
+    });
+    if (!folder) throw new Error('Could not create Knowledge folder');
+    await this.touchSpace(spaceId);
+    this.captureMutation(space, principal, 'knowledge.folder.created', {
+      folderId: folder.folderId,
+      path,
+    });
+    return this.publicFolder(folder);
+  }
+
+  async moveFolder(
+    spaceId: string,
+    folderId: string,
+    principal: KnowledgePrincipal,
+    requestedPath: string,
+  ) {
+    const { space } = await this.requireSpace(spaceId, principal, 'write');
+    const folder = await this.db.query.knowledgeFolder.findFirst({
+      where: (table) =>
+        and(
+          eq(table.folderId, folderId),
+          eq(table.spaceId, spaceId),
+          isNull(table.deletedAt),
+        ),
+    });
+    if (!folder) throw new NotFoundException('Knowledge folder not found');
+    let nextPath: string;
+    try {
+      nextPath = normalizeFolderPath(requestedPath);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Invalid folder path',
+      );
+    }
+    if (same(folder.path, nextPath)) {
+      return { folder: this.publicFolder(folder), movedDocuments: [] };
+    }
+    if (nextPath.toLowerCase().startsWith(`${folder.path.toLowerCase()}/`)) {
+      throw new BadRequestException('A folder cannot be moved inside itself');
+    }
+
+    const [folders, documents] = await Promise.all([
+      this.db.query.knowledgeFolder.findMany({
+        where: (table) =>
+          and(eq(table.spaceId, spaceId), isNull(table.deletedAt)),
+      }),
+      this.db.query.knowledgeDocument.findMany({
+        where: (table) =>
+          and(
+            eq(table.spaceId, spaceId),
+            ilike(table.path, `${escapeLike(folder.path)}/%`),
+            isNull(table.deletedAt),
+          ),
+      }),
+    ]);
+    const movingFolderIds = new Set(
+      folders
+        .filter(
+          (candidate) =>
+            same(candidate.path, folder.path) ||
+            candidate.path
+              .toLowerCase()
+              .startsWith(`${folder.path.toLowerCase()}/`),
+        )
+        .map((candidate) => candidate.folderId),
+    );
+    const occupiedFolders = new Set(
+      folders
+        .filter((candidate) => !movingFolderIds.has(candidate.folderId))
+        .map((candidate) => candidate.path.toLowerCase()),
+    );
+    const folderMoves = folders
+      .filter((candidate) => movingFolderIds.has(candidate.folderId))
+      .map((candidate) => ({
+        folder: candidate,
+        path: `${nextPath}${candidate.path.slice(folder.path.length)}`,
+      }));
+    if (
+      folderMoves.some((candidate) =>
+        occupiedFolders.has(candidate.path.toLowerCase()),
+      )
+    ) {
+      throw new ConflictException('A folder already exists at that location');
+    }
+
+    const activeDocuments = await this.db.query.knowledgeDocument.findMany({
+      columns: { documentId: true, path: true },
+      where: (table) =>
+        and(eq(table.spaceId, spaceId), isNull(table.deletedAt)),
+    });
+    const movingDocumentIds = new Set(
+      documents.map((document) => document.documentId),
+    );
+    const occupiedDocuments = new Set(
+      activeDocuments
+        .filter((candidate) => !movingDocumentIds.has(candidate.documentId))
+        .map((candidate) => candidate.path.toLowerCase()),
+    );
+    const documentMoves = documents.map((document) => ({
+      document,
+      fromPath: document.path,
+      path: `${nextPath}${document.path.slice(folder.path.length)}`,
+    }));
+    if (
+      documentMoves.some((candidate) =>
+        occupiedDocuments.has(candidate.path.toLowerCase()),
+      )
+    ) {
+      throw new ConflictException('A note already exists at that location');
+    }
+
+    const trace = this.startMutation(space, principal, 'move_folder', {
+      folderId,
+      fromPath: folder.path,
+      toPath: nextPath,
+      documentCount: documentMoves.length,
+    });
+    try {
+      for (const candidate of documentMoves) {
+        await this.writeDocument(
+          spaceId,
+          principal,
+          {
+            documentId: candidate.document.documentId,
+            path: candidate.path,
+            title: candidate.document.title,
+            content: candidate.document.content,
+            expectedRevision: candidate.document.revision,
+            providerDocumentId:
+              candidate.document.providerDocumentId ?? undefined,
+            providerRevision: candidate.document.providerRevision ?? undefined,
+          },
+          {
+            traceId: trace.traceId,
+            deferGraph: true,
+            deferFolders: true,
+          },
+        );
+      }
+      for (const candidate of folderMoves) {
+        await this.db
+          .update(schema.knowledgeFolder)
+          .set({
+            path: candidate.path,
+            updatedByType: principal.principalType,
+            updatedById: principal.principalId,
+            updatedAt: new Date(),
+          })
+          .where(
+            eq(schema.knowledgeFolder.folderId, candidate.folder.folderId),
+          );
+      }
+      await this.rebuildLinks(spaceId);
+      await this.touchSpace(spaceId);
+      this.provenance.recordEvent(trace.traceId, {
+        category: 'tool',
+        eventType: 'knowledge.folder.moved',
+        name: 'Move knowledge folder',
+        summary: `Moved ${folder.path} to ${nextPath}`,
+        payload: { folderId, fromPath: folder.path, toPath: nextPath },
+        result: { movedDocuments: documentMoves.length },
+        performedBy: actor(principal),
+      });
+      this.provenance.finishRun(trace.traceId, {
+        status: 'completed',
+        output: { folderId, path: nextPath },
+      });
+    } catch (error) {
+      this.provenance.finishRun(trace.traceId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+    const movedFolder = await this.db.query.knowledgeFolder.findFirst({
+      where: (table) => eq(table.folderId, folderId),
+    });
+    return {
+      folder: movedFolder ? this.publicFolder(movedFolder) : undefined,
+      movedDocuments: documentMoves.map((candidate) => ({
+        documentId: candidate.document.documentId,
+        fromPath: candidate.fromPath,
+        path: candidate.path,
+      })),
+    };
+  }
+
+  async removeFolder(
+    spaceId: string,
+    folderId: string,
+    principal: KnowledgePrincipal,
+  ) {
+    const { space } = await this.requireSpace(spaceId, principal, 'write');
+    const folder = await this.db.query.knowledgeFolder.findFirst({
+      where: (table) =>
+        and(
+          eq(table.folderId, folderId),
+          eq(table.spaceId, spaceId),
+          isNull(table.deletedAt),
+        ),
+    });
+    if (!folder) throw new NotFoundException('Knowledge folder not found');
+    const documents = await this.db.query.knowledgeDocument.findMany({
+      where: (table) =>
+        and(
+          eq(table.spaceId, spaceId),
+          ilike(table.path, `${escapeLike(folder.path)}/%`),
+          isNull(table.deletedAt),
+        ),
+    });
+    const trace = this.startMutation(space, principal, 'delete_folder', {
+      folderId,
+      path: folder.path,
+      documentCount: documents.length,
+    });
+    try {
+      for (const document of documents) {
+        await this.providers
+          .resolve(space.provider)
+          .remove(document.documentId);
+      }
+      await this.db
+        .update(schema.knowledgeFolder)
+        .set({
+          deletedAt: new Date(),
+          updatedByType: principal.principalType,
+          updatedById: principal.principalId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.knowledgeFolder.spaceId, spaceId),
+            or(
+              sql<boolean>`lower(${schema.knowledgeFolder.path}) = lower(${folder.path})`,
+              ilike(
+                schema.knowledgeFolder.path,
+                `${escapeLike(folder.path)}/%`,
+              ),
+            ),
+            isNull(schema.knowledgeFolder.deletedAt),
+          ),
+        );
+      await this.rebuildLinks(spaceId);
+      await this.touchSpace(spaceId);
+      this.provenance.recordEvent(trace.traceId, {
+        category: 'tool',
+        eventType: 'knowledge.folder.deleted',
+        name: 'Delete knowledge folder',
+        summary: `Deleted ${folder.path} and ${documents.length} notes`,
+        payload: { folderId, path: folder.path },
+        result: { deletedDocuments: documents.length },
+        performedBy: actor(principal),
+      });
+      this.provenance.finishRun(trace.traceId, {
+        status: 'completed',
+        output: { deleted: true, deletedDocuments: documents.length },
+      });
+    } catch (error) {
+      this.provenance.finishRun(trace.traceId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+    return { deleted: true, deletedDocuments: documents.length };
   }
 
   async listDocuments(
@@ -394,7 +769,11 @@ export class BrainService {
       providerDocumentId?: string;
       providerRevision?: string;
     },
-    options: { traceId?: string; deferGraph?: boolean } = {},
+    options: {
+      traceId?: string;
+      deferGraph?: boolean;
+      deferFolders?: boolean;
+    } = {},
   ) {
     const { space } = await this.requireSpace(spaceId, principal, 'write');
     if (typeof input.content !== 'string') {
@@ -451,6 +830,9 @@ export class BrainService {
         providerRevision: input.providerRevision,
       });
       await this.indexDocument(document);
+      if (!options.deferFolders) {
+        await this.ensureFolderRows(spaceId, principal, [document.path]);
+      }
       if (!options.deferGraph) await this.rebuildLinks(spaceId);
       await this.touchSpace(spaceId);
       if (trace.owned) {
@@ -490,15 +872,30 @@ export class BrainService {
     spaceId: string,
     principal: KnowledgePrincipal,
     documents: KnowledgeDocumentImport[],
+    folderPaths: string[] = [],
   ) {
     const { space } = await this.requireSpace(spaceId, principal, 'write');
-    if (!Array.isArray(documents) || !documents.length) {
+    documents = Array.isArray(documents) ? documents : [];
+    folderPaths = Array.isArray(folderPaths) ? folderPaths : [];
+    if (!documents.length && !folderPaths.length) {
       throw new BadRequestException(
-        'At least one Markdown document is required',
+        'At least one Markdown document or folder is required',
       );
     }
-    if (documents.length > 1_000) {
-      throw new BadRequestException('Import at most 1,000 notes at a time');
+    if (documents.length + folderPaths.length > 2_000) {
+      throw new BadRequestException(
+        'Import at most 2,000 notes and folders at a time',
+      );
+    }
+    let normalizedFolders: string[];
+    try {
+      normalizedFolders = [
+        ...new Set(folderPaths.map((path) => normalizeFolderPath(path))),
+      ];
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Invalid folder path',
+      );
     }
     const totalChars = documents.reduce(
       (total, document) => total + String(document.content ?? '').length,
@@ -509,6 +906,7 @@ export class BrainService {
     }
     const trace = this.startMutation(space, principal, 'import', {
       documentCount: documents.length,
+      folderCount: normalizedFolders.length,
       totalCharacters: totalChars,
     });
     const result = {
@@ -516,6 +914,7 @@ export class BrainService {
       updated: 0,
       unchanged: 0,
       remoteKept: 0,
+      folders: 0,
       failed: [] as any[],
     };
     for (const candidate of documents) {
@@ -585,6 +984,11 @@ export class BrainService {
         });
       }
     }
+    await this.ensureFolderRows(spaceId, principal, [
+      ...documents.map((document) => document.path),
+      ...normalizedFolders.map((path) => `${path}/placeholder.md`),
+    ]);
+    result.folders = normalizedFolders.length;
     await this.rebuildLinks(spaceId);
     this.provenance.recordEvent(trace.traceId, {
       category: 'tool',
@@ -597,10 +1001,12 @@ export class BrainService {
     });
     this.provenance.finishRun(trace.traceId, {
       status:
-        result.failed.length === documents.length ? 'failed' : 'completed',
+        result.failed.length === documents.length && !normalizedFolders.length
+          ? 'failed'
+          : 'completed',
       output: result,
       error:
-        result.failed.length === documents.length
+        result.failed.length === documents.length && !normalizedFolders.length
           ? 'Every document in the import failed'
           : undefined,
     });
@@ -696,7 +1102,13 @@ export class BrainService {
     const requested = new Set(input.spaceIds ?? []);
     const spaceIds = accessible
       .map((space) => space.spaceId)
-      .filter((spaceId) => !requested.size || requested.has(spaceId));
+      .filter((spaceId) => !requested.size || requested.has(spaceId))
+      .filter(
+        (spaceId) =>
+          requested.size > 0 ||
+          principal.principalType !== 'agent' ||
+          accessible.find((space) => space.spaceId === spaceId)?.autoRetrieve,
+      );
     if (!spaceIds.length) {
       return { query, algorithm: 'hybrid_graph', results: [] };
     }
@@ -876,7 +1288,7 @@ export class BrainService {
           .values({
             ownerUserId,
             workspaceId: workspaceId ?? null,
-            name: 'Commons Brain',
+            name: 'Common Brain',
             description:
               'Shared context for you and all of your Commons agents.',
             provider: 'native',
@@ -898,6 +1310,13 @@ export class BrainService {
       }
     }
     if (!space) throw new Error('Could not create the default Knowledge Space');
+    if (space.name === 'Commons Brain') {
+      [space] = await this.db
+        .update(schema.knowledgeSpace)
+        .set({ name: 'Common Brain', updatedAt: new Date() })
+        .where(eq(schema.knowledgeSpace.spaceId, space.spaceId))
+        .returning();
+    }
     await this.grantOwnedAgents(
       space,
       {
@@ -907,19 +1326,30 @@ export class BrainService {
       },
       { allAgents: true },
     );
-    const welcome = await this.db.query.knowledgeDocument.findFirst({
+    const providerConfig = (space.providerConfig ?? {}) as Record<
+      string,
+      unknown
+    >;
+    if (providerConfig.knowledgeStarterVersion === 1) return space;
+
+    const existingDocuments = await this.db.query.knowledgeDocument.findMany({
       where: (table) =>
         and(eq(table.spaceId, space!.spaceId), isNull(table.deletedAt)),
     });
-    if (!welcome) {
-      const parsed = parseMarkdownDocument(DEFAULT_WELCOME, 'Welcome.md');
+    const existingPaths = new Set(
+      existingDocuments.map((document) => document.path.toLowerCase()),
+    );
+    let seededCount = 0;
+    for (const starter of DEFAULT_STARTER_DOCUMENTS) {
+      if (existingPaths.has(starter.path.toLowerCase())) continue;
+      const parsed = parseMarkdownDocument(starter.content, starter.path);
       try {
         const document = await this.providers.resolve(space.provider).write({
           spaceId: space.spaceId,
-          path: 'Welcome.md',
-          title: 'Welcome',
-          content: DEFAULT_WELCOME,
-          contentHash: sha256(DEFAULT_WELCOME),
+          path: starter.path,
+          title: starter.title,
+          content: starter.content,
+          contentHash: sha256(starter.content),
           frontmatter: parsed.frontmatter,
           tags: parsed.tags,
           actor: {
@@ -929,20 +1359,51 @@ export class BrainService {
           },
         });
         await this.indexDocument(document);
-        await this.rebuildLinks(space.spaceId);
+        seededCount += 1;
       } catch (error) {
         if (!(error instanceof ConflictException)) throw error;
         const raced = await this.db.query.knowledgeDocument.findFirst({
           where: (table) =>
             and(
               eq(table.spaceId, space!.spaceId),
-              sql<boolean>`lower(${table.path}) = lower('Welcome.md')`,
+              sql<boolean>`lower(${table.path}) = lower(${starter.path})`,
               isNull(table.deletedAt),
             ),
         });
         if (!raced) throw error;
       }
     }
+    await this.ensureFolderRows(
+      space.spaceId,
+      {
+        principalId: ownerUserId,
+        principalType: 'user',
+        workspaceId,
+      },
+      DEFAULT_STARTER_DOCUMENTS.map((document) => document.path),
+    );
+    if (seededCount) await this.rebuildLinks(space.spaceId);
+    [space] = await this.db
+      .update(schema.knowledgeSpace)
+      .set({
+        providerConfig: {
+          ...providerConfig,
+          knowledgeStarterVersion: 1,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.knowledgeSpace.spaceId, space.spaceId))
+      .returning();
+    this.captureMutation(
+      space,
+      {
+        principalId: ownerUserId,
+        principalType: 'user',
+        workspaceId,
+      },
+      'knowledge.space.starter_seeded',
+      { version: 1, addedDocuments: seededCount },
+    );
     return space;
   }
 
@@ -1043,6 +1504,36 @@ export class BrainService {
     }, null);
   }
 
+  private async automaticRetrievalForSpace(
+    spaceId: string,
+    principal: KnowledgePrincipal,
+  ) {
+    if (principal.principalType !== 'agent') return true;
+    const conditions: SQL[] = [
+      and(
+        eq(schema.knowledgeSpaceGrant.subjectType, 'agent'),
+        sql<boolean>`lower(${schema.knowledgeSpaceGrant.subjectId}) = lower(${principal.principalId})`,
+      )!,
+    ];
+    if (principal.workspaceId) {
+      conditions.push(
+        and(
+          eq(schema.knowledgeSpaceGrant.subjectType, 'workspace'),
+          sql<boolean>`lower(${schema.knowledgeSpaceGrant.subjectId}) = lower(${principal.workspaceId})`,
+        )!,
+      );
+    }
+    const grant = await this.db.query.knowledgeSpaceGrant.findFirst({
+      where: (table) =>
+        and(
+          eq(table.spaceId, spaceId),
+          eq(table.autoRetrieve, true),
+          or(...conditions),
+        ),
+    });
+    return Boolean(grant);
+  }
+
   private accessCondition(
     table: typeof schema.knowledgeSpace,
     principal: KnowledgePrincipal,
@@ -1073,6 +1564,7 @@ export class BrainService {
       .select({
         documents: sql<number>`count(DISTINCT ${schema.knowledgeDocument.documentId})::int`,
         links: sql<number>`count(DISTINCT ${schema.knowledgeLink.linkId})::int`,
+        folders: sql<number>`count(DISTINCT ${schema.knowledgeFolder.folderId})::int`,
       })
       .from(schema.knowledgeSpace)
       .leftJoin(
@@ -1086,11 +1578,67 @@ export class BrainService {
         schema.knowledgeLink,
         eq(schema.knowledgeLink.spaceId, schema.knowledgeSpace.spaceId),
       )
+      .leftJoin(
+        schema.knowledgeFolder,
+        and(
+          eq(schema.knowledgeFolder.spaceId, schema.knowledgeSpace.spaceId),
+          isNull(schema.knowledgeFolder.deletedAt),
+        ),
+      )
       .where(eq(schema.knowledgeSpace.spaceId, spaceId));
     return {
       documents: Number(row?.documents ?? 0),
       links: Number(row?.links ?? 0),
+      folders: Number(row?.folders ?? 0),
     };
+  }
+
+  private async ensureFolderRows(
+    spaceId: string,
+    principal: KnowledgePrincipal,
+    documentPaths: string[],
+  ) {
+    const requested = new Set<string>();
+    for (const value of documentPaths) {
+      let documentPath: string;
+      try {
+        documentPath = normalizeDocumentPath(value);
+      } catch {
+        continue;
+      }
+      const parts = documentPath.split('/');
+      parts.pop();
+      let current = '';
+      for (const part of parts) {
+        current = current ? `${current}/${part}` : part;
+        requested.add(current);
+      }
+    }
+    if (!requested.size) return;
+    const existing = await this.db.query.knowledgeFolder.findMany({
+      columns: { path: true },
+      where: (table) =>
+        and(eq(table.spaceId, spaceId), isNull(table.deletedAt)),
+    });
+    const existingPaths = new Set(
+      existing.map((folder) => folder.path.toLowerCase()),
+    );
+    for (const path of requested) {
+      if (existingPaths.has(path.toLowerCase())) continue;
+      try {
+        await this.db.insert(schema.knowledgeFolder).values({
+          spaceId,
+          path,
+          createdByType: principal.principalType,
+          createdById: principal.principalId,
+          updatedByType: principal.principalType,
+          updatedById: principal.principalId,
+        });
+        existingPaths.add(path.toLowerCase());
+      } catch (error: any) {
+        if (error?.code !== '23505') throw error;
+      }
+    }
   }
 
   private async indexDocument(
@@ -1318,7 +1866,8 @@ export class BrainService {
   private publicSpace(
     space: typeof schema.knowledgeSpace.$inferSelect,
     permission: KnowledgePermission | null,
-    counts: { documents: number; links: number },
+    counts: { documents: number; links: number; folders: number },
+    autoRetrieve = true,
   ) {
     return {
       spaceId: space.spaceId,
@@ -1330,11 +1879,22 @@ export class BrainService {
       status: space.status,
       isDefault: space.isDefault,
       autoGrantNewAgents: space.autoGrantNewAgents,
+      autoRetrieve,
       permission,
       counts,
       workspaceId: space.workspaceId,
       createdAt: space.createdAt,
       updatedAt: space.updatedAt,
+    };
+  }
+
+  private publicFolder(folder: typeof schema.knowledgeFolder.$inferSelect) {
+    return {
+      folderId: folder.folderId,
+      spaceId: folder.spaceId,
+      path: folder.path,
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt,
     };
   }
 

@@ -29,8 +29,17 @@ export type KnowledgeSpace = {
   status: "active" | "disconnected";
   isDefault: boolean;
   autoGrantNewAgents: boolean;
-  counts: { documents: number; links: number };
+  autoRetrieve?: boolean;
+  counts: { documents: number; links: number; folders?: number };
   grants?: KnowledgeGrant[];
+  updatedAt: string;
+};
+
+export type KnowledgeFolder = {
+  folderId: string;
+  spaceId: string;
+  path: string;
+  createdAt: string;
   updatedAt: string;
 };
 

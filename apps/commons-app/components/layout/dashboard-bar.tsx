@@ -46,7 +46,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({
       icon: Workflow,
       path: "/studio/workflows",
     },
-    { key: "brains", label: "Knowledge", icon: Network, path: "/brains" },
+    { key: "knowledge", label: "Knowledge", icon: Network, path: "/knowledge" },
     { key: "library", label: "Library", icon: LibraryBig, path: "/library" },
     {
       key: "customize",

@@ -129,6 +129,54 @@ export class BrainController {
     return this.brains.revokeGrant(spaceId, grantId, principalFrom(request));
   }
 
+  @Get(':spaceId/folders')
+  async folders(@Req() request: Request, @Param('spaceId') spaceId: string) {
+    return {
+      data: await this.brains.listFolders(spaceId, principalFrom(request)),
+    };
+  }
+
+  @Post(':spaceId/folders')
+  async createFolder(
+    @Req() request: Request,
+    @Param('spaceId') spaceId: string,
+    @Body() body: { path: string },
+  ) {
+    return {
+      data: await this.brains.createFolder(
+        spaceId,
+        principalFrom(request),
+        body.path,
+      ),
+    };
+  }
+
+  @Patch(':spaceId/folders/:folderId')
+  async moveFolder(
+    @Req() request: Request,
+    @Param('spaceId') spaceId: string,
+    @Param('folderId') folderId: string,
+    @Body() body: { path: string },
+  ) {
+    return {
+      data: await this.brains.moveFolder(
+        spaceId,
+        folderId,
+        principalFrom(request),
+        body.path,
+      ),
+    };
+  }
+
+  @Delete(':spaceId/folders/:folderId')
+  async removeFolder(
+    @Req() request: Request,
+    @Param('spaceId') spaceId: string,
+    @Param('folderId') folderId: string,
+  ) {
+    return this.brains.removeFolder(spaceId, folderId, principalFrom(request));
+  }
+
   @Get(':spaceId/documents')
   async documents(
     @Req() request: Request,
@@ -213,13 +261,14 @@ export class BrainController {
   async importDocuments(
     @Req() request: Request,
     @Param('spaceId') spaceId: string,
-    @Body() body: { documents: KnowledgeDocumentImport[] },
+    @Body() body: { documents: KnowledgeDocumentImport[]; folders?: string[] },
   ) {
     return {
       data: await this.brains.importDocuments(
         spaceId,
         principalFrom(request),
         body.documents,
+        body.folders,
       ),
     };
   }

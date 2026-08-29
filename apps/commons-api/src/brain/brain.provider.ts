@@ -176,7 +176,7 @@ export class BrowserFilesystemKnowledgeProvider extends NativeKnowledgeProvider 
   override readonly definition: KnowledgeProviderDefinition = {
     id: 'browser_filesystem',
     name: 'Markdown folder',
-    description: 'Connect an Obsidian-compatible folder through your browser.',
+    description: 'Connect a portable Markdown folder through your browser.',
     capabilities: { editable: true, import: true, clientSync: true },
   };
 

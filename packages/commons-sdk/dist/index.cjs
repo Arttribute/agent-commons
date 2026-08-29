@@ -1145,6 +1145,17 @@ var CommonsClient = class {
         "DELETE",
         `${spacePath(spaceId)}/grants/${encodeURIComponent(grantId)}`
       ),
+      listFolders: (spaceId) => this.request("GET", `${spacePath(spaceId)}/folders`),
+      createFolder: (spaceId, path) => this.request("POST", `${spacePath(spaceId)}/folders`, { path }),
+      moveFolder: (spaceId, folderId, path) => this.request(
+        "PATCH",
+        `${spacePath(spaceId)}/folders/${encodeURIComponent(folderId)}`,
+        { path }
+      ),
+      deleteFolder: (spaceId, folderId) => this.request(
+        "DELETE",
+        `${spacePath(spaceId)}/folders/${encodeURIComponent(folderId)}`
+      ),
       listDocuments: (spaceId, options) => {
         const query = new URLSearchParams();
         if (options?.query) query.set("query", options.query);
@@ -1161,7 +1172,10 @@ var CommonsClient = class {
       createDocument: (spaceId, params) => this.request("POST", `${spacePath(spaceId)}/documents`, params),
       updateDocument: (spaceId, documentId, params) => this.request("PATCH", documentPath(spaceId, documentId), params),
       deleteDocument: (spaceId, documentId) => this.request("DELETE", documentPath(spaceId, documentId)),
-      importMarkdown: (spaceId, documents) => this.request("POST", `${spacePath(spaceId)}/import`, { documents }),
+      importMarkdown: (spaceId, documents, folders = []) => this.request("POST", `${spacePath(spaceId)}/import`, {
+        documents,
+        folders
+      }),
       graph: (spaceId) => this.request("GET", `${spacePath(spaceId)}/graph`),
       search: (params) => {
         const query = new URLSearchParams({ query: params.query });

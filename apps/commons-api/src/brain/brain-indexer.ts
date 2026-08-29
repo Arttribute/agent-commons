@@ -66,6 +66,23 @@ export function normalizeDocumentPath(value: string) {
   return path;
 }
 
+export function normalizeFolderPath(value: string) {
+  const decoded = safelyDecode(value.trim()).replace(/\\/g, '/');
+  if (!decoded) throw new Error('Folder path is required');
+  if (decoded.includes('\0')) throw new Error('Folder path is invalid');
+  const pieces = decoded
+    .replace(/^\/+|\/+$/g, '')
+    .split('/')
+    .filter((piece) => piece && piece !== '.');
+  if (pieces.some((piece) => piece === '..')) {
+    throw new Error('Folder path cannot leave its Knowledge Space');
+  }
+  const path = pieces.join('/');
+  if (!path) throw new Error('Folder path is required');
+  if (path.length > 480) throw new Error('Folder path is too long');
+  return path;
+}
+
 export function titleFromPath(path: string) {
   return posix.basename(path, posix.extname(path)).replace(/[-_]+/g, ' ');
 }

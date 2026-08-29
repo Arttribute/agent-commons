@@ -1016,6 +1016,37 @@ export const knowledgeSpaceGrant = pgTable(
   }),
 );
 
+/** Durable folders, including empty folders created before their first note. */
+export const knowledgeFolder = pgTable(
+  'knowledge_folder',
+  {
+    folderId: uuid('folder_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => knowledgeSpace.spaceId, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    createdByType: text('created_by_type').default('user').notNull(),
+    createdById: text('created_by_id').notNull(),
+    updatedByType: text('updated_by_type').default('user').notNull(),
+    updatedById: text('updated_by_id').notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    spacePathIdx: index('idx_knowledge_folder_space_path').on(
+      table.spaceId,
+      table.path,
+    ),
+  }),
+);
+
 /** Canonical mutable Markdown document. Folder structure lives in `path`. */
 export const knowledgeDocument = pgTable(
   'knowledge_document',

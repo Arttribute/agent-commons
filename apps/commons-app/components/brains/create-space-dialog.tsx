@@ -30,7 +30,7 @@ export function CreateSpaceDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: (space: KnowledgeSpace) => void;
+  onCreated: (space: KnowledgeSpace) => Promise<void> | void;
 }) {
   const [mode, setMode] = useState<"native" | "browser_filesystem">("native");
   const [name, setName] = useState("");
@@ -70,14 +70,17 @@ export function CreateSpaceDialog({
         throw new Error(apiMessage(payload, "Could not create space"));
       const space = payload.data as KnowledgeSpace;
       if (folder) {
-        rememberMarkdownFolder(space.spaceId, folder.handle);
-        if (folder.documents.length) {
+        await rememberMarkdownFolder(space.spaceId, folder.handle);
+        if (folder.documents.length || folder.folders.length) {
           const imported = await fetch(
             `/api/knowledge/${space.spaceId}/import`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ documents: folder.documents }),
+              body: JSON.stringify({
+                documents: folder.documents,
+                folders: folder.folders,
+              }),
             },
           );
           const importPayload = await imported.json();
@@ -88,7 +91,7 @@ export function CreateSpaceDialog({
           }
         }
       }
-      onCreated(space);
+      await onCreated(space);
       onOpenChange(false);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -141,7 +144,7 @@ export function CreateSpaceDialog({
             <FolderInput className="mb-3 h-5 w-5 text-sky-700" />
             <span className="block text-sm font-medium">Markdown folder</span>
             <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-              Connect an Obsidian-compatible folder on this device.
+              Connect a portable folder of Markdown files on this device.
             </span>
           </button>
         </div>

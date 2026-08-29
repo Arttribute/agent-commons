@@ -79,6 +79,7 @@ import {
   KnowledgeSpace,
   KnowledgeGrant,
   KnowledgeDocument,
+  KnowledgeFolder,
   KnowledgeGraph,
   KnowledgeSearchResult,
   Space,
@@ -2276,6 +2277,44 @@ export class CommonsClient {
           `${spacePath(spaceId)}/grants/${encodeURIComponent(grantId)}`,
         ),
 
+      listFolders: (spaceId: string): Promise<{ data: KnowledgeFolder[] }> =>
+        this.request("GET", `${spacePath(spaceId)}/folders`),
+
+      createFolder: (
+        spaceId: string,
+        path: string,
+      ): Promise<{ data: KnowledgeFolder }> =>
+        this.request("POST", `${spacePath(spaceId)}/folders`, { path }),
+
+      moveFolder: (
+        spaceId: string,
+        folderId: string,
+        path: string,
+      ): Promise<{
+        data: {
+          folder?: KnowledgeFolder;
+          movedDocuments: Array<{
+            documentId: string;
+            fromPath: string;
+            path: string;
+          }>;
+        };
+      }> =>
+        this.request(
+          "PATCH",
+          `${spacePath(spaceId)}/folders/${encodeURIComponent(folderId)}`,
+          { path },
+        ),
+
+      deleteFolder: (
+        spaceId: string,
+        folderId: string,
+      ): Promise<{ deleted: boolean; deletedDocuments: number }> =>
+        this.request(
+          "DELETE",
+          `${spacePath(spaceId)}/folders/${encodeURIComponent(folderId)}`,
+        ),
+
       listDocuments: (
         spaceId: string,
         options?: { query?: string; includeContent?: boolean; limit?: number },
@@ -2330,15 +2369,21 @@ export class CommonsClient {
           content: string;
           modifiedAt?: string;
         }>,
+        folders: string[] = [],
       ): Promise<{
         data: {
           created: number;
           updated: number;
           unchanged: number;
           remoteKept: number;
+          folders: number;
           failed: Array<{ path: string; error: string }>;
         };
-      }> => this.request("POST", `${spacePath(spaceId)}/import`, { documents }),
+      }> =>
+        this.request("POST", `${spacePath(spaceId)}/import`, {
+          documents,
+          folders,
+        }),
 
       graph: (spaceId: string): Promise<{ data: KnowledgeGraph }> =>
         this.request("GET", `${spacePath(spaceId)}/graph`),

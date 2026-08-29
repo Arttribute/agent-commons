@@ -156,6 +156,7 @@ export type {
   KnowledgeProviderDefinition,
   KnowledgeGrant,
   KnowledgeSpace,
+  KnowledgeFolder,
   KnowledgeLink,
   KnowledgeDocument,
   KnowledgeGraph,

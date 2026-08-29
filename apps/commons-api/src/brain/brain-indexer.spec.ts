@@ -4,6 +4,7 @@ import {
   decideFilesystemMerge,
   documentAliases,
   normalizeDocumentPath,
+  normalizeFolderPath,
   normalizeKnowledgeAlias,
   parseMarkdownDocument,
   resolveLinkPath,
@@ -24,6 +25,14 @@ describe('Knowledge Markdown indexer', () => {
       (path) =>
         expect(() => normalizeDocumentPath(path)).toThrow(/cannot leave/),
     );
+
+    it('normalizes durable folder paths without adding a file extension', () => {
+      expect(normalizeFolderPath(' /Projects\\Launch%20notes/ ')).toBe(
+        'Projects/Launch notes',
+      );
+      expect(() => normalizeFolderPath('../outside')).toThrow(/cannot leave/);
+      expect(() => normalizeFolderPath('')).toThrow(/required/);
+    });
   });
 
   it('extracts portable properties, tags, wikilinks, and Markdown links', () => {

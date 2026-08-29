@@ -68,7 +68,7 @@ export function DashboardSideBar({ username }: { username: string }) {
     )
       return "customize";
     if (pathname.startsWith("/library")) return "library";
-    if (pathname.startsWith("/brains")) return "brains";
+    if (pathname.startsWith("/knowledge")) return "knowledge";
     if (pathname.startsWith("/logs")) return "logs";
     if (pathname.startsWith("/spaces")) return "spaces";
     return "agents";
@@ -173,9 +173,9 @@ export function DashboardSideBar({ username }: { username: string }) {
                   label: "Workflows",
                 },
                 {
-                  key: "brains",
+                  key: "knowledge",
                   icon: Network,
-                  path: "/brains",
+                  path: "/knowledge",
                   label: "Knowledge",
                 },
                 {

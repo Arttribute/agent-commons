@@ -1,9 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BookOpen,
   Bot,
@@ -13,7 +11,6 @@ import {
   Clock3,
   FilePlus2,
   FileText,
-  Folder,
   FolderInput,
   FolderPlus,
   FolderSync,
@@ -58,16 +55,23 @@ import { cn } from "@/lib/utils";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import {
   chooseMarkdownFolder,
+  createConnectedFolder,
   hasConnectedFolder,
+  moveConnectedEntry,
+  removeConnectedFolder,
   removeConnectedNote,
   reconnectMarkdownFolder,
   rememberMarkdownFolder,
+  restoreMarkdownFolder,
   writeConnectedNote,
 } from "./browser-folder";
 import { CreateSpaceDialog } from "./create-space-dialog";
+import { KnowledgeTree } from "./knowledge-tree";
+import { RichMarkdownEditor } from "./rich-markdown-editor";
 import { SpaceAccessDialog } from "./space-access-dialog";
 import type {
   KnowledgeDocument,
+  KnowledgeFolder,
   KnowledgeGraph,
   KnowledgeSearchResult,
   KnowledgeSpace,
@@ -85,7 +89,7 @@ const KnowledgeGraphView = dynamic(
   },
 );
 
-type EditorMode = "edit" | "preview";
+type EditorMode = "visual" | "markdown";
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function KnowledgeSpacesView() {
@@ -95,11 +99,12 @@ export function KnowledgeSpacesView() {
   const [spaces, setSpaces] = useState<KnowledgeSpace[]>([]);
   const [spaceId, setSpaceId] = useState("");
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+  const [folders, setFolders] = useState<KnowledgeFolder[]>([]);
   const [documentId, setDocumentId] = useState("");
   const [document, setDocument] = useState<KnowledgeDocument | null>(null);
   const [graph, setGraph] = useState<KnowledgeGraph>({ nodes: [], edges: [] });
   const [view, setView] = useState<"notes" | "graph">("notes");
-  const [editorMode, setEditorMode] = useState<EditorMode>("edit");
+  const [editorMode, setEditorMode] = useState<EditorMode>("visual");
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [draft, setDraft] = useState("");
   const [draftTitle, setDraftTitle] = useState("");
@@ -114,17 +119,25 @@ export function KnowledgeSpacesView() {
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [newNoteOpen, setNewNoteOpen] = useState(false);
-  const [newNoteKind, setNewNoteKind] = useState<"note" | "project">("note");
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderParent, setNewFolderParent] = useState("");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>(
     [],
   );
   const [searching, setSearching] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [connectedFolderIds, setConnectedFolderIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   const activeSpace = spaces.find((space) => space.spaceId === spaceId) || null;
   const canWrite =
     activeSpace?.permission === "write" || activeSpace?.permission === "manage";
+  const sourceConnected =
+    activeSpace?.provider !== "browser_filesystem" ||
+    connectedFolderIds.has(activeSpace.spaceId);
+  const canEdit = Boolean(canWrite && sourceConnected);
   const canManage = activeSpace?.permission === "manage";
 
   const loadSpaces = useCallback(async () => {
@@ -189,15 +202,35 @@ export function KnowledgeSpacesView() {
     if (response.ok) setGraph(payload.data || { nodes: [], edges: [] });
   }, []);
 
+  const loadFolders = useCallback(async (nextSpaceId: string) => {
+    if (!nextSpaceId) return;
+    const response = await fetch(`/api/knowledge/${nextSpaceId}/folders`, {
+      cache: "no-store",
+    });
+    const payload = await response.json();
+    if (!response.ok)
+      throw new Error(apiMessage(payload, "Could not load folders"));
+    setFolders(Array.isArray(payload.data) ? payload.data : []);
+  }, []);
+
   useEffect(() => {
     setDocument(null);
     setDocumentId("");
     setDocuments([]);
+    setFolders([]);
     if (spaceId) {
       void loadDocuments(spaceId);
+      void loadFolders(spaceId);
       void loadGraph(spaceId);
+      const selectedSpace = spaces.find((space) => space.spaceId === spaceId);
+      if (selectedSpace?.provider === "browser_filesystem") {
+        void restoreMarkdownFolder(spaceId).then((connected) => {
+          if (!connected) return;
+          setConnectedFolderIds((current) => new Set(current).add(spaceId));
+        });
+      }
     }
-  }, [loadDocuments, loadGraph, spaceId]);
+  }, [activeSpace?.provider, loadDocuments, loadFolders, loadGraph, spaceId]);
 
   useEffect(() => {
     if (!spaceId || !documentId) {
@@ -239,7 +272,8 @@ export function KnowledgeSpacesView() {
   }, [documentId, spaceId]);
 
   const saveDocument = useCallback(async () => {
-    if (!document || !activeSpace || !canWrite || !dirty) return;
+    if (!dirty) return true;
+    if (!document || !activeSpace || !canEdit) return false;
     const captured = { ...draftRef.current };
     setSaveState("saving");
     setError("");
@@ -294,11 +328,13 @@ export function KnowledgeSpacesView() {
       if (unchanged) setDirty(false);
       setSaveState("saved");
       void loadGraph(activeSpace.spaceId);
+      return true;
     } catch (cause) {
       setSaveState("error");
       setError(cause instanceof Error ? cause.message : "Could not save note");
+      return false;
     }
-  }, [activeSpace, canWrite, dirty, document, loadGraph]);
+  }, [activeSpace, canEdit, dirty, document, loadGraph]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -350,6 +386,9 @@ export function KnowledgeSpacesView() {
 
   async function createNote(input: { path: string; title: string }) {
     if (!activeSpace) return;
+    if (!sourceConnected) {
+      throw new Error("Reconnect this folder before creating a note.");
+    }
     const content = `---\ntype: Note\ntitle: ${JSON.stringify(input.title)}\nstatus: draft\n---\n\n# ${input.title}\n\n`;
     const response = await fetch(
       `/api/knowledge/${activeSpace.spaceId}/documents`,
@@ -371,10 +410,20 @@ export function KnowledgeSpacesView() {
       throw new Error(apiMessage(payload, "Could not create note"));
     const created = payload.data as KnowledgeDocument;
     if (activeSpace.provider === "browser_filesystem") {
-      await writeConnectedNote(activeSpace.spaceId, created.path, content);
+      const writtenLocally = await writeConnectedNote(
+        activeSpace.spaceId,
+        created.path,
+        content,
+      ).catch(() => false);
+      if (!writtenLocally) {
+        setNotice(
+          "The note was created in Knowledge, but the connected source could not be updated. Reconnect it before the next sync.",
+        );
+      }
     }
     await Promise.all([
       loadDocuments(activeSpace.spaceId),
+      loadFolders(activeSpace.spaceId),
       loadGraph(activeSpace.spaceId),
       loadSpaces(),
     ]);
@@ -382,42 +431,355 @@ export function KnowledgeSpacesView() {
     setNewNoteOpen(false);
   }
 
-  async function removeDocument() {
-    if (!document || !activeSpace) return;
+  const refreshActiveSpace = useCallback(async () => {
+    if (!activeSpace) return;
+    await Promise.all([
+      loadDocuments(activeSpace.spaceId),
+      loadFolders(activeSpace.spaceId),
+      loadGraph(activeSpace.spaceId),
+      loadSpaces(),
+    ]);
+  }, [activeSpace, loadDocuments, loadFolders, loadGraph, loadSpaces]);
+
+  async function documentDetail(target: KnowledgeDocument) {
+    if (
+      target.documentId === document?.documentId &&
+      document.content != null
+    ) {
+      return {
+        ...document,
+        content: dirty ? draftRef.current.content : document.content,
+      };
+    }
+    const response = await fetch(
+      `/api/knowledge/${target.spaceId}/documents/${target.documentId}`,
+      { cache: "no-store" },
+    );
+    const payload = await response.json();
+    if (!response.ok)
+      throw new Error(apiMessage(payload, "Could not open note"));
+    return payload.data as KnowledgeDocument;
+  }
+
+  async function reloadOpenDocument(documentId: string) {
+    if (!activeSpace) return;
+    const response = await fetch(
+      `/api/knowledge/${activeSpace.spaceId}/documents/${documentId}`,
+      { cache: "no-store" },
+    );
+    const payload = await response.json();
+    if (!response.ok)
+      throw new Error(apiMessage(payload, "Could not refresh note"));
+    const next = payload.data as KnowledgeDocument;
+    setDocument(next);
+    setDraft(next.content || "");
+    setDraftTitle(next.title);
+    setDraftPath(next.path);
+    draftRef.current = {
+      content: next.content || "",
+      title: next.title,
+      path: next.path,
+    };
+    setDirty(false);
+  }
+
+  async function updateDocumentPath(
+    target: KnowledgeDocument,
+    nextPath: string,
+    nextTitle = target.title,
+  ) {
+    if (!activeSpace || nextPath === target.path) return;
+    setError("");
+    const selectedTarget = target.documentId === document?.documentId;
+    const hadUnsavedChanges = selectedTarget && dirty;
+    if (selectedTarget) setDirty(false);
+    try {
+      const detail = await documentDetail(target);
+      let movedLocal = false;
+      if (activeSpace.provider === "browser_filesystem") {
+        if (!hasConnectedFolder(activeSpace.spaceId)) {
+          throw new Error(
+            "Reconnect this folder before moving its source file.",
+          );
+        }
+        movedLocal = await moveConnectedEntry(
+          activeSpace.spaceId,
+          target.path,
+          nextPath,
+          "file",
+        );
+      }
+      const response = await fetch(
+        `/api/knowledge/${activeSpace.spaceId}/documents/${target.documentId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            path: nextPath,
+            title: nextTitle,
+            content: detail.content || "",
+            expectedRevision: detail.revision,
+            providerRevision:
+              activeSpace.provider === "browser_filesystem"
+                ? new Date().toISOString()
+                : undefined,
+          }),
+        },
+      );
+      const payload = await response.json();
+      if (!response.ok) {
+        if (movedLocal) {
+          await moveConnectedEntry(
+            activeSpace.spaceId,
+            nextPath,
+            target.path,
+            "file",
+          ).catch(() => false);
+        }
+        throw new Error(apiMessage(payload, "Could not move note"));
+      }
+      if (target.documentId === document?.documentId) {
+        const saved = payload.data as KnowledgeDocument;
+        setDocument(saved);
+        setDraftPath(saved.path);
+        setDraftTitle(saved.title);
+        draftRef.current = {
+          ...draftRef.current,
+          path: saved.path,
+          title: saved.title,
+        };
+        setDirty(false);
+      }
+      await refreshActiveSpace();
+    } catch (cause) {
+      if (hadUnsavedChanges) setDirty(true);
+      setError(cause instanceof Error ? cause.message : "Could not move note");
+    }
+  }
+
+  async function renameDocument(
+    target: KnowledgeDocument,
+    requestedName: string,
+  ) {
+    const name = cleanEntryName(requestedName).replace(/\.md$/i, "");
+    if (!name) return;
+    const parent = parentPath(target.path);
+    await updateDocumentPath(target, joinPath(parent, `${name}.md`), name);
+  }
+
+  async function moveDocument(
+    target: KnowledgeDocument,
+    targetFolderPath: string,
+  ) {
+    await updateDocumentPath(
+      target,
+      joinPath(targetFolderPath, baseName(target.path)),
+    );
+  }
+
+  async function createFolder(path: string) {
+    if (!activeSpace) return;
+    if (!sourceConnected) {
+      setError("Reconnect this folder before creating a folder.");
+      return;
+    }
+    setError("");
+    let createdLocally = false;
+    try {
+      if (activeSpace.provider === "browser_filesystem") {
+        createdLocally = await createConnectedFolder(activeSpace.spaceId, path);
+        if (!createdLocally) {
+          throw new Error("Reconnect this folder before creating a folder.");
+        }
+      }
+      const response = await fetch(
+        `/api/knowledge/${activeSpace.spaceId}/folders`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path }),
+        },
+      );
+      const payload = await response.json();
+      if (!response.ok) {
+        if (createdLocally) {
+          await removeConnectedFolder(activeSpace.spaceId, path).catch(
+            () => false,
+          );
+        }
+        throw new Error(apiMessage(payload, "Could not create folder"));
+      }
+      await refreshActiveSpace();
+      setNewFolderOpen(false);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not create folder",
+      );
+    }
+  }
+
+  async function updateFolderPath(target: KnowledgeFolder, nextPath: string) {
+    if (!activeSpace || nextPath === target.path) return;
+    if (nextPath.startsWith(`${target.path}/`)) {
+      setError("A folder cannot be moved inside itself.");
+      return;
+    }
+    setError("");
+    try {
+      if (dirty && !(await saveDocument())) {
+        throw new Error("Save the open note before moving this folder.");
+      }
+      const selectedDocumentId =
+        document &&
+        (document.path.toLowerCase().startsWith(`${target.path.toLowerCase()}/`)
+          ? document.documentId
+          : undefined);
+      let movedLocal = false;
+      if (activeSpace.provider === "browser_filesystem") {
+        if (!hasConnectedFolder(activeSpace.spaceId)) {
+          throw new Error("Reconnect this folder before moving it.");
+        }
+        movedLocal = await moveConnectedEntry(
+          activeSpace.spaceId,
+          target.path,
+          nextPath,
+          "folder",
+        );
+      }
+      const response = await fetch(
+        `/api/knowledge/${activeSpace.spaceId}/folders/${target.folderId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: nextPath }),
+        },
+      );
+      const payload = await response.json();
+      if (!response.ok) {
+        if (movedLocal) {
+          await moveConnectedEntry(
+            activeSpace.spaceId,
+            nextPath,
+            target.path,
+            "folder",
+          ).catch(() => false);
+        }
+        throw new Error(apiMessage(payload, "Could not move folder"));
+      }
+      await refreshActiveSpace();
+      if (selectedDocumentId) await reloadOpenDocument(selectedDocumentId);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not move folder",
+      );
+    }
+  }
+
+  async function renameFolder(target: KnowledgeFolder, requestedName: string) {
+    const name = cleanEntryName(requestedName);
+    if (!name) return;
+    await updateFolderPath(target, joinPath(parentPath(target.path), name));
+  }
+
+  async function moveFolder(target: KnowledgeFolder, targetFolderPath: string) {
+    await updateFolderPath(
+      target,
+      joinPath(targetFolderPath, baseName(target.path)),
+    );
+  }
+
+  async function removeFolder(target: KnowledgeFolder) {
+    if (!activeSpace) return;
+    if (!sourceConnected) {
+      setError("Reconnect this folder before deleting it.");
+      return;
+    }
     if (
       !window.confirm(
-        `Delete “${document.title}”? Its revision history remains in provenance.`,
+        `Delete “${target.path}” and every note inside it? Note history remains in provenance.`,
+      )
+    )
+      return;
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/knowledge/${activeSpace.spaceId}/folders/${target.folderId}`,
+        { method: "DELETE" },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok)
+        throw new Error(apiMessage(payload, "Could not delete folder"));
+      if (
+        activeSpace.provider === "browser_filesystem" &&
+        hasConnectedFolder(activeSpace.spaceId)
+      ) {
+        const removedLocally = await removeConnectedFolder(
+          activeSpace.spaceId,
+          target.path,
+        ).catch(() => false);
+        if (!removedLocally) {
+          setNotice(
+            "The Knowledge folder was deleted, but the connected source could not be updated. Reconnect it before the next sync.",
+          );
+        }
+      }
+      await refreshActiveSpace();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not delete folder",
+      );
+    }
+  }
+
+  async function removeDocument(target: KnowledgeDocument | null = document) {
+    if (!target || !activeSpace) return;
+    if (
+      !window.confirm(
+        `Delete “${target.title}”? Its revision history remains in provenance.`,
       )
     )
       return;
     let removedLocal = false;
+    let sourceContent =
+      target.documentId === document?.documentId
+        ? document.content || draft
+        : "";
     if (activeSpace.provider === "browser_filesystem") {
       if (!hasConnectedFolder(activeSpace.spaceId)) {
         setError("Reconnect this folder before deleting its source file.");
         return;
       }
+      if (!sourceContent) {
+        const detail = await fetch(
+          `/api/knowledge/${activeSpace.spaceId}/documents/${target.documentId}`,
+          { cache: "no-store" },
+        );
+        const payload = await detail.json();
+        sourceContent = payload?.data?.content || "";
+      }
       removedLocal = await removeConnectedNote(
         activeSpace.spaceId,
-        document.path,
+        target.path,
       );
     }
     const response = await fetch(
-      `/api/knowledge/${activeSpace.spaceId}/documents/${document.documentId}`,
+      `/api/knowledge/${activeSpace.spaceId}/documents/${target.documentId}`,
       { method: "DELETE" },
     );
     if (!response.ok) {
       if (removedLocal) {
         await writeConnectedNote(
           activeSpace.spaceId,
-          document.path,
-          document.content || draft,
+          target.path,
+          sourceContent,
         ).catch(() => false);
       }
       return setError("Could not delete note");
     }
-    setDocument(null);
+    if (target.documentId === document?.documentId) setDocument(null);
     await Promise.all([
       loadDocuments(activeSpace.spaceId),
+      loadFolders(activeSpace.spaceId),
       loadGraph(activeSpace.spaceId),
       loadSpaces(),
     ]);
@@ -434,14 +796,20 @@ export function KnowledgeSpacesView() {
           ? await reconnectMarkdownFolder(activeSpace.spaceId)
           : await chooseMarkdownFolder();
       if (activeSpace.provider === "browser_filesystem") {
-        rememberMarkdownFolder(activeSpace.spaceId, selected.handle);
+        await rememberMarkdownFolder(activeSpace.spaceId, selected.handle);
+        setConnectedFolderIds((current) =>
+          new Set(current).add(activeSpace.spaceId),
+        );
       }
       const response = await fetch(
         `/api/knowledge/${activeSpace.spaceId}/import`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ documents: selected.documents }),
+          body: JSON.stringify({
+            documents: selected.documents,
+            folders: selected.folders,
+          }),
         },
       );
       const payload = await response.json();
@@ -449,10 +817,11 @@ export function KnowledgeSpacesView() {
         throw new Error(apiMessage(payload, "Could not import folder"));
       const result = payload.data;
       setNotice(
-        `Folder synced: ${result.created} created, ${result.updated} updated, ${result.unchanged} unchanged${result.remoteKept ? `, ${result.remoteKept} newer agent edits kept` : ""}${result.failed?.length ? `, ${result.failed.length} conflicts need review` : ""}.`,
+        `Folder synced: ${result.created} created, ${result.updated} updated, ${result.unchanged} unchanged${result.folders ? `, ${result.folders} folders ready` : ""}${result.remoteKept ? `, ${result.remoteKept} newer agent edits kept` : ""}${result.failed?.length ? `, ${result.failed.length} conflicts need review` : ""}.`,
       );
       await Promise.all([
         loadDocuments(activeSpace.spaceId),
+        loadFolders(activeSpace.spaceId),
         loadGraph(activeSpace.spaceId),
         loadSpaces(),
       ]);
@@ -475,15 +844,12 @@ export function KnowledgeSpacesView() {
     setView("notes");
   }
 
-  const preview = useMemo(() => markdownWithWikiLinks(draft), [draft]);
-  const tree = useMemo(() => buildTree(documents), [documents]);
-
   return (
-    <div className="h-screen overflow-hidden bg-page text-stone-950">
+    <div className="h-screen overflow-hidden bg-[#f1efea] text-stone-950">
       <div className="flex h-screen">
         <DashboardSideBar username={userAddress} />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-[74px] shrink-0 items-center justify-between border-b bg-white px-6">
+          <header className="flex h-[74px] shrink-0 items-center justify-between border-b border-stone-200/80 bg-[#fbfaf7] px-6">
             <div className="min-w-0">
               <PageTitle title="Knowledge" />
               <p className="mt-1.5 truncate text-sm text-muted-foreground">
@@ -549,7 +915,7 @@ export function KnowledgeSpacesView() {
           )}
 
           <div className="flex min-h-0 flex-1">
-            <aside className="flex w-[268px] shrink-0 flex-col border-r bg-white">
+            <aside className="flex w-[276px] shrink-0 flex-col border-r border-stone-200/80 bg-[#f8f7f3]">
               <div className="border-b p-3">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -601,21 +967,18 @@ export function KnowledgeSpacesView() {
                 <div className="flex items-center gap-0.5">
                   <button
                     onClick={() => {
-                      setNewNoteKind("project");
-                      setNewNoteOpen(true);
+                      setNewFolderParent("");
+                      setNewFolderOpen(true);
                     }}
-                    disabled={!canWrite}
+                    disabled={!canEdit}
                     className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-40"
-                    title="New project folder"
+                    title="New folder"
                   >
                     <FolderPlus className="h-3.5 w-3.5" />
                   </button>
                   <button
-                    onClick={() => {
-                      setNewNoteKind("note");
-                      setNewNoteOpen(true);
-                    }}
-                    disabled={!canWrite}
+                    onClick={() => setNewNoteOpen(true)}
+                    disabled={!canEdit}
                     className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-40"
                     title="New note"
                   >
@@ -634,13 +997,25 @@ export function KnowledgeSpacesView() {
                     ))}
                   </div>
                 ) : (
-                  <DocumentTree
-                    tree={tree}
+                  <KnowledgeTree
+                    folders={folders}
+                    documents={documents}
                     selectedId={documentId}
+                    canWrite={canEdit}
                     onSelect={(id) => {
                       setDocumentId(id);
                       setView("notes");
                     }}
+                    onCreateFolder={(parent) => {
+                      setNewFolderParent(parent);
+                      setNewFolderOpen(true);
+                    }}
+                    onRenameDocument={renameDocument}
+                    onRenameFolder={renameFolder}
+                    onMoveDocument={moveDocument}
+                    onMoveFolder={moveFolder}
+                    onDeleteDocument={(target) => void removeDocument(target)}
+                    onDeleteFolder={(target) => void removeFolder(target)}
                   />
                 )}
               </ScrollArea>
@@ -658,7 +1033,7 @@ export function KnowledgeSpacesView() {
                     <FolderInput className="h-3.5 w-3.5" />
                   )}
                   {activeSpace?.provider === "browser_filesystem"
-                    ? hasConnectedFolder(activeSpace.spaceId)
+                    ? connectedFolderIds.has(activeSpace.spaceId)
                       ? "Sync connected folder"
                       : "Reconnect folder"
                     : "Import Markdown folder"}
@@ -666,8 +1041,8 @@ export function KnowledgeSpacesView() {
               </div>
             </aside>
 
-            <section className="flex min-w-0 flex-1 flex-col bg-white">
-              <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+            <section className="flex min-w-0 flex-1 flex-col bg-[#f2f0eb]">
+              <div className="flex h-12 shrink-0 items-center justify-between border-b border-stone-200/80 bg-[#fbfaf7] px-4">
                 <div className="flex rounded-lg bg-stone-100 p-1">
                   <button
                     onClick={() => setView("notes")}
@@ -714,7 +1089,12 @@ export function KnowledgeSpacesView() {
               </div>
 
               <div className="flex min-h-0 flex-1">
-                <div className="min-w-0 flex-1 overflow-hidden p-4 lg:p-5">
+                <div
+                  className={cn(
+                    "min-w-0 flex-1 overflow-hidden",
+                    view === "graph" ? "p-3" : "p-4 lg:p-5",
+                  )}
+                >
                   {loading ? (
                     <div className="grid h-full place-items-center">
                       <Loader2 className="h-5 w-5 animate-spin text-stone-400" />
@@ -723,21 +1103,22 @@ export function KnowledgeSpacesView() {
                     <KnowledgeGraphView
                       graph={graph}
                       selectedId={documentId}
-                      onSelect={(id) => {
+                      onSelect={setDocumentId}
+                      onOpen={(id) => {
                         setDocumentId(id);
                         setView("notes");
                       }}
                     />
                   ) : document ? (
-                    <div className="mx-auto flex h-full max-w-4xl flex-col">
-                      <div className="flex shrink-0 items-start justify-between gap-4 border-b pb-4">
+                    <div className="mx-auto flex h-full max-w-5xl flex-col">
+                      <div className="mb-3 flex shrink-0 items-start justify-between gap-4 rounded-xl border border-stone-200/80 bg-[#fbfaf7] px-5 py-4 shadow-[0_1px_2px_rgba(28,25,23,0.03)]">
                         <div className="min-w-0 flex-1">
                           <input
                             value={draftTitle}
                             onChange={(event) =>
                               updateDraft("title", event.target.value)
                             }
-                            disabled={!canWrite}
+                            disabled={!canEdit}
                             className="w-full bg-transparent text-2xl font-semibold tracking-tight outline-none placeholder:text-stone-300 disabled:text-stone-900"
                             placeholder="Untitled note"
                           />
@@ -748,7 +1129,7 @@ export function KnowledgeSpacesView() {
                               onChange={(event) =>
                                 updateDraft("path", event.target.value)
                               }
-                              disabled={!canWrite}
+                              disabled={!canEdit}
                               className="min-w-0 flex-1 bg-transparent font-mono text-[11px] outline-none disabled:text-muted-foreground"
                             />
                           </div>
@@ -756,26 +1137,26 @@ export function KnowledgeSpacesView() {
                         <div className="flex items-center gap-1">
                           <div className="mr-1 flex rounded-md bg-stone-100 p-0.5">
                             <button
-                              onClick={() => setEditorMode("edit")}
+                              onClick={() => setEditorMode("visual")}
                               className={cn(
                                 "rounded px-2 py-1 text-[11px]",
-                                editorMode === "edit"
+                                editorMode === "visual"
                                   ? "bg-white font-medium shadow-sm"
                                   : "text-muted-foreground",
                               )}
                             >
-                              Edit
+                              Visual
                             </button>
                             <button
-                              onClick={() => setEditorMode("preview")}
+                              onClick={() => setEditorMode("markdown")}
                               className={cn(
                                 "rounded px-2 py-1 text-[11px]",
-                                editorMode === "preview"
+                                editorMode === "markdown"
                                   ? "bg-white font-medium shadow-sm"
                                   : "text-muted-foreground",
                               )}
                             >
-                              Preview
+                              Markdown
                             </button>
                           </div>
                           <DropdownMenu>
@@ -792,12 +1173,12 @@ export function KnowledgeSpacesView() {
                               >
                                 <Link2 className="h-4 w-4" /> Copy Markdown
                               </DropdownMenuItem>
-                              {canWrite && (
+                              {canEdit && (
                                 <>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
                                     className="text-red-600"
-                                    onClick={removeDocument}
+                                    onClick={() => void removeDocument()}
                                   >
                                     <Trash2 className="h-4 w-4" /> Delete note
                                   </DropdownMenuItem>
@@ -807,63 +1188,32 @@ export function KnowledgeSpacesView() {
                           </DropdownMenu>
                         </div>
                       </div>
-                      {editorMode === "edit" ? (
+                      {editorMode === "visual" ? (
+                        <RichMarkdownEditor
+                          value={draft}
+                          onChange={(value) => updateDraft("content", value)}
+                          editable={canEdit}
+                          documentPath={draftPath}
+                          documents={documents}
+                          onOpenDocument={setDocumentId}
+                        />
+                      ) : (
                         <textarea
                           value={draft}
                           onChange={(event) =>
                             updateDraft("content", event.target.value)
                           }
-                          readOnly={!canWrite}
+                          readOnly={!canEdit}
                           spellCheck
-                          className="min-h-0 flex-1 resize-none bg-transparent py-5 font-mono text-[13px] leading-7 text-stone-800 outline-none placeholder:text-stone-300"
-                          placeholder="Write in Markdown. Connect notes with [[double brackets]]."
+                          className="min-h-0 flex-1 resize-none rounded-xl border border-stone-200/80 bg-[#fffefa] px-8 py-7 font-mono text-[13px] leading-7 text-stone-800 shadow-[0_1px_2px_rgba(28,25,23,0.03)] outline-none placeholder:text-stone-300 sm:px-10"
+                          placeholder="Write raw Markdown here."
                         />
-                      ) : (
-                        <ScrollArea className="min-h-0 flex-1 py-5">
-                          <article className="prose prose-stone max-w-none prose-headings:tracking-tight prose-a:text-teal-700">
-                            <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
-                              components={{
-                                a: ({ href, children, ...props }) =>
-                                  href?.startsWith("brain:") ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        openWikiLink(
-                                          href.slice(6),
-                                          documents,
-                                          setDocumentId,
-                                        )
-                                      }
-                                      className="font-medium text-teal-700 underline decoration-teal-300 underline-offset-2"
-                                    >
-                                      {children}
-                                    </button>
-                                  ) : (
-                                    <a
-                                      href={href}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      {...props}
-                                    >
-                                      {children}
-                                    </a>
-                                  ),
-                              }}
-                            >
-                              {preview}
-                            </ReactMarkdown>
-                          </article>
-                        </ScrollArea>
                       )}
                     </div>
                   ) : (
                     <EmptyNotes
-                      canWrite={Boolean(canWrite)}
-                      onCreate={() => {
-                        setNewNoteKind("note");
-                        setNewNoteOpen(true);
-                      }}
+                      canWrite={canEdit}
+                      onCreate={() => setNewNoteOpen(true)}
                     />
                   )}
                 </div>
@@ -894,6 +1244,11 @@ export function KnowledgeSpacesView() {
         onCreated={async (space) => {
           await loadSpaces();
           setSpaceId(space.spaceId);
+          await Promise.all([
+            loadDocuments(space.spaceId),
+            loadFolders(space.spaceId),
+            loadGraph(space.spaceId),
+          ]);
         }}
       />
       <SpaceAccessDialog
@@ -907,126 +1262,15 @@ export function KnowledgeSpacesView() {
       />
       <NewNoteDialog
         open={newNoteOpen}
-        kind={newNoteKind}
         onOpenChange={setNewNoteOpen}
         onCreate={createNote}
       />
-    </div>
-  );
-}
-
-type TreeNode = {
-  folders: Map<string, TreeNode>;
-  documents: KnowledgeDocument[];
-};
-
-function buildTree(documents: KnowledgeDocument[]) {
-  const root: TreeNode = { folders: new Map(), documents: [] };
-  for (const document of documents) {
-    const parts = document.path.split("/");
-    parts.pop();
-    let node = root;
-    for (const part of parts) {
-      if (!node.folders.has(part))
-        node.folders.set(part, { folders: new Map(), documents: [] });
-      node = node.folders.get(part)!;
-    }
-    node.documents.push(document);
-  }
-  return root;
-}
-
-function DocumentTree({
-  tree,
-  selectedId,
-  onSelect,
-}: {
-  tree: TreeNode;
-  selectedId: string;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <TreeLevel
-      tree={tree}
-      depth={0}
-      selectedId={selectedId}
-      onSelect={onSelect}
-    />
-  );
-}
-
-function TreeLevel({
-  tree,
-  depth,
-  selectedId,
-  onSelect,
-}: {
-  tree: TreeNode;
-  depth: number;
-  selectedId: string;
-  onSelect: (id: string) => void;
-}) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const folders = [...tree.folders.entries()].sort(([left], [right]) =>
-    left.localeCompare(right),
-  );
-  const docs = [...tree.documents].sort((left, right) =>
-    left.title.localeCompare(right.title),
-  );
-  return (
-    <div className="space-y-0.5 pb-3">
-      {folders.map(([name, child]) => {
-        const closed = collapsed.has(name);
-        return (
-          <div key={name}>
-            <button
-              type="button"
-              onClick={() =>
-                setCollapsed((current) => {
-                  const next = new Set(current);
-                  closed ? next.delete(name) : next.add(name);
-                  return next;
-                })
-              }
-              className="flex h-7 w-full items-center gap-1 rounded px-1.5 text-left text-xs text-stone-600 hover:bg-stone-50"
-              style={{ paddingLeft: 6 + depth * 14 }}
-            >
-              {closed ? (
-                <ChevronRight className="h-3 w-3" />
-              ) : (
-                <ChevronDown className="h-3 w-3" />
-              )}
-              <Folder className="h-3.5 w-3.5 fill-stone-100 text-stone-500" />
-              <span className="truncate">{name}</span>
-            </button>
-            {!closed && (
-              <TreeLevel
-                tree={child}
-                depth={depth + 1}
-                selectedId={selectedId}
-                onSelect={onSelect}
-              />
-            )}
-          </div>
-        );
-      })}
-      {docs.map((document) => (
-        <button
-          key={document.documentId}
-          type="button"
-          onClick={() => onSelect(document.documentId)}
-          className={cn(
-            "flex h-7 w-full items-center gap-1.5 rounded px-2 text-left text-xs hover:bg-stone-50",
-            document.documentId === selectedId
-              ? "bg-teal-50 font-medium text-teal-900"
-              : "text-stone-600",
-          )}
-          style={{ paddingLeft: 21 + depth * 14 }}
-        >
-          <FileText className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{document.title}</span>
-        </button>
-      ))}
+      <NewFolderDialog
+        open={newFolderOpen}
+        parentPath={newFolderParent}
+        onOpenChange={setNewFolderOpen}
+        onCreate={createFolder}
+      />
     </div>
   );
 }
@@ -1369,12 +1613,10 @@ function SearchResults({
 
 function NewNoteDialog({
   open,
-  kind,
   onOpenChange,
   onCreate,
 }: {
   open: boolean;
-  kind: "note" | "project";
   onOpenChange: (open: boolean) => void;
   onCreate: (input: { path: string; title: string }) => Promise<void>;
 }) {
@@ -1385,12 +1627,10 @@ function NewNoteDialog({
   useEffect(() => {
     if (open) {
       setTitle("");
-      setPath(
-        kind === "project" ? "Projects/New project/Overview.md" : "Untitled.md",
-      );
+      setPath("Untitled.md");
       setError("");
     }
-  }, [kind, open]);
+  }, [open]);
   async function submit() {
     setBusy(true);
     setError("");
@@ -1412,13 +1652,9 @@ function NewNoteDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {kind === "project" ? "Create a project folder" : "Create a note"}
-          </DialogTitle>
+          <DialogTitle>Create a note</DialogTitle>
           <DialogDescription>
-            {kind === "project"
-              ? "Folders are portable: they are represented directly by the note path."
-              : "Use folders in the path to keep related knowledge together."}
+            Use folders in the path to keep related knowledge together.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -1428,9 +1664,7 @@ function NewNoteDialog({
               id="note-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder={
-                kind === "project" ? "Project overview" : "Untitled note"
-              }
+              placeholder="Untitled note"
             />
           </div>
           <div className="space-y-1.5">
@@ -1461,30 +1695,102 @@ function NewNoteDialog({
   );
 }
 
-function markdownWithWikiLinks(markdown: string) {
-  return markdown.replace(
-    /!?(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])/g,
-    (_match, _whole, target, label) =>
-      `[${label || target}](brain:${encodeURIComponent(target.trim())})`,
+function NewFolderDialog({
+  open,
+  parentPath,
+  onOpenChange,
+  onCreate,
+}: {
+  open: boolean;
+  parentPath: string;
+  onOpenChange: (open: boolean) => void;
+  onCreate: (path: string) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setName("");
+    setError("");
+  }, [open, parentPath]);
+  async function submit() {
+    const clean = cleanEntryName(name);
+    if (!clean) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onCreate(joinPath(parentPath, clean));
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not create folder",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>New folder</DialogTitle>
+          <DialogDescription>
+            {parentPath
+              ? `Create a folder inside ${parentPath}.`
+              : "Create a folder at the top level of this space."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="folder-name">Name</Label>
+          <Input
+            id="folder-name"
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void submit();
+            }}
+            placeholder="Project notes"
+          />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={busy || !name.trim()}>
+            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Create folder
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function openWikiLink(
-  target: string,
-  documents: KnowledgeDocument[],
-  select: (id: string) => void,
-) {
-  const decoded = decodeURIComponent(target)
-    .split("#")[0]
-    .replace(/\.md$/i, "")
-    .toLowerCase();
-  const match = documents.find(
-    (document) =>
-      document.path.replace(/\.md$/i, "").toLowerCase() === decoded ||
-      document.title.toLowerCase() === decoded ||
-      document.path.replace(/\.md$/i, "").toLowerCase().endsWith(`/${decoded}`),
-  );
-  if (match) select(match.documentId);
+function cleanEntryName(value: string) {
+  return value
+    .trim()
+    .replace(/[\\/]+/g, "-")
+    .replace(/^\.+|\.+$/g, "");
+}
+
+function joinPath(parent: string, child: string) {
+  return [parent, child].filter(Boolean).join("/");
+}
+
+function parentPath(path: string) {
+  const parts = path.replace(/\\/g, "/").split("/");
+  parts.pop();
+  return parts.join("/");
+}
+
+function baseName(path: string) {
+  return path.replace(/\\/g, "/").split("/").pop() || path;
 }
 
 function relativeDate(value: string) {

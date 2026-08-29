@@ -469,12 +469,17 @@ export interface CommonTool {
     sessionId?: string;
   }): Promise<any[]>;
 
-  /** List the Markdown Knowledge Spaces this agent can use and its access level. */
+  /**
+   * List the Markdown Knowledge Spaces this agent can use, its access level,
+   * and whether each space participates in automatic retrieval.
+   */
   listKnowledgeSpaces(props: { agentId: string }): Promise<any[]>;
 
   /**
-   * Search this agent's connected Knowledge Spaces. Retrieval combines
-   * semantic similarity, exact text, headings, and explicitly linked notes.
+   * Search this agent's connected Knowledge Spaces. When spaceIds is omitted,
+   * search only spaces configured for automatic retrieval. Passing explicit
+   * spaceIds is manual routing and may search any space the agent can access.
+   * Retrieval combines meaning, exact text, headings, and linked notes.
    */
   searchKnowledge(props: {
     query: string;
@@ -491,7 +496,7 @@ export interface CommonTool {
 
   /**
    * Create or update a Markdown note. Omit spaceId when creating to use the
-   * agent's default Commons Brain. New concepts should use Open Knowledge
+   * agent's default Common Brain. New concepts should use Open Knowledge
    * Format v0.2 frontmatter with at least a non-empty type. Preserve unknown
    * frontmatter fields. Supply expectedRevision for safe updates.
    */

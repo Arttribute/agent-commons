@@ -1,5 +1,5 @@
-import { KnowledgeSpacesView } from "@/components/brains/knowledge-spaces-view";
+import { redirect } from "next/navigation";
 
 export default function KnowledgePage() {
-  return <KnowledgeSpacesView />;
+  redirect("/knowledge");
 }

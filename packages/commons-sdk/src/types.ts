@@ -607,10 +607,19 @@ export interface KnowledgeSpace {
   status: "active" | "disconnected";
   isDefault: boolean;
   autoGrantNewAgents: boolean;
+  autoRetrieve?: boolean;
   permission: KnowledgePermission;
-  counts: { documents: number; links: number };
+  counts: { documents: number; links: number; folders: number };
   grants?: KnowledgeGrant[];
   workspaceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeFolder {
+  folderId: string;
+  spaceId: string;
+  path: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -657,15 +657,41 @@ describe("client.knowledge", () => {
     const fetch = makeFetch({
       data: { created: 1, updated: 0, unchanged: 0, failed: [] },
     });
-    await makeClient(fetch).knowledge.importMarkdown("space-1", [
-      { path: "Decisions/Choice.md", content: "# Choice" },
-    ]);
+    await makeClient(fetch).knowledge.importMarkdown(
+      "space-1",
+      [{ path: "Decisions/Choice.md", content: "# Choice" }],
+      ["Projects/Empty project"],
+    );
     expect(fetch.mock.calls[0][0]).toBe(
       "http://api.test/v1/knowledge/space-1/import",
     );
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
       documents: [{ path: "Decisions/Choice.md", content: "# Choice" }],
+      folders: ["Projects/Empty project"],
     });
+  });
+
+  it("creates and moves durable folders using only knowledge routes", async () => {
+    const fetch = makeFetch({ data: {} });
+    await makeClient(fetch).knowledge.createFolder(
+      "space/one",
+      "Projects/Launch",
+    );
+    await makeClient(fetch).knowledge.moveFolder(
+      "space/one",
+      "folder/one",
+      "Archive/Launch",
+    );
+    expect(fetch.mock.calls[0][0]).toBe(
+      "http://api.test/v1/knowledge/space%2Fone/folders",
+    );
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      path: "Projects/Launch",
+    });
+    expect(fetch.mock.calls[1][0]).toBe(
+      "http://api.test/v1/knowledge/space%2Fone/folders/folder%2Fone",
+    );
+    expect(fetch.mock.calls[1][1].method).toBe("PATCH");
   });
 });
 

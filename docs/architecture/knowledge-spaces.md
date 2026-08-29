@@ -1,12 +1,13 @@
 # Knowledge Spaces
 
-Status: implemented for staging in migration `027_knowledge_spaces.sql`.
+Status: implemented for staging in migrations `027_knowledge_spaces.sql` and
+`028_knowledge_folders.sql`.
 
 ## Product boundary
 
 Agent Commons calls the feature **Knowledge** and each isolated collection a
 **Knowledge Space**. A newly signed-in member receives a preconfigured
-**Commons Brain**. We deliberately avoid “vault”: that word is reserved for a
+**Common Brain**. We deliberately avoid “vault”: that word is reserved for a
 future secrets and key-management boundary.
 
 A Knowledge Space is a portable folder-shaped set of Markdown notes. Folder
@@ -37,7 +38,7 @@ The design follows three evidence-backed constraints:
    links, bundle-relative paths, optional `index.md`/`log.md`, and first-class
    provenance, trust, freshness, lifecycle, and attested-computation metadata.
    Knowledge Spaces are permissive OKF consumers and produce conformant new
-   notes without rejecting ordinary Obsidian Markdown.
+   notes without rejecting ordinary Markdown.
 5. Karpathy's LLM Wiki is an operating pattern rather than a storage protocol:
    immutable raw sources, a persistent agent-maintained synthesis wiki, and an
    evolving instruction/schema document, exercised through ingest, query, and
@@ -123,6 +124,8 @@ source note.
 - `knowledge_space`: ownership, provider, state, and connector configuration.
 - `knowledge_space_grant`: explicit user, agent, or workspace subject with
   read/write/manage permission and automatic-retrieval policy.
+- `knowledge_folder`: durable empty and populated folders with portable,
+  case-insensitive paths.
 - `knowledge_document`: mutable canonical Markdown at a case-insensitive path.
 - `knowledge_document_revision`: immutable full snapshots tied to an actor and
   provenance trace.
@@ -131,10 +134,12 @@ source note.
 - `knowledge_chunk`: heading-aware citeable retrieval unit with optional
   1,536-dimensional embedding.
 
-Folders are implicit in document paths, so exports stay portable. Explicit
-links are preserved even when their target does not exist yet; graph rebuilding
-resolves them if the target later appears. Document aliases include full path,
-path without extension, basename, title, and frontmatter aliases.
+Document paths remain the portable source of hierarchy; explicit folder rows
+also preserve empty folders and make rename, move, and recursive delete
+revision-safe. Exports need no proprietary folder format. Explicit links are
+preserved even when their target does not exist yet; graph rebuilding resolves
+them if the target later appears. Document aliases include full path, path
+without extension, basename, title, and frontmatter aliases.
 
 ## Retrieval
 
@@ -167,9 +172,13 @@ All Commons agents receive four static tools:
 - read a full note with links and backlinks;
 - create or revision-safely update a note.
 
-The default Commons Brain is granted to all of the member's agents. Other
-spaces can be dedicated to selected agents, shared among several, or configured
-to grant current and future owned agents. The agent identity—not a caller-
+The default Common Brain is seeded with a welcome guide, inbox, decision
+memory, and reusable note template, then granted to all of the member's agents.
+Other spaces can be dedicated to selected agents, shared among several, or
+configured to grant current and future owned agents. Each grant independently
+chooses automatic retrieval or manual-only access. When an agent searches
+without explicit space IDs, only its automatic routes participate; naming a
+space opts into an explicit manual route. The agent identity—not a caller-
 supplied owner—is checked at the service boundary. Optimistic revision checks
 prevent a person and agent from silently overwriting one another.
 
@@ -180,15 +189,19 @@ enterprise membership policy.
 
 ## UI contract
 
-`/brains` lives in the standard Commons dashboard shell and uses existing
-stone neutrals, teal accents, type scale, controls, dialogs, and spacing. The
-interface has three calm work areas: folder tree, editor/preview or graph, and
-an inspector for backlinks/tags/details. Project folders are normal paths. The
-graph is an alternate view, not the primary way to find or edit knowledge.
+`/knowledge` lives in the standard Commons dashboard shell; the legacy
+`/brains` page redirects there. It uses warm stone surfaces, teal accents, the
+existing type scale, controls, dialogs, and spacing. The interface has three
+calm work areas: a drag-and-drop folder tree, visual editor or graph, and an
+inspector for backlinks, tags, and revision details. Folders and notes support
+inline rename, move, and delete. The visual editor is the default and includes
+tables, links, images, files, and Library insertion; raw Markdown remains a
+first-class mode. The custom canvas graph uses a dark, pannable force layout,
+click-to-focus neighborhood highlighting, and double-click-to-open behavior.
 
 ## Operational checks
 
-1. Apply migration 027 before deploying the API.
+1. Apply migrations 027 and 028 before deploying the API.
 2. Keep embeddings optional during rollout; validate lexical retrieval first.
 3. Create a space, import linked Markdown, and verify resolved/unresolved graph
    edges.
