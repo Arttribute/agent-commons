@@ -1292,6 +1292,7 @@ export class BrainService {
             description:
               'Shared context for you and all of your Commons agents.',
             provider: 'native',
+            providerConfig: { commonBrainVersion: 1 },
             color: 'teal',
             isDefault: true,
             autoGrantNewAgents: true,
@@ -1310,13 +1311,6 @@ export class BrainService {
       }
     }
     if (!space) throw new Error('Could not create the default Knowledge Space');
-    if (space.name === 'Commons Brain') {
-      [space] = await this.db
-        .update(schema.knowledgeSpace)
-        .set({ name: 'Common Brain', updatedAt: new Date() })
-        .where(eq(schema.knowledgeSpace.spaceId, space.spaceId))
-        .returning();
-    }
     await this.grantOwnedAgents(
       space,
       {

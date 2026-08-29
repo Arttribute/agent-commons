@@ -113,11 +113,10 @@ export function KnowledgeGraphView({
       context.lineTo(target.x, target.y);
       context.strokeStyle = connected
         ? selected
-          ? "rgba(139, 92, 246, .72)"
-          : "rgba(100, 116, 139, .3)"
-        : "rgba(120, 113, 108, .09)";
-      context.lineWidth =
-        (connected && selected ? 1.15 : 0.8) / transform.scale;
+          ? "rgba(13, 148, 136, .8)"
+          : "rgba(71, 85, 105, .42)"
+        : "rgba(100, 116, 139, .15)";
+      context.lineWidth = (connected && selected ? 1.35 : 1) / transform.scale;
       context.stroke();
     }
 
@@ -137,20 +136,20 @@ export function KnowledgeGraphView({
       context.arc(node.x, node.y, radius, 0, Math.PI * 2);
       if (active) {
         context.shadowBlur = 15 / transform.scale;
-        context.shadowColor = "rgba(139, 92, 246, .42)";
-        context.fillStyle = "#8b5cf6";
+        context.shadowColor = "rgba(13, 148, 136, .42)";
+        context.fillStyle = "#0d9488";
       } else if (related) {
         context.shadowBlur = hovering ? 10 / transform.scale : 0;
         context.shadowColor = "rgba(28, 25, 23, .2)";
-        context.fillStyle = hovering ? "#292524" : "#78716c";
+        context.fillStyle = hovering ? "#0f766e" : "#64748b";
       } else {
         context.shadowBlur = 0;
-        context.fillStyle = "rgba(120, 113, 108, .22)";
+        context.fillStyle = "rgba(100, 116, 139, .35)";
       }
       context.fill();
       context.shadowBlur = 0;
-      const alpha = related ? (active || hovering ? 1 : 0.86) : 0.2;
-      context.fillStyle = `rgba(41, 37, 36, ${alpha})`;
+      const alpha = related ? (active || hovering ? 1 : 0.94) : 0.34;
+      context.fillStyle = `rgba(30, 41, 59, ${alpha})`;
       context.font = `${active ? 600 : 400} ${11 / labelScale}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
       context.textAlign = "center";
       context.textBaseline = "top";
@@ -227,58 +226,35 @@ export function KnowledgeGraphView({
         vy: 0,
       };
     });
-    let frame = 0;
-    const simulate = () => {
-      const nodes = nodesRef.current;
-      const byId = new Map(nodes.map((node) => [node.id, node]));
-      const repulsion = nodes.length > 260 ? 1150 : 1750;
-      for (let left = 0; left < nodes.length; left += 1) {
-        const a = nodes[left];
-        for (let right = left + 1; right < nodes.length; right += 1) {
-          const b = nodes[right];
-          let dx = b.x - a.x;
-          let dy = b.y - a.y;
-          const distanceSquared = Math.max(90, dx * dx + dy * dy);
-          const distance = Math.sqrt(distanceSquared);
-          dx /= distance;
-          dy /= distance;
-          const force = Math.min(1.8, repulsion / distanceSquared);
-          a.vx -= dx * force;
-          a.vy -= dy * force;
-          b.vx += dx * force;
-          b.vy += dy * force;
-        }
-      }
-      for (const edge of resolvedEdges) {
-        const source = byId.get(edge.source);
-        const target = edge.target ? byId.get(edge.target) : undefined;
-        if (!source || !target) continue;
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
-        const distance = Math.max(1, Math.hypot(dx, dy));
-        const desired = 76 + Math.min(38, (source.degree + target.degree) * 2);
-        const force = (distance - desired) * 0.0075;
-        source.vx += (dx / distance) * force;
-        source.vy += (dy / distance) * force;
-        target.vx -= (dx / distance) * force;
-        target.vy -= (dy / distance) * force;
-      }
-      for (const node of nodes) {
-        node.vx += -node.x * 0.0008;
-        node.vy += -node.y * 0.0008;
-        node.vx *= 0.86;
-        node.vy *= 0.86;
-        node.x += node.vx;
-        node.y += node.vy;
-      }
-      frame += 1;
-      if (frame === 12 || frame === 70) fitGraph(false);
+    if (!nodesRef.current.length) {
       draw();
-      if (frame < 145) animationRef.current = requestAnimationFrame(simulate);
-      else setReady(true);
+      setReady(true);
+      return;
+    }
+    let cancelled = false;
+    let settledSteps = 0;
+    const targetSteps = nodesRef.current.length > 260 ? 60 : 96;
+    const stepsPerFrame = nodesRef.current.length > 500 ? 2 : 6;
+    const settle = () => {
+      for (
+        let step = 0;
+        step < stepsPerFrame && settledSteps < targetSteps;
+        step += 1
+      ) {
+        stepGraphLayout(nodesRef.current, resolvedEdges);
+        settledSteps += 1;
+      }
+      if (settledSteps < targetSteps) {
+        animationRef.current = requestAnimationFrame(settle);
+        return;
+      }
+      if (cancelled) return;
+      fitGraph(false);
+      setReady(true);
     };
-    animationRef.current = requestAnimationFrame(simulate);
+    animationRef.current = requestAnimationFrame(settle);
     return () => {
+      cancelled = true;
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
   }, [draw, fitGraph, graph.nodes, resolvedEdges]);
@@ -425,13 +401,15 @@ export function KnowledgeGraphView({
   return (
     <div
       ref={surfaceRef}
-      className="relative h-full min-h-[480px] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-[inset_0_1px_rgba(255,255,255,.75),0_8px_30px_rgba(28,25,23,.07)]"
+      className="relative h-full min-h-[480px] overflow-hidden bg-white"
     >
       <canvas
         ref={canvasRef}
         role="application"
         aria-label="Interactive knowledge graph. Drag to pan, scroll to zoom, click to focus, and double-click a note to open it."
-        className="block h-full w-full cursor-grab touch-none"
+        className={`block h-full w-full cursor-grab touch-none transition-opacity duration-300 ${
+          ready ? "opacity-100" : "opacity-0"
+        }`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -506,6 +484,50 @@ function seededAngle(value: string, index: number) {
     hash = Math.imul(hash, 16777619);
   }
   return ((hash >>> 0) / 0xffffffff) * Math.PI * 2 + index * 0.43;
+}
+
+function stepGraphLayout(nodes: GraphNode[], edges: KnowledgeGraph["edges"]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const repulsion = nodes.length > 260 ? 1150 : 1750;
+  for (let left = 0; left < nodes.length; left += 1) {
+    const a = nodes[left];
+    for (let right = left + 1; right < nodes.length; right += 1) {
+      const b = nodes[right];
+      let dx = b.x - a.x;
+      let dy = b.y - a.y;
+      const distanceSquared = Math.max(90, dx * dx + dy * dy);
+      const distance = Math.sqrt(distanceSquared);
+      dx /= distance;
+      dy /= distance;
+      const force = Math.min(1.8, repulsion / distanceSquared);
+      a.vx -= dx * force;
+      a.vy -= dy * force;
+      b.vx += dx * force;
+      b.vy += dy * force;
+    }
+  }
+  for (const edge of edges) {
+    const source = byId.get(edge.source);
+    const target = edge.target ? byId.get(edge.target) : undefined;
+    if (!source || !target) continue;
+    const dx = target.x - source.x;
+    const dy = target.y - source.y;
+    const distance = Math.max(1, Math.hypot(dx, dy));
+    const desired = 76 + Math.min(38, (source.degree + target.degree) * 2);
+    const force = (distance - desired) * 0.0075;
+    source.vx += (dx / distance) * force;
+    source.vy += (dy / distance) * force;
+    target.vx -= (dx / distance) * force;
+    target.vy -= (dy / distance) * force;
+  }
+  for (const node of nodes) {
+    node.vx += -node.x * 0.0008;
+    node.vy += -node.y * 0.0008;
+    node.vx *= 0.86;
+    node.vy *= 0.86;
+    node.x += node.vx;
+    node.y += node.vy;
+  }
 }
 
 function truncateLabel(value: string, scale: number) {

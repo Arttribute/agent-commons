@@ -1089,12 +1089,7 @@ export function KnowledgeSpacesView() {
               </div>
 
               <div className="flex min-h-0 flex-1">
-                <div
-                  className={cn(
-                    "min-w-0 flex-1 overflow-hidden",
-                    view === "graph" ? "p-3" : "p-4 lg:p-5",
-                  )}
-                >
+                <div className="min-w-0 flex-1 overflow-hidden p-0">
                   {loading ? (
                     <div className="grid h-full place-items-center">
                       <Loader2 className="h-5 w-5 animate-spin text-stone-400" />
@@ -1110,8 +1105,8 @@ export function KnowledgeSpacesView() {
                       }}
                     />
                   ) : document ? (
-                    <div className="mx-auto flex h-full max-w-5xl flex-col">
-                      <div className="mb-3 flex shrink-0 items-start justify-between gap-4 rounded-xl border border-stone-200/80 bg-[#fbfaf7] px-5 py-4 shadow-[0_1px_2px_rgba(28,25,23,0.03)]">
+                    <div className="flex h-full w-full flex-col bg-white">
+                      <div className="flex shrink-0 items-start justify-between gap-4 border-b border-stone-200/80 bg-white px-6 py-4">
                         <div className="min-w-0 flex-1">
                           <input
                             value={draftTitle}
@@ -1205,7 +1200,7 @@ export function KnowledgeSpacesView() {
                           }
                           readOnly={!canEdit}
                           spellCheck
-                          className="min-h-0 flex-1 resize-none rounded-xl border border-stone-200/80 bg-[#fffefa] px-8 py-7 font-mono text-[13px] leading-7 text-stone-800 shadow-[0_1px_2px_rgba(28,25,23,0.03)] outline-none placeholder:text-stone-300 sm:px-10"
+                          className="min-h-0 flex-1 resize-none border-0 bg-white px-6 py-6 font-mono text-[13px] leading-7 text-stone-800 outline-none placeholder:text-stone-300 sm:px-8"
                           placeholder="Write raw Markdown here."
                         />
                       )}

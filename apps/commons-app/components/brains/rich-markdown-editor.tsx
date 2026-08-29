@@ -142,7 +142,7 @@ export function RichMarkdownEditor({
     editorProps: {
       attributes: {
         class:
-          "tiptap min-h-full max-w-none px-8 py-7 text-[15px] leading-7 text-stone-800 outline-none sm:px-10 lg:px-14",
+          "tiptap min-h-full max-w-none px-6 py-6 text-[15px] leading-7 text-stone-800 outline-none sm:px-8",
         spellcheck: "true",
       },
       handleDOMEvents: {
@@ -307,8 +307,8 @@ export function RichMarkdownEditor({
     .slice(0, 100);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-stone-200/80 bg-[#fffefa] shadow-[0_1px_2px_rgba(28,25,23,0.03)]">
-      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-0.5 border-b border-stone-200/80 bg-[#f7f5f1] px-2 py-1.5">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-0.5 border-b border-stone-200/80 bg-stone-50/70 px-3 py-1.5">
         <ToolbarButton
           label="Undo"
           icon={Undo2}
