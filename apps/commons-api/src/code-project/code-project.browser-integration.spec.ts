@@ -112,10 +112,7 @@ createRoot(document.getElementById('root')).render(<App />);`,
       ].join('; ');
       expect(preview.productionPolicies).toContain(productionCsp);
       expect(previewResponse.headers.get('content-security-policy')).toBe(
-        productionCsp.replace(
-          "connect-src 'none'",
-          `connect-src ${preview.origin}`,
-        ),
+        productionCsp,
       );
       expect(await previewResponse.text()).toContain(
         'name="agent-commons-runtime" content="2"',
@@ -626,8 +623,11 @@ async function startProductionPreviewServer(assets: BuiltAsset[]) {
     }
 
     const path = decodeURIComponent(requestUrl.pathname.slice(rootPath.length));
-    const adapter = responseAdapter(response, requestUrl.origin, (policy) =>
-      productionPolicies.push(policy),
+    const adapter = responseAdapter(
+      response,
+      requestUrl.origin,
+      (policy) => productionPolicies.push(policy),
+      false,
     );
     const controllerRequest = {
       originalUrl: `${requestUrl.pathname}${requestUrl.search}`,
@@ -1000,11 +1000,13 @@ function responseAdapter(
       return adapter;
     },
     setHeader(name: string, value: string) {
+      if (name.toLocaleLowerCase() === 'content-security-policy') {
+        onProductionCsp(value);
+      }
       if (
         allowOpaqueLoopbackAssets &&
         name.toLocaleLowerCase() === 'content-security-policy'
       ) {
-        onProductionCsp(value);
         // A sandboxed document has an opaque origin. Chromium consequently
         // classifies its temporary loopback stylesheet fetch as connect-src.
         // Production stays `connect-src 'none'`; this opt-in local harness

@@ -331,6 +331,12 @@ export class CodeProjectVerifier {
         const violations = await appFrame.evaluate(async () => {
           const axe = (globalThis as any).axe;
           const result = await axe.run((globalThis as any).document, {
+            // The preview intentionally runs in an opaque sandbox. axe-core's
+            // default CSSOM preloader re-fetches an already-loaded stylesheet
+            // with XHR, which is correctly blocked by connect-src 'none'. The
+            // audit can use the browser's computed styles without that fetch;
+            // keep media preloading for the rules that need it.
+            preload: { assets: ['media'] },
             runOnly: {
               type: 'tag',
               values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'],
