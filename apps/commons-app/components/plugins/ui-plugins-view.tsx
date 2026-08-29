@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { openUiPluginCreator } from "@/lib/commons-copilot-events";
 import { notifyUiPluginsChanged } from "@/lib/ui-plugin-events";
 import type { UiPlugin } from "./types";
 
@@ -31,7 +32,21 @@ export function UiPluginsView() {
   useEffect(() => void load(), [load]);
 
   const toggle = async (plugin: UiPlugin, active: boolean) => {
+    const optimisticPlugin: UiPlugin = {
+      ...plugin,
+      status: active ? "active" : "disabled",
+    };
     setSaving(plugin.pluginId);
+    setPlugins((items) =>
+      items.map((item) =>
+        item.pluginId === plugin.pluginId ? optimisticPlugin : item,
+      ),
+    );
+    notifyUiPluginsChanged({
+      pluginId: plugin.pluginId,
+      status: optimisticPlugin.status,
+      plugin: optimisticPlugin,
+    });
     try {
       const response = await fetch(
         `/api/ui-plugins/${plugin.pluginId}/status`,
@@ -43,6 +58,16 @@ export function UiPluginsView() {
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        setPlugins((items) =>
+          items.map((item) =>
+            item.pluginId === plugin.pluginId ? plugin : item,
+          ),
+        );
+        notifyUiPluginsChanged({
+          pluginId: plugin.pluginId,
+          status: plugin.status,
+          plugin,
+        });
         toast({
           title: "Could not update app",
           description: payload.message || payload.error || "Please try again.",
@@ -61,6 +86,16 @@ export function UiPluginsView() {
         plugin: payload.data,
       });
     } catch {
+      setPlugins((items) =>
+        items.map((item) =>
+          item.pluginId === plugin.pluginId ? plugin : item,
+        ),
+      );
+      notifyUiPluginsChanged({
+        pluginId: plugin.pluginId,
+        status: plugin.status,
+        plugin,
+      });
       toast({
         title: "Could not update app",
         description: "The app registry could not be reached. Please try again.",
@@ -69,16 +104,6 @@ export function UiPluginsView() {
     } finally {
       setSaving(null);
     }
-  };
-
-  const createWithCopilot = () => {
-    window.dispatchEvent(
-      new CustomEvent("commons-copilot-prompt", {
-        detail: {
-          text: "Help me create a custom Commons UI plugin. Infer sensible details from my request, match the Agent Commons look and feel unless I ask for another style, then build, test, and refine the smallest useful page or floating widget. Register the verified result as a draft for me to review here before it is enabled.",
-        },
-      }),
-    );
   };
 
   if (loading) {
@@ -100,10 +125,13 @@ export function UiPluginsView() {
           </p>
         </div>
       </div>
-      <div className="flex justify-end">
-        <Button onClick={createWithCopilot}>
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <p className="text-xs text-muted-foreground">
+          Opens an editable brief; nothing runs until you send it.
+        </p>
+        <Button onClick={openUiPluginCreator}>
           <Plus className="mr-2 h-4 w-4" />
-          Create with Commons Copilot
+          Open Commons Copilot
         </Button>
       </div>
       {!plugins.length ? (

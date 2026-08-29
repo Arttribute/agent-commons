@@ -223,6 +223,10 @@ export default function ChatInputBox({
   const markRunning = useSessionRunStore((state) => state.markRunning);
   const markCompleted = useSessionRunStore((state) => state.markCompleted);
   const activeRunSessionRef = useRef<string>("");
+  // React state updates are asynchronous, so two clicks in the same frame can
+  // both observe `streaming === false`. This synchronous lock guarantees only
+  // one request can create/adopt a session at a time.
+  const sendInFlightRef = useRef(false);
   const {
     addMessage,
     updateStreamingMessage,
@@ -537,6 +541,9 @@ export default function ChatInputBox({
       return;
     }
 
+    if (sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
+
     const computerRequest =
       allowComputer && computerEnabled
         ? {
@@ -586,19 +593,23 @@ export default function ChatInputBox({
       isStreaming: true,
     });
 
-    await stream({
-      agentId,
-      sessionId,
-      uiContext,
-      messages: [{ role: "user", content: userMessage }],
-      attachments: messageAttachments.map((attachment) => ({
-        fileId: attachment.fileId,
-      })),
-      computerRequest,
-      knowledgeSpaceIds: selectedKnowledgeSpaceIds,
-      reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
-      provenance,
-    });
+    try {
+      await stream({
+        agentId,
+        sessionId,
+        uiContext,
+        messages: [{ role: "user", content: userMessage }],
+        attachments: messageAttachments.map((attachment) => ({
+          fileId: attachment.fileId,
+        })),
+        computerRequest,
+        knowledgeSpaceIds: selectedKnowledgeSpaceIds,
+        reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
+        provenance,
+      });
+    } finally {
+      sendInFlightRef.current = false;
+    }
   };
 
   // Auto-send a handed-off prompt exactly once (arriving from the launcher).
