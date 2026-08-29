@@ -94,8 +94,8 @@ export function KnowledgeGraphView({
       height * 0.46,
       Math.max(width, height) * 0.72,
     );
-    glow.addColorStop(0, "#222426");
-    glow.addColorStop(1, "#161719");
+    glow.addColorStop(0, "#ffffff");
+    glow.addColorStop(1, "#f5f4f1");
     context.fillStyle = glow;
     context.fillRect(0, 0, width, height);
 
@@ -114,8 +114,8 @@ export function KnowledgeGraphView({
       context.strokeStyle = connected
         ? selected
           ? "rgba(139, 92, 246, .72)"
-          : "rgba(148, 163, 184, .23)"
-        : "rgba(120, 126, 132, .075)";
+          : "rgba(100, 116, 139, .3)"
+        : "rgba(120, 113, 108, .09)";
       context.lineWidth =
         (connected && selected ? 1.15 : 0.8) / transform.scale;
       context.stroke();
@@ -136,21 +136,21 @@ export function KnowledgeGraphView({
       context.beginPath();
       context.arc(node.x, node.y, radius, 0, Math.PI * 2);
       if (active) {
-        context.shadowBlur = 18 / transform.scale;
-        context.shadowColor = "rgba(139, 92, 246, .9)";
+        context.shadowBlur = 15 / transform.scale;
+        context.shadowColor = "rgba(139, 92, 246, .42)";
         context.fillStyle = "#8b5cf6";
       } else if (related) {
-        context.shadowBlur = hovering ? 12 / transform.scale : 0;
-        context.shadowColor = "rgba(255,255,255,.55)";
-        context.fillStyle = hovering ? "#f5f5f4" : "#c7c8c8";
+        context.shadowBlur = hovering ? 10 / transform.scale : 0;
+        context.shadowColor = "rgba(28, 25, 23, .2)";
+        context.fillStyle = hovering ? "#292524" : "#78716c";
       } else {
         context.shadowBlur = 0;
-        context.fillStyle = "rgba(132, 134, 136, .28)";
+        context.fillStyle = "rgba(120, 113, 108, .22)";
       }
       context.fill();
       context.shadowBlur = 0;
       const alpha = related ? (active || hovering ? 1 : 0.86) : 0.2;
-      context.fillStyle = `rgba(245, 245, 244, ${alpha})`;
+      context.fillStyle = `rgba(41, 37, 36, ${alpha})`;
       context.font = `${active ? 600 : 400} ${11 / labelScale}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
       context.textAlign = "center";
       context.textBaseline = "top";
@@ -425,7 +425,7 @@ export function KnowledgeGraphView({
   return (
     <div
       ref={surfaceRef}
-      className="relative h-full min-h-[480px] overflow-hidden rounded-2xl border border-stone-700/50 bg-[#171819] shadow-[inset_0_1px_rgba(255,255,255,.03),0_8px_30px_rgba(28,25,23,.12)]"
+      className="relative h-full min-h-[480px] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-[inset_0_1px_rgba(255,255,255,.75),0_8px_30px_rgba(28,25,23,.07)]"
     >
       <canvas
         ref={canvasRef}
@@ -441,15 +441,15 @@ export function KnowledgeGraphView({
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
       />
-      <div className="pointer-events-none absolute left-4 top-4 rounded-lg border border-white/10 bg-black/20 px-3 py-2 backdrop-blur-sm">
-        <p className="text-[11px] font-medium text-stone-200">
+      <div className="pointer-events-none absolute left-4 top-4 rounded-lg border border-stone-200/80 bg-white/85 px-3 py-2 shadow-sm backdrop-blur-sm">
+        <p className="text-[11px] font-medium text-stone-800">
           Knowledge graph
         </p>
         <p className="mt-0.5 text-[10px] text-stone-500">
           {graph.nodes.length} notes · {resolvedEdges.length} connections
         </p>
       </div>
-      <div className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-lg border border-white/10 bg-[#242628]/90 shadow-lg backdrop-blur">
+      <div className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-lg border border-stone-200 bg-white/90 shadow-md backdrop-blur">
         <GraphControl label="Zoom in" icon={Plus} onClick={() => zoom(1.25)} />
         <GraphControl label="Zoom out" icon={Minus} onClick={() => zoom(0.8)} />
         <GraphControl
@@ -464,12 +464,12 @@ export function KnowledgeGraphView({
         />
       </div>
       {!graph.nodes.length && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-stone-500">
+        <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-stone-400">
           Connected notes will gather here.
         </div>
       )}
       {!ready && graph.nodes.length > 0 && (
-        <div className="pointer-events-none absolute bottom-3 left-4 text-[10px] text-stone-600">
+        <div className="pointer-events-none absolute bottom-3 left-4 text-[10px] text-stone-400">
           Arranging connections…
         </div>
       )}
@@ -492,7 +492,7 @@ function GraphControl({
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="grid h-8 w-8 place-items-center border-b border-white/10 text-stone-400 last:border-b-0 hover:bg-white/10 hover:text-white"
+      className="grid h-8 w-8 place-items-center border-b border-stone-200 text-stone-500 last:border-b-0 hover:bg-stone-100 hover:text-stone-900"
     >
       <Icon className="h-3.5 w-3.5" />
     </button>

@@ -915,7 +915,7 @@ export function KnowledgeSpacesView() {
           )}
 
           <div className="flex min-h-0 flex-1">
-            <aside className="flex w-[276px] shrink-0 flex-col border-r border-stone-200/80 bg-[#f8f7f3]">
+            <aside className="flex w-[276px] shrink-0 flex-col border-r border-stone-200/80 bg-white">
               <div className="border-b p-3">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
