@@ -94,8 +94,8 @@ export function KnowledgeGraphView({
       height * 0.46,
       Math.max(width, height) * 0.72,
     );
-    glow.addColorStop(0, "#ffffff");
-    glow.addColorStop(1, "#f5f4f1");
+    glow.addColorStop(0, "#fcfcfb");
+    glow.addColorStop(1, "#fcfcfb");
     context.fillStyle = glow;
     context.fillRect(0, 0, width, height);
 
@@ -113,10 +113,11 @@ export function KnowledgeGraphView({
       context.lineTo(target.x, target.y);
       context.strokeStyle = connected
         ? selected
-          ? "rgba(13, 148, 136, .8)"
-          : "rgba(71, 85, 105, .42)"
-        : "rgba(100, 116, 139, .15)";
-      context.lineWidth = (connected && selected ? 1.35 : 1) / transform.scale;
+          ? "rgba(13, 148, 136, .9)"
+          : "rgba(51, 65, 85, .56)"
+        : "rgba(71, 85, 105, .24)";
+      context.lineWidth =
+        (connected && selected ? 1.5 : 1.15) / transform.scale;
       context.stroke();
     }
 
@@ -130,7 +131,7 @@ export function KnowledgeGraphView({
           ? 6.3
           : hovering
             ? 5.2
-            : 3.2 + Math.min(2, node.degree * 0.16)) /
+            : 3.5 + Math.min(2.2, node.degree * 0.18)) /
         Math.sqrt(transform.scale);
       context.beginPath();
       context.arc(node.x, node.y, radius, 0, Math.PI * 2);
@@ -141,14 +142,14 @@ export function KnowledgeGraphView({
       } else if (related) {
         context.shadowBlur = hovering ? 10 / transform.scale : 0;
         context.shadowColor = "rgba(28, 25, 23, .2)";
-        context.fillStyle = hovering ? "#0f766e" : "#64748b";
+        context.fillStyle = hovering ? "#0f766e" : "#475569";
       } else {
         context.shadowBlur = 0;
-        context.fillStyle = "rgba(100, 116, 139, .35)";
+        context.fillStyle = "rgba(71, 85, 105, .5)";
       }
       context.fill();
       context.shadowBlur = 0;
-      const alpha = related ? (active || hovering ? 1 : 0.94) : 0.34;
+      const alpha = related ? (active || hovering ? 1 : 0.98) : 0.5;
       context.fillStyle = `rgba(30, 41, 59, ${alpha})`;
       context.font = `${active ? 600 : 400} ${11 / labelScale}px ui-sans-serif, system-ui, -apple-system, sans-serif`;
       context.textAlign = "center";
@@ -401,7 +402,7 @@ export function KnowledgeGraphView({
   return (
     <div
       ref={surfaceRef}
-      className="relative h-full min-h-[480px] overflow-hidden bg-white"
+      className="relative h-full min-h-[480px] overflow-hidden bg-page"
     >
       <canvas
         ref={canvasRef}

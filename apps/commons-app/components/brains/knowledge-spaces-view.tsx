@@ -845,11 +845,11 @@ export function KnowledgeSpacesView() {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f1efea] text-stone-950">
+    <div className="h-screen overflow-hidden bg-white text-stone-950">
       <div className="flex h-screen">
         <DashboardSideBar username={userAddress} />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-[74px] shrink-0 items-center justify-between border-b border-stone-200/80 bg-[#fbfaf7] px-6">
+          <header className="flex h-[74px] shrink-0 items-center justify-between border-b border-stone-200/80 bg-white px-6">
             <div className="min-w-0">
               <PageTitle title="Knowledge" />
               <p className="mt-1.5 truncate text-sm text-muted-foreground">
@@ -1041,8 +1041,8 @@ export function KnowledgeSpacesView() {
               </div>
             </aside>
 
-            <section className="flex min-w-0 flex-1 flex-col bg-[#f2f0eb]">
-              <div className="flex h-12 shrink-0 items-center justify-between border-b border-stone-200/80 bg-[#fbfaf7] px-4">
+            <section className="flex min-w-0 flex-1 flex-col bg-white">
+              <div className="flex h-12 shrink-0 items-center justify-between border-b border-stone-200/80 bg-white px-4">
                 <div className="flex rounded-lg bg-stone-100 p-1">
                   <button
                     onClick={() => setView("notes")}
@@ -1089,7 +1089,7 @@ export function KnowledgeSpacesView() {
               </div>
 
               <div className="flex min-h-0 flex-1">
-                <div className="min-w-0 flex-1 overflow-hidden p-0">
+                <div className="min-w-0 flex-1 overflow-hidden bg-page p-0">
                   {loading ? (
                     <div className="grid h-full place-items-center">
                       <Loader2 className="h-5 w-5 animate-spin text-stone-400" />
@@ -1105,7 +1105,7 @@ export function KnowledgeSpacesView() {
                       }}
                     />
                   ) : document ? (
-                    <div className="flex h-full w-full flex-col bg-white">
+                    <div className="flex h-full w-full flex-col bg-page">
                       <div className="flex shrink-0 items-start justify-between gap-4 border-b border-stone-200/80 bg-white px-6 py-4">
                         <div className="min-w-0 flex-1">
                           <input
@@ -1200,7 +1200,7 @@ export function KnowledgeSpacesView() {
                           }
                           readOnly={!canEdit}
                           spellCheck
-                          className="min-h-0 flex-1 resize-none border-0 bg-white px-6 py-6 font-mono text-[13px] leading-7 text-stone-800 outline-none placeholder:text-stone-300 sm:px-8"
+                          className="min-h-0 flex-1 resize-none border-0 bg-page px-6 py-6 font-mono text-[13px] leading-7 text-stone-800 outline-none placeholder:text-stone-300 sm:px-8"
                           placeholder="Write raw Markdown here."
                         />
                       )}
@@ -1291,7 +1291,7 @@ function Inspector({
     (node) => node.id === document?.documentId,
   );
   return (
-    <aside className="hidden w-[286px] shrink-0 border-l bg-stone-50/40 xl:flex xl:flex-col">
+    <aside className="hidden w-[286px] shrink-0 border-l bg-white xl:flex xl:flex-col">
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-6 p-4">
           {view === "graph" ? (
