@@ -31,6 +31,9 @@ import { cn } from "@/lib/utils";
 import { normalizeSessionHistory } from "@/lib/session-history";
 import {
   COMMONS_COPILOT_PROMPT_EVENT,
+  CREATE_UI_PLUGIN_HASH,
+  CREATE_UI_PLUGIN_INTENT_ID,
+  CREATE_UI_PLUGIN_PROMPT,
   takePendingCommonsCopilotPrompt,
   type CommonsCopilotPromptDetail,
 } from "@/lib/commons-copilot-events";
@@ -243,8 +246,25 @@ function FloatingCommonsCopilotInner() {
     window.addEventListener(COMMONS_COPILOT_PROMPT_EVENT, onPrompt);
     const pendingPrompt = takePendingCommonsCopilotPrompt();
     if (pendingPrompt) openWithPrompt(pendingPrompt);
-    return () =>
+    const openCreatorFromLocation = () => {
+      if (window.location.hash !== CREATE_UI_PLUGIN_HASH) return;
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+      openWithPrompt({
+        text: CREATE_UI_PLUGIN_PROMPT,
+        mode: "draft",
+        intentId: CREATE_UI_PLUGIN_INTENT_ID,
+      });
+    };
+    window.addEventListener("hashchange", openCreatorFromLocation);
+    openCreatorFromLocation();
+    return () => {
       window.removeEventListener(COMMONS_COPILOT_PROMPT_EVENT, onPrompt);
+      window.removeEventListener("hashchange", openCreatorFromLocation);
+    };
   }, []);
 
   useEffect(() => {

@@ -12,7 +12,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { openUiPluginCreator } from "@/lib/commons-copilot-events";
+import {
+  CREATE_UI_PLUGIN_HASH,
+  openUiPluginCreator,
+} from "@/lib/commons-copilot-events";
 import { notifyUiPluginsChanged } from "@/lib/ui-plugin-events";
 import type { UiPlugin } from "./types";
 
@@ -138,9 +141,18 @@ export function UiPluginsView() {
         <p className="text-xs text-muted-foreground">
           Opens an editable brief; nothing runs until you send it.
         </p>
-        <Button onClick={openUiPluginCreator}>
-          <Plus className="mr-2 h-4 w-4" />
-          Open Commons Copilot
+        <Button asChild>
+          <a
+            href={CREATE_UI_PLUGIN_HASH}
+            role="button"
+            onClick={(event) => {
+              event.preventDefault();
+              openUiPluginCreator();
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Open Commons Copilot
+          </a>
         </Button>
       </div>
       {!plugins.length ? (

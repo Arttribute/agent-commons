@@ -1,4 +1,6 @@
 export const COMMONS_COPILOT_PROMPT_EVENT = "commons-copilot-prompt";
+export const CREATE_UI_PLUGIN_HASH = "#create-ui-plugin";
+export const CREATE_UI_PLUGIN_INTENT_ID = "create-ui-plugin";
 
 export type CommonsCopilotPromptMode = "send" | "draft";
 
@@ -73,6 +75,6 @@ export function openUiPluginCreator() {
   openCommonsCopilotPrompt({
     text: CREATE_UI_PLUGIN_PROMPT,
     mode: "draft",
-    intentId: "create-ui-plugin",
+    intentId: CREATE_UI_PLUGIN_INTENT_ID,
   });
 }

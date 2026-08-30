@@ -24,7 +24,10 @@ import { CreateButton, PageHeader } from "@/components/layout/page-header";
 import { useRouter } from "next/navigation";
 import { useAgents } from "@/hooks/use-agents";
 import { normalizePrincipalId } from "@/lib/principal-id";
-import { openUiPluginCreator } from "@/lib/commons-copilot-events";
+import {
+  CREATE_UI_PLUGIN_HASH,
+  openUiPluginCreator,
+} from "@/lib/commons-copilot-events";
 import { CustomizeTabs } from "@/components/customize/customize-tabs";
 
 const StudioPage: NextPage = () => {
@@ -300,7 +303,11 @@ const StudioPage: NextPage = () => {
     <div className="relative flex h-full min-w-0 flex-col bg-page">
       <PageHeader title={pageCopy.title} description={pageCopy.description}>
         <CreditsMenu />
-        <CreateButton label={createLabel} onClick={handleCreateClick} />
+        <CreateButton
+          label={createLabel}
+          onClick={handleCreateClick}
+          href={activeTab === "apps" ? CREATE_UI_PLUGIN_HASH : undefined}
+        />
       </PageHeader>
 
       {isCustomize && <CustomizeTabs />}
