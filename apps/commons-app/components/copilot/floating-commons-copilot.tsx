@@ -99,7 +99,10 @@ function FloatingCommonsCopilotInner() {
   } | null>(null);
   const [uiContext, setUiContext] = useState<Record<string, unknown>>({});
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
-  const activeExternalIntentRef = useRef<string | null>(null);
+  const recentExternalIntentRef = useRef<{
+    intentId: string;
+    openedAt: number;
+  } | null>(null);
 
   useEffect(() => {
     const stored = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
@@ -216,8 +219,17 @@ function FloatingCommonsCopilotInner() {
       setOpen(true);
       setView("chat");
       const intentId = detail.intentId?.trim();
-      if (intentId && activeExternalIntentRef.current === intentId) return;
-      activeExternalIntentRef.current = intentId || null;
+      const now = Date.now();
+      if (
+        intentId &&
+        recentExternalIntentRef.current?.intentId === intentId &&
+        now - recentExternalIntentRef.current.openedAt < 2_000
+      ) {
+        return;
+      }
+      recentExternalIntentRef.current = intentId
+        ? { intentId, openedAt: now }
+        : null;
       setExternalPrompt({
         id: `external:${Date.now()}`,
         text,
@@ -326,7 +338,7 @@ function FloatingCommonsCopilotInner() {
     clearMessages();
     setSessionId("");
     setExternalPrompt(null);
-    activeExternalIntentRef.current = null;
+    recentExternalIntentRef.current = null;
     setView("chat");
   };
 
@@ -505,7 +517,7 @@ function FloatingCommonsCopilotInner() {
                 userId={authState.userId || authState.walletAddress || ""}
                 onSessionCreated={(createdSessionId) => {
                   setSessionId(createdSessionId);
-                  activeExternalIntentRef.current = null;
+                  recentExternalIntentRef.current = null;
                   loadSessions();
                 }}
                 isLoadingSession={loadingSession}
