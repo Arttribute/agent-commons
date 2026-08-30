@@ -277,10 +277,11 @@ Resources:
               Value: !Ref ProvenanceKitApiUrl
             - !Ref AWS::NoValue
           - Name: PROTOTYPE_PUBLIC_BASE_URL
-            Value: !If
-              - IsProduction
-              - https://api.agentcommons.io/v1/previews
-              - https://api-staging.agentcommons.io/v1/previews
+            # Use the environment's configured public API origin. Staging is
+            # intentionally reachable through its isolated ECS endpoint until
+            # the optional staging gateway/domain is bootstrapped; hard-coding
+            # an unprovisioned hostname makes every published preview unusable.
+            Value: !Sub "${AgentCommonsApiUrl}/v1/previews"
         Secrets:
           - Name: APP_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:APP_KEY::"

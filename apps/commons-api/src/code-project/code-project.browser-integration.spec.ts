@@ -227,6 +227,67 @@ createRoot(document.getElementById('root')).render(<App />);`,
     }
   });
 
+  it('rejects a bundled CSS orientation lock without loosening the opaque-frame CSP', async () => {
+    const builder = new CodeProjectBuilder();
+    const verifier = new CodeProjectVerifier();
+    const build = await builder.build({
+      name: 'Orientation lock fixture',
+      entryFile: 'src/main.tsx',
+      files: [
+        {
+          path: 'src/main.tsx',
+          content: `import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { AppShell, Card } from '@agent-commons/ui';
+import './orientation.css';
+function App() { return <AppShell><Card className="orientation-lock p-4"><h1 className="m-0 text-lg font-semibold">Orientation check</h1><p className="text-sm">This app must work in either orientation.</p></Card></AppShell>; }
+createRoot(document.getElementById('root')).render(<App />);`,
+        },
+        {
+          path: 'src/orientation.css',
+          content:
+            '@media (orientation: landscape) { .orientation-lock { transform: rotate(90deg); } }',
+        },
+      ],
+    });
+
+    const previousFrameAncestors = process.env.PLUGIN_FRAME_ANCESTORS;
+    process.env.PLUGIN_FRAME_ANCESTORS = 'http://127.0.0.1:41737';
+    let preview:
+      | Awaited<ReturnType<typeof startProductionPreviewServer>>
+      | undefined;
+
+    try {
+      preview = await startProductionPreviewServer(build.assets);
+      const result = await verifier.verify(
+        preview.url,
+        [],
+        [{ type: 'widget', width: 380, height: 480 }],
+      );
+
+      expect(result.passed).toBe(false);
+      expect(result.consoleErrors).toEqual([]);
+      expect(result.requestFailures).toEqual([]);
+      expect(result.accessibilityViolations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'css-orientation-lock',
+            impact: 'serious',
+            nodes: 1,
+          }),
+        ]),
+      );
+      expect(result.checks.every((check) => !check.passed)).toBe(true);
+    } finally {
+      if (previousFrameAncestors === undefined) {
+        delete process.env.PLUGIN_FRAME_ANCESTORS;
+      } else {
+        process.env.PLUGIN_FRAME_ANCESTORS = previousFrameAncestors;
+      }
+      await preview?.close();
+    }
+  });
+
   it('rejects root content clipped by the fixed widget viewport', async () => {
     const builder = new CodeProjectBuilder();
     const verifier = new CodeProjectVerifier();
