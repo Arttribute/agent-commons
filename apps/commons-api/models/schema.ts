@@ -902,6 +902,10 @@ export const libraryShareLink = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     useCount: integer('use_count').default(0).notNull(),
+    disclosure: jsonb('disclosure')
+      .$type<{ artifact: boolean; provenance: boolean; events: boolean }>()
+      .default({ artifact: true, provenance: true, events: false })
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .default(sql`timezone('utc', now())`)
       .notNull(),

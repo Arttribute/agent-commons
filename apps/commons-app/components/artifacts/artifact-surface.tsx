@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  BadgeCheck,
+  Code2,
   Download,
+  Eye,
   ExternalLink,
   Loader2,
   Maximize2,
@@ -11,7 +14,13 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ArtifactIcon } from "./artifact-icon";
+import {
+  ArtifactProvenance,
+  type ArtifactProvenanceRecord,
+} from "@/components/provenance/artifact-provenance";
 import {
   artifactKind,
   artifactLabel,
@@ -34,6 +43,14 @@ export function ArtifactSurface({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
+  const [view, setView] = useState<"preview" | "source" | "provenance">(
+    "preview",
+  );
+  const [provenance, setProvenance] = useState<ArtifactProvenanceRecord | null>(
+    null,
+  );
+  const [provenanceLoading, setProvenanceLoading] = useState(false);
+  const [provenanceError, setProvenanceError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,8 +78,44 @@ export function ArtifactSurface({
 
   useEffect(() => {
     setPreview(null);
+    setProvenance(null);
+    setView("preview");
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (view !== "provenance" || provenance || provenanceLoading) return;
+    let cancelled = false;
+    setProvenanceLoading(true);
+    setProvenanceError("");
+    fetch(`/api/library/${encodeURIComponent(artifact.fileId)}/provenance`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(
+            data?.message || data?.error || "Could not load provenance",
+          );
+        }
+        if (!cancelled) setProvenance(data?.data ?? data);
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          setProvenanceError(
+            cause instanceof Error
+              ? cause.message
+              : "Could not load provenance",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setProvenanceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [artifact.fileId, provenance, provenanceLoading, view]);
 
   const resolved = useMemo<ArtifactRef>(
     () => ({
@@ -109,6 +162,12 @@ export function ArtifactSurface({
           </p>
         </div>
         <div className="ml-auto flex items-center gap-0.5">
+          <ToolbarButton
+            label="View provenance"
+            onClick={() => setView("provenance")}
+          >
+            <span className="text-[10px] font-semibold">Pr</span>
+          </ToolbarButton>
           {onRevise && (
             <ToolbarButton
               label="Revise with agent"
@@ -154,6 +213,36 @@ export function ArtifactSurface({
         </div>
       </header>
 
+      {!loading && !error && preview ? (
+        <nav className="flex h-10 shrink-0 items-center gap-1 border-b border-stone-200 bg-white px-3">
+          <SurfaceTab
+            active={view === "preview"}
+            onClick={() => setView("preview")}
+            icon={Eye}
+          >
+            Preview
+          </SurfaceTab>
+          {preview.kind === "code" ||
+          preview.kind === "app" ||
+          preview.codeProject ? (
+            <SurfaceTab
+              active={view === "source"}
+              onClick={() => setView("source")}
+              icon={Code2}
+            >
+              Source
+            </SurfaceTab>
+          ) : null}
+          <SurfaceTab
+            active={view === "provenance"}
+            onClick={() => setView("provenance")}
+            icon={BadgeCheck}
+          >
+            Provenance
+          </SurfaceTab>
+        </nav>
+      ) : null}
+
       {loading ? (
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <div className="text-center text-stone-500">
@@ -178,6 +267,16 @@ export function ArtifactSurface({
             </button>
           </div>
         </div>
+      ) : preview && view === "source" ? (
+        <ArtifactSource preview={preview} />
+      ) : preview && view === "provenance" ? (
+        provenanceLoading ? (
+          <CenteredMessage message="Loading provenance…" loading />
+        ) : provenanceError ? (
+          <CenteredMessage message={provenanceError} />
+        ) : provenance ? (
+          <ArtifactProvenance record={provenance} itemId={artifact.fileId} />
+        ) : null
       ) : preview ? (
         <ArtifactPreviewBody preview={preview} />
       ) : null}
@@ -195,6 +294,51 @@ function ArtifactPreviewBody({ preview }: { preview: ArtifactPreview }) {
     typeof preview.metadata?.pages === "number"
       ? preview.metadata.pages
       : visualPages.length;
+
+  if (kind === "app" || kind === "code") {
+    const interactive = preview.interactivePreview;
+    if (interactive?.type === "html") {
+      return (
+        <iframe
+          srcDoc={interactive.html}
+          title={`Interactive preview of ${preview.name}`}
+          sandbox="allow-scripts allow-modals"
+          referrerPolicy="no-referrer"
+          className="min-h-0 flex-1 border-0 bg-white"
+        />
+      );
+    }
+    if (interactive?.type === "url") {
+      return (
+        <iframe
+          src={interactive.url}
+          title={`Interactive preview of ${preview.name}`}
+          sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"
+          referrerPolicy="no-referrer"
+          className="min-h-0 flex-1 border-0 bg-white"
+        />
+      );
+    }
+    if (interactive?.type === "unavailable") {
+      return (
+        <div className="flex min-h-0 flex-1 items-center justify-center p-8">
+          <div className="max-w-sm text-center">
+            <Code2 className="mx-auto h-8 w-8 text-stone-300" />
+            <p className="mt-3 text-sm font-medium text-stone-800">
+              Interactive preview unavailable
+            </p>
+            <p className="mt-1 text-xs leading-5 text-stone-500">
+              {interactive.error}
+            </p>
+            <p className="mt-2 text-[11px] text-stone-400">
+              The source remains available in the Source tab.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return <ArtifactSource preview={preview} />;
+  }
 
   if (kind === "image" && inlineUrl) {
     return (
@@ -337,18 +481,10 @@ function ArtifactPreviewBody({ preview }: { preview: ArtifactPreview }) {
   }
 
   if (kind === "spreadsheet") {
-    return (
-      <div className="min-h-0 flex-1 overflow-auto bg-white">
-        <pre className="min-w-max whitespace-pre p-5 font-mono text-xs leading-6 text-stone-700">
-          {preview.content ||
-            preview.textPreview ||
-            "No cell preview available."}
-        </pre>
-      </div>
-    );
+    return <SpreadsheetPreview preview={preview} />;
   }
 
-  if (["document", "text", "code"].includes(kind)) {
+  if (["document", "text"].includes(kind)) {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto bg-stone-200/60 p-4 sm:p-7">
         <article
@@ -371,6 +507,165 @@ function ArtifactPreviewBody({ preview }: { preview: ArtifactPreview }) {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-8">
       <EmptyPreview preview={preview} />
+    </div>
+  );
+}
+
+function ArtifactSource({ preview }: { preview: ArtifactPreview }) {
+  const files = preview.codeProject?.files ?? [];
+  const [activePath, setActivePath] = useState(
+    preview.codeProject?.entryFile || files[0]?.path || preview.name,
+  );
+  const active = files.find((file) => file.path === activePath);
+  const content =
+    active?.content ?? preview.content ?? preview.textPreview ?? "";
+  const language = codeLanguage(active?.path || preview.name);
+
+  return (
+    <div className="flex min-h-0 flex-1 bg-[#fafaf9]">
+      {files.length ? (
+        <aside className="w-44 shrink-0 overflow-y-auto border-r border-stone-200 bg-white py-2">
+          {files.map((file) => (
+            <button
+              key={file.path}
+              type="button"
+              onClick={() => setActivePath(file.path)}
+              className={cn(
+                "block w-full truncate px-3 py-1.5 text-left font-mono text-[11px] text-stone-500 hover:bg-stone-50 hover:text-stone-900",
+                activePath === file.path &&
+                  "bg-stone-100 font-medium text-stone-900",
+              )}
+            >
+              {file.path}
+            </button>
+          ))}
+        </aside>
+      ) : null}
+      <div className="min-w-0 flex-1 overflow-auto">
+        {content ? (
+          <SyntaxHighlighter
+            language={language}
+            style={oneLight}
+            showLineNumbers
+            wrapLongLines={false}
+            customStyle={{
+              margin: 0,
+              minHeight: "100%",
+              padding: "20px",
+              background: "#fafaf9",
+              fontSize: "12px",
+              lineHeight: "1.65",
+            }}
+            lineNumberStyle={{ color: "#a8a29e", minWidth: "2.6em" }}
+          >
+            {content}
+          </SyntaxHighlighter>
+        ) : (
+          <CenteredMessage message="No source is available for this artifact." />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SpreadsheetPreview({ preview }: { preview: ArtifactPreview }) {
+  const sheets = useMemo(
+    () => parseWorkbookPreview(preview.content || preview.textPreview || ""),
+    [preview.content, preview.textPreview],
+  );
+  const [active, setActive] = useState(0);
+  const sheet = sheets[active];
+  if (!sheet)
+    return <CenteredMessage message="No cell preview is available." />;
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-white">
+      <div className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-stone-200 bg-stone-50 px-2">
+        {sheets.map((candidate, index) => (
+          <button
+            key={`${candidate.name}-${index}`}
+            type="button"
+            onClick={() => setActive(index)}
+            className={cn(
+              "shrink-0 rounded-md px-2.5 py-1 text-[11px] text-stone-500 hover:bg-white",
+              active === index &&
+                "bg-white font-medium text-stone-900 shadow-sm",
+            )}
+          >
+            {candidate.name}
+          </button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="min-w-full border-collapse text-left text-xs">
+          <tbody>
+            {sheet.rows.map((row, rowIndex) => (
+              <tr
+                key={rowIndex}
+                className={rowIndex === 0 ? "bg-stone-50 font-medium" : ""}
+              >
+                <th className="sticky left-0 border-b border-r border-stone-200 bg-stone-50 px-2 py-1.5 text-right font-mono text-[10px] font-normal text-stone-400">
+                  {rowIndex + 1}
+                </th>
+                {row.map((cell, columnIndex) => (
+                  <td
+                    key={columnIndex}
+                    className="min-w-28 max-w-72 border-b border-r border-stone-200 px-3 py-1.5 text-stone-700"
+                  >
+                    <span className="line-clamp-3 whitespace-pre-wrap">
+                      {cell}
+                    </span>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SurfaceTab({
+  active,
+  onClick,
+  icon: Icon,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: typeof Eye;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-stone-500 hover:bg-stone-100 hover:text-stone-900",
+        active && "bg-stone-100 text-stone-900",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {children}
+    </button>
+  );
+}
+
+function CenteredMessage({
+  message,
+  loading = false,
+}: {
+  message: string;
+  loading?: boolean;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center text-xs text-stone-500">
+      <div>
+        {loading ? (
+          <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" />
+        ) : null}
+        {message}
+      </div>
     </div>
   );
 }
@@ -422,6 +717,82 @@ function splitPresentation(content: string) {
     .split(/--- Slide \d+ ---/g)
     .map((slide) => slide.trim())
     .filter(Boolean);
+}
+
+function parseWorkbookPreview(content: string) {
+  return content
+    .split(/^## Sheet: /gm)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const newline = part.indexOf("\n");
+      const name = newline >= 0 ? part.slice(0, newline).trim() : part;
+      const csv = newline >= 0 ? part.slice(newline + 1) : "";
+      return {
+        name,
+        rows: parseCsv(csv).slice(0, 500),
+      };
+    });
+}
+
+function parseCsv(csv: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < csv.length; index += 1) {
+    const char = csv[index];
+    if (char === '"') {
+      if (quoted && csv[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && csv[index + 1] === "\n") index += 1;
+      row.push(cell);
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  if (cell || row.length) {
+    row.push(cell);
+    if (row.some(Boolean)) rows.push(row);
+  }
+  return rows;
+}
+
+function codeLanguage(fileName: string) {
+  const extension = fileName.split(".").pop()?.toLowerCase();
+  return (
+    (
+      {
+        tsx: "tsx",
+        ts: "typescript",
+        jsx: "jsx",
+        js: "javascript",
+        mjs: "javascript",
+        cjs: "javascript",
+        html: "html",
+        css: "css",
+        json: "json",
+        md: "markdown",
+        py: "python",
+        sql: "sql",
+        yml: "yaml",
+        yaml: "yaml",
+        xml: "xml",
+        sh: "bash",
+      } as Record<string, string>
+    )[extension || ""] || "text"
+  );
 }
 
 function ToolbarButton({

@@ -1,12 +1,16 @@
 import { Module } from '@nestjs/common';
 import { FilesController } from './files.controller';
 import { FilesService } from './files.service';
-import { LibraryController, SharedArtifactController } from './library.controller';
+import {
+  LibraryController,
+  SharedArtifactController,
+} from './library.controller';
 import { LibraryService } from './library.service';
 import { PinataModule } from '~/pinata/pinata.module';
+import { CodeProjectModule } from '~/code-project';
 
 @Module({
-  imports: [PinataModule],
+  imports: [PinataModule, CodeProjectModule],
   controllers: [FilesController, LibraryController, SharedArtifactController],
   providers: [FilesService, LibraryService],
   exports: [FilesService, LibraryService],

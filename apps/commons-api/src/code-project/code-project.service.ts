@@ -54,26 +54,41 @@ export class CodeProjectService {
     const ownerUserId = agent.ownerUserId ?? agent.owner;
     if (!ownerUserId)
       throw new BadRequestException('A verified project owner is required');
-    const [libraryItem] = await this.db
-      .insert(schema.libraryItem)
-      .values({
-        ownerUserId,
-        workspaceId: agent.workspaceId,
-        sourceAgentId: args.agentId,
-        sourceSessionId: args.sessionId,
-        kind: 'app',
-        name,
-        description: args.description?.trim().slice(0, 1_000),
-        mimeType: 'application/vnd.agent-commons.nextjs-project',
-        sizeBytes: 0,
-        sha256: checksum(projectId),
-        source: 'code_project',
-        metadata: { projectId, framework: 'nextjs' },
-      })
-      .returning();
-    const [project] = await this.db
-      .insert(schema.codeProject)
-      .values({
+    const files = validateFiles(
+      args.files?.length ? args.files : starterFiles(name),
+    );
+    const contents = files.map((file) => file.content).join('\n');
+
+    await this.db.transaction(async (tx) => {
+      const [libraryItem] = await tx
+        .insert(schema.libraryItem)
+        .values({
+          ownerUserId,
+          workspaceId: agent.workspaceId,
+          sourceAgentId: args.agentId,
+          sourceSessionId: args.sessionId,
+          kind: 'app',
+          name,
+          description: args.description?.trim().slice(0, 1_000),
+          mimeType: 'application/vnd.agent-commons.nextjs-project',
+          sizeBytes: Buffer.byteLength(contents),
+          sha256: checksum(contents || projectId),
+          source: 'code_project',
+          textPreview: contents.slice(0, 2_000),
+          extractedTextChars: contents.length,
+          metadata: {
+            projectId,
+            framework: 'nextjs',
+            provenance: {
+              schema: 'https://provenancekit.com/context/v2',
+              traceId: args.runId ?? null,
+              contentHash: `sha256:${checksum(contents || projectId)}`,
+              capture: 'eager',
+            },
+          },
+        })
+        .returning();
+      await tx.insert(schema.codeProject).values({
         projectId,
         agentId: args.agentId,
         sessionId: args.sessionId,
@@ -85,35 +100,70 @@ export class CodeProjectService {
         framework: 'nextjs',
         entryFile: 'app/page.tsx',
         libraryItemId: libraryItem.itemId,
-      })
-      .returning();
-    await this.db.insert(schema.libraryLink).values([
-      {
+      });
+      await tx.insert(schema.libraryLink).values([
+        {
+          itemId: libraryItem.itemId,
+          scopeType: 'code_project',
+          scopeId: projectId,
+        },
+        {
+          itemId: libraryItem.itemId,
+          scopeType: 'agent',
+          scopeId: args.agentId,
+        },
+        ...(args.sessionId
+          ? [
+              {
+                itemId: libraryItem.itemId,
+                scopeType: 'session',
+                scopeId: args.sessionId,
+              },
+            ]
+          : []),
+        ...(args.runId
+          ? [
+              {
+                itemId: libraryItem.itemId,
+                scopeType: 'provenance_trace',
+                scopeId: args.runId,
+              },
+            ]
+          : []),
+      ]);
+      await tx.insert(schema.codeProjectFile).values(
+        files.map((file) => ({
+          projectId,
+          path: file.path,
+          content: file.content,
+          mimeType: mimeTypeFor(file.path),
+          sizeBytes: Buffer.byteLength(file.content),
+          checksum: checksum(file.content),
+        })),
+      );
+      await tx.insert(schema.libraryAuditEvent).values({
         itemId: libraryItem.itemId,
-        scopeType: 'code_project',
-        scopeId: projectId,
-      },
-      ...(args.sessionId
-        ? [
-            {
-              itemId: libraryItem.itemId,
-              scopeType: 'session',
-              scopeId: args.sessionId,
-            },
-          ]
-        : []),
-    ]);
-
-    const files = args.files?.length ? args.files : starterFiles(name);
-    await this.writeFiles({
-      agentId: args.agentId,
-      projectId,
-      files,
-      replace: true,
-      runId: args.runId,
-      toolCallId: args.toolCallId,
+        actorType: 'agent',
+        actorId: args.agentId,
+        action: 'created',
+        metadata: {
+          traceId: args.runId ?? null,
+          contentHash: `sha256:${checksum(contents || projectId)}`,
+        },
+      });
     });
-    return this.get(args.agentId, project.projectId);
+    this.emit(
+      args.runId,
+      'completed',
+      'Code project created',
+      {
+        projectId,
+        toolCallId: args.toolCallId,
+        paths: files.map((f) => f.path),
+      },
+      'createCodeProject',
+    );
+    return this.get(args.agentId, projectId);
   }
 
   async list(agentId: string) {
@@ -330,6 +380,27 @@ export class CodeProjectService {
             updatedAt: new Date(),
           })
           .where(eq(schema.libraryItem.itemId, project.libraryItemId));
+        if (args.runId) {
+          await tx
+            .insert(schema.libraryLink)
+            .values({
+              itemId: project.libraryItemId,
+              scopeType: 'provenance_trace',
+              scopeId: args.runId,
+            })
+            .onConflictDoNothing();
+        }
+        await tx.insert(schema.libraryAuditEvent).values({
+          itemId: project.libraryItemId,
+          actorType: 'agent',
+          actorId: args.agentId,
+          action: 'revised',
+          metadata: {
+            traceId: args.runId ?? null,
+            contentHash: `sha256:${checksum(contents)}`,
+            paths: files.map((file) => file.path),
+          },
+        });
       }
     });
 
@@ -757,6 +828,7 @@ export class CodeProjectService {
     message: string,
     payload: Record<string, any>,
     toolName:
+      | 'createCodeProject'
       | 'writeCodeProjectFiles'
       | 'publishCodeProject'
       | 'testCodeProject',
