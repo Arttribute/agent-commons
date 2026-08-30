@@ -79,6 +79,12 @@ export class LibraryController {
     return this.library.preview(itemId, principalFrom(req));
   }
 
+  @Get(':itemId/provenance')
+  @RateLimit({ limit: 120, windowMs: 60_000, keyStrategy: 'user' })
+  provenance(@Req() req: Request, @Param('itemId') itemId: string) {
+    return this.library.provenance(itemId, principalFrom(req));
+  }
+
   @Patch(':itemId')
   update(
     @Req() req: Request,
@@ -122,7 +128,15 @@ export class LibraryController {
   createShare(
     @Req() req: Request,
     @Param('itemId') itemId: string,
-    @Body() body: { expiresAt?: string | null } = {},
+    @Body()
+    body: {
+      expiresAt?: string | null;
+      disclosure?: {
+        artifact?: boolean;
+        provenance?: boolean;
+        events?: boolean;
+      };
+    } = {},
   ) {
     return this.library.createShareLink(itemId, principalFrom(req), body);
   }

@@ -45,6 +45,36 @@ export type ArtifactPreview = {
     url: string;
     expiresInSeconds: number;
   };
+  interactivePreview?:
+    | {
+        type: "html";
+        html: string;
+        compiled: true;
+        warnings?: Array<{ message?: string } | string>;
+      }
+    | {
+        type: "url";
+        url: string;
+        compiled: true;
+        warnings?: Array<{ message?: string } | string>;
+      }
+    | { type: "unavailable"; error: string };
+  codeProject?: {
+    projectId: string;
+    agentId: string;
+    name: string;
+    framework: string;
+    entryFile: string;
+    status: string;
+    repositoryUrl?: string | null;
+    files: Array<{
+      path: string;
+      content: string;
+      mimeType: string;
+      sizeBytes: number;
+      version: number;
+    }>;
+  };
   createdAt: string;
   updatedAt: string;
 };

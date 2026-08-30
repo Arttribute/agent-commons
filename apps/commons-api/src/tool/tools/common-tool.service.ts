@@ -1670,49 +1670,67 @@ export class CommonToolService {
     );
   }
 
-  async createSpreadsheetFile(props: {
-    fileName: string;
-    sheets: Array<{
-      name: string;
-      rows: Array<Record<string, any> | any[]>;
-    }>;
-    agentId: string;
-    sessionId?: string;
-  }) {
+  async createSpreadsheetFile(
+    props: {
+      fileName: string;
+      sheets: Array<{
+        name: string;
+        rows: Array<Record<string, any> | any[]>;
+      }>;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     return this.files.createSpreadsheetFile({
       fileName: props.fileName,
       sheets: props.sheets,
       agentId: props.agentId,
       sessionId: props.sessionId,
-      ownerId: props.agentId,
-      ownerType: 'agent',
+      traceId: metadata?.runId,
+      ownerId: metadata?.ownerId,
+      ownerType: metadata?.ownerId ? 'user' : 'agent',
     });
   }
 
-  async createTextFile(props: {
-    fileName: string;
-    content: string;
-    mimeType?: string;
-    sourceFileId?: string;
-    agentId: string;
-    sessionId?: string;
-  }) {
-    return this.files.createTextFile(props);
+  async createTextFile(
+    props: {
+      fileName: string;
+      content: string;
+      mimeType?: string;
+      sourceFileId?: string;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    return this.files.createTextFile({
+      ...props,
+      traceId: metadata?.runId,
+      ownerId: metadata?.ownerId,
+    });
   }
 
-  async createDocumentFile(props: {
-    fileName: string;
-    title?: string;
-    sections: Array<{
-      heading?: string;
-      paragraphs?: string[];
-      bullets?: string[];
-    }>;
-    sourceFileId?: string;
-    agentId: string;
-    sessionId?: string;
-  }) {
-    return this.files.createDocumentFile(props);
+  async createDocumentFile(
+    props: {
+      fileName: string;
+      title?: string;
+      sections: Array<{
+        heading?: string;
+        paragraphs?: string[];
+        bullets?: string[];
+      }>;
+      sourceFileId?: string;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    return this.files.createDocumentFile({
+      ...props,
+      traceId: metadata?.runId,
+      ownerId: metadata?.ownerId,
+    });
   }
 
   async createPresentationFile(
@@ -1754,6 +1772,7 @@ export class CommonToolService {
   ) {
     return this.files.createPresentationFile({
       ...props,
+      traceId: metadata?.runId,
       ownerId: metadata?.ownerId,
       requiredImageFileIds: metadata?.attachmentFileIds,
     });
@@ -1777,6 +1796,7 @@ export class CommonToolService {
   ) {
     return this.files.createPdfFile({
       ...props,
+      traceId: metadata?.runId,
       ownerId: metadata?.ownerId,
     });
   }

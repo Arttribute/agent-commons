@@ -90,6 +90,8 @@ type PersistFileInput = {
   mimeType?: string;
   agentId?: string | null;
   sessionId?: string | null;
+  /** Exact producing run. Used to bind this resource to its EAA trajectory. */
+  traceId?: string | null;
   ownerId?: string | null;
   ownerType?: 'user' | 'agent' | 'service';
   workspaceId?: string | null;
@@ -246,6 +248,7 @@ export class FilesService {
     mimeType: string;
     agentId: string;
     sessionId?: string;
+    traceId?: string;
     metadata?: Record<string, any>;
   }) {
     return this.persistFile({
@@ -254,6 +257,7 @@ export class FilesService {
       mimeType: input.mimeType,
       agentId: input.agentId,
       sessionId: input.sessionId,
+      traceId: input.traceId,
       ownerId: input.agentId,
       ownerType: 'agent',
       source: 'agent_generated',
@@ -269,6 +273,7 @@ export class FilesService {
     }>;
     agentId?: string;
     sessionId?: string;
+    traceId?: string;
     ownerId?: string;
     ownerType?: 'user' | 'agent' | 'service';
     workspaceId?: string;
@@ -319,6 +324,7 @@ export class FilesService {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       agentId: input.agentId,
       sessionId: input.sessionId,
+      traceId: input.traceId,
       ownerId: input.ownerId ?? input.agentId,
       ownerType: input.ownerType ?? 'agent',
       workspaceId: input.workspaceId,
@@ -331,6 +337,9 @@ export class FilesService {
     mimeType?: string;
     agentId?: string;
     sessionId?: string;
+    traceId?: string;
+    ownerId?: string;
+    workspaceId?: string;
     sourceFileId?: string;
   }) {
     const fileName = sanitizeFileName(input.fileName || 'artifact.md');
@@ -352,8 +361,10 @@ export class FilesService {
       mimeType: normalizeMimeType(input.mimeType, fileName),
       agentId: input.agentId,
       sessionId: input.sessionId,
-      ownerId: input.agentId,
-      ownerType: 'agent',
+      traceId: input.traceId,
+      ownerId: input.ownerId ?? input.agentId,
+      ownerType: input.ownerId ? 'user' : 'agent',
+      workspaceId: input.workspaceId,
       source: 'agent_generated',
       metadata: versionMetadata(input.sourceFileId),
     });
@@ -369,6 +380,9 @@ export class FilesService {
     }>;
     agentId: string;
     sessionId?: string;
+    traceId?: string;
+    ownerId?: string;
+    workspaceId?: string;
     sourceFileId?: string;
   }) {
     const fileName = ensureExtension(
@@ -393,8 +407,10 @@ export class FilesService {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       agentId: input.agentId,
       sessionId: input.sessionId,
-      ownerId: input.agentId,
-      ownerType: 'agent',
+      traceId: input.traceId,
+      ownerId: input.ownerId ?? input.agentId,
+      ownerType: input.ownerId ? 'user' : 'agent',
+      workspaceId: input.workspaceId,
       source: 'agent_generated',
       metadata: versionMetadata(input.sourceFileId),
     });
@@ -408,6 +424,8 @@ export class FilesService {
     agentId: string;
     sessionId?: string;
     ownerId?: string;
+    workspaceId?: string;
+    traceId?: string;
     requiredImageFileIds?: string[];
     sourceFileId?: string;
   }) {
@@ -532,8 +550,10 @@ export class FilesService {
           'application/vnd.openxmlformats-officedocument.presentationml.presentation',
         agentId: input.agentId,
         sessionId: input.sessionId,
-        ownerId: input.agentId,
-        ownerType: 'agent',
+        traceId: input.traceId,
+        ownerId: input.ownerId ?? input.agentId,
+        ownerType: input.ownerId ? 'user' : 'agent',
+        workspaceId: input.workspaceId,
         source: 'agent_generated',
         metadata: {
           ...versionMetadata(input.sourceFileId),
@@ -674,6 +694,8 @@ export class FilesService {
     agentId: string;
     sessionId?: string;
     ownerId?: string;
+    workspaceId?: string;
+    traceId?: string;
     sourceFileId?: string;
   }) {
     if (input.sourceFileId) {
@@ -728,8 +750,10 @@ export class FilesService {
         mimeType: 'application/pdf',
         agentId: input.agentId,
         sessionId: input.sessionId,
-        ownerId: input.agentId,
-        ownerType: 'agent',
+        traceId: input.traceId,
+        ownerId: input.ownerId ?? input.agentId,
+        ownerType: input.ownerId ? 'user' : 'agent',
+        workspaceId: input.workspaceId,
         source: 'agent_generated',
         extractedTextOverride,
         metadata: {
@@ -794,8 +818,10 @@ export class FilesService {
       mimeType: 'application/pdf',
       agentId: input.agentId,
       sessionId: input.sessionId,
-      ownerId: input.agentId,
-      ownerType: 'agent',
+      traceId: input.traceId,
+      ownerId: input.ownerId ?? input.agentId,
+      ownerType: input.ownerId ? 'user' : 'agent',
+      workspaceId: input.workspaceId,
       source: 'agent_generated',
       metadata: versionMetadata(input.sourceFileId),
     });
@@ -830,7 +856,7 @@ export class FilesService {
           extractedText.storageBucket,
           extractedText.storagePath,
         )
-      : file.textPreview ?? '';
+      : (file.textPreview ?? '');
     const content = fullText.slice(offset, offset + maxChars);
     const nextOffset = offset + content.length;
     const artifacts = await this.getArtifacts(file.itemId);
@@ -1077,7 +1103,7 @@ export class FilesService {
     input: PersistFileInput,
   ): Promise<FileAttachmentRef> {
     const updateStage = (stage: string) => input.onPersistenceStage?.(stage);
-    updateStage('validating the presentation artifact');
+    updateStage('validating the artifact');
     const maxBytes = Number(
       process.env.AGENT_FILE_UPLOAD_MAX_BYTES ?? 50 * 1024 * 1024,
     );
@@ -1096,9 +1122,9 @@ export class FilesService {
       .createHash('sha256')
       .update(input.buffer)
       .digest('hex');
-    updateStage('resolving presentation ownership');
+    updateStage('resolving artifact ownership');
     const ownership = await this.resolveOwnership(input);
-    updateStage('resolving presentation storage');
+    updateStage('resolving artifact storage');
     const storageProvider = await this.resolveStorageProvider(
       ownership.ownerUserId,
       input.storageProvider,
@@ -1140,7 +1166,7 @@ export class FilesService {
     const fileId = uuidv4();
     const bucket = storageProvider === 's3' ? this.bucketName() : 'ipfs';
     if (storageProvider === 's3') {
-      updateStage('checking presentation storage');
+      updateStage('checking artifact storage');
       await this.ensureBucket();
     }
     const ownerSegment = crypto
@@ -1160,7 +1186,7 @@ export class FilesService {
     ]
       .filter(Boolean)
       .join('/');
-    updateStage('storing the PPTX file');
+    updateStage('storing the original file');
     const original = await this.storeBuffer(
       storageProvider,
       bucket,
@@ -1173,7 +1199,7 @@ export class FilesService {
 
     let extraction: ExtractionResult;
     try {
-      updateStage('extracting presentation text');
+      updateStage('extracting artifact content');
       extraction = await this.extractFile(
         input.buffer,
         originalName,
@@ -1220,7 +1246,7 @@ export class FilesService {
 
     for (const artifact of extraction.artifacts) {
       updateStage(
-        `storing presentation preview ${
+        `storing artifact preview ${
           artifact.pageNumber ?? persistedArtifacts.length + 1
         }`,
       );
@@ -1253,7 +1279,7 @@ export class FilesService {
       ? `${basePath}/derived/extracted.txt`
       : undefined;
     if (textStoragePath) {
-      updateStage('storing extracted presentation text');
+      updateStage('storing extracted artifact text');
       const storedText = await this.storeBuffer(
         storageProvider,
         bucket,
@@ -1265,42 +1291,41 @@ export class FilesService {
       textStoragePath = storedText.path;
     }
 
-    updateStage('creating the presentation library record');
-    const [file] = await this.db
-      .insert(schema.libraryItem)
-      .values({
-        itemId: fileId,
-        ownerUserId: ownership.ownerUserId,
-        sourceAgentId: input.agentId || null,
-        sourceSessionId: input.sessionId || null,
-        workspaceId: input.workspaceId || ownership.workspaceId || null,
-        name: originalName,
-        mimeType,
-        kind: libraryKind(kind),
-        sizeBytes: input.buffer.length,
-        sha256,
-        source:
-          input.source ??
-          (input.ownerType === 'agent' ? 'agent_generated' : 'upload'),
-        status: extraction.status,
-        textPreview: text ? text.slice(0, DEFAULT_PREVIEW_CHARS) : null,
-        extractedTextChars: text.length,
-        extractionError: extraction.error,
-        metadata: {
-          ...extraction.metadata,
-          ...input.metadata,
-          storageProvider,
-          maxExtractedTextChars: this.maxExtractedTextChars(),
-          originalTextChars: extraction.text.length,
-          textTruncated: extraction.text.length > text.length,
+    const itemRecord = {
+      itemId: fileId,
+      ownerUserId: ownership.ownerUserId,
+      sourceAgentId: input.agentId || null,
+      sourceSessionId: input.sessionId || null,
+      workspaceId: input.workspaceId || ownership.workspaceId || null,
+      name: originalName,
+      mimeType,
+      kind: libraryKind(kind),
+      sizeBytes: input.buffer.length,
+      sha256,
+      source: input.source ?? (input.agentId ? 'agent_generated' : 'upload'),
+      status: extraction.status,
+      textPreview: text ? text.slice(0, DEFAULT_PREVIEW_CHARS) : null,
+      extractedTextChars: text.length,
+      extractionError: extraction.error,
+      metadata: {
+        ...extraction.metadata,
+        ...input.metadata,
+        provenance: {
+          schema: 'https://provenancekit.com/context/v2',
+          traceId: input.traceId ?? null,
+          contentHash: `sha256:${sha256}`,
+          capture: 'eager',
+          ...(input.metadata?.provenance ?? {}),
         },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .returning();
-
-    updateStage('creating presentation blob records');
-    await this.db.insert(schema.libraryBlob).values([
+        storageProvider,
+        maxExtractedTextChars: this.maxExtractedTextChars(),
+        originalTextChars: extraction.text.length,
+        textTruncated: extraction.text.length > text.length,
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } satisfies typeof schema.libraryItem.$inferInsert;
+    const blobRecords: Array<typeof schema.libraryBlob.$inferInsert> = [
       {
         itemId: fileId,
         role: 'original',
@@ -1339,21 +1364,42 @@ export class FilesService {
             },
           ]
         : []),
-    ]);
+    ];
 
-    updateStage('linking the presentation to its agent and session');
-    await this.linkArtifactScopes(fileId, input);
-    updateStage('indexing presentation text');
-    await this.indexText(fileId, text);
-    updateStage('auditing presentation creation');
-    await this.audit(
-      fileId,
-      input.ownerType ?? 'user',
-      input.ownerId ?? ownership.ownerUserId,
-      'created',
-    );
+    // Metadata becomes visible atomically. A link or blob failure rolls the
+    // entire record back, so Library can never expose a half-created artifact.
+    updateStage('committing the artifact record');
+    const file = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(schema.libraryItem)
+        .values(itemRecord)
+        .returning();
+      await tx.insert(schema.libraryBlob).values(blobRecords);
+      await this.linkArtifactScopes(fileId, input, tx);
+      await this.audit(
+        fileId,
+        input.agentId ? 'agent' : (input.ownerType ?? 'user'),
+        input.agentId ?? input.ownerId ?? ownership.ownerUserId,
+        'created',
+        {
+          traceId: input.traceId ?? null,
+          contentHash: `sha256:${sha256}`,
+        },
+        tx,
+      );
+      return created;
+    });
 
-    updateStage('loading the completed presentation');
+    updateStage('indexing artifact text');
+    await this.indexText(fileId, text).catch((error) => {
+      this.logger.warn(
+        `Artifact text indexing deferred for ${fileId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    });
+
+    updateStage('loading the completed artifact');
     const artifacts = await this.getArtifacts(fileId);
     return this.toAttachmentRef(file, artifacts);
   }
@@ -2159,7 +2205,12 @@ export class FilesService {
 
   private async linkArtifactScopes(
     itemId: string,
-    input: { agentId?: string | null; sessionId?: string | null },
+    input: {
+      agentId?: string | null;
+      sessionId?: string | null;
+      traceId?: string | null;
+    },
+    executor: Pick<DatabaseService, 'insert'> = this.db,
   ) {
     const links = [
       input.agentId
@@ -2168,13 +2219,20 @@ export class FilesService {
       input.sessionId
         ? { itemId, scopeType: 'session', scopeId: input.sessionId }
         : null,
+      input.traceId
+        ? {
+            itemId,
+            scopeType: 'provenance_trace',
+            scopeId: input.traceId,
+          }
+        : null,
     ].filter(Boolean) as Array<{
       itemId: string;
       scopeType: string;
       scopeId: string;
     }>;
     if (!links.length) return;
-    await this.db
+    await executor
       .insert(schema.libraryLink)
       .values(links)
       .onConflictDoNothing();
@@ -2255,8 +2313,8 @@ export class FilesService {
         ServerSideEncryption: process.env.AGENT_FILES_S3_KMS_KEY_ID
           ? 'aws:kms'
           : process.env.AGENT_FILE_S3_SSE === 'false'
-          ? undefined
-          : 'AES256',
+            ? undefined
+            : 'AES256',
         SSEKMSKeyId: process.env.AGENT_FILES_S3_KMS_KEY_ID,
       }),
     );
@@ -2449,7 +2507,10 @@ export class FilesService {
         };
       }
     }
-    if (input.ownerId && input.ownerType === 'service') {
+    // Tool calls carry the authenticated user as ownerId. Prefer the agent's
+    // canonical owner when it exists, but keep Commons Copilot and other
+    // synthetic agents able to create durable artifacts for that user.
+    if (input.ownerId) {
       return { ownerUserId: input.ownerId, workspaceId: input.workspaceId };
     }
     throw new BadRequestException('A verified artifact owner is required');
@@ -2479,6 +2540,13 @@ export class FilesService {
       process.env.ARTIFACT_EMBEDDINGS_DISABLED === 'true'
     )
       return;
+    void this.embedArtifactChunks(itemId, inserted);
+  }
+
+  private async embedArtifactChunks(
+    itemId: string,
+    inserted: Array<{ chunkId: string; content: string }>,
+  ) {
     try {
       const model =
         process.env.ARTIFACT_EMBEDDING_MODEL || 'text-embedding-3-small';
@@ -2556,8 +2624,9 @@ export class FilesService {
     actorId: string,
     action: string,
     metadata: Record<string, unknown> = {},
+    executor: Pick<DatabaseService, 'insert'> = this.db,
   ) {
-    await this.db.insert(schema.libraryAuditEvent).values({
+    await executor.insert(schema.libraryAuditEvent).values({
       itemId,
       actorType,
       actorId,
@@ -3030,21 +3099,21 @@ async function renderPresentationPreview(
           .join('');
         return `<rect x="${x}" y="${y}" width="${width}" height="184" rx="18" fill="#${color}" fill-opacity=".2" stroke="#${color}" stroke-width="2"/>
           <rect x="${x + 22}" y="${
-          y + 24
-        }" width="42" height="32" rx="8" fill="#${color}"/>
+            y + 24
+          }" width="42" height="32" rx="8" fill="#${color}"/>
           <text x="${x + 43}" y="${
-          y + 45
-        }" text-anchor="middle" font-size="13" font-weight="700" fill="#${
-          theme.textColor
-        }">${String(cardIndex + 1).padStart(2, '0')}</text>
+            y + 45
+          }" text-anchor="middle" font-size="13" font-weight="700" fill="#${
+            theme.textColor
+          }">${String(cardIndex + 1).padStart(2, '0')}</text>
           <text x="${x + 78}" y="${
-          y + 46
-        }" font-size="24" font-weight="700" fill="#${
-          theme.textColor
-        }">${heading}</text>
+            y + 46
+          }" font-size="24" font-weight="700" fill="#${
+            theme.textColor
+          }">${heading}</text>
           <text x="${x + 24}" y="${y + 96}" font-size="19" fill="#${
-          theme.mutedTextColor
-        }">${body}</text>`;
+            theme.mutedTextColor
+          }">${body}</text>`;
       })
       .join('');
     const imageMarkup = image
@@ -3061,8 +3130,8 @@ async function renderPresentationPreview(
       <text x="112" y="94" font-family="${escapeXml(
         theme.headFontFace,
       )}, Arial, sans-serif" font-size="46" font-weight="700" fill="#${
-      theme.textColor
-    }">${escapeXml(spec.title ?? '')}</text>
+        theme.textColor
+      }">${escapeXml(spec.title ?? '')}</text>
       ${imageMarkup}
       ${cardMarkup}
       ${
@@ -3084,8 +3153,8 @@ async function renderPresentationPreview(
       <text x="1210" y="685" text-anchor="end" font-family="${escapeXml(
         theme.bodyFontFace,
       )}, Arial, sans-serif" font-size="15" fill="#${
-      theme.mutedTextColor
-    }">${String(index + 1).padStart(2, '0')}</text>
+        theme.mutedTextColor
+      }">${String(index + 1).padStart(2, '0')}</text>
     </svg>`;
     buffer = await sharp(Buffer.from(svg)).png().toBuffer();
   }

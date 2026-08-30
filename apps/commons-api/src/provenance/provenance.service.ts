@@ -1,6 +1,6 @@
 import * as crypto from 'node:crypto';
 import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
-import { and, asc, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import type {
   Action,
   Attribution,
@@ -903,6 +903,32 @@ export class ProvenanceService implements OnApplicationShutdown {
       where: eq(schema.provenanceEvent.traceId, traceId),
       orderBy: [asc(schema.provenanceEvent.sequence)],
     });
+    const artifactLinks = await this.db.query.libraryLink.findMany({
+      where: (table) =>
+        and(
+          eq(table.scopeType, 'provenance_trace'),
+          eq(table.scopeId, traceId),
+        ),
+    });
+    const artifactItems = artifactLinks.length
+      ? await this.db.query.libraryItem.findMany({
+          where: (table) =>
+            inArray(
+              table.itemId,
+              artifactLinks.map((link) => link.itemId),
+            ),
+        })
+      : [];
+    const attachmentFileIds = Array.isArray(run.metadata?.attachmentFileIds)
+      ? run.metadata.attachmentFileIds.filter(
+          (value): value is string => typeof value === 'string',
+        )
+      : [];
+    const inputArtifacts = attachmentFileIds.length
+      ? await this.db.query.libraryItem.findMany({
+          where: (table) => inArray(table.itemId, attachmentFileIds),
+        })
+      : [];
     const userId = `user:${run.initiator ?? 'unknown'}`;
     const agentId = run.agentId
       ? `agent:${run.agentId}`
@@ -933,6 +959,61 @@ export class ProvenanceService implements OnApplicationShutdown {
     const actions = events
       .map((event) => event.eaaAction as Action | null)
       .filter((action): action is Action => Boolean(action));
+    for (const artifact of inputArtifacts) {
+      actions.push({
+        id: `urn:agentcommons:artifact-use:${traceId}:${artifact.itemId}`,
+        type: 'ext:agentcommons:context' as Action['type'],
+        performedBy: agentId,
+        timestamp: run.startedAt.toISOString(),
+        inputs: [{ ref: `sha256:${artifact.sha256}`, scheme: 'hash' as const }],
+        outputs: [],
+        extensions: {
+          'ext:agentcommons:artifact@1.0.0': {
+            itemId: artifact.itemId,
+            name: artifact.name,
+            kind: artifact.kind,
+            role: 'input',
+          },
+        },
+      });
+    }
+    for (const artifact of artifactItems) {
+      const sourceFileId =
+        typeof artifact.metadata?.sourceFileId === 'string'
+          ? artifact.metadata.sourceFileId
+          : undefined;
+      const sourceHash = sourceFileId
+        ? await this.db.query.libraryItem
+            .findFirst({
+              where: (table) => eq(table.itemId, sourceFileId),
+            })
+            .then((source) => (source ? `sha256:${source.sha256}` : undefined))
+        : undefined;
+      actions.push({
+        id: `urn:agentcommons:artifact-action:${artifact.itemId}`,
+        type: (sourceHash ? 'transform' : 'create') as Action['type'],
+        performedBy: artifact.sourceAgentId
+          ? `agent:${artifact.sourceAgentId}`
+          : `user:${artifact.ownerUserId}`,
+        timestamp: artifact.createdAt.toISOString(),
+        inputs: sourceHash
+          ? [{ ref: sourceHash, scheme: 'hash' as const }]
+          : [],
+        outputs: [
+          { ref: `sha256:${artifact.sha256}`, scheme: 'hash' as const },
+        ],
+        extensions: {
+          'ext:agentcommons:artifact@1.0.0': {
+            itemId: artifact.itemId,
+            name: artifact.name,
+            kind: artifact.kind,
+            mimeType: artifact.mimeType,
+            sizeBytes: artifact.sizeBytes,
+            revisionOf: artifact.metadata?.sourceFileId,
+          },
+        },
+      });
+    }
     const knownEntityIds = new Set(entities.map((entity) => entity.id));
     const actorIds = actions
       .map((action) => action.performedBy)
@@ -971,6 +1052,67 @@ export class ProvenanceService implements OnApplicationShutdown {
           },
         },
       }));
+    resources.push(
+      ...artifactItems.map((artifact) => ({
+        address: {
+          ref: `sha256:${artifact.sha256}`,
+          scheme: 'hash' as const,
+        },
+        type: 'other' as const,
+        locations: [],
+        createdAt: artifact.createdAt.toISOString(),
+        createdBy: artifact.sourceAgentId
+          ? `agent:${artifact.sourceAgentId}`
+          : `user:${artifact.ownerUserId}`,
+        rootAction: `urn:agentcommons:artifact-action:${artifact.itemId}`,
+        extensions: {
+          'ext:agentcommons:artifact@1.0.0': {
+            itemId: artifact.itemId,
+            name: artifact.name,
+            kind: artifact.kind,
+            mimeType: artifact.mimeType,
+            sizeBytes: artifact.sizeBytes,
+            revisionOf: artifact.metadata?.sourceFileId,
+            license:
+              artifact.metadata?.provenance?.license ??
+              artifact.metadata?.license ??
+              'not_specified',
+            aiTraining:
+              artifact.metadata?.provenance?.aiTraining ??
+              artifact.metadata?.aiTraining ??
+              'not_specified',
+          },
+        },
+      })),
+    );
+    const producedHashes = new Set(artifactItems.map((item) => item.sha256));
+    resources.push(
+      ...inputArtifacts
+        .filter((artifact) => !producedHashes.has(artifact.sha256))
+        .map((artifact) => ({
+          address: {
+            ref: `sha256:${artifact.sha256}`,
+            scheme: 'hash' as const,
+          },
+          type: 'other' as const,
+          locations: [],
+          createdAt: artifact.createdAt.toISOString(),
+          createdBy: artifact.sourceAgentId
+            ? `agent:${artifact.sourceAgentId}`
+            : `user:${artifact.ownerUserId}`,
+          rootAction: `urn:agentcommons:artifact-use:${traceId}:${artifact.itemId}`,
+          extensions: {
+            'ext:agentcommons:artifact@1.0.0': {
+              itemId: artifact.itemId,
+              name: artifact.name,
+              kind: artifact.kind,
+              mimeType: artifact.mimeType,
+              sizeBytes: artifact.sizeBytes,
+              role: 'input',
+            },
+          },
+        })),
+    );
     const attributions: Attribution[] = actions.flatMap((action) => [
       {
         actionId: action.id,

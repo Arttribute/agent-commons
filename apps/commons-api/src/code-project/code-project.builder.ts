@@ -1,5 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { build, type Loader, type Message, type Plugin } from 'esbuild';
+import {
+  build,
+  transform,
+  type Loader,
+  type Message,
+  type Plugin,
+} from 'esbuild';
 import { posix } from 'node:path';
 import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
@@ -97,7 +103,12 @@ export class CodeProjectBuilder {
       });
 
       const outputAssets = result.outputFiles.map((file) => {
-        const path = file.path.replace('/prototype-dist/', '');
+        // esbuild may resolve the absolute outdir beneath absWorkingDir even
+        // when the configured path begins with `/`. Persist only the stable
+        // deployment-relative suffix, never a machine-local build path.
+        const path = file.path
+          .replace(/^.*[\\/]prototype-dist[\\/]/, '')
+          .replaceAll('\\', '/');
         return {
           path,
           content: file.contents,
@@ -155,6 +166,213 @@ export class CodeProjectBuilder {
       throw error;
     }
   }
+
+  /**
+   * Build a project into one self-contained HTML document for an authenticated,
+   * sandboxed artifact preview. This deliberately does not publish anything or
+   * create a durable public URL.
+   */
+  async buildInlinePreview(args: {
+    name: string;
+    entryFile: string;
+    files: CodeProjectFileInput[];
+  }) {
+    const result = await this.build(args);
+    return {
+      html: inlineBuildAssets(result.assets),
+      warnings: result.warnings,
+    };
+  }
+
+  /** Compile common single-file web artifacts without turning them into a project. */
+  async buildSingleFilePreview(args: { name: string; content: string }) {
+    const extension = posix.extname(args.name).toLowerCase();
+    if (extension === '.html' || extension === '.htm') {
+      return { html: securePreviewHtml(args.content), warnings: [] };
+    }
+
+    if (['.jsx', '.tsx'].includes(extension)) {
+      return this.buildInlinePreview({
+        name: args.name,
+        entryFile: 'app/page.tsx',
+        files: [
+          { path: 'app/page.tsx', content: args.content },
+          {
+            path: 'app/globals.css',
+            content:
+              'html,body,#root{min-height:100%;margin:0}body{font-family:ui-sans-serif,system-ui,sans-serif}',
+          },
+        ],
+      });
+    }
+
+    if (['.js', '.mjs', '.cjs', '.ts'].includes(extension)) {
+      const loader: Loader = extension === '.ts' ? 'ts' : 'js';
+      const output = await transform(args.content, {
+        loader,
+        format: 'esm',
+        platform: 'browser',
+        target: 'es2022',
+        sourcemap: false,
+      });
+      return {
+        html: executableScriptHtml(args.name, output.code),
+        warnings: output.warnings.map(formatMessage),
+      };
+    }
+
+    return null;
+  }
+}
+
+function inlineBuildAssets(assets: BuildResult['assets']) {
+  const htmlAsset = assets.find((asset) => asset.path === 'index.html');
+  if (!htmlAsset) throw new Error('Build did not produce an HTML entry');
+  let html = assetText(htmlAsset.content);
+  const binaryAssets = assets.filter(
+    (asset) =>
+      asset !== htmlAsset &&
+      !asset.path.endsWith('.js') &&
+      !asset.path.endsWith('.css'),
+  );
+  for (const asset of binaryAssets) {
+    const dataUrl = `data:${asset.contentType};base64,${Buffer.from(
+      typeof asset.content === 'string'
+        ? Buffer.from(asset.content)
+        : asset.content,
+    ).toString('base64')}`;
+    html = replaceAssetReference(html, asset.path, dataUrl);
+  }
+  const cssAssets = assets.filter((asset) => asset.path.endsWith('.css'));
+  html = html.replace(
+    /<link\b([^>]*?)href=["']([^"']+)["']([^>]*)>/gi,
+    (tag, before, reference, after) => {
+      const asset = cssAssets.find((candidate) =>
+        referencesAsset(reference, candidate.path),
+      );
+      if (!asset) return tag;
+      let css = assetText(asset.content);
+      for (const binary of binaryAssets) {
+        const dataUrl = assetDataUrl(binary);
+        css = replaceAssetReference(css, binary.path, dataUrl);
+      }
+      return `<style>${escapeStyle(css)}</style>`;
+    },
+  );
+  const javaScriptAssets = assets.filter((asset) => asset.path.endsWith('.js'));
+  html = html.replace(
+    /<script\b([^>]*?)src=["']([^"']+)["']([^>]*)><\/script>/gi,
+    (tag, before, reference) => {
+      const asset = javaScriptAssets.find((candidate) =>
+        referencesAsset(reference, candidate.path),
+      );
+      if (!asset) return tag;
+      let javascript = assetText(asset.content);
+      for (const binary of binaryAssets) {
+        javascript = replaceAssetReference(
+          javascript,
+          binary.path,
+          assetDataUrl(binary),
+        );
+      }
+      return `<script type="module">${escapeScript(javascript)}</script>`;
+    },
+  );
+  return securePreviewHtml(html);
+}
+
+function executableScriptHtml(name: string, javascript: string) {
+  return securePreviewHtml(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(name)}</title>
+    <style>
+      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+      body { margin: 0; padding: 20px; }
+      #artifact-console { white-space: pre-wrap; font: 12px/1.6 ui-monospace, monospace; }
+      .hint { color: #78716c; font-size: 12px; margin-bottom: 14px; }
+    </style>
+  </head>
+  <body>
+    <div class="hint">Interactive JavaScript output</div>
+    <pre id="artifact-console"></pre>
+    <script>
+      (() => {
+        const output = document.getElementById('artifact-console');
+        const write = (kind, values) => {
+          const line = document.createElement('div');
+          line.dataset.kind = kind;
+          line.textContent = values.map((value) => {
+            if (typeof value === 'string') return value;
+            try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+          }).join(' ');
+          output.appendChild(line);
+        };
+        for (const method of ['log', 'info', 'warn', 'error']) {
+          const original = console[method].bind(console);
+          console[method] = (...values) => { original(...values); write(method, values); };
+        }
+        window.addEventListener('error', (event) => write('error', [event.message]));
+        window.addEventListener('unhandledrejection', (event) => write('error', [event.reason]));
+      })();
+    </script>
+    <script type="module">${escapeScript(javascript)}</script>
+  </body>
+</html>`);
+}
+
+function securePreviewHtml(html: string) {
+  const policy =
+    "default-src 'none'; script-src 'unsafe-inline' data: blob: https:; style-src 'unsafe-inline' data: https:; img-src data: blob: https:; media-src data: blob: https:; font-src data: https:; connect-src https:; frame-src https:; form-action 'none'; base-uri 'none'";
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${policy}" />`;
+  if (/<head(?:\s[^>]*)?>/i.test(html)) {
+    return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}\n${meta}`);
+  }
+  return `${meta}\n${html}`;
+}
+
+function assetText(content: string | Uint8Array) {
+  return typeof content === 'string'
+    ? content
+    : Buffer.from(content).toString('utf8');
+}
+
+function replaceAssetReference(
+  source: string,
+  path: string,
+  replacement: string,
+) {
+  return source.replace(
+    new RegExp(`(?:\\./)?${escapeRegExp(path)}`, 'g'),
+    replacement,
+  );
+}
+
+function referencesAsset(reference: string, assetPath: string) {
+  const normalizedReference = reference.replace(/^\.\//, '').replace(/^\//, '');
+  const normalizedAsset = assetPath.replace(/^\.\//, '').replace(/^\//, '');
+  return (
+    normalizedReference === normalizedAsset ||
+    normalizedAsset.endsWith(`/${normalizedReference}`)
+  );
+}
+
+function assetDataUrl(asset: BuildResult['assets'][number]) {
+  return `data:${asset.contentType};base64,${Buffer.from(
+    typeof asset.content === 'string'
+      ? Buffer.from(asset.content)
+      : asset.content,
+  ).toString('base64')}`;
+}
+
+function escapeScript(value: string) {
+  return value.replace(/<\/script/gi, '<\\/script');
+}
+
+function escapeStyle(value: string) {
+  return value.replace(/<\/style/gi, '<\\/style');
 }
 
 function virtualProjectPlugin(files: Map<string, string>): Plugin {

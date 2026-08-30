@@ -33,6 +33,10 @@ phases:
       - pnpm install --filter commons-api... --frozen-lockfile
       - >-
         pnpm --filter commons-api test -- --runInBand --forceExit
+        src/files/files.service.spec.ts
+        src/files/library.service.spec.ts
+        src/code-project/code-project.builder.spec.ts
+        src/code-project/code-project.service.spec.ts
         src/provenance/provenance.service.spec.ts
         src/tool/workflow-executor.service.spec.ts
         src/tool/workflow-hitl.integration.spec.ts

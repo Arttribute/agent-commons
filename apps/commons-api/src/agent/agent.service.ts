@@ -1020,6 +1020,8 @@ export class AgentService implements OnModuleInit {
               parentSessionId,
               reasoningEffort: effectiveModel.reasoningEffort,
               attachmentCount: props.attachments?.length ?? 0,
+              attachmentFileIds:
+                props.attachments?.map((attachment) => attachment.fileId) ?? [],
               ...props.provenanceContext?.metadata,
             },
             lineage: props.provenanceContext?.lineage,

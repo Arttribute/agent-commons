@@ -179,6 +179,17 @@ export function createGatewayApp() {
       c.req.path,
     ),
   );
+  // A revocable, expiring artifact capability is authenticated by its opaque
+  // token downstream. It must remain reachable to signed-out recipients; the
+  // Nest service applies token hashing, expiry, revocation, and rate limits.
+  app.get("/v1/shared/artifacts/:token", (c) =>
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
+  );
   // Trusted relay around an opaque generated-app iframe. It carries no user
   // data or credential and must be frameable from the configured Commons app
   // origin, just like the immutable preview it contains.

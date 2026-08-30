@@ -2,11 +2,13 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import crypto from 'node:crypto';
 import {
   and,
+  asc,
   cosineDistance,
   desc,
   eq,
@@ -21,6 +23,7 @@ import {
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import { OpenAIService } from '~/modules/openai/openai.service';
+import { CodeProjectBuilder } from '~/code-project/code-project.builder';
 import { FilesService } from './files.service';
 
 export type LibraryPrincipal = {
@@ -31,10 +34,17 @@ export type LibraryPrincipal = {
 
 @Injectable()
 export class LibraryService {
+  private readonly logger = new Logger(LibraryService.name);
+  private readonly compiledPreviewCache = new Map<
+    string,
+    { version: string; html: string; warnings: unknown[] }
+  >();
+
   constructor(
     private readonly db: DatabaseService,
     private readonly files: FilesService,
     private readonly openAI: OpenAIService,
+    private readonly codeBuilder: CodeProjectBuilder,
   ) {}
 
   async list(
@@ -185,16 +195,33 @@ export class LibraryService {
         principal.principalType === 'agent' ? undefined : principal.principalId,
       workspaceId: principal.workspaceId ?? undefined,
     };
-    const [content, download, inline] = await Promise.all([
-      this.files.readFileForAgent({
-        fileId: itemId,
-        ...context,
-        maxChars: 50_000,
-        includeImageUrls: true,
-      }),
-      this.files.createDownloadUrl(itemId, context),
-      this.files.createInlineUrl(itemId, context),
-    ]);
+    const content = await this.files.readFileForAgent({
+      fileId: itemId,
+      ...context,
+      maxChars: 50_000,
+      includeImageUrls: true,
+    });
+    const [downloadResult, inlineResult, codePreviewResult] =
+      await Promise.allSettled([
+        this.files.createDownloadUrl(itemId, context),
+        this.files.createInlineUrl(itemId, context),
+        this.codePreview(item, content.content, content.truncated),
+      ]);
+    const download = settledValue(downloadResult);
+    const inline = settledValue(inlineResult);
+    const codePreview = settledValue(codePreviewResult);
+    for (const result of [downloadResult, inlineResult]) {
+      if (result.status === 'rejected') {
+        this.logger.debug(
+          `Artifact ${itemId} has no downloadable original: ${safeErrorMessage(result.reason)}`,
+        );
+      }
+    }
+    if (codePreviewResult.status === 'rejected') {
+      this.logger.warn(
+        `Could not prepare code preview for ${itemId}: ${safeErrorMessage(codePreviewResult.reason)}`,
+      );
+    }
     await this.audit(itemId, principal, 'previewed');
     return {
       ...this.publicItem(item),
@@ -204,7 +231,361 @@ export class LibraryService {
       artifacts: content.artifacts,
       download,
       inline,
+      ...codePreview,
     };
+  }
+
+  async provenance(itemId: string, principal: LibraryPrincipal) {
+    const item = await this.getAccessible(itemId, principal);
+    const result = await this.buildArtifactProvenance(item, true);
+    await this.audit(itemId, principal, 'provenance_viewed');
+    return result;
+  }
+
+  /** A safe EAA-oriented projection for compact UI, export, and sharing. */
+  private async buildArtifactProvenance(
+    item: typeof schema.libraryItem.$inferSelect,
+    includeEvents: boolean,
+  ) {
+    const links = await this.db.query.libraryLink.findMany({
+      where: (table) => eq(table.itemId, item.itemId),
+    });
+    const exactTraceIds = links
+      .filter((link) => link.scopeType === 'provenance_trace')
+      .map((link) => link.scopeId);
+    const runs = exactTraceIds.length
+      ? await this.db.query.provenanceRun.findMany({
+          where: (table) => inArray(table.traceId, exactTraceIds),
+          orderBy: (table) => asc(table.startedAt),
+        })
+      : item.sourceSessionId
+        ? await this.db.query.provenanceRun.findMany({
+            where: (table) => eq(table.sessionId, item.sourceSessionId!),
+            orderBy: (table) => asc(table.startedAt),
+          })
+        : [];
+    const traceIds = runs.map((run) => run.traceId);
+    const [events, audits, grants, shares] = await Promise.all([
+      includeEvents && traceIds.length
+        ? this.db.query.provenanceEvent.findMany({
+            where: (table) => inArray(table.traceId, traceIds),
+            orderBy: (table) => [asc(table.startedAt), asc(table.sequence)],
+          })
+        : Promise.resolve([]),
+      this.db.query.libraryAuditEvent.findMany({
+        where: (table) => eq(table.itemId, item.itemId),
+        orderBy: (table) => asc(table.createdAt),
+      }),
+      this.db.query.libraryGrant.findMany({
+        where: (table) => eq(table.itemId, item.itemId),
+      }),
+      this.db.query.libraryShareLink.findMany({
+        where: (table) => eq(table.itemId, item.itemId),
+      }),
+    ]);
+    const sourceFileId = stringValue(
+      item.metadata?.sourceFileId ?? item.metadata?.revisionOf,
+    );
+    const source = sourceFileId
+      ? await this.db.query.libraryItem.findFirst({
+          where: (table) => eq(table.itemId, sourceFileId),
+        })
+      : undefined;
+    const revisions = await this.db.query.libraryItem.findMany({
+      where: (table) =>
+        sql`${table.metadata}->>'sourceFileId' = ${item.itemId}`,
+      orderBy: (table) => asc(table.createdAt),
+      limit: 25,
+    });
+    const metadataProvenance = recordValue(item.metadata?.provenance);
+    const contentHash = `sha256:${item.sha256}`;
+
+    return {
+      schemaVersion: 1,
+      context: 'https://provenancekit.com/context/v2',
+      resource: {
+        id: `urn:agentcommons:artifact:${item.itemId}`,
+        itemId: item.itemId,
+        name: item.name,
+        kind: item.kind,
+        mimeType: item.mimeType,
+        sizeBytes: item.sizeBytes,
+        createdAt: item.createdAt,
+        createdBy: item.sourceAgentId
+          ? `agent:${item.sourceAgentId}`
+          : `user:${item.ownerUserId}`,
+        address: { scheme: 'hash', ref: contentHash },
+      },
+      capture: {
+        mode: runs[0]?.captureMode ?? 'metadata',
+        linkage: exactTraceIds.length ? 'exact_trace' : 'session_fallback',
+        traceCount: runs.length,
+        eventCount: runs.reduce(
+          (total, run) => total + Number(run.eventCount ?? 0),
+          0,
+        ),
+        droppedEvents: runs.reduce(
+          (total, run) => total + Number(run.droppedEventCount ?? 0),
+          0,
+        ),
+      },
+      entities: uniqueEntities(runs, item),
+      runs: runs.map((run) => ({
+        traceId: run.traceId,
+        status: run.status,
+        provider: run.provider,
+        modelId: run.modelId,
+        agentId: run.agentId,
+        initiator: run.initiator,
+        startedAt: run.startedAt,
+        endedAt: run.endedAt,
+        durationMs: run.durationMs,
+        captureMode: run.captureMode,
+        bundleHash: run.bundleHash,
+        anchorStatus: run.anchorStatus,
+        anchorProvider: run.anchorProvider,
+        anchorRef: run.anchorRef,
+      })),
+      actions: includeEvents
+        ? events.map((event) => ({
+            id:
+              stringValue((event.eaaAction as any)?.id) ??
+              `urn:agentcommons:event:${event.traceId}:${event.sequence}`,
+            traceId: event.traceId,
+            sequence: event.sequence,
+            category: event.category,
+            eventType: event.eventType,
+            name: event.name,
+            summary: event.summary,
+            status: event.status,
+            performedBy: stringValue((event.eaaAction as any)?.performedBy),
+            contentHash: event.contentHash,
+            startedAt: event.startedAt,
+            endedAt: event.endedAt,
+            durationMs: event.durationMs,
+            lineage: recordValue(event.metadata)?.lineage,
+          }))
+        : [],
+      derivation: {
+        source: source
+          ? {
+              itemId: source.itemId,
+              name: source.name,
+              contentHash: `sha256:${source.sha256}`,
+            }
+          : null,
+        revisions: revisions.map((revision) => ({
+          itemId: revision.itemId,
+          name: revision.name,
+          contentHash: `sha256:${revision.sha256}`,
+          createdAt: revision.createdAt,
+        })),
+      },
+      governance: {
+        license:
+          metadataProvenance?.license ??
+          item.metadata?.license ??
+          'not_specified',
+        aiTraining:
+          metadataProvenance?.aiTraining ??
+          item.metadata?.aiTraining ??
+          'not_specified',
+        authorization: {
+          visibility: item.visibility,
+          owner: item.ownerUserId,
+          grantCount: grants.length,
+          grants: grants.map((grant) => ({
+            grantor: grant.createdBy,
+            subjectType: grant.subjectType,
+            subjectId: grant.subjectId,
+            permission: grant.permission,
+            expiresAt: grant.expiresAt,
+            createdAt: grant.createdAt,
+          })),
+          shareCount: shares.filter((share) => !share.revokedAt).length,
+          shares: shares.map((share) => ({
+            shareId: share.shareId,
+            createdBy: share.createdBy,
+            expiresAt: share.expiresAt,
+            revokedAt: share.revokedAt,
+            disclosure: normalizeDisclosure(share.disclosure),
+          })),
+          sharing: 'revocable_capability',
+        },
+      },
+      integrity: {
+        algorithm: 'sha256',
+        contentHash,
+        verified: Boolean(item.sha256),
+        bundleHashes: runs.map((run) => run.bundleHash).filter(Boolean),
+        anchors: runs
+          .filter((run) => run.anchorStatus !== 'not_requested')
+          .map((run) => ({
+            traceId: run.traceId,
+            status: run.anchorStatus,
+            provider: run.anchorProvider,
+            reference: run.anchorRef,
+          })),
+      },
+      history: audits.map((event) => ({
+        eventId: event.eventId,
+        action: event.action,
+        actorType: event.actorType,
+        actorId: event.actorId,
+        createdAt: event.createdAt,
+        contentHash: stringValue(event.metadata?.contentHash),
+        traceId: stringValue(event.metadata?.traceId),
+      })),
+      disclosure: {
+        eventsIncluded: includeEvents,
+        privateReasoningIncluded: false,
+        credentialsIncluded: false,
+      },
+    };
+  }
+
+  private async codePreview(
+    item: typeof schema.libraryItem.$inferSelect,
+    content: string,
+    truncated: boolean,
+  ) {
+    if (item.kind === 'app' || item.source === 'code_project') {
+      const project = await this.db.query.codeProject.findFirst({
+        where: (table) => eq(table.libraryItemId, item.itemId),
+      });
+      if (!project) {
+        return {
+          interactivePreview: {
+            type: 'unavailable' as const,
+            error: 'The source project record is unavailable.',
+          },
+        };
+      }
+      const [files, deployment] = await Promise.all([
+        this.db.query.codeProjectFile.findMany({
+          where: (table) => eq(table.projectId, project.projectId),
+          orderBy: (table) => table.path,
+        }),
+        this.db.query.codeProjectDeployment.findFirst({
+          where: (table) =>
+            and(
+              eq(table.projectId, project.projectId),
+              eq(table.status, 'ready'),
+            ),
+          orderBy: (table) => desc(table.createdAt),
+        }),
+      ]);
+      let interactivePreview:
+        | {
+            type: 'url';
+            url: string;
+            compiled: true;
+            warnings: unknown[];
+          }
+        | {
+            type: 'html';
+            html: string;
+            compiled: true;
+            warnings: unknown[];
+          }
+        | { type: 'unavailable'; error: string };
+      if (deployment?.publicUrl) {
+        interactivePreview = {
+          type: 'url',
+          url: deployment.publicUrl,
+          compiled: true,
+          warnings: deployment.buildErrors ?? [],
+        };
+      } else {
+        try {
+          const version = `${project.updatedAt.toISOString()}:${files
+            .map((file) => `${file.path}:${file.version}`)
+            .join('|')}`;
+          let built = this.compiledPreviewCache.get(project.projectId);
+          if (!built || built.version !== version) {
+            const compiled = await this.codeBuilder.buildInlinePreview({
+              name: project.name,
+              entryFile: project.entryFile,
+              files: files.map((file) => ({
+                path: file.path,
+                content: file.content,
+              })),
+            });
+            built = { version, ...compiled };
+            this.compiledPreviewCache.set(project.projectId, built);
+            while (this.compiledPreviewCache.size > 50) {
+              this.compiledPreviewCache.delete(
+                this.compiledPreviewCache.keys().next().value!,
+              );
+            }
+          }
+          interactivePreview = {
+            type: 'html',
+            html: built.html,
+            compiled: true,
+            warnings: built.warnings,
+          };
+        } catch (error) {
+          interactivePreview = {
+            type: 'unavailable',
+            error: buildErrorMessage(error),
+          };
+        }
+      }
+      return {
+        codeProject: {
+          projectId: project.projectId,
+          agentId: project.agentId,
+          name: project.name,
+          framework: project.framework,
+          entryFile: project.entryFile,
+          status: project.status,
+          repositoryUrl: project.repositoryUrl,
+          files: files.map((file) => ({
+            path: file.path,
+            content: file.content,
+            mimeType: file.mimeType,
+            sizeBytes: file.sizeBytes,
+            version: file.version,
+          })),
+        },
+        interactivePreview,
+      };
+    }
+
+    if (item.kind !== 'code' || !content) return {};
+    if (truncated) {
+      return {
+        interactivePreview: {
+          type: 'unavailable' as const,
+          error:
+            'This source file is too large to compile in the artifact preview. The complete original remains downloadable.',
+        },
+      };
+    }
+    try {
+      const built = await this.codeBuilder.buildSingleFilePreview({
+        name: item.name,
+        content,
+      });
+      return built
+        ? {
+            interactivePreview: {
+              type: 'html' as const,
+              html: built.html,
+              compiled: true,
+              warnings: built.warnings,
+            },
+          }
+        : {};
+    } catch (error) {
+      return {
+        interactivePreview: {
+          type: 'unavailable' as const,
+          error: buildErrorMessage(error),
+        },
+      };
+    }
   }
 
   async update(
@@ -308,7 +689,14 @@ export class LibraryService {
   async createShareLink(
     itemId: string,
     principal: LibraryPrincipal,
-    input: { expiresAt?: string | null },
+    input: {
+      expiresAt?: string | null;
+      disclosure?: {
+        artifact?: boolean;
+        provenance?: boolean;
+        events?: boolean;
+      };
+    },
   ) {
     await this.getOwned(itemId, principal);
     const token = crypto.randomBytes(32).toString('base64url');
@@ -317,6 +705,17 @@ export class LibraryService {
     if (expiresAt && Number.isNaN(expiresAt.valueOf())) {
       throw new BadRequestException('expiresAt must be an ISO date');
     }
+    const disclosure = {
+      artifact: input.disclosure?.artifact !== false,
+      provenance: input.disclosure?.provenance !== false,
+      events: Boolean(input.disclosure?.events),
+    };
+    if (!disclosure.artifact && !disclosure.provenance) {
+      throw new BadRequestException(
+        'A share link must disclose the artifact, its provenance, or both',
+      );
+    }
+    if (!disclosure.provenance) disclosure.events = false;
     const [share] = await this.db
       .insert(schema.libraryShareLink)
       .values({
@@ -324,17 +723,19 @@ export class LibraryService {
         tokenHash,
         createdBy: principal.principalId,
         expiresAt,
+        disclosure,
       })
       .returning();
     await this.markShared(itemId);
     await this.audit(itemId, principal, 'share_link_created', {
       shareId: share.shareId,
+      disclosure,
     });
     const base = (
       process.env.ARTIFACT_SHARE_BASE_URL ||
       'http://localhost:3000/shared/artifacts'
     ).replace(/\/$/, '');
-    return { ...share, token: undefined, url: `${base}/${token}` };
+    return { ...share, token: undefined, disclosure, url: `${base}/${token}` };
   }
 
   async revokeShareLink(
@@ -388,9 +789,34 @@ export class LibraryService {
       actorId: share.shareId,
       action: 'downloaded',
     });
+    const disclosure = normalizeDisclosure(share.disclosure);
+    const [downloadResult, provenanceResult] = await Promise.allSettled([
+      disclosure.artifact
+        ? this.files.createShareDownloadUrl(item.itemId)
+        : Promise.resolve(undefined),
+      disclosure.provenance
+        ? this.buildArtifactProvenance(item, disclosure.events).then(
+            redactSharedProvenance,
+          )
+        : Promise.resolve(undefined),
+    ]);
+    const download = settledValue(downloadResult);
+    const provenance = settledValue(provenanceResult);
     return {
-      item: this.publicItem(item),
-      download: await this.files.createShareDownloadUrl(item.itemId),
+      item: sharedItem(item),
+      disclosure,
+      download,
+      provenance,
+      unavailable: {
+        artifact:
+          downloadResult.status === 'rejected'
+            ? safeErrorMessage(downloadResult.reason)
+            : undefined,
+        provenance:
+          provenanceResult.status === 'rejected'
+            ? safeErrorMessage(provenanceResult.reason)
+            : undefined,
+      },
     };
   }
 
@@ -688,4 +1114,121 @@ function same(left: string, right: string) {
 
 function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function recordValue(value: unknown): Record<string, any> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : undefined;
+}
+
+function uniqueEntities(
+  runs: Array<typeof schema.provenanceRun.$inferSelect>,
+  item: typeof schema.libraryItem.$inferSelect,
+) {
+  const entities = new Map<string, Record<string, unknown>>();
+  for (const run of runs) {
+    if (run.initiator) {
+      entities.set(`human:${run.initiator}`, {
+        id: `human:${run.initiator}`,
+        role: 'human',
+        name: run.initiator,
+      });
+    }
+    if (run.agentId) {
+      entities.set(`agent:${run.agentId}`, {
+        id: `agent:${run.agentId}`,
+        role: 'ai',
+        name: run.agentId,
+        provider: run.provider,
+        modelId: run.modelId,
+      });
+    }
+  }
+  if (!entities.size) {
+    const id = item.sourceAgentId
+      ? `agent:${item.sourceAgentId}`
+      : `human:${item.ownerUserId}`;
+    entities.set(id, {
+      id,
+      role: item.sourceAgentId ? 'ai' : 'human',
+      name: item.sourceAgentId ?? item.ownerUserId,
+    });
+  }
+  return [...entities.values()];
+}
+
+function normalizeDisclosure(value: unknown) {
+  const record = recordValue(value);
+  return {
+    artifact: record?.artifact !== false,
+    provenance: record?.provenance !== false,
+    events: Boolean(record?.events && record?.provenance !== false),
+  };
+}
+
+function sharedItem(item: typeof schema.libraryItem.$inferSelect) {
+  return {
+    itemId: item.itemId,
+    name: item.name,
+    description: item.description,
+    kind: item.kind,
+    mimeType: item.mimeType,
+    sizeBytes: item.sizeBytes,
+    status: item.status,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+}
+
+function redactSharedProvenance(provenance: Record<string, any>) {
+  return {
+    ...provenance,
+    entities: (provenance.entities ?? []).map((entity: Record<string, any>) =>
+      entity.role === 'human'
+        ? { id: 'human:withheld', role: 'human', name: 'Human requester' }
+        : entity,
+    ),
+    runs: (provenance.runs ?? []).map((run: Record<string, any>) => ({
+      ...run,
+      initiator: undefined,
+    })),
+    governance: {
+      ...provenance.governance,
+      authorization: {
+        ...provenance.governance?.authorization,
+        owner: 'withheld',
+        grants: undefined,
+        shares: undefined,
+      },
+    },
+    history: (provenance.history ?? []).map((event: Record<string, any>) => ({
+      ...event,
+      actorId:
+        event.actorType === 'agent' ? event.actorId : 'identity-withheld',
+    })),
+    disclosure: {
+      ...provenance.disclosure,
+      humanIdentityIncluded: false,
+    },
+  };
+}
+
+function settledValue<T>(result: PromiseSettledResult<T>): T | undefined {
+  return result.status === 'fulfilled' ? result.value : undefined;
+}
+
+function safeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function buildErrorMessage(error: unknown): string {
+  const message = safeErrorMessage(error).replace(/\s+/g, ' ').trim();
+  return message
+    ? `The interactive preview could not be compiled: ${message.slice(0, 360)}`
+    : 'The interactive preview could not be compiled.';
 }

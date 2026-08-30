@@ -433,6 +433,32 @@ describe('ProvenanceService', () => {
             },
           ]),
         },
+        libraryLink: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              itemId: '10000000-0000-4000-8000-000000000001',
+              scopeType: 'provenance_trace',
+              scopeId: traceId,
+            },
+          ]),
+        },
+        libraryItem: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              itemId: '10000000-0000-4000-8000-000000000001',
+              ownerUserId: 'reviewer@example.com',
+              sourceAgentId: null,
+              name: 'result.pdf',
+              kind: 'pdf',
+              mimeType: 'application/pdf',
+              sizeBytes: 42,
+              sha256: 'artifact-hash',
+              metadata: {},
+              createdAt: startedAt,
+            },
+          ]),
+          findFirst: jest.fn(),
+        },
       },
     } as never);
 
@@ -443,5 +469,14 @@ describe('ProvenanceService', () => {
         (entity) => entity.id === 'service:reviewer@example.com',
       ),
     ).toMatchObject({ role: 'ext:agentcommons:runtime' });
+    expect(bundle.resources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          address: { scheme: 'hash', ref: 'sha256:artifact-hash' },
+          rootAction:
+            'urn:agentcommons:artifact-action:10000000-0000-4000-8000-000000000001',
+        }),
+      ]),
+    );
   });
 });
