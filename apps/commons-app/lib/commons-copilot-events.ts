@@ -13,25 +13,52 @@ export type CommonsCopilotPromptDetail = {
   intentId?: string;
 };
 
+type PendingCommonsCopilotPrompt = {
+  detail: CommonsCopilotPromptDetail;
+  createdAt: number;
+};
+
+type CommonsCopilotWindow = Window & {
+  __agentCommonsPendingCopilotPrompt?: PendingCommonsCopilotPrompt;
+};
+
+const PENDING_PROMPT_TTL_MS = 10_000;
+
+/**
+ * Take an intent dispatched before the floating Copilot host mounted. Keeping
+ * this on window makes the handoff durable across independently loaded client
+ * chunks without leaving stale prompts behind after a reload.
+ */
+export function takePendingCommonsCopilotPrompt() {
+  if (typeof window === "undefined") return undefined;
+  const copilotWindow = window as CommonsCopilotWindow;
+  const pending = copilotWindow.__agentCommonsPendingCopilotPrompt;
+  delete copilotWindow.__agentCommonsPendingCopilotPrompt;
+  if (!pending || Date.now() - pending.createdAt > PENDING_PROMPT_TTL_MS) {
+    return undefined;
+  }
+  return pending.detail;
+}
+
 /** Open Commons Copilot with a prompt from another part of the product. */
-export function openCommonsCopilotPrompt(
-  detail: CommonsCopilotPromptDetail,
-) {
+export function openCommonsCopilotPrompt(detail: CommonsCopilotPromptDetail) {
   if (typeof window === "undefined") return;
   const text = detail.text.trim();
   if (!text) return;
 
+  const normalizedDetail: CommonsCopilotPromptDetail = {
+    text,
+    mode: detail.mode === "draft" ? "draft" : "send",
+    intentId: detail.intentId?.trim() || undefined,
+  };
+  (window as CommonsCopilotWindow).__agentCommonsPendingCopilotPrompt = {
+    detail: normalizedDetail,
+    createdAt: Date.now(),
+  };
   window.dispatchEvent(
-    new CustomEvent<CommonsCopilotPromptDetail>(
-      COMMONS_COPILOT_PROMPT_EVENT,
-      {
-        detail: {
-          text,
-          mode: detail.mode === "draft" ? "draft" : "send",
-          intentId: detail.intentId?.trim() || undefined,
-        },
-      },
-    ),
+    new CustomEvent<CommonsCopilotPromptDetail>(COMMONS_COPILOT_PROMPT_EVENT, {
+      detail: normalizedDetail,
+    }),
   );
 }
 

@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { normalizeSessionHistory } from "@/lib/session-history";
 import {
   COMMONS_COPILOT_PROMPT_EVENT,
+  takePendingCommonsCopilotPrompt,
   type CommonsCopilotPromptDetail,
 } from "@/lib/commons-copilot-events";
 import { CopilotChangeList, type CopilotChange } from "./copilot-change-list";
@@ -212,8 +213,7 @@ function FloatingCommonsCopilotInner() {
   }, [loadChanges]);
 
   useEffect(() => {
-    const openWithPrompt = (event: Event) => {
-      const detail = (event as CustomEvent<CommonsCopilotPromptDetail>).detail;
+    const openWithPrompt = (detail: CommonsCopilotPromptDetail) => {
       const text = detail?.text?.trim();
       if (!text) return;
       setOpen(true);
@@ -236,9 +236,15 @@ function FloatingCommonsCopilotInner() {
         mode: detail.mode === "draft" ? "draft" : "send",
       });
     };
-    window.addEventListener(COMMONS_COPILOT_PROMPT_EVENT, openWithPrompt);
+    const onPrompt = (event: Event) => {
+      takePendingCommonsCopilotPrompt();
+      openWithPrompt((event as CustomEvent<CommonsCopilotPromptDetail>).detail);
+    };
+    window.addEventListener(COMMONS_COPILOT_PROMPT_EVENT, onPrompt);
+    const pendingPrompt = takePendingCommonsCopilotPrompt();
+    if (pendingPrompt) openWithPrompt(pendingPrompt);
     return () =>
-      window.removeEventListener(COMMONS_COPILOT_PROMPT_EVENT, openWithPrompt);
+      window.removeEventListener(COMMONS_COPILOT_PROMPT_EVENT, onPrompt);
   }, []);
 
   useEffect(() => {
