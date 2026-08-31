@@ -14,6 +14,7 @@
     "migrate:ai-fluency-media:s3": "node scripts/migrate-ai-fluency-media-to-s3.mjs",
     "seed:make-agent-powerful-skill": "node scripts/seed-make-agent-powerful-skill.mjs",
     "seed:intro-multi-agent-systems-skill": "node scripts/seed-intro-multi-agent-systems-skill.mjs",
+    "prepare:ai-quick-wins-check-in": "node --experimental-strip-types scripts/prepare-ai-quick-wins-check-in.mjs",
     "repair:payments-index": "node scripts/repair-payments-index.mjs",
     "set:ai-quick-wins-start-date": "node scripts/set-ai-quick-wins-start-date.mjs",
     "migrate:moringa-workshop-course": "node scripts/migrate-moringa-workshop-course.mjs",
