@@ -1,6 +1,119 @@
+@import "reactflow/dist/style.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Knowledge's visual Markdown editor keeps a calm document surface while the
+   stored value remains portable Markdown. */
+.tiptap > * + * {
+  margin-top: 0.85em;
+}
+.tiptap h1,
+.tiptap h2,
+.tiptap h3 {
+  color: #1c1917;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  margin-bottom: 0.45em;
+  margin-top: 1.35em;
+}
+.tiptap h1 {
+  font-size: 1.9rem;
+}
+.tiptap h2 {
+  font-size: 1.4rem;
+}
+.tiptap h3 {
+  font-size: 1.15rem;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  color: #a8a29e;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.tiptap ul,
+.tiptap ol {
+  padding-left: 1.45rem;
+}
+.tiptap ul {
+  list-style: disc;
+}
+.tiptap ol {
+  list-style: decimal;
+}
+.tiptap blockquote {
+  border-left: 3px solid #99f6e4;
+  color: #57534e;
+  padding-left: 1rem;
+}
+.tiptap code {
+  border-radius: 0.35rem;
+  background: #f1f0ed;
+  color: #292524;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.88em;
+  padding: 0.12em 0.3em;
+}
+.tiptap pre {
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  background: #1c1917;
+  color: #fafaf9;
+  padding: 1rem;
+}
+.tiptap pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+.tiptap table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+}
+.tiptap th,
+.tiptap td {
+  border: 1px solid #d6d3d1;
+  min-width: 6rem;
+  padding: 0.5rem 0.65rem;
+  position: relative;
+  vertical-align: top;
+}
+.tiptap th {
+  background: #f5f5f4;
+  font-weight: 600;
+  text-align: left;
+}
+.tiptap .selectedCell::after {
+  background: rgb(45 212 191 / 0.13);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+.tiptap .column-resize-handle {
+  background: #14b8a6;
+  bottom: -1px;
+  pointer-events: none;
+  position: absolute;
+  right: -2px;
+  top: 0;
+  width: 3px;
+}
+.tiptap hr {
+  border: 0;
+  border-top: 1px solid #d6d3d1;
+  margin: 1.5rem 0;
+}
+.tiptap img {
+  display: block;
+  margin: 1.25rem auto;
+  max-width: 100%;
+}
 
 html,
 body {

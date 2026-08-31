@@ -72,6 +72,7 @@ const publicRoutes: Array<[string, RequestInit?]> = [
   ["/v1/billing/webhook", { method: "POST" }],
   ["/v1/previews/example-project/"],
   ["/v1/previews/example-project/assets/index.js"],
+  ["/v1/shared/artifacts/example-opaque-token"],
   [
     "/v1/ui-plugin-host?entry=https%3A%2F%2Fapi.agentcommons.io%2Fv1%2Fpreviews%2Fexample-project%2Fdeployments%2F00000000-0000-4000-8000-000000000000%2F&commonsHostOrigin=https%3A%2F%2Fagentcommons.io",
   ],

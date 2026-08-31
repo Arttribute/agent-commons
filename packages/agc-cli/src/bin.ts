@@ -1,30 +1,41 @@
 declare const __CLI_VERSION__: string;
 
-import { Command } from 'commander';
-import { spawn } from 'child_process';
-import { loginCommand, logoutCommand, whoamiCommand, configCommand } from './commands/login.js';
-import { agentsCommand } from './commands/agents.js';
-import { sessionsCommand } from './commands/sessions.js';
-import { toolsCommand } from './commands/tools.js';
-import { connectionsCommand } from './commands/connections.js';
-import { workflowCommand } from './commands/workflow.js';
-import { taskCommand } from './commands/task.js';
-import { runCommand } from './commands/run.js';
-import { chatCommand } from './commands/chat.js';
-import { mcpCommand } from './commands/mcp.js';
-import { skillsCommand } from './commands/skills.js';
-import { walletCommand } from './commands/wallet.js';
-import { modelsCommand } from './commands/models.js';
-import { memoryCommand } from './commands/memory.js';
-import { usageCommand } from './commands/usage.js';
-import { billingCommand, creditsCommand } from './commands/billing.js';
-import { logsCommand } from './commands/logs.js';
-import { computerCommand } from './commands/computer.js';
-import { libraryCommand } from './commands/library.js';
-import { projectsCommand } from './commands/projects.js';
-import { apiKeysCommand } from './commands/api-keys.js';
-import { banner, select, spin, c, sym } from './ui.js';
-import { loadConfig, saveConfig, makeClient, ensureAccessToken } from './config.js';
+import { Command } from "commander";
+import { spawn } from "child_process";
+import {
+  loginCommand,
+  logoutCommand,
+  whoamiCommand,
+  configCommand,
+} from "./commands/login.js";
+import { agentsCommand } from "./commands/agents.js";
+import { sessionsCommand } from "./commands/sessions.js";
+import { toolsCommand } from "./commands/tools.js";
+import { connectionsCommand } from "./commands/connections.js";
+import { workflowCommand } from "./commands/workflow.js";
+import { taskCommand } from "./commands/task.js";
+import { runCommand } from "./commands/run.js";
+import { chatCommand } from "./commands/chat.js";
+import { mcpCommand } from "./commands/mcp.js";
+import { skillsCommand } from "./commands/skills.js";
+import { walletCommand } from "./commands/wallet.js";
+import { modelsCommand } from "./commands/models.js";
+import { memoryCommand } from "./commands/memory.js";
+import { usageCommand } from "./commands/usage.js";
+import { billingCommand, creditsCommand } from "./commands/billing.js";
+import { logsCommand } from "./commands/logs.js";
+import { computerCommand } from "./commands/computer.js";
+import { libraryCommand } from "./commands/library.js";
+import { projectsCommand } from "./commands/projects.js";
+import { apiKeysCommand } from "./commands/api-keys.js";
+import { provenanceCommand } from "./commands/provenance.js";
+import { banner, select, spin, c, sym } from "./ui.js";
+import {
+  loadConfig,
+  saveConfig,
+  makeClient,
+  ensureAccessToken,
+} from "./config.js";
 
 // ── Interactive top-level menu ────────────────────────────────────────────────
 
@@ -32,97 +43,127 @@ async function interactiveMenu(): Promise<void> {
   banner();
 
   const cfg = loadConfig();
-  const isSetup = !!((cfg.accessToken || cfg.apiKey || cfg.sessionToken) && (cfg.userId || cfg.initiator));
+  const isSetup = !!(
+    (cfg.accessToken || cfg.apiKey || cfg.sessionToken) &&
+    (cfg.userId || cfg.initiator)
+  );
 
   // First-run: guide user through login
   if (!isSetup) {
-    console.log(c.bold('  Welcome to Agent Commons CLI!'));
-    console.log(c.dim('  Looks like this is your first time here — let\'s get you set up.\n'));
-    console.log(`  ${sym.arrow} Running ${c.bold('agc login')} to configure your credentials…\n`);
-    runSubcommand(['login']);
+    console.log(c.bold("  Welcome to Agent Commons CLI!"));
+    console.log(
+      c.dim(
+        "  Looks like this is your first time here — let's get you set up.\n",
+      ),
+    );
+    console.log(
+      `  ${sym.arrow} Running ${c.bold("agc login")} to configure your credentials…\n`,
+    );
+    runSubcommand(["login"]);
     return;
   }
 
   // Show connection context
   console.log(
-    `  ${c.dim('Connected to')}  ${c.primary(cfg.apiUrl)}  ${c.dim('·')}  ` +
-    `${c.dim('Identity')} ${c.id((cfg.userId ?? cfg.initiator)!.slice(0, 8) + '…' + (cfg.userId ?? cfg.initiator)!.slice(-4))}\n`,
+    `  ${c.dim("Connected to")}  ${c.primary(cfg.apiUrl)}  ${c.dim("·")}  ` +
+      `${c.dim("Identity")} ${c.id((cfg.userId ?? cfg.initiator)!.slice(0, 8) + "…" + (cfg.userId ?? cfg.initiator)!.slice(-4))}\n`,
   );
 
   type MenuAction =
-    | 'chat' | 'run' | 'computer' | 'sessions' | 'agents'
-    | 'tasks' | 'workflows' | 'mcp' | 'skills'
-    | 'library' | 'projects' | 'keys'
-    | 'wallet' | 'usage' | 'logs' | 'config' | 'exit';
+    | "chat"
+    | "run"
+    | "computer"
+    | "sessions"
+    | "agents"
+    | "tasks"
+    | "workflows"
+    | "mcp"
+    | "skills"
+    | "library"
+    | "projects"
+    | "keys"
+    | "wallet"
+    | "usage"
+    | "logs"
+    | "config"
+    | "exit";
 
-  const action = await select<MenuAction>('What would you like to do?', [
-    { label: 'Chat with an agent',         value: 'chat',      hint: 'agc chat' },
-    { label: 'Run an agent (one-shot)',    value: 'run',       hint: 'agc run'  },
-    { label: 'Manage an agent cloud computer', value: 'computer', hint: 'agc computer status' },
-    { label: 'View sessions',              value: 'sessions',  hint: 'agc sessions list' },
-    { label: 'Manage agents',              value: 'agents',    hint: 'agc agents list'   },
-    { label: 'Tasks',                      value: 'tasks',     hint: 'agc task list'     },
-    { label: 'Workflows',                  value: 'workflows', hint: 'agc workflow list' },
-    { label: 'MCP servers',                value: 'mcp',       hint: 'agc mcp list'      },
-    { label: 'Skills',                     value: 'skills',    hint: 'agc skills list'   },
-    { label: 'Library & files',            value: 'library',   hint: 'agc library list'  },
-    { label: 'Code projects',              value: 'projects',  hint: 'agc projects list' },
-    { label: 'Developer API keys',         value: 'keys',      hint: 'agc keys list'      },
-    { label: 'Wallet & balance',           value: 'wallet',    hint: 'agc wallet balance'},
-    { label: 'Usage & cost',               value: 'usage',     hint: 'agc usage'         },
-    { label: 'Logs',                       value: 'logs',      hint: 'agc logs'          },
-    { label: 'Config & credentials',       value: 'config',    hint: 'agc config get'    },
-    { label: 'Exit',                       value: 'exit'                                 },
+  const action = await select<MenuAction>("What would you like to do?", [
+    { label: "Chat with an agent", value: "chat", hint: "agc chat" },
+    { label: "Run an agent (one-shot)", value: "run", hint: "agc run" },
+    {
+      label: "Manage an agent cloud computer",
+      value: "computer",
+      hint: "agc computer status",
+    },
+    { label: "View sessions", value: "sessions", hint: "agc sessions list" },
+    { label: "Manage agents", value: "agents", hint: "agc agents list" },
+    { label: "Tasks", value: "tasks", hint: "agc task list" },
+    { label: "Workflows", value: "workflows", hint: "agc workflow list" },
+    { label: "MCP servers", value: "mcp", hint: "agc mcp list" },
+    { label: "Skills", value: "skills", hint: "agc skills list" },
+    { label: "Library & files", value: "library", hint: "agc library list" },
+    { label: "Code projects", value: "projects", hint: "agc projects list" },
+    { label: "Developer API keys", value: "keys", hint: "agc keys list" },
+    { label: "Wallet & balance", value: "wallet", hint: "agc wallet balance" },
+    { label: "Usage & cost", value: "usage", hint: "agc usage" },
+    { label: "Logs", value: "logs", hint: "agc logs" },
+    { label: "Config & credentials", value: "config", hint: "agc config get" },
+    { label: "Exit", value: "exit" },
   ]);
 
-  if (action === 'exit') {
+  if (action === "exit") {
     process.exit(0);
   }
 
   // For commands that need an agent ID, pick one interactively if no default is set.
-  const needsAgent = action === 'chat' || action === 'run' || action === 'computer';
+  const needsAgent =
+    action === "chat" || action === "run" || action === "computer";
   const agentId = needsAgent
-    ? cfg.defaultAgentId ?? await pickAgentInteractively(action)
+    ? (cfg.defaultAgentId ?? (await pickAgentInteractively(action)))
     : undefined;
   if (needsAgent && !agentId) return;
 
   // "run" needs a prompt typed before handing off to the subprocess
-  if (action === 'run') {
-    const prompt = await askPrompt('Enter your prompt:');
+  if (action === "run") {
+    const prompt = await askPrompt("Enter your prompt:");
     if (!prompt) return;
-    runSubcommand(['run', '--agent', agentId!, prompt]);
+    runSubcommand(["run", "--agent", agentId!, prompt]);
     return;
   }
 
   const commandMap: Record<MenuAction, string[]> = {
-    chat:      ['chat', '--agent', agentId!],
-    run:       [],  // handled above
-    computer:  ['computer', 'status', '--agent', agentId!],
-    sessions:  ['sessions', 'list'],
-    agents:    ['agents', 'list'],
-    tasks:     ['task', 'list'],
-    workflows: ['workflow', 'list'],
-    mcp:       ['mcp', 'list'],
-    skills:    ['skills', 'list'],
-    library:   ['library', 'list'],
-    projects:  ['projects', 'list'],
-    keys:      ['keys', 'list'],
-    wallet:    ['wallet', 'balance'],
-    usage:     ['usage'],
-    logs:      ['logs'],
-    config:    ['config', 'get'],
-    exit:      [],
+    chat: ["chat", "--agent", agentId!],
+    run: [], // handled above
+    computer: ["computer", "status", "--agent", agentId!],
+    sessions: ["sessions", "list"],
+    agents: ["agents", "list"],
+    tasks: ["task", "list"],
+    workflows: ["workflow", "list"],
+    mcp: ["mcp", "list"],
+    skills: ["skills", "list"],
+    library: ["library", "list"],
+    projects: ["projects", "list"],
+    keys: ["keys", "list"],
+    wallet: ["wallet", "balance"],
+    usage: ["usage"],
+    logs: ["logs"],
+    config: ["config", "get"],
+    exit: [],
   };
 
   runSubcommand(commandMap[action]);
 }
 
 async function askPrompt(question: string): Promise<string | null> {
-  const { createInterface } = await import('readline');
+  const { createInterface } = await import("readline");
   return new Promise((resolve) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    process.stdout.write(`\n  ${c.bold(question)}\n  ${c.primary('›')} `);
-    rl.once('line', (line) => {
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    process.stdout.write(`\n  ${c.bold(question)}\n  ${c.primary("›")} `);
+    rl.once("line", (line) => {
       rl.close();
       const trimmed = line.trim();
       resolve(trimmed || null);
@@ -132,9 +173,9 @@ async function askPrompt(question: string): Promise<string | null> {
 
 function runSubcommand(args: string[]): void {
   const child = spawn(process.argv[0], [process.argv[1], ...args], {
-    stdio: 'inherit',
+    stdio: "inherit",
   });
-  child.on('exit', (code) => process.exit(code ?? 0));
+  child.on("exit", (code) => process.exit(code ?? 0));
 }
 
 /**
@@ -142,9 +183,11 @@ function runSubcommand(args: string[]): void {
  * or null if the user cancels or no agents are accessible.
  * If no agents exist yet, guides the user to create one.
  */
-async function pickAgentInteractively(action: 'chat' | 'run' | 'computer'): Promise<string | null> {
+async function pickAgentInteractively(
+  action: "chat" | "run" | "computer",
+): Promise<string | null> {
   const cfg = loadConfig();
-  const spinner = spin('Fetching your agents…');
+  const spinner = spin("Fetching your agents…");
 
   let agents: any[] = [];
   try {
@@ -154,26 +197,35 @@ async function pickAgentInteractively(action: 'chat' | 'run' | 'computer'): Prom
     spinner.stop();
   } catch {
     spinner.stop();
-    console.log(`\n  ${c.warn('⚠')}  Could not fetch agents. Check your sign-in and connection.\n`);
+    console.log(
+      `\n  ${c.warn("⚠")}  Could not fetch agents. Check your sign-in and connection.\n`,
+    );
     return null;
   }
 
   if (agents.length === 0) {
-    console.log(`\n  ${c.warn('⚠')}  You don't have any agents yet.\n`);
-    const choice = await select<'create' | 'cancel'>('What would you like to do?', [
-      { label: 'Create a new agent now', value: 'create', hint: 'agc agents create' },
-      { label: 'Go back',                value: 'cancel' },
-    ]);
-    if (choice === 'create') {
-      runSubcommand(['agents', 'create']);
+    console.log(`\n  ${c.warn("⚠")}  You don't have any agents yet.\n`);
+    const choice = await select<"create" | "cancel">(
+      "What would you like to do?",
+      [
+        {
+          label: "Create a new agent now",
+          value: "create",
+          hint: "agc agents create",
+        },
+        { label: "Go back", value: "cancel" },
+      ],
+    );
+    if (choice === "create") {
+      runSubcommand(["agents", "create"]);
     }
     return null;
   }
 
   console.log();
   const agentId = await select<string>(
-    action === 'computer'
-      ? 'Choose the agent whose cloud computer you want to manage:'
+    action === "computer"
+      ? "Choose the agent whose cloud computer you want to manage:"
       : `Choose an agent to ${action} with:`,
     agents.map((a: any) => ({
       label: a.name,
@@ -183,15 +235,17 @@ async function pickAgentInteractively(action: 'chat' | 'run' | 'computer'): Prom
   );
 
   // Offer to save as default so they don't have to pick every time
-  const saveDefault = await select<boolean>('Set as your default agent?', [
-    { label: 'Yes — remember this agent for next time', value: true },
-    { label: 'No — just this once',                     value: false },
+  const saveDefault = await select<boolean>("Set as your default agent?", [
+    { label: "Yes — remember this agent for next time", value: true },
+    { label: "No — just this once", value: false },
   ]);
 
   if (saveDefault) {
     saveConfig({ defaultAgentId: agentId });
     const chosen = agents.find((a: any) => a.agentId === agentId);
-    console.log(`  ${sym.ok} ${c.dim('Default agent set to')} ${c.bold(chosen?.name ?? agentId)}\n`);
+    console.log(
+      `  ${sym.ok} ${c.dim("Default agent set to")} ${c.bold(chosen?.name ?? agentId)}\n`,
+    );
   }
 
   return agentId;
@@ -202,16 +256,16 @@ async function pickAgentInteractively(action: 'chat' | 'run' | 'computer'): Prom
 const program = new Command();
 
 program
-  .name('agc')
-  .description('Agent Commons CLI — interact with the Agent Commons platform')
-  .version(__CLI_VERSION__, '-v, --version')
-  .showHelpAfterError('(run `agc --help` for usage)')
+  .name("agc")
+  .description("Agent Commons CLI — interact with the Agent Commons platform")
+  .version(__CLI_VERSION__, "-v, --version")
+  .showHelpAfterError("(run `agc --help` for usage)")
   .configureHelp({
     sortOptions: true,
     sortSubcommands: true,
   })
   .addHelpText(
-    'after',
+    "after",
     `
 Examples:
   $ agc login
@@ -227,8 +281,9 @@ Docs: https://docs.agentcommons.io/docs/cli
     await interactiveMenu();
   });
 
-program.hook('preAction', async (_thisCommand, actionCommand) => {
-  if (actionCommand.name() === 'login' || actionCommand.name() === 'logout') return;
+program.hook("preAction", async (_thisCommand, actionCommand) => {
+  if (actionCommand.name() === "login" || actionCommand.name() === "logout")
+    return;
   await ensureAccessToken();
 });
 
@@ -246,6 +301,7 @@ program.addCommand(connectionsCommand());
 program.addCommand(libraryCommand());
 program.addCommand(projectsCommand());
 program.addCommand(apiKeysCommand());
+program.addCommand(provenanceCommand());
 
 // Workflows
 program.addCommand(workflowCommand());
@@ -284,15 +340,17 @@ program.addCommand(creditsCommand());
 program.addCommand(billingCommand());
 
 // Unknown command hint
-program.on('command:*', () => {
+program.on("command:*", () => {
   console.error(
-    `\n  ${c.error('Unknown command:')} ${program.args.join(' ')}\n` +
-    `  Run ${c.bold('agc --help')} to see available commands, or just ${c.bold('agc')} for the interactive menu.\n`,
+    `\n  ${c.error("Unknown command:")} ${program.args.join(" ")}\n` +
+      `  Run ${c.bold("agc --help")} to see available commands, or just ${c.bold("agc")} for the interactive menu.\n`,
   );
   process.exit(1);
 });
 
 program.parseAsync(process.argv).catch((error) => {
-  console.error(`\n  ${sym.fail} ${c.error(error instanceof Error ? error.message : String(error))}\n`);
+  console.error(
+    `\n  ${sym.fail} ${c.error(error instanceof Error ? error.message : String(error))}\n`,
+  );
   process.exitCode = 1;
 });

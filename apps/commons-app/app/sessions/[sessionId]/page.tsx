@@ -41,6 +41,7 @@ export default function SessionPage() {
   const [agent, setAgent] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<"chat" | "trajectory">("chat");
 
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
@@ -99,8 +100,10 @@ export default function SessionPage() {
               userId={userAddress}
               sessionId={sessionId}
               isLoadingSession={loading}
+              viewMode={viewMode}
               header={
-                <div className="flex min-w-0 items-center gap-1.5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-1.5">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -130,6 +133,12 @@ export default function SessionPage() {
                       </span>
                     </Link>
                   )}
+                  </div>
+                  <div className="flex shrink-0 items-center rounded-lg bg-muted/60 p-0.5 text-xs">
+                    {(["chat", "trajectory"] as const).map((mode) => (
+                      <button key={mode} type="button" onClick={() => setViewMode(mode)} className={`rounded-md px-2.5 py-1 capitalize transition-colors ${viewMode === mode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{mode}</button>
+                    ))}
+                  </div>
                 </div>
               }
             />

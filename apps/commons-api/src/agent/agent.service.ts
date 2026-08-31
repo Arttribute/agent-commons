@@ -75,6 +75,7 @@ import {
   CopilotUiContext,
 } from './copilot-platform-guide';
 import { SkillService } from '~/skill/skill.service';
+import { ProvenanceService, ProvenanceRunOptions } from '~/provenance';
 import { durableRole, restoreSessionMessages } from '~/session/session-history';
 import { filterPlatformToolsForAgent } from './copilot-tool-policy';
 
@@ -112,7 +113,7 @@ const COMMONS_COPILOT_STARTERS = [
 ];
 const COMMONS_COPILOT_INSTRUCTIONS = `You are Commons Copilot, the user's native guide and co-creator inside Agent Commons. You understand the web Studio, API, SDK, and agc CLI, and help users create, inspect, test, and manage agents, tools, skills, tasks, workflows, spaces, and code projects.
 
-For platform management, inspect current resources before proposing changes. Use the typed proposal tool matching the resource the user requested. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.
+For platform management, inspect current resources before proposing changes. Use the typed proposal tool matching the resource the user requested. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. When the user asks about their brain, knowledge, memory, company context, policies, decisions, people, projects, or facts they expect you to remember, use listKnowledgeSpaces and searchKnowledge before general resource inspection. Omit spaceIds for the user's configured automatic routing; pass explicit spaceIds only when the user selects or names a particular space. Knowledge document paths are their canonical identities; frontmatter titles are descriptive metadata. Create internal note connections as portable [[path/to/note]] wikilinks and preserve existing ordinary Markdown links when editing imported notes. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.
 
 ${COMMONS_COPILOT_OPERATING_GUIDE}`;
 
@@ -211,6 +212,7 @@ export class AgentService implements OnModuleInit {
     private filesService: FilesService,
     private computerService: ComputerService,
     private skillService: SkillService,
+    private provenanceService: ProvenanceService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
     @Inject(forwardRef(() => TaskExecutionService))
     private taskExecution: TaskExecutionService,
@@ -494,7 +496,7 @@ export class AgentService implements OnModuleInit {
 
       ### Resources
       Resources are shared files, datasets, and tools on the platform.
-      - **searchLibraryArtifacts** — semantic + lexical search across only the library artifacts explicitly available to you. Results contain file IDs and citeable excerpts.
+      - **searchLibraryArtifacts** — on-demand access to the calling user's Library. Omit query to list recent files, or search once by filename, type, or topic. Results are deliberately compact; do not probe with many generic queries. Use the returned fileId with readUploadedFile only when exact contents are needed.
       - **readUploadedFile** — read a selected library artifact in bounded chunks after permission checks.
       - **generateImage** — create an image with the stable GPT Image API. The result is stored in the owner's artifact library using their storage preference (Private S3 by default).
       - **uploadFileToIPFS** — explicit-only public IPFS publishing. Never call this for ordinary uploads, generated files, or library storage unless the user specifically asks for IPFS.
@@ -751,6 +753,8 @@ export class AgentService implements OnModuleInit {
     cliContext?: string;
     /** Untrusted browser page hint; Commons Copilot re-verifies it server-side. */
     uiContext?: CopilotUiContext;
+    /** Knowledge Spaces explicitly selected by the user for this turn. */
+    knowledgeSpaceIds?: string[];
     /**
      * Dynamic CLI tool catalog sent by the caller's own daemon/CLI process.
      * When present, this fully replaces the hardcoded CLI tool list below —
@@ -774,6 +778,13 @@ export class AgentService implements OnModuleInit {
     };
     /** User-selected thinking depth for this turn; overrides the adaptive hint. */
     reasoningEffort?: string;
+    /** Per-run provenance policy. Defaults to metadata-only and off-chain. */
+    provenance?: ProvenanceRunOptions;
+    /** Internal/public caller context used to join delegated and A2A runs. */
+    provenanceContext?: {
+      lineage?: import('../provenance/provenance.types').ProvenanceLineageMetadata;
+      metadata?: Record<string, unknown>;
+    };
   }): Observable<any> {
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
@@ -813,6 +824,15 @@ export class AgentService implements OnModuleInit {
           detail?: string,
           payload?: Record<string, any>,
         ) => {
+          this.provenanceService.recordEvent(traceId, {
+            category: 'system',
+            eventType: `status.${stage}`,
+            name: message,
+            phase: 'commentary',
+            status,
+            summary: detail ?? message,
+            payload,
+          });
           if (!stream) return;
           subscriber.next({
             type: 'status',
@@ -984,6 +1004,28 @@ export class AgentService implements OnModuleInit {
             props.reasoningEffort,
           );
           if (requestedEffort) effectiveModel.reasoningEffort = requestedEffort;
+
+          this.provenanceService.startRun({
+            traceId,
+            sessionId: currentSessionId,
+            agentId,
+            initiator,
+            workspaceId: props.workspaceId ?? agent.workspaceId ?? undefined,
+            provider: effectiveModel.provider,
+            modelId: effectiveModel.modelId,
+            options: props.provenance,
+            input: props.messages?.filter((message) => message.role === 'user'),
+            metadata: {
+              spaceId,
+              parentSessionId,
+              reasoningEffort: effectiveModel.reasoningEffort,
+              attachmentCount: props.attachments?.length ?? 0,
+              attachmentFileIds:
+                props.attachments?.map((attachment) => attachment.fileId) ?? [],
+              ...props.provenanceContext?.metadata,
+            },
+            lineage: props.provenanceContext?.lineage,
+          });
 
           const billingOwnerId = agent.ownerUserId ?? agent.owner;
           if (
@@ -1182,6 +1224,7 @@ export class AgentService implements OnModuleInit {
           }[] = [];
           const executedCalls: any[] = [];
           const llmRunStartedAt = new Map<string, number>();
+          const llmRunInputs = new Map<string, unknown>();
           const usageContext = {
             provider: effectiveModel.provider,
             modelId: effectiveModel.modelId,
@@ -1208,7 +1251,10 @@ export class AgentService implements OnModuleInit {
                 maxOutputTokens: effectiveModel.maxTokens,
                 isByok: usageContext.isByok,
               });
-              if (runId) llmRunStartedAt.set(runId, performance.now());
+              if (runId) {
+                llmRunStartedAt.set(runId, performance.now());
+                llmRunInputs.set(runId, _prompts);
+              }
               emitStatus('model', 'running', 'Thinking');
             },
             handleLLMNewToken: async (token: string) => {
@@ -1220,25 +1266,6 @@ export class AgentService implements OnModuleInit {
                   timestamp: new Date().toISOString(),
                 });
               }
-            },
-            handleToolStart: async (tool: any, input: string) => {
-              subscriber.next({
-                type: 'toolStart',
-                phase: 'commentary',
-                toolName: tool.name,
-                input,
-                sessionId: currentSessionId,
-                timestamp: new Date().toISOString(),
-              });
-            },
-            handleToolEnd: async (output: any) => {
-              subscriber.next({
-                type: 'toolEnd',
-                phase: 'commentary',
-                output,
-                sessionId: currentSessionId,
-                timestamp: new Date().toISOString(),
-              });
             },
             /** Structured trace log — parseable by log aggregators (CloudWatch, Datadog, etc.) */
             handleLLMEnd: async (result: any, runId: string) => {
@@ -1256,6 +1283,25 @@ export class AgentService implements OnModuleInit {
               );
 
               if (!usage) {
+                this.provenanceService.recordEvent(traceId, {
+                  category: 'model',
+                  eventType: 'gen_ai.chat',
+                  name: effectiveModel.modelId,
+                  phase: 'commentary',
+                  status: 'completed',
+                  spanId: runId,
+                  summary:
+                    'Model step completed; provider did not report token usage',
+                  payload: runId ? llmRunInputs.get(runId) : undefined,
+                  result,
+                  durationMs,
+                  startedAt:
+                    durationMs !== undefined
+                      ? new Date(Date.now() - durationMs)
+                      : undefined,
+                  endedAt: new Date(),
+                });
+                if (runId) llmRunInputs.delete(runId);
                 console.log(
                   JSON.stringify({
                     level: 'warn',
@@ -1284,6 +1330,30 @@ export class AgentService implements OnModuleInit {
               usageTotals.outputTokens += usage.outputTokens;
               usageTotals.cachedTokens += usage.cachedTokens;
               usageTotals.costUsd += costUsd;
+
+              this.provenanceService.recordEvent(traceId, {
+                category: 'model',
+                eventType: 'gen_ai.chat',
+                name: effectiveModel.modelId,
+                phase: 'commentary',
+                status: 'completed',
+                spanId: runId,
+                summary: `${usage.totalTokens} tokens`,
+                payload: runId ? llmRunInputs.get(runId) : undefined,
+                result,
+                durationMs,
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                cachedTokens: usage.cachedTokens,
+                costUsd,
+                startedAt:
+                  durationMs !== undefined
+                    ? new Date(Date.now() - durationMs)
+                    : undefined,
+                endedAt: new Date(),
+                metadata: { usageSource: usage.source },
+              });
+              if (runId) llmRunInputs.delete(runId);
 
               await this.usageService.record({
                 agentId,
@@ -1557,6 +1627,16 @@ export class AgentService implements OnModuleInit {
               async (args, config) => {
                 const fn = config.toolCall?.name ?? 'unknown';
                 const t0 = performance.now();
+                const startedAt = new Date();
+                subscriber.next({
+                  type: 'toolStart',
+                  phase: 'commentary',
+                  toolName: fn,
+                  input: args,
+                  toolCallId: config.toolCall?.id,
+                  sessionId: currentSessionId,
+                  timestamp: startedAt.toISOString(),
+                });
                 const got_ = await got;
                 let data: any;
                 let status: 'success' | 'error' = 'success';
@@ -1622,17 +1702,18 @@ export class AgentService implements OnModuleInit {
                   };
                 }
 
+                const durationMs = Math.round(performance.now() - t0);
                 toolUsage.push({
                   name: fn,
                   status,
-                  duration: performance.now() - t0,
+                  duration: durationMs,
                 });
 
                 const callObj = {
                   role: 'tool',
                   name: fn,
                   status,
-                  duration: performance.now() - t0,
+                  duration: durationMs,
                   args,
                   result: data,
                   toolCallId: config.toolCall?.id,
@@ -1640,6 +1721,35 @@ export class AgentService implements OnModuleInit {
                 };
 
                 executedCalls.push(callObj);
+
+                const failureMessage =
+                  status === 'error' && typeof data?.error === 'string'
+                    ? data.error
+                    : undefined;
+                this.provenanceService.recordEvent(traceId, {
+                  category: 'tool',
+                  eventType: 'tool.execute',
+                  name: fn,
+                  phase: 'commentary',
+                  status: status === 'success' ? 'completed' : 'failed',
+                  spanId: config.toolCall?.id,
+                  summary:
+                    status === 'success'
+                      ? `${fn} completed`
+                      : `${fn} failed${
+                          failureMessage ? `: ${failureMessage}` : ''
+                        }`,
+                  payload: args,
+                  result: data,
+                  content: data,
+                  startedAt,
+                  endedAt: new Date(),
+                  durationMs,
+                  metadata: {
+                    transport: 'internal_http',
+                    reconstructed: false,
+                  },
+                });
 
                 subscriber.next({
                   type: 'tool',
@@ -2149,6 +2259,25 @@ export class AgentService implements OnModuleInit {
                       `## Commons Copilot context\nLive context lookup failed: ${error.message}`,
                   )
               : '';
+          const selectedKnowledgeSpaceIds = [
+            ...new Set(
+              (props.knowledgeSpaceIds ?? [])
+                .filter((value): value is string => typeof value === 'string')
+                .map((value) => value.trim())
+                .filter((value) => /^[a-zA-Z0-9_-]{1,160}$/.test(value))
+                .slice(0, 20),
+            ),
+          ];
+          const knowledgeSelectionBlock = selectedKnowledgeSpaceIds.length
+            ? [
+                '## USER-SELECTED KNOWLEDGE',
+                'The user explicitly referenced Knowledge Spaces for this turn.',
+                `Use searchKnowledge with spaceIds ${JSON.stringify(
+                  selectedKnowledgeSpaceIds,
+                )} before answering whenever the request depends on stored context.`,
+                'This is a manual route for this turn. Do not silently replace it with other Knowledge Spaces.',
+              ].join('\n')
+            : '';
 
           // Build the extra content to append to the system prompt (memory + CLI context)
           const computerSelectionDetail = computerUnavailable
@@ -2181,6 +2310,7 @@ export class AgentService implements OnModuleInit {
 
           const extraSystemContent = [
             memoryBlock,
+            knowledgeSelectionBlock,
             copilotContext,
             props.cliContext,
             computerSelectionBlock,
@@ -2623,6 +2753,16 @@ export class AgentService implements OnModuleInit {
             tools: toolUsage,
           });
 
+          this.provenanceService.finishRun(traceId, {
+            status: 'completed',
+            output: finalText,
+            durationMs: Math.round(performance.now() - tStart),
+            inputTokens: usageTotals.inputTokens,
+            outputTokens: usageTotals.outputTokens,
+            cachedTokens: usageTotals.cachedTokens,
+            costUsd: usageTotals.costUsd,
+          });
+
           if (!stream) {
             subscriber.next({
               type: 'final',
@@ -2682,6 +2822,12 @@ export class AgentService implements OnModuleInit {
           clearInterval(keepalive);
           unsubscribeProgress();
           const message = err instanceof Error ? err.message : String(err);
+          this.provenanceService.finishRun(traceId, {
+            status: 'failed',
+            output: { error: message },
+            durationMs: Math.round(performance.now() - tStart),
+            error: message,
+          });
           if (stream) {
             subscriber.next({
               type: 'error',

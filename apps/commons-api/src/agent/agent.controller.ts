@@ -40,6 +40,7 @@ import { RuntimeManagementService } from './runtime/runtime-management.service';
 import { normalizeRuntimeType } from './runtime/runtime.types';
 import { CopilotUiContext } from './copilot-platform-guide';
 import { CommonToolService } from '~/tool/tools/common-tool.service';
+import type { ProvenanceRunOptions } from '~/provenance';
 
 interface RunBody {
   agentId: string;
@@ -47,6 +48,8 @@ interface RunBody {
   sessionId?: string;
   cliContext?: string;
   uiContext?: CopilotUiContext;
+  /** Knowledge Spaces explicitly selected by the user for this turn. */
+  knowledgeSpaceIds?: string[];
   cliTools?: Array<{
     name: string;
     description: string;
@@ -62,6 +65,8 @@ interface RunBody {
   };
   /** User-selected thinking depth for this turn (none|minimal|low|medium|high|xhigh). */
   reasoningEffort?: string;
+  /** Privacy and anchoring policy for this run. Metadata-only is the default. */
+  provenance?: ProvenanceRunOptions;
 }
 
 @Controller({ version: '1', path: 'agents' })
@@ -408,7 +413,9 @@ export class AgentController {
       throw new BadRequestException('Failed to upload profile image');
     }
 
-    const url = `https://${process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'}/ipfs/${cid}`;
+    const url = `https://${
+      process.env.GATEWAY_URL ?? 'gateway.pinata.cloud'
+    }/ipfs/${cid}`;
     const updated = await this.agent.updateAgent(agentId, { avatar: url });
     if (!updated) {
       throw new BadRequestException('Unable to update agent profile image');

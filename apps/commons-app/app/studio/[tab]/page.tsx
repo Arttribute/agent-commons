@@ -24,6 +24,10 @@ import { CreateButton, PageHeader } from "@/components/layout/page-header";
 import { useRouter } from "next/navigation";
 import { useAgents } from "@/hooks/use-agents";
 import { normalizePrincipalId } from "@/lib/principal-id";
+import {
+  CREATE_UI_PLUGIN_HASH,
+  openUiPluginCreator,
+} from "@/lib/commons-copilot-events";
 import { CustomizeTabs } from "@/components/customize/customize-tabs";
 
 const StudioPage: NextPage = () => {
@@ -234,7 +238,7 @@ const StudioPage: NextPage = () => {
       case "skills":
         return "Create new skill";
       case "apps":
-        return "Create custom app";
+        return "Create app with Commons Copilot";
       default:
         return "Create new agent";
     }
@@ -289,14 +293,7 @@ const StudioPage: NextPage = () => {
     } else if (activeTab === "tools") {
       setShowCreateToolDialog(true);
     } else if (activeTab === "apps") {
-      window.dispatchEvent(
-        new CustomEvent("commons-copilot-prompt", {
-          detail: {
-            prompt:
-              "Help me build a custom Commons UI plugin. Ask what page or floating widget I need, then build, test, and register it as a draft for review.",
-          },
-        })
-      );
+      openUiPluginCreator();
     } else {
       router.push("/studio/agents/create");
     }
@@ -306,7 +303,11 @@ const StudioPage: NextPage = () => {
     <div className="relative flex h-full min-w-0 flex-col bg-page">
       <PageHeader title={pageCopy.title} description={pageCopy.description}>
         <CreditsMenu />
-        <CreateButton label={createLabel} onClick={handleCreateClick} />
+        <CreateButton
+          label={createLabel}
+          onClick={handleCreateClick}
+          href={activeTab === "apps" ? CREATE_UI_PLUGIN_HASH : undefined}
+        />
       </PageHeader>
 
       {isCustomize && <CustomizeTabs />}

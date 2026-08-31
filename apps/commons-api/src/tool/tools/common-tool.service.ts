@@ -47,6 +47,7 @@ import {
   type UiPluginPermission,
   type UiPluginSurface,
 } from '~/ui-plugin';
+import { BrainService } from '~/brain';
 
 type ToolExecutionMetadata = {
   agentId?: string;
@@ -460,13 +461,61 @@ export interface CommonTool {
     }>;
   }>;
 
-  /** Search only artifacts explicitly available to this agent. */
+  /**
+   * Search the calling user's Library without loading it into the conversation.
+   * Omit query (or pass an empty string) to list recently updated artifacts.
+   * Results are compact metadata and short excerpts; call readUploadedFile only
+   * for the specific file whose contents are needed.
+   */
   searchLibraryArtifacts(props: {
-    query: string;
+    query?: string;
     limit?: number;
     agentId: string;
     sessionId?: string;
   }): Promise<any[]>;
+
+  /**
+   * List the Markdown Knowledge Spaces this agent can use, its access level,
+   * and whether each space participates in automatic retrieval.
+   */
+  listKnowledgeSpaces(props: { agentId: string }): Promise<any[]>;
+
+  /**
+   * Search this agent's connected Knowledge Spaces. When spaceIds is omitted,
+   * search only spaces configured for automatic retrieval. Passing explicit
+   * spaceIds is manual routing and may search any space the agent can access.
+   * Retrieval combines meaning, exact text, headings, and linked notes.
+   */
+  searchKnowledge(props: {
+    query: string;
+    spaceIds?: string[];
+    limit?: number;
+    agentId: string;
+  }): Promise<any>;
+
+  /** Read a complete Markdown note, including links and backlinks. */
+  readKnowledgeDocument(props: {
+    documentId: string;
+    agentId: string;
+  }): Promise<any>;
+
+  /**
+   * Create or update a Markdown note. Omit spaceId when creating to use the
+   * agent's default Common Brain. New concepts should use Open Knowledge
+   * Format v0.2 frontmatter with at least a non-empty type. Preserve unknown
+   * frontmatter fields. The path is the note's canonical identity; title is
+   * optional descriptive metadata. Write internal links as [[path/to/note]].
+   * Supply expectedRevision for safe updates.
+   */
+  writeKnowledgeDocument(props: {
+    spaceId?: string;
+    documentId?: string;
+    path: string;
+    title?: string;
+    content: string;
+    expectedRevision?: number;
+    agentId: string;
+  }): Promise<any>;
 
   /**
    * Create an .xlsx spreadsheet and store it as an agent file attachment.
@@ -890,6 +939,7 @@ export class CommonToolService {
     private usage: UsageService,
     private capabilityProviders: CapabilityProviderService,
     private uiPlugins: UiPluginService,
+    private brains: BrainService,
   ) {}
 
   private async capabilityOwner(agentId: string) {
@@ -1533,7 +1583,7 @@ export class CommonToolService {
 
   async searchLibraryArtifacts(
     props: {
-      query: string;
+      query?: string;
       limit?: number;
       agentId: string;
       sessionId?: string;
@@ -1544,54 +1594,149 @@ export class CommonToolService {
     return this.library.searchForAgent({
       agentId,
       sessionId: props.sessionId ?? metadata?.sessionId,
+      ownerId: metadata?.ownerId,
       query: props.query,
       limit: props.limit,
     });
   }
 
-  async createSpreadsheetFile(props: {
-    fileName: string;
-    sheets: Array<{
-      name: string;
-      rows: Array<Record<string, any> | any[]>;
-    }>;
-    agentId: string;
-    sessionId?: string;
-  }) {
+  async listKnowledgeSpaces(
+    props: { agentId: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    await this.brains.ensureDefaultForAgent(agentId);
+    return this.brains.listSpaces({
+      principalId: agentId,
+      principalType: 'agent',
+    });
+  }
+
+  async searchKnowledge(
+    props: {
+      query: string;
+      spaceIds?: string[];
+      limit?: number;
+      agentId: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    await this.brains.ensureDefaultForAgent(agentId);
+    return this.brains.search(
+      { principalId: agentId, principalType: 'agent' },
+      {
+        query: props.query,
+        spaceIds: props.spaceIds,
+        limit: props.limit,
+      },
+      { traceId: metadata?.runId },
+    );
+  }
+
+  async readKnowledgeDocument(
+    props: { documentId: string; agentId: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    await this.brains.ensureDefaultForAgent(agentId);
+    return this.brains.getDocument(props.documentId, {
+      principalId: agentId,
+      principalType: 'agent',
+    });
+  }
+
+  async writeKnowledgeDocument(
+    props: {
+      spaceId?: string;
+      documentId?: string;
+      path: string;
+      title?: string;
+      content: string;
+      expectedRevision?: number;
+      agentId: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const defaultSpace = props.spaceId
+      ? undefined
+      : await this.brains.defaultWritableSpaceForAgent(agentId);
+    return this.brains.writeDocument(
+      props.spaceId ?? defaultSpace!.spaceId,
+      { principalId: agentId, principalType: 'agent' },
+      {
+        documentId: props.documentId,
+        path: props.path,
+        title: props.title,
+        content: props.content,
+        expectedRevision: props.expectedRevision,
+      },
+      { traceId: metadata?.runId },
+    );
+  }
+
+  async createSpreadsheetFile(
+    props: {
+      fileName: string;
+      sheets: Array<{
+        name: string;
+        rows: Array<Record<string, any> | any[]>;
+      }>;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
     return this.files.createSpreadsheetFile({
       fileName: props.fileName,
       sheets: props.sheets,
       agentId: props.agentId,
       sessionId: props.sessionId,
-      ownerId: props.agentId,
-      ownerType: 'agent',
+      traceId: metadata?.runId,
+      ownerId: metadata?.ownerId,
+      ownerType: metadata?.ownerId ? 'user' : 'agent',
     });
   }
 
-  async createTextFile(props: {
-    fileName: string;
-    content: string;
-    mimeType?: string;
-    sourceFileId?: string;
-    agentId: string;
-    sessionId?: string;
-  }) {
-    return this.files.createTextFile(props);
+  async createTextFile(
+    props: {
+      fileName: string;
+      content: string;
+      mimeType?: string;
+      sourceFileId?: string;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    return this.files.createTextFile({
+      ...props,
+      traceId: metadata?.runId,
+      ownerId: metadata?.ownerId,
+    });
   }
 
-  async createDocumentFile(props: {
-    fileName: string;
-    title?: string;
-    sections: Array<{
-      heading?: string;
-      paragraphs?: string[];
-      bullets?: string[];
-    }>;
-    sourceFileId?: string;
-    agentId: string;
-    sessionId?: string;
-  }) {
-    return this.files.createDocumentFile(props);
+  async createDocumentFile(
+    props: {
+      fileName: string;
+      title?: string;
+      sections: Array<{
+        heading?: string;
+        paragraphs?: string[];
+        bullets?: string[];
+      }>;
+      sourceFileId?: string;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    return this.files.createDocumentFile({
+      ...props,
+      traceId: metadata?.runId,
+      ownerId: metadata?.ownerId,
+    });
   }
 
   async createPresentationFile(
@@ -1633,6 +1778,7 @@ export class CommonToolService {
   ) {
     return this.files.createPresentationFile({
       ...props,
+      traceId: metadata?.runId,
       ownerId: metadata?.ownerId,
       requiredImageFileIds: metadata?.attachmentFileIds,
     });
@@ -1656,6 +1802,7 @@ export class CommonToolService {
   ) {
     return this.files.createPdfFile({
       ...props,
+      traceId: metadata?.runId,
       ownerId: metadata?.ownerId,
     });
   }

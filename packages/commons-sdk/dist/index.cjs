@@ -338,6 +338,28 @@ var CommonsClient = class {
       once: (params) => this.request("POST", "/v1/agents/run", params)
     };
   }
+  // ── Provenance & attribution ─────────────────────────────────────────────
+  get provenance() {
+    return {
+      session: (sessionId) => this.request(
+        "GET",
+        `/v1/provenance/sessions/${encodeURIComponent(sessionId)}`
+      ),
+      scope: (scopeType, scopeId) => this.request(
+        "GET",
+        `/v1/provenance/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}`
+      ),
+      bundle: (traceId) => this.request(
+        "GET",
+        `/v1/provenance/traces/${encodeURIComponent(traceId)}/bundle`
+      ),
+      anchor: (traceId) => this.request(
+        "POST",
+        `/v1/provenance/traces/${encodeURIComponent(traceId)}/anchor`,
+        {}
+      )
+    };
+  }
   // ── Workflows ─────────────────────────────────────────────────────────────
   get workflows() {
     return {
@@ -452,16 +474,11 @@ var CommonsClient = class {
       /** Get full session with history, tasks, childSessions, and spaces. */
       getFull: (sessionId) => this.request("GET", `/v1/sessions/${sessionId}/full`),
       /** Rename a session. */
-      rename: (sessionId, title) => this.request(
-        "PATCH",
-        `/v1/sessions/${encodeURIComponent(sessionId)}`,
-        { title }
-      ),
+      rename: (sessionId, title) => this.request("PATCH", `/v1/sessions/${encodeURIComponent(sessionId)}`, {
+        title
+      }),
       /** Delete a session and its owned session data. */
-      delete: (sessionId) => this.request(
-        "DELETE",
-        `/v1/sessions/${encodeURIComponent(sessionId)}`
-      ),
+      delete: (sessionId) => this.request("DELETE", `/v1/sessions/${encodeURIComponent(sessionId)}`),
       /** Get the full chat transcript for a session. */
       getChat: (sessionId) => this.request(
         "GET",
@@ -540,10 +557,7 @@ var CommonsClient = class {
     return {
       list: () => this.request("GET", "/v1/tool-keys"),
       create: (params) => this.request("POST", "/v1/tool-keys", params),
-      get: (keyId) => this.request(
-        "GET",
-        `/v1/tool-keys/${encodeURIComponent(keyId)}`
-      ),
+      get: (keyId) => this.request("GET", `/v1/tool-keys/${encodeURIComponent(keyId)}`),
       updateMetadata: (keyId, params) => this.request(
         "PUT",
         `/v1/tool-keys/${encodeURIComponent(keyId)}/metadata`,
@@ -564,10 +578,7 @@ var CommonsClient = class {
         "DELETE",
         `/v1/tool-keys/map/${encodeURIComponent(mappingId)}`
       ),
-      delete: (keyId) => this.request(
-        "DELETE",
-        `/v1/tool-keys/${encodeURIComponent(keyId)}`
-      )
+      delete: (keyId) => this.request("DELETE", `/v1/tool-keys/${encodeURIComponent(keyId)}`)
     };
   }
   // ── Tool Permissions ──────────────────────────────────────────────────────
@@ -584,10 +595,7 @@ var CommonsClient = class {
       ),
       listForSubject: (subjectId, subjectType) => {
         const query = new URLSearchParams({ subjectId, subjectType });
-        return this.request(
-          "GET",
-          `/v1/tool-permissions/subject?${query}`
-        );
+        return this.request("GET", `/v1/tool-permissions/subject?${query}`);
       },
       accessibleTools: (subjectId, subjectType) => {
         const query = new URLSearchParams({ subjectId, subjectType });
@@ -614,11 +622,7 @@ var CommonsClient = class {
           `/v1/tool-permissions/check-agent-access?${query}`
         );
       },
-      transferOwnership: (params) => this.request(
-        "POST",
-        "/v1/tool-permissions/transfer-ownership",
-        params
-      )
+      transferOwnership: (params) => this.request("POST", "/v1/tool-permissions/transfer-ownership", params)
     };
   }
   // ── Skills ────────────────────────────────────────────────────────────────
@@ -684,10 +688,7 @@ var CommonsClient = class {
         "GET",
         `/v1/ui-plugins${activeOnly ? "?active=true" : ""}`
       ),
-      getBySlug: (slug) => this.request(
-        "GET",
-        `/v1/ui-plugins/slug/${encodeURIComponent(slug)}`
-      ),
+      getBySlug: (slug) => this.request("GET", `/v1/ui-plugins/slug/${encodeURIComponent(slug)}`),
       create: (input) => this.request("PUT", "/v1/ui-plugins", input),
       setStatus: (pluginId, status) => this.request(
         "PUT",
@@ -1085,10 +1086,7 @@ var CommonsClient = class {
           `/v1/library${query.size ? `?${query}` : ""}`
         );
       },
-      get: (itemId) => this.request(
-        "GET",
-        `/v1/library/${encodeURIComponent(itemId)}`
-      ),
+      get: (itemId) => this.request("GET", `/v1/library/${encodeURIComponent(itemId)}`),
       download: (itemId) => this.request(
         "GET",
         `/v1/library/${encodeURIComponent(itemId)}/download`
@@ -1102,10 +1100,7 @@ var CommonsClient = class {
         `/v1/library/${encodeURIComponent(itemId)}`,
         params
       ),
-      delete: (itemId) => this.request(
-        "DELETE",
-        `/v1/library/${encodeURIComponent(itemId)}`
-      ),
+      delete: (itemId) => this.request("DELETE", `/v1/library/${encodeURIComponent(itemId)}`),
       storagePreference: () => this.request("GET", "/v1/library/preferences/storage"),
       setStoragePreference: (defaultStorageProvider) => this.request("PATCH", "/v1/library/preferences/storage", {
         defaultStorageProvider
@@ -1132,6 +1127,64 @@ var CommonsClient = class {
         "GET",
         `/v1/shared/artifacts/${encodeURIComponent(token)}`
       )
+    };
+  }
+  // ── Knowledge Spaces ────────────────────────────────────────────────────
+  get knowledge() {
+    const spacePath = (spaceId) => `/v1/knowledge/${encodeURIComponent(spaceId)}`;
+    const documentPath = (spaceId, documentId) => `${spacePath(spaceId)}/documents/${encodeURIComponent(documentId)}`;
+    return {
+      providers: () => this.request("GET", "/v1/knowledge/providers"),
+      listSpaces: () => this.request("GET", "/v1/knowledge"),
+      createSpace: (params) => this.request("POST", "/v1/knowledge", params),
+      getSpace: (spaceId) => this.request("GET", spacePath(spaceId)),
+      updateSpace: (spaceId, params) => this.request("PATCH", spacePath(spaceId), params),
+      deleteSpace: (spaceId) => this.request("DELETE", spacePath(spaceId)),
+      grant: (spaceId, params) => this.request("POST", `${spacePath(spaceId)}/grants`, params),
+      revokeGrant: (spaceId, grantId) => this.request(
+        "DELETE",
+        `${spacePath(spaceId)}/grants/${encodeURIComponent(grantId)}`
+      ),
+      listFolders: (spaceId) => this.request("GET", `${spacePath(spaceId)}/folders`),
+      createFolder: (spaceId, path) => this.request("POST", `${spacePath(spaceId)}/folders`, { path }),
+      moveFolder: (spaceId, folderId, path) => this.request(
+        "PATCH",
+        `${spacePath(spaceId)}/folders/${encodeURIComponent(folderId)}`,
+        { path }
+      ),
+      deleteFolder: (spaceId, folderId) => this.request(
+        "DELETE",
+        `${spacePath(spaceId)}/folders/${encodeURIComponent(folderId)}`
+      ),
+      listDocuments: (spaceId, options) => {
+        const query = new URLSearchParams();
+        if (options?.query) query.set("query", options.query);
+        if (options?.includeContent !== void 0)
+          query.set("includeContent", String(options.includeContent));
+        if (options?.limit !== void 0)
+          query.set("limit", String(options.limit));
+        return this.request(
+          "GET",
+          `${spacePath(spaceId)}/documents${query.size ? `?${query}` : ""}`
+        );
+      },
+      getDocument: (spaceId, documentId) => this.request("GET", documentPath(spaceId, documentId)),
+      createDocument: (spaceId, params) => this.request("POST", `${spacePath(spaceId)}/documents`, params),
+      updateDocument: (spaceId, documentId, params) => this.request("PATCH", documentPath(spaceId, documentId), params),
+      deleteDocument: (spaceId, documentId) => this.request("DELETE", documentPath(spaceId, documentId)),
+      importMarkdown: (spaceId, documents, folders = []) => this.request("POST", `${spacePath(spaceId)}/import`, {
+        documents,
+        folders
+      }),
+      graph: (spaceId) => this.request("GET", `${spacePath(spaceId)}/graph`),
+      search: (params) => {
+        const query = new URLSearchParams({ query: params.query });
+        if (params.spaceIds?.length)
+          query.set("spaceIds", params.spaceIds.join(","));
+        if (params.limit !== void 0)
+          query.set("limit", String(params.limit));
+        return this.request("GET", `/v1/knowledge/search?${query}`);
+      }
     };
   }
   // ── Spaces, projects, and goals ──────────────────────────────────────────
@@ -1163,23 +1216,14 @@ var CommonsClient = class {
           "x-creator-type": creator.type
         }
       }),
-      get: (spaceId) => this.request(
-        "GET",
-        `/v1/spaces/${encodeURIComponent(spaceId)}`
-      ),
-      getFull: (spaceId) => this.request(
-        "GET",
-        `/v1/spaces/${encodeURIComponent(spaceId)}/full`
-      ),
+      get: (spaceId) => this.request("GET", `/v1/spaces/${encodeURIComponent(spaceId)}`),
+      getFull: (spaceId) => this.request("GET", `/v1/spaces/${encodeURIComponent(spaceId)}/full`),
       update: (spaceId, params) => this.request(
         "PUT",
         `/v1/spaces/${encodeURIComponent(spaceId)}`,
         params
       ),
-      delete: (spaceId) => this.request(
-        "DELETE",
-        `/v1/spaces/${encodeURIComponent(spaceId)}`
-      ),
+      delete: (spaceId) => this.request("DELETE", `/v1/spaces/${encodeURIComponent(spaceId)}`),
       issueRtcTicket: (spaceId) => this.request(
         "POST",
         `/v1/spaces/${encodeURIComponent(spaceId)}/rtc-ticket`,
@@ -1277,11 +1321,10 @@ var CommonsClient = class {
     return {
       create: (params) => this.request("POST", "/v1/goals", params),
       get: (goalId) => this.request("GET", `/v1/goals/${encodeURIComponent(goalId)}`),
-      updateProgress: (goalId, progress, status) => this.request(
-        "PUT",
-        `/v1/goals/${encodeURIComponent(goalId)}`,
-        { progress, status }
-      )
+      updateProgress: (goalId, progress, status) => this.request("PUT", `/v1/goals/${encodeURIComponent(goalId)}`, {
+        progress,
+        status
+      })
     };
   }
   // ── Audio and liaison agents ─────────────────────────────────────────────

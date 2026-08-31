@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { source as axeSource } from 'axe-core';
 import { chromium, type Browser } from 'playwright';
+import postcss, { type Declaration, type Rule } from 'postcss';
 import type {
   BrowserCheckAction,
   BrowserCheckCapability,
@@ -158,6 +159,7 @@ export class CodeProjectVerifier {
         context.setDefaultTimeout(DEFAULT_ACTION_TIMEOUT_MS);
         context.setDefaultNavigationTimeout(DEFAULT_NAVIGATION_TIMEOUT_MS);
         const page = await context.newPage();
+        const stylesheetSources: Array<Promise<string | null>> = [];
         page.on('console', (message) => {
           if (message.type() === 'error') {
             consoleErrors.push(`${scenario.name}: ${message.text()}`);
@@ -169,6 +171,22 @@ export class CodeProjectVerifier {
         page.on('requestfailed', (request) => {
           requestFailures.push(
             `${scenario.name}: ${request.method()} ${request.url()}: ${request.failure()?.errorText ?? 'failed'}`,
+          );
+        });
+        page.on('response', (response) => {
+          if (
+            response.request().resourceType() !== 'stylesheet' ||
+            !isAllowedPreviewRequest(response.url(), url)
+          ) {
+            return;
+          }
+          stylesheetSources.push(
+            response.text().catch((error: any) => {
+              requestFailures.push(
+                `${scenario.name}: could not inspect stylesheet ${response.url()}: ${error?.message || String(error)}`,
+              );
+              return null;
+            }),
           );
         });
 
@@ -273,6 +291,14 @@ export class CodeProjectVerifier {
         const rootChildren = await appFrame.locator('#root > *').count();
         const visual = await inspectVisualSurface(appFrame);
         const bridgeCalls = await readBridgeCalls(page);
+        const inlineStyles = await appFrame.locator('style').allTextContents();
+        const loadedStyles = (await Promise.all(stylesheetSources)).filter(
+          (source): source is string => typeof source === 'string',
+        );
+        const orientationLocks = countCssOrientationLocks([
+          ...loadedStyles,
+          ...inlineStyles,
+        ]);
         const rejectedBridgeCalls = bridgeCalls.filter(
           (call) => call.outcome !== 'fixture',
         );
@@ -326,11 +352,27 @@ export class CodeProjectVerifier {
             `${scenario.name}: Commons bridge ${call.method} was ${call.outcome}; declare its least-privilege capability and send it to testCodeProject`,
           );
         }
+        if (orientationLocks > 0) {
+          accessibilityViolations.push({
+            scenario: scenario.name,
+            id: 'css-orientation-lock',
+            impact: 'serious',
+            description:
+              'Ensure content is not locked to a specific display orientation',
+            nodes: orientationLocks,
+          });
+        }
 
         await appFrame.addScriptTag({ content: axeSource });
         const violations = await appFrame.evaluate(async () => {
           const axe = (globalThis as any).axe;
           const result = await axe.run((globalThis as any).document, {
+            // The preview intentionally runs in an opaque sandbox. axe-core's
+            // default CSSOM preloader re-fetches an already-loaded stylesheet
+            // with XHR, which is correctly blocked by connect-src 'none'. The
+            // audit can use the browser's computed styles without that fetch;
+            // keep media preloading for the rules that need it.
+            preload: { assets: ['media'] },
             runOnly: {
               type: 'tag',
               values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'],
@@ -368,6 +410,7 @@ export class CodeProjectVerifier {
           !hasDefaultSerifFont(visual.fontFamily) &&
           visual.stylesheets > 0 &&
           rejectedBridgeCalls.length === 0 &&
+          orientationLocks === 0 &&
           violations.length === 0;
         checks.push({
           viewport: scenario.name,
@@ -639,6 +682,125 @@ function exercisedCapabilities(
       ),
     ),
   ];
+}
+
+/**
+ * axe-core normally re-fetches stylesheets to inspect orientation media rules.
+ * That fetch is intentionally forbidden inside our opaque sandbox, so inspect
+ * the CSS response bodies in the verifier process instead. PostCSS gives us a
+ * browser-independent CSS parser without weakening the preview CSP.
+ */
+export function countCssOrientationLocks(stylesheets: string[]) {
+  let count = 0;
+  for (const source of stylesheets) {
+    let root: ReturnType<typeof postcss.parse>;
+    try {
+      root = postcss.parse(source);
+    } catch {
+      // The browser remains the authority for malformed inline CSS. Generated
+      // stylesheet assets are parsed and normalized by the project builder.
+      continue;
+    }
+
+    const lockedRules = new Set<Rule>();
+    root.walkAtRules((atRule) => {
+      if (
+        atRule.name.toLowerCase() !== 'media' ||
+        !/\(\s*orientation\s*:\s*(?:portrait|landscape)\s*\)/i.test(
+          atRule.params,
+        )
+      ) {
+        return;
+      }
+      atRule.walkRules((rule) => {
+        if (!lockedRules.has(rule) && ruleHasQuarterTurn(rule)) {
+          lockedRules.add(rule);
+          count += 1;
+        }
+      });
+    });
+  }
+  return count;
+}
+
+function ruleHasQuarterTurn(rule: Rule) {
+  const declarations = new Map<string, { value: string; important: boolean }>();
+  rule.each((node) => {
+    if (node.type !== 'decl') return;
+    const declaration = node as Declaration;
+    const property = declaration.prop.toLowerCase();
+    if (
+      !['transform', '-webkit-transform', '-ms-transform', 'rotate'].includes(
+        property,
+      )
+    ) {
+      return;
+    }
+    const previous = declarations.get(property);
+    if (!previous || declaration.important || !previous.important) {
+      declarations.set(property, {
+        value: declaration.value,
+        important: declaration.important,
+      });
+    }
+  });
+
+  const transform =
+    declarations.get('transform')?.value ||
+    declarations.get('-webkit-transform')?.value ||
+    declarations.get('-ms-transform')?.value ||
+    '';
+  const rotate = declarations.get('rotate')?.value || '';
+  const degrees = transformRotationDegrees(transform) + angleDegrees(rotate);
+  if (!Number.isFinite(degrees)) return false;
+  const normalized = ((degrees % 180) + 180) % 180;
+  return Math.abs(normalized - 90) <= 0.01;
+}
+
+function transformRotationDegrees(value: string) {
+  let degrees = 0;
+  const functions =
+    /\b(rotate|rotatez|rotate3d|matrix|matrix3d)\s*\(([^)]*)\)/gi;
+  for (const match of value.matchAll(functions)) {
+    const name = match[1].toLowerCase();
+    const args = match[2].split(',').map((part) => part.trim());
+    if (name === 'rotate' || name === 'rotatez') {
+      degrees += angleDegrees(args[0] || '');
+    } else if (name === 'rotate3d') {
+      const z = Number(args[2]);
+      if (Number.isFinite(z) && z !== 0) {
+        degrees += angleDegrees(args[3] || '');
+      }
+    } else {
+      const values = args.map(Number);
+      if (
+        values.length >= 2 &&
+        Number.isFinite(values[0]) &&
+        Number.isFinite(values[1])
+      ) {
+        degrees += (Math.atan2(values[1], values[0]) * 180) / Math.PI;
+      }
+    }
+  }
+  return degrees;
+}
+
+function angleDegrees(value: string) {
+  const match = value.match(
+    /(-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)\s*(deg|grad|rad|turn)\b/i,
+  );
+  if (!match) return 0;
+  const angle = Number(match[1]);
+  switch (match[2].toLowerCase()) {
+    case 'grad':
+      return angle * 0.9;
+    case 'rad':
+      return (angle * 180) / Math.PI;
+    case 'turn':
+      return angle * 360;
+    default:
+      return angle;
+  }
 }
 
 function clamp(

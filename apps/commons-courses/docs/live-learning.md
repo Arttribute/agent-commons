@@ -52,4 +52,3 @@ The educator copilot can read live-room participation, use the current page as f
 - [Wooclap self-paced sessions](https://docs.wooclap.com/en/articles/674825-self-paced-session) supports using an opening diagnostic and letting learners practise independently before a shared correction or debrief.
 
 The Commons distinction is that these patterns sit inside the existing course, identity, enrollment, evidence, and copilot system. Educators should not need a separate quiz product, workbook product, and classroom-management product to facilitate one coherent learning experience.
-

@@ -1,5 +1,6 @@
 import {
   CodeProjectVerifier,
+  countCssOrientationLocks,
   getEmbeddingError,
   hasDefaultSerifFont,
   isAllowedPreviewRequest,
@@ -60,6 +61,42 @@ describe('code project embedding policy', () => {
     );
     expect(hasDefaultSerifFont('serif')).toBe(true);
     expect(hasDefaultSerifFont('"Times New Roman", serif')).toBe(true);
+  });
+
+  it('detects quarter-turn orientation locks without fetching CSS in-browser', () => {
+    expect(
+      countCssOrientationLocks([
+        `
+          @media screen and (orientation: portrait) {
+            .app { transform: rotate(90deg); }
+          }
+          @media (orientation: landscape) {
+            .other { rotate: -0.25turn; }
+          }
+        `,
+      ]),
+    ).toBe(2);
+    expect(
+      countCssOrientationLocks([
+        '@media (orientation: portrait) { main { transform: matrix(0, 1, -1, 0, 0, 0); } }',
+      ]),
+    ).toBe(1);
+  });
+
+  it('does not confuse ordinary responsive CSS or overwritten rotations with an orientation lock', () => {
+    expect(
+      countCssOrientationLocks([
+        `
+          .icon { transform: rotate(90deg); }
+          @media (min-width: 700px) { .menu { transform: rotate(90deg); } }
+          @media (orientation: landscape) {
+            .logo { transform: rotate(180deg); }
+            .reset { transform: rotate(90deg); transform: none; }
+            .balanced { transform: rotate(90deg) rotate(-90deg); }
+          }
+        `,
+      ]),
+    ).toBe(0);
   });
 
   it('allows only the pinned preview path and its assets', () => {

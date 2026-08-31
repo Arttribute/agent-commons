@@ -36,28 +36,46 @@ export function PageTitle({
 export function CreateButton({
   label,
   onClick,
+  href,
   className,
 }: {
   label: string;
   onClick: () => void;
+  /** Native fallback for actions that must survive a click before hydration. */
+  href?: string;
   className?: string;
 }) {
+  const classNames = cn(
+    "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-card transition-colors hover:bg-muted",
+    className,
+  );
+  const trigger = href ? (
+    <a
+      href={href}
+      role="button"
+      aria-label={label}
+      onClick={(event) => {
+        event.preventDefault();
+        onClick();
+      }}
+      className={classNames}
+    >
+      <Plus className="h-4 w-4" strokeWidth={1.75} />
+    </a>
+  ) : (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className={classNames}
+    >
+      <Plus className="h-4 w-4" strokeWidth={1.75} />
+    </button>
+  );
   return (
     <TooltipProvider delayDuration={150}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-label={label}
-            onClick={onClick}
-            className={cn(
-              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-card transition-colors hover:bg-muted",
-              className,
-            )}
-          >
-            <Plus className="h-4 w-4" strokeWidth={1.75} />
-          </button>
-        </TooltipTrigger>
+        <TooltipTrigger asChild>{trigger}</TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">
           {label}
         </TooltipContent>

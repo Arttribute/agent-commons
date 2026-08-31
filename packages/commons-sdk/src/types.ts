@@ -451,6 +451,11 @@ export interface RunParams {
   agentId: string;
   messages: ChatMessage[];
   sessionId?: string;
+  /** Per-run provenance policy. Metadata capture is the platform default; on-chain anchoring is always explicit. */
+  provenance?: {
+    mode?: "off" | "metadata" | "full";
+    onchain?: boolean;
+  };
   initiatorId?: string;
   computerRequest?: {
     enabled: boolean;
@@ -469,6 +474,298 @@ export interface RunParams {
     description: string;
     parameters: Record<string, unknown>;
   }>;
+}
+
+export interface ProvenanceLineage {
+  schemaVersion: 1;
+  kind:
+    | "web_search"
+    | "workflow"
+    | "decision"
+    | "delegation"
+    | "library_retrieval"
+    | "knowledge_retrieval"
+    | "tool";
+  tool?: { name: string; provider?: string; invocationId?: string };
+  query?: { text: string; sha256?: string };
+  sources?: Array<{
+    url: string;
+    domain: string;
+    title?: string;
+    rank?: number;
+    publishedAt?: string;
+    contentHash?: string;
+  }>;
+  workflow?: {
+    workflowId: string;
+    executionId?: string;
+    nodeId?: string;
+    nodeType?: string;
+    version?: string | number;
+    definitionHash?: string;
+    parentExecutionId?: string;
+  };
+  decision?: {
+    type: "condition" | "human_approval" | "policy" | "routing";
+    outcome: string | boolean;
+    rule?: string;
+    alternatives?: string[];
+  };
+  delegation?: {
+    fromAgentId?: string;
+    toAgentId: string;
+    role?: string;
+    architecture?: string;
+    handoffPolicy?: string;
+    contextPolicy?: string;
+  };
+  library?: {
+    query: string;
+    algorithm: "hybrid" | "semantic" | "lexical";
+    semanticWeight?: number;
+    lexicalWeight?: number;
+    results: Array<{
+      itemId: string;
+      name?: string;
+      kind?: string;
+      sourceSessionId?: string;
+      sourceUri?: string;
+      sourceType?: string;
+      contentHash?: string;
+      chunkIndex?: number;
+      score: number;
+      percentageMatch: number;
+      rank: number;
+    }>;
+  };
+  knowledge?: {
+    query: string;
+    algorithm: "hybrid_graph" | "semantic" | "lexical" | "graph";
+    semanticWeight?: number;
+    lexicalWeight?: number;
+    graphExpansion?: boolean;
+    embedding?: {
+      model: string;
+      dimensions: number;
+      normalizationVersion: string;
+      computedBy: "agent-commons" | "external";
+      vectorIncluded: false;
+    };
+    results: Array<{
+      spaceId: string;
+      documentId: string;
+      path: string;
+      title?: string;
+      heading?: string;
+      contentHash?: string;
+      revision?: number;
+      chunkIndex?: number;
+      score: number;
+      percentageMatch: number;
+      rank: number;
+      embeddingModel?: string;
+      matchedBy?: string[];
+    }>;
+  };
+}
+
+// ─── Knowledge Spaces ───────────────────────────────────────────────────────
+
+export type KnowledgePermission = "read" | "write" | "manage";
+export type KnowledgeProviderId = "native" | "browser_filesystem";
+
+export interface KnowledgeProviderDefinition {
+  id: KnowledgeProviderId;
+  name: string;
+  description: string;
+  capabilities: {
+    editable: boolean;
+    import: boolean;
+    clientSync: boolean;
+  };
+}
+
+export interface KnowledgeGrant {
+  grantId: string;
+  spaceId: string;
+  subjectType: "user" | "agent" | "workspace";
+  subjectId: string;
+  permission: KnowledgePermission;
+  autoRetrieve: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeSpace {
+  spaceId: string;
+  name: string;
+  description?: string | null;
+  provider: KnowledgeProviderId;
+  providerConfig: Record<string, unknown>;
+  providerDefinition?: KnowledgeProviderDefinition;
+  color: string;
+  status: "active" | "disconnected";
+  isDefault: boolean;
+  autoGrantNewAgents: boolean;
+  autoRetrieve?: boolean;
+  permission: KnowledgePermission;
+  counts: { documents: number; links: number; folders: number };
+  grants?: KnowledgeGrant[];
+  workspaceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeFolder {
+  folderId: string;
+  spaceId: string;
+  path: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeLink {
+  linkId: string;
+  relation: "wikilink" | "markdown" | "frontmatter";
+  documentId?: string | null;
+  title?: string | null;
+  path?: string | null;
+  targetPath?: string;
+  label?: string | null;
+}
+
+export interface KnowledgeDocument {
+  documentId: string;
+  spaceId: string;
+  path: string;
+  title: string;
+  content?: string;
+  contentHash: string;
+  revision: number;
+  frontmatter: Record<string, unknown>;
+  okf: {
+    version: "0.2";
+    kind: "concept" | "index" | "log";
+    conceptId?: string;
+    conformant: boolean;
+    issues: string[];
+    type?: string;
+    description?: string;
+    resource?: string;
+    status?: "draft" | "stable" | "deprecated";
+    staleAfter?: string;
+    isStale: boolean;
+    trustTier: "unverified" | "machine-confirmed" | "human-reviewed";
+    generatedBy?: string;
+    verifiedBy: string[];
+    sourceCount: number;
+  };
+  tags: string[];
+  providerDocumentId?: string | null;
+  providerRevision?: string | null;
+  createdByType: string;
+  createdById: string;
+  updatedByType: string;
+  updatedById: string;
+  outgoing?: KnowledgeLink[];
+  backlinks?: KnowledgeLink[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeGraph {
+  nodes: Array<{
+    id: string;
+    title: string;
+    path: string;
+    folder: string;
+    tags: string[];
+    degree: number;
+    updatedAt: string;
+  }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string | null;
+    targetPath: string;
+    relation: string;
+    resolved: boolean;
+  }>;
+}
+
+export interface KnowledgeSearchResult {
+  spaceId: string;
+  documentId: string;
+  path: string;
+  title: string;
+  contentHash: string;
+  revision: number;
+  tags: string[];
+  chunkIndex: number;
+  heading?: string | null;
+  excerpt: string;
+  embeddingModel?: string | null;
+  semantic: number;
+  lexical: number;
+  graphBoost: number;
+  score: number;
+  rank: number;
+  percentageMatch: number;
+  matchedBy: string[];
+}
+
+export interface ProvenanceRun {
+  traceId: string;
+  sessionId?: string;
+  agentId?: string;
+  scopeType: string;
+  scopeId?: string;
+  status: string;
+  captureMode: "metadata" | "full";
+  provider?: string;
+  modelId?: string;
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+  bundleHash?: string;
+  anchorStatus?: string;
+  anchorRef?: string;
+}
+
+export interface ProvenanceEvent {
+  eventId: string;
+  traceId: string;
+  sequence: number;
+  category: string;
+  eventType: string;
+  name: string;
+  status: string;
+  summary?: string;
+  contentHash?: string;
+  durationMs?: number;
+  metadata?: { lineage?: ProvenanceLineage; [key: string]: unknown };
+  startedAt: string;
+  endedAt?: string;
+}
+
+export interface ProvenanceTrajectory {
+  sessionId?: string;
+  scopeType?: string;
+  scopeId?: string;
+  runs: ProvenanceRun[];
+  events: ProvenanceEvent[];
+  summary: {
+    runs: number;
+    events: number;
+    modelCalls: number;
+    toolCalls: number;
+    durationMs: number;
+    inputTokens: number;
+    outputTokens: number;
+    cachedTokens: number;
+    costUsd: number;
+    droppedEvents: number;
+  };
 }
 
 export interface ChatMessage {

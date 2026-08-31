@@ -66,6 +66,7 @@ function makeDb() {
   // Paused execution returned by query for approve/reject
   const pausedExecution = () => ({
     executionId: 'exec-hitl',
+    workflowId: 'wf-hitl',
     status: 'awaiting_approval',
     approvalToken: 'tok-test',
     pausedAtNode: 'n-approval',
@@ -189,7 +190,7 @@ describe('HITL integration — WorkflowExecutorService', () => {
       expect(db._states).toContain('running');
       expect(walkerSpy).toHaveBeenCalledWith(
         'exec-hitl',
-        expect.any(Object), // workflow definition
+        expect.objectContaining({ workflowId: 'wf-hitl' }),
         undefined, // agentId (null coerced to undefined in the service)
         undefined, // userId
         { x: 1 }, // inputData

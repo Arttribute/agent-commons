@@ -131,10 +131,11 @@ jobs:
                     --max-results 20 \
                     --query '{serviceDeployments:serviceDeployments[*].{arn:serviceDeploymentArn,status:status,statusReason:statusReason,createdAt:createdAt,startedAt:startedAt,finishedAt:finishedAt,targetRevision:targetServiceRevisionArn}}' \
                     --output json)
-                  available_secret_keys=$(aws secretsmanager get-secret-value \
+                  available_secret_json=$(aws secretsmanager get-secret-value \
                     --secret-id "$RUNTIME_SECRET_ARN" \
                     --query SecretString \
-                    --output text | jq -c 'keys | sort')
+                    --output text)
+                  available_secret_keys=$(jq -c 'keys | sort' <<<"$available_secret_json")
                   required_secret_keys=$(sed \
                     -e '/^[[:space:]]*#/d' \
                     -e '/^[[:space:]]*$/d' \
@@ -143,13 +144,33 @@ jobs:
                     --argjson required "$required_secret_keys" \
                     --argjson available "$available_secret_keys" \
                     '$required - $available')
+
+                  # Re-run the pending migrations from the uploaded source and
+                  # capture the real error through the diagnostic
+                  # S3 channel. The GitHub deploy role intentionally cannot read
+                  # CodeBuild's CloudWatch stream.
+                  corepack enable pnpm
+                  corepack prepare pnpm@9.15.3 --activate
+                  pnpm install --frozen-lockfile --filter commons-api...
+                  set +e
+                  POSTGRES_HOST="$(jq -r .POSTGRES_HOST <<<"$available_secret_json")" \
+                  POSTGRES_PORT="$(jq -r .POSTGRES_PORT <<<"$available_secret_json")" \
+                  POSTGRES_DATABASE="$(jq -r .POSTGRES_DATABASE <<<"$available_secret_json")" \
+                  POSTGRES_USER="$(jq -r .POSTGRES_USER <<<"$available_secret_json")" \
+                  POSTGRES_PASSWORD="$(jq -r .POSTGRES_PASSWORD <<<"$available_secret_json")" \
+                  POSTGRES_SSL="$(jq -r '.POSTGRES_SSL // "disable"' <<<"$available_secret_json")" \
+                    pnpm --filter commons-api migrate > /tmp/migration-probe.log 2>&1
+                  migration_exit=$?
+                  set -e
                   jq -n \
                     --argjson stack "$stack_json" \
                     --argjson service "$service_json" \
                     --argjson deploymentList "$deployment_list" \
                     --argjson availableSecretKeys "$available_secret_keys" \
                     --argjson missingSecretKeys "$missing_secret_keys" \
-                    '{stack: $stack, service: $service, deploymentList: $deploymentList, runtimeSecret: {availableKeys: $availableSecretKeys, missingKeys: $missingSecretKeys}}' \
+                    --argjson migrationExit "$migration_exit" \
+                    --rawfile migrationLog /tmp/migration-probe.log \
+                    '{stack: $stack, service: $service, deploymentList: $deploymentList, runtimeSecret: {availableKeys: $availableSecretKeys, missingKeys: $missingSecretKeys}, migrationProbe: {exitCode: $migrationExit, log: $migrationLog}}' \
                     > /tmp/service-deployment.json
                   curl --fail-with-body --silent --show-error -X PUT -H 'Content-Type:' --data-binary @/tmp/service-deployment.json "$DIAGNOSTIC_PUT_URL"
           YAML

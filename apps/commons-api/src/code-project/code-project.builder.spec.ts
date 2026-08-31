@@ -244,6 +244,41 @@ createRoot(document.getElementById('root')!).render(<App />);`,
       }),
     ).rejects.toMatchObject({ response: { code: 'project_build_failed' } });
   });
+
+  it('produces a self-contained sandbox document for React previews', async () => {
+    const result = await builder.buildInlinePreview({
+      name: 'Inline app',
+      entryFile: 'app/page.tsx',
+      files: [
+        {
+          path: 'app/page.tsx',
+          content:
+            'export default function Page(){return <button className="p-4">Interactive</button>}',
+        },
+      ],
+    });
+
+    expect(result.html).toContain('Content-Security-Policy');
+    expect(result.html).toContain('<script type="module">');
+    expect(result.html).toContain('<style>');
+    expect(result.html).not.toContain(
+      '<script type="module" src="./assets/app.js"></script>',
+    );
+    expect(result.html).not.toContain(
+      '<link rel="stylesheet" href="./assets/commons-ui.css" />',
+    );
+  });
+
+  it('compiles a TypeScript artifact into an interactive console document', async () => {
+    const result = await builder.buildSingleFilePreview({
+      name: 'calculation.ts',
+      content: 'const total: number = 6 * 7; console.log(total);',
+    });
+
+    expect(result?.html).toContain('Interactive JavaScript output');
+    expect(result?.html).toContain('console.log');
+    expect(result?.html).not.toContain(': number');
+  });
 });
 
 function assetText(content: string | Uint8Array | undefined) {

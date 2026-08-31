@@ -24,6 +24,6 @@ import { CodeProjectVerifier } from './code-project.verifier';
     CodeProjectStorage,
     CodeProjectVerifier,
   ],
-  exports: [CodeProjectService],
+  exports: [CodeProjectService, CodeProjectBuilder],
 })
 export class CodeProjectModule {}

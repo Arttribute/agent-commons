@@ -24,7 +24,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/bin.ts
-var import_commander22 = require("commander");
+var import_commander23 = require("commander");
 var import_child_process3 = require("child_process");
 
 // src/commands/login.ts
@@ -2536,15 +2536,50 @@ async function runLocalTool(call, cfg) {
 
 // src/commands/run.ts
 function runCommand() {
-  return new import_commander8.Command("run").description("Send a single prompt to an agent and stream the response").argument("<prompt>", "Prompt text to send").option("--agent <agentId>", "Agent ID").option("--session <sessionId>", "Resume an existing session by ID").option("--new-session", "Create a new session and print its ID for future use").option("--computer", "Give the agent access to its persistent cloud computer").option("--local", "Enable local file system access (with permission prompts)").option("-y, --yes", "Enable local file system access and auto-approve all operations").option("--no-stream", "Disable streaming (wait for full response)").option("--json", "Output raw event stream as JSON lines").action(async (prompt, opts) => {
+  return new import_commander8.Command("run").description("Send a single prompt to an agent and stream the response").argument("<prompt>", "Prompt text to send").option("--agent <agentId>", "Agent ID").option("--session <sessionId>", "Resume an existing session by ID").option(
+    "--new-session",
+    "Create a new session and print its ID for future use"
+  ).option(
+    "--computer",
+    "Give the agent access to its persistent cloud computer"
+  ).option(
+    "--local",
+    "Enable local file system access (with permission prompts)"
+  ).option(
+    "-y, --yes",
+    "Enable local file system access and auto-approve all operations"
+  ).option("--no-stream", "Disable streaming (wait for full response)").option("--json", "Output raw event stream as JSON lines").option(
+    "--provenance <mode>",
+    "Provenance capture: off, metadata, or full",
+    "metadata"
+  ).option(
+    "--onchain-provenance",
+    "Request an optional on-chain anchor for this run"
+  ).action(async (prompt, opts) => {
     const cfg = loadConfig();
     const agentId2 = opts.agent ?? cfg.defaultAgentId;
     if (!agentId2) {
-      console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
+      console.error(
+        c.error(
+          "Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"
+        )
+      );
       process.exit(1);
     }
     if (opts.session && opts.newSession) {
-      console.error(c.error("Cannot use --session and --new-session together."));
+      console.error(
+        c.error("Cannot use --session and --new-session together.")
+      );
+      process.exit(1);
+    }
+    if (!["off", "metadata", "full"].includes(opts.provenance)) {
+      console.error(c.error("--provenance must be off, metadata, or full."));
+      process.exit(1);
+    }
+    if (opts.onchainProvenance && opts.provenance === "off") {
+      console.error(
+        c.error("--onchain-provenance requires metadata or full capture.")
+      );
       process.exit(1);
     }
     const client = makeClient();
@@ -2594,7 +2629,12 @@ function runCommand() {
         autoApprove
       };
       const snapshot = buildDirSnapshot(rootDir, 2);
-      cliContext = buildLocalToolsManifest(rootDir, snapshot, [], autoApprove);
+      cliContext = buildLocalToolsManifest(
+        rootDir,
+        snapshot,
+        [],
+        autoApprove
+      );
     }
     if (!opts.json) {
       const rows = [];
@@ -2603,10 +2643,16 @@ function runCommand() {
         rows.push(["Session", label]);
       }
       if (localEnabled) {
-        rows.push(["Local tools", autoApprove ? c.warn("enabled  (auto-approve on)") : c.success("enabled")]);
+        rows.push([
+          "Local tools",
+          autoApprove ? c.warn("enabled  (auto-approve on)") : c.success("enabled")
+        ]);
       }
       if (opts.computer) {
-        rows.push(["Cloud computer", c.success("enabled") + c.dim("  (persistent, remote)")]);
+        rows.push([
+          "Cloud computer",
+          c.success("enabled") + c.dim("  (persistent, remote)")
+        ]);
       }
       if (rows.length) {
         detail(rows);
@@ -2619,7 +2665,11 @@ function runCommand() {
       messages: [{ role: "user", content: prompt }],
       ...cfg.initiator && { initiatorId: cfg.initiator },
       ...opts.computer && { computerRequest: { enabled: true } },
-      ...cliContext && { cliContext }
+      ...cliContext && { cliContext },
+      provenance: {
+        mode: opts.provenance,
+        onchain: Boolean(opts.onchainProvenance)
+      }
     };
     if (opts.noStream && !localEnabled) {
       const spinner = spin("Running\u2026");
@@ -2629,8 +2679,13 @@ function runCommand() {
         if (opts.json) return jsonOut(result);
         const text = result?.content ?? result?.text ?? result?.message ?? JSON.stringify(result);
         console.log(text);
-        if (sessionId) console.log(c.dim(`
-Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`));
+        if (sessionId)
+          console.log(
+            c.dim(
+              `
+Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`
+            )
+          );
       } catch (err) {
         spinner.stop();
         printError(err);
@@ -2662,7 +2717,10 @@ Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`
           let result;
           let toolOk = true;
           try {
-            result = await runLocalTool({ tool: displayName, args: args ?? {} }, localToolsCfg);
+            result = await runLocalTool(
+              { tool: displayName, args: args ?? {} },
+              localToolsCfg
+            );
           } catch (err) {
             result = `Error: ${err?.message ?? String(err)}`;
             toolOk = false;
@@ -2670,8 +2728,10 @@ Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`
           const elapsed = ((Date.now() - startMs) / 1e3).toFixed(1);
           readline2.cursorTo(process.stdout, 0);
           readline2.clearLine(process.stdout, 0);
-          process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(displayName)}  ${toolOk ? sym.ok : sym.fail}  ${c.dim("(" + elapsed + "s)")}
-`);
+          process.stdout.write(
+            `  ${c.dim("\u2500")} ${c.bold(displayName)}  ${toolOk ? sym.ok : sym.fail}  ${c.dim("(" + elapsed + "s)")}
+`
+          );
           try {
             await client.agents.submitCliToolResult(requestId, result);
           } catch {
@@ -2688,20 +2748,29 @@ Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`
           const elapsed = ((Date.now() - toolStartMs) / 1e3).toFixed(1);
           readline2.cursorTo(process.stdout, 0);
           readline2.clearLine(process.stdout, 0);
-          process.stdout.write(`  ${c.dim("\u2500")} ${c.bold(lastToolName)}  ${sym.ok}  ${c.dim("(" + elapsed + "s)")}
-`);
+          process.stdout.write(
+            `  ${c.dim("\u2500")} ${c.bold(lastToolName)}  ${sym.ok}  ${c.dim("(" + elapsed + "s)")}
+`
+          );
         } else if (event.type === "final") {
           if (hasOutput) process.stdout.write("\n");
           const e = event;
           const finalText = e.content ?? e.payload?.content ?? e.payload?.text ?? e.payload?.message;
           if (finalText && !hasOutput) console.log(finalText);
-          if (sessionId) console.log(c.dim(`
-Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`));
+          if (sessionId)
+            console.log(
+              c.dim(
+                `
+Session: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`
+              )
+            );
           break;
         } else if (event.type === "error") {
           if (hasOutput) process.stdout.write("\n");
-          console.error(`
-${sym.fail} ${c.error(event.message ?? "Error")}`);
+          console.error(
+            `
+${sym.fail} ${c.error(event.message ?? "Error")}`
+          );
           process.exit(1);
         }
       }
@@ -5333,6 +5402,96 @@ ${sym.ok} Developer project created.`);
   return command;
 }
 
+// src/commands/provenance.ts
+var import_commander22 = require("commander");
+function printTrajectory(trajectory) {
+  const sources = trajectory.events.flatMap(
+    (event) => event.metadata?.lineage?.sources ?? []
+  );
+  const delegates = trajectory.events.flatMap(
+    (event) => event.metadata?.lineage?.delegation ? [event.metadata.lineage.delegation] : []
+  );
+  const matches = trajectory.events.flatMap(
+    (event) => event.metadata?.lineage?.library?.results ?? []
+  );
+  section("Provenance report");
+  detail([
+    ["Runs", String(trajectory.summary?.runs ?? trajectory.runs?.length ?? 0)],
+    [
+      "Events",
+      String(trajectory.summary?.events ?? trajectory.events?.length ?? 0)
+    ],
+    [
+      "Model / tool calls",
+      `${trajectory.summary?.modelCalls ?? 0} / ${trajectory.summary?.toolCalls ?? 0}`
+    ],
+    ["Sources", String(sources.length)],
+    ["Agent delegations", String(delegates.length)],
+    ["Library matches", String(matches.length)],
+    ["Dropped events", String(trajectory.summary?.droppedEvents ?? 0)]
+  ]);
+  if (sources.length) {
+    section("Web sources");
+    for (const source of sources)
+      console.log(
+        `  ${c.primary(source.domain)}  ${source.title ?? ""}
+  ${c.dim(source.url)}`
+      );
+  }
+  if (delegates.length) {
+    section("Agent contributions");
+    for (const item of delegates)
+      console.log(
+        `  ${item.fromAgentId ?? "workflow"} \u2192 ${c.primary(item.toAgentId)}  ${c.dim(item.role ?? "")}`
+      );
+  }
+  if (matches.length) {
+    section("Library matches");
+    for (const item of matches)
+      console.log(
+        `  ${c.primary(`${item.percentageMatch}%`)}  ${item.name ?? item.itemId}  ${c.dim(`#${item.rank}`)}`
+      );
+  }
+}
+function provenanceCommand() {
+  const cmd = new import_commander22.Command("provenance").description(
+    "Inspect and export provenance and attribution trails"
+  );
+  cmd.command("session <sessionId>").description("Show a plain-language sources and contributors report").option("--json", "Output the complete machine-readable trajectory").action(async (sessionId, opts) => {
+    const spinner = spin("Building provenance report\u2026");
+    try {
+      const { data } = await makeClient().provenance.session(sessionId);
+      spinner.stop();
+      if (opts.json) return jsonOut(data);
+      printTrajectory(data);
+    } catch (error) {
+      spinner.stop();
+      printError(error);
+      process.exitCode = 1;
+    }
+  });
+  cmd.command("workflow <executionId>").description("Show provenance for a workflow execution").option("--json", "Output the complete machine-readable trajectory").action(async (executionId, opts) => {
+    const spinner = spin("Building workflow provenance report\u2026");
+    try {
+      const { data } = await makeClient().provenance.scope(
+        "workflow",
+        executionId
+      );
+      spinner.stop();
+      if (opts.json) return jsonOut(data);
+      printTrajectory(data);
+    } catch (error) {
+      spinner.stop();
+      printError(error);
+      process.exitCode = 1;
+    }
+  });
+  cmd.command("bundle <traceId>").description("Export the standards-based EAA provenance bundle as JSON").action(
+    async (traceId) => jsonOut((await makeClient().provenance.bundle(traceId)).data)
+  );
+  return cmd;
+}
+
 // src/bin.ts
 async function interactiveMenu() {
   banner();
@@ -5340,9 +5499,15 @@ async function interactiveMenu() {
   const isSetup = !!((cfg.accessToken || cfg.apiKey || cfg.sessionToken) && (cfg.userId || cfg.initiator));
   if (!isSetup) {
     console.log(c.bold("  Welcome to Agent Commons CLI!"));
-    console.log(c.dim("  Looks like this is your first time here \u2014 let's get you set up.\n"));
-    console.log(`  ${sym.arrow} Running ${c.bold("agc login")} to configure your credentials\u2026
-`);
+    console.log(
+      c.dim(
+        "  Looks like this is your first time here \u2014 let's get you set up.\n"
+      )
+    );
+    console.log(
+      `  ${sym.arrow} Running ${c.bold("agc login")} to configure your credentials\u2026
+`
+    );
     runSubcommand(["login"]);
     return;
   }
@@ -5353,7 +5518,11 @@ async function interactiveMenu() {
   const action = await select("What would you like to do?", [
     { label: "Chat with an agent", value: "chat", hint: "agc chat" },
     { label: "Run an agent (one-shot)", value: "run", hint: "agc run" },
-    { label: "Manage an agent cloud computer", value: "computer", hint: "agc computer status" },
+    {
+      label: "Manage an agent cloud computer",
+      value: "computer",
+      hint: "agc computer status"
+    },
     { label: "View sessions", value: "sessions", hint: "agc sessions list" },
     { label: "Manage agents", value: "agents", hint: "agc agents list" },
     { label: "Tasks", value: "tasks", hint: "agc task list" },
@@ -5406,7 +5575,10 @@ async function interactiveMenu() {
 async function askPrompt(question) {
   const { createInterface: createInterface3 } = await import("readline");
   return new Promise((resolve2) => {
-    const rl = createInterface3({ input: process.stdin, output: process.stdout });
+    const rl = createInterface3({
+      input: process.stdin,
+      output: process.stdout
+    });
     process.stdout.write(`
   ${c.bold(question)}
   ${c.primary("\u203A")} `);
@@ -5434,19 +5606,28 @@ async function pickAgentInteractively(action) {
     spinner.stop();
   } catch {
     spinner.stop();
-    console.log(`
+    console.log(
+      `
   ${c.warn("\u26A0")}  Could not fetch agents. Check your sign-in and connection.
-`);
+`
+    );
     return null;
   }
   if (agents.length === 0) {
     console.log(`
   ${c.warn("\u26A0")}  You don't have any agents yet.
 `);
-    const choice = await select("What would you like to do?", [
-      { label: "Create a new agent now", value: "create", hint: "agc agents create" },
-      { label: "Go back", value: "cancel" }
-    ]);
+    const choice = await select(
+      "What would you like to do?",
+      [
+        {
+          label: "Create a new agent now",
+          value: "create",
+          hint: "agc agents create"
+        },
+        { label: "Go back", value: "cancel" }
+      ]
+    );
     if (choice === "create") {
       runSubcommand(["agents", "create"]);
     }
@@ -5468,12 +5649,14 @@ async function pickAgentInteractively(action) {
   if (saveDefault) {
     saveConfig({ defaultAgentId: agentId2 });
     const chosen = agents.find((a) => a.agentId === agentId2);
-    console.log(`  ${sym.ok} ${c.dim("Default agent set to")} ${c.bold(chosen?.name ?? agentId2)}
-`);
+    console.log(
+      `  ${sym.ok} ${c.dim("Default agent set to")} ${c.bold(chosen?.name ?? agentId2)}
+`
+    );
   }
   return agentId2;
 }
-var program = new import_commander22.Command();
+var program = new import_commander23.Command();
 program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.4.0", "-v, --version").showHelpAfterError("(run `agc --help` for usage)").configureHelp({
   sortOptions: true,
   sortSubcommands: true
@@ -5492,7 +5675,8 @@ Docs: https://docs.agentcommons.io/docs/cli
   await interactiveMenu();
 });
 program.hook("preAction", async (_thisCommand, actionCommand) => {
-  if (actionCommand.name() === "login" || actionCommand.name() === "logout") return;
+  if (actionCommand.name() === "login" || actionCommand.name() === "logout")
+    return;
   await ensureAccessToken();
 });
 program.addCommand(loginCommand());
@@ -5506,6 +5690,7 @@ program.addCommand(connectionsCommand());
 program.addCommand(libraryCommand());
 program.addCommand(projectsCommand());
 program.addCommand(apiKeysCommand());
+program.addCommand(provenanceCommand());
 program.addCommand(workflowCommand());
 program.addCommand(taskCommand());
 program.addCommand(runCommand());
@@ -5530,8 +5715,10 @@ program.on("command:*", () => {
   process.exit(1);
 });
 program.parseAsync(process.argv).catch((error) => {
-  console.error(`
+  console.error(
+    `
   ${sym.fail} ${c.error(error instanceof Error ? error.message : String(error))}
-`);
+`
+  );
   process.exitCode = 1;
 });

@@ -12,4 +12,3 @@ export default async function LiveSessionsPage({
   if (result.error) redirect("/educator");
   return <LiveSessionManager courseSlug={slug} courseTitle={result.course.title} />;
 }
-

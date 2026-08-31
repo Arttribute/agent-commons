@@ -2,7 +2,10 @@ import { auth } from "@/auth";
 import type { Session } from "next-auth";
 import { normalizePrincipalId } from "@/lib/principal-id";
 
-const serviceTokenCache = new Map<string, { value: string; expiresAt: number }>();
+const serviceTokenCache = new Map<
+  string,
+  { value: string; expiresAt: number }
+>();
 const SERVICE_TOKEN_SCOPE =
   "agents:create agents:read agents:write agents:run activity:read usage:read compute:read compute:write";
 
@@ -71,7 +74,9 @@ export async function backendAuthHeaders(
 
   if (process.env.ALLOW_LEGACY_MANAGEMENT_AUTH !== "true") return {};
   const key = envValue("NEST_API_SECRET_KEY");
-  return key ? { Authorization: `Bearer ${key}`, ...delegatedHeaders } : delegatedHeaders;
+  return key
+    ? { Authorization: `Bearer ${key}`, ...delegatedHeaders }
+    : delegatedHeaders;
 }
 
 export async function backendServiceAuthHeaders(
@@ -89,6 +94,11 @@ export async function backendServiceAuthHeaders(
   if (serviceKey) return { Authorization: `Bearer ${serviceKey}` };
 
   return {};
+}
+
+/** Clear a rejected client-credential token so the next proxy attempt remints it. */
+export function invalidateBackendServiceAuthCache() {
+  serviceTokenCache.clear();
 }
 
 /**
@@ -126,7 +136,9 @@ async function commonsIdentityServiceToken() {
   const response = await fetch(`${issuer.replace(/\/$/, "")}/oauth2/token`, {
     method: "POST",
     headers: {
-      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      Authorization: `Basic ${Buffer.from(
+        `${clientId}:${clientSecret}`,
+      ).toString("base64")}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({

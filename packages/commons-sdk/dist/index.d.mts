@@ -361,6 +361,11 @@ interface RunParams {
     agentId: string;
     messages: ChatMessage[];
     sessionId?: string;
+    /** Per-run provenance policy. Metadata capture is the platform default; on-chain anchoring is always explicit. */
+    provenance?: {
+        mode?: "off" | "metadata" | "full";
+        onchain?: boolean;
+    };
     initiatorId?: string;
     computerRequest?: {
         enabled: boolean;
@@ -381,6 +386,290 @@ interface RunParams {
         description: string;
         parameters: Record<string, unknown>;
     }>;
+}
+interface ProvenanceLineage {
+    schemaVersion: 1;
+    kind: "web_search" | "workflow" | "decision" | "delegation" | "library_retrieval" | "knowledge_retrieval" | "tool";
+    tool?: {
+        name: string;
+        provider?: string;
+        invocationId?: string;
+    };
+    query?: {
+        text: string;
+        sha256?: string;
+    };
+    sources?: Array<{
+        url: string;
+        domain: string;
+        title?: string;
+        rank?: number;
+        publishedAt?: string;
+        contentHash?: string;
+    }>;
+    workflow?: {
+        workflowId: string;
+        executionId?: string;
+        nodeId?: string;
+        nodeType?: string;
+        version?: string | number;
+        definitionHash?: string;
+        parentExecutionId?: string;
+    };
+    decision?: {
+        type: "condition" | "human_approval" | "policy" | "routing";
+        outcome: string | boolean;
+        rule?: string;
+        alternatives?: string[];
+    };
+    delegation?: {
+        fromAgentId?: string;
+        toAgentId: string;
+        role?: string;
+        architecture?: string;
+        handoffPolicy?: string;
+        contextPolicy?: string;
+    };
+    library?: {
+        query: string;
+        algorithm: "hybrid" | "semantic" | "lexical";
+        semanticWeight?: number;
+        lexicalWeight?: number;
+        results: Array<{
+            itemId: string;
+            name?: string;
+            kind?: string;
+            sourceSessionId?: string;
+            sourceUri?: string;
+            sourceType?: string;
+            contentHash?: string;
+            chunkIndex?: number;
+            score: number;
+            percentageMatch: number;
+            rank: number;
+        }>;
+    };
+    knowledge?: {
+        query: string;
+        algorithm: "hybrid_graph" | "semantic" | "lexical" | "graph";
+        semanticWeight?: number;
+        lexicalWeight?: number;
+        graphExpansion?: boolean;
+        embedding?: {
+            model: string;
+            dimensions: number;
+            normalizationVersion: string;
+            computedBy: "agent-commons" | "external";
+            vectorIncluded: false;
+        };
+        results: Array<{
+            spaceId: string;
+            documentId: string;
+            path: string;
+            title?: string;
+            heading?: string;
+            contentHash?: string;
+            revision?: number;
+            chunkIndex?: number;
+            score: number;
+            percentageMatch: number;
+            rank: number;
+            embeddingModel?: string;
+            matchedBy?: string[];
+        }>;
+    };
+}
+type KnowledgePermission = "read" | "write" | "manage";
+type KnowledgeProviderId = "native" | "browser_filesystem";
+interface KnowledgeProviderDefinition {
+    id: KnowledgeProviderId;
+    name: string;
+    description: string;
+    capabilities: {
+        editable: boolean;
+        import: boolean;
+        clientSync: boolean;
+    };
+}
+interface KnowledgeGrant {
+    grantId: string;
+    spaceId: string;
+    subjectType: "user" | "agent" | "workspace";
+    subjectId: string;
+    permission: KnowledgePermission;
+    autoRetrieve: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+interface KnowledgeSpace {
+    spaceId: string;
+    name: string;
+    description?: string | null;
+    provider: KnowledgeProviderId;
+    providerConfig: Record<string, unknown>;
+    providerDefinition?: KnowledgeProviderDefinition;
+    color: string;
+    status: "active" | "disconnected";
+    isDefault: boolean;
+    autoGrantNewAgents: boolean;
+    autoRetrieve?: boolean;
+    permission: KnowledgePermission;
+    counts: {
+        documents: number;
+        links: number;
+        folders: number;
+    };
+    grants?: KnowledgeGrant[];
+    workspaceId?: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+interface KnowledgeFolder {
+    folderId: string;
+    spaceId: string;
+    path: string;
+    createdAt: string;
+    updatedAt: string;
+}
+interface KnowledgeLink {
+    linkId: string;
+    relation: "wikilink" | "markdown" | "frontmatter";
+    documentId?: string | null;
+    title?: string | null;
+    path?: string | null;
+    targetPath?: string;
+    label?: string | null;
+}
+interface KnowledgeDocument {
+    documentId: string;
+    spaceId: string;
+    path: string;
+    title: string;
+    content?: string;
+    contentHash: string;
+    revision: number;
+    frontmatter: Record<string, unknown>;
+    okf: {
+        version: "0.2";
+        kind: "concept" | "index" | "log";
+        conceptId?: string;
+        conformant: boolean;
+        issues: string[];
+        type?: string;
+        description?: string;
+        resource?: string;
+        status?: "draft" | "stable" | "deprecated";
+        staleAfter?: string;
+        isStale: boolean;
+        trustTier: "unverified" | "machine-confirmed" | "human-reviewed";
+        generatedBy?: string;
+        verifiedBy: string[];
+        sourceCount: number;
+    };
+    tags: string[];
+    providerDocumentId?: string | null;
+    providerRevision?: string | null;
+    createdByType: string;
+    createdById: string;
+    updatedByType: string;
+    updatedById: string;
+    outgoing?: KnowledgeLink[];
+    backlinks?: KnowledgeLink[];
+    createdAt: string;
+    updatedAt: string;
+}
+interface KnowledgeGraph {
+    nodes: Array<{
+        id: string;
+        title: string;
+        path: string;
+        folder: string;
+        tags: string[];
+        degree: number;
+        updatedAt: string;
+    }>;
+    edges: Array<{
+        id: string;
+        source: string;
+        target: string | null;
+        targetPath: string;
+        relation: string;
+        resolved: boolean;
+    }>;
+}
+interface KnowledgeSearchResult {
+    spaceId: string;
+    documentId: string;
+    path: string;
+    title: string;
+    contentHash: string;
+    revision: number;
+    tags: string[];
+    chunkIndex: number;
+    heading?: string | null;
+    excerpt: string;
+    embeddingModel?: string | null;
+    semantic: number;
+    lexical: number;
+    graphBoost: number;
+    score: number;
+    rank: number;
+    percentageMatch: number;
+    matchedBy: string[];
+}
+interface ProvenanceRun {
+    traceId: string;
+    sessionId?: string;
+    agentId?: string;
+    scopeType: string;
+    scopeId?: string;
+    status: string;
+    captureMode: "metadata" | "full";
+    provider?: string;
+    modelId?: string;
+    startedAt: string;
+    endedAt?: string;
+    durationMs?: number;
+    bundleHash?: string;
+    anchorStatus?: string;
+    anchorRef?: string;
+}
+interface ProvenanceEvent {
+    eventId: string;
+    traceId: string;
+    sequence: number;
+    category: string;
+    eventType: string;
+    name: string;
+    status: string;
+    summary?: string;
+    contentHash?: string;
+    durationMs?: number;
+    metadata?: {
+        lineage?: ProvenanceLineage;
+        [key: string]: unknown;
+    };
+    startedAt: string;
+    endedAt?: string;
+}
+interface ProvenanceTrajectory {
+    sessionId?: string;
+    scopeType?: string;
+    scopeId?: string;
+    runs: ProvenanceRun[];
+    events: ProvenanceEvent[];
+    summary: {
+        runs: number;
+        events: number;
+        modelCalls: number;
+        toolCalls: number;
+        durationMs: number;
+        inputTokens: number;
+        outputTokens: number;
+        cachedTokens: number;
+        costUsd: number;
+        droppedEvents: number;
+    };
 }
 interface ChatMessage {
     role: "user" | "assistant" | "system" | "tool";
@@ -1660,6 +1949,23 @@ declare class CommonsClient {
     get run(): {
         once: (params: RunParams) => Promise<any>;
     };
+    get provenance(): {
+        session: (sessionId: string) => Promise<{
+            data: ProvenanceTrajectory;
+        }>;
+        scope: (scopeType: string, scopeId: string) => Promise<{
+            data: ProvenanceTrajectory;
+        }>;
+        bundle: (traceId: string) => Promise<{
+            data: Record<string, unknown>;
+        }>;
+        anchor: (traceId: string) => Promise<{
+            data: {
+                traceId: string;
+                status: string;
+            };
+        }>;
+    };
     get workflows(): {
         create: (params: {
             name: string;
@@ -2450,6 +2756,132 @@ declare class CommonsClient {
             data: LibraryItem;
         }>;
     };
+    get knowledge(): {
+        providers: () => Promise<{
+            data: KnowledgeProviderDefinition[];
+        }>;
+        listSpaces: () => Promise<{
+            data: KnowledgeSpace[];
+        }>;
+        createSpace: (params: {
+            name: string;
+            description?: string;
+            provider?: KnowledgeProviderId;
+            providerConfig?: Record<string, unknown>;
+            color?: string;
+            allAgents?: boolean;
+            agentIds?: string[];
+        }) => Promise<{
+            data: KnowledgeSpace;
+        }>;
+        getSpace: (spaceId: string) => Promise<{
+            data: KnowledgeSpace;
+        }>;
+        updateSpace: (spaceId: string, params: {
+            name?: string;
+            description?: string;
+            color?: string;
+            autoGrantNewAgents?: boolean;
+            status?: "active" | "disconnected";
+            providerConfig?: Record<string, unknown>;
+        }) => Promise<{
+            data: KnowledgeSpace;
+        }>;
+        deleteSpace: (spaceId: string) => Promise<{
+            deleted: boolean;
+        }>;
+        grant: (spaceId: string, params: {
+            subjectType: "user" | "agent" | "workspace";
+            subjectId: string;
+            permission?: KnowledgePermission;
+            autoRetrieve?: boolean;
+        }) => Promise<{
+            data: KnowledgeGrant;
+        }>;
+        revokeGrant: (spaceId: string, grantId: string) => Promise<{
+            revoked: boolean;
+        }>;
+        listFolders: (spaceId: string) => Promise<{
+            data: KnowledgeFolder[];
+        }>;
+        createFolder: (spaceId: string, path: string) => Promise<{
+            data: KnowledgeFolder;
+        }>;
+        moveFolder: (spaceId: string, folderId: string, path: string) => Promise<{
+            data: {
+                folder?: KnowledgeFolder;
+                movedDocuments: Array<{
+                    documentId: string;
+                    fromPath: string;
+                    path: string;
+                }>;
+            };
+        }>;
+        deleteFolder: (spaceId: string, folderId: string) => Promise<{
+            deleted: boolean;
+            deletedDocuments: number;
+        }>;
+        listDocuments: (spaceId: string, options?: {
+            query?: string;
+            includeContent?: boolean;
+            limit?: number;
+        }) => Promise<{
+            data: KnowledgeDocument[];
+        }>;
+        getDocument: (spaceId: string, documentId: string) => Promise<{
+            data: KnowledgeDocument;
+        }>;
+        createDocument: (spaceId: string, params: {
+            path: string;
+            title?: string;
+            content: string;
+        }) => Promise<{
+            data: KnowledgeDocument;
+        }>;
+        updateDocument: (spaceId: string, documentId: string, params: {
+            path: string;
+            title?: string;
+            content: string;
+            expectedRevision?: number;
+        }) => Promise<{
+            data: KnowledgeDocument;
+        }>;
+        deleteDocument: (spaceId: string, documentId: string) => Promise<{
+            deleted: boolean;
+        }>;
+        importMarkdown: (spaceId: string, documents: Array<{
+            path: string;
+            title?: string;
+            content: string;
+            modifiedAt?: string;
+        }>, folders?: string[]) => Promise<{
+            data: {
+                created: number;
+                updated: number;
+                unchanged: number;
+                remoteKept: number;
+                folders: number;
+                failed: Array<{
+                    path: string;
+                    error: string;
+                }>;
+            };
+        }>;
+        graph: (spaceId: string) => Promise<{
+            data: KnowledgeGraph;
+        }>;
+        search: (params: {
+            query: string;
+            spaceIds?: string[];
+            limit?: number;
+        }) => Promise<{
+            data: {
+                query: string;
+                algorithm: "hybrid_graph";
+                results: KnowledgeSearchResult[];
+            };
+        }>;
+    };
     get spaces(): {
         list: (filter?: {
             memberId?: string;
@@ -2771,4 +3203,4 @@ declare function listWorkflowTemplates(): readonly [{
 }];
 declare function buildWorkflowTemplate(templateName: WorkflowTemplateName, ctx: WorkflowTemplateContext): WorkflowTemplateBuild;
 
-export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type ActivityEvent, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentLog, type AgentMemory, type AgentSkill, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type BillingCatalog, type BillingInvoice, type BillingPaymentMethod, type CapabilityName, type CapabilityProviderConfiguration, type CapabilityProviderDefinition, type CapabilityProviderInput, type ChatMessage, type CodeProject, type CodeProjectFile, CommonsClient, type CommonsClientConfig, CommonsError, type CommonsRequestOptions, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateUiPluginParams, type CreateWalletParams, type CreatedApiKey, type CreatedDeveloperApiKey, type CreditBalance, type CreditCampaign, type CreditDirection, type CreditLedgerEntry, type CreditPlatform, type CreditSummary, type CreditTransfer, type CreditWriteParams, type DeveloperApiKey, type DeveloperProject, type DeveloperProjectEnvironment, type FileArtifact, type FileContent, type FileContentArtifact, type FileContentDownload, type FlagEvaluation, type GenerateImageParams, type GeneratedImageAsset, type Goal, type LibraryGrant, type LibraryItem, type LibraryShareLink, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type OAuthConnection, type OAuthProvider, type OutputPresentation, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillAgentAssignment, type SkillIndex, type Space, type SpaceMember, type SpaceMessage, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UiPlugin, type UiPluginCapabilityGrant, type UiPluginCapabilityName, type UiPluginPermission, type UiPluginSurface, type UpdateMemoryParams, type UploadFileInput, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, type WorkflowValue, type WorkflowValueKind, buildWorkflowTemplate, listWorkflowTemplates };
+export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type ActivityEvent, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentLog, type AgentMemory, type AgentSkill, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type BillingCatalog, type BillingInvoice, type BillingPaymentMethod, type CapabilityName, type CapabilityProviderConfiguration, type CapabilityProviderDefinition, type CapabilityProviderInput, type ChatMessage, type CodeProject, type CodeProjectFile, CommonsClient, type CommonsClientConfig, CommonsError, type CommonsRequestOptions, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateUiPluginParams, type CreateWalletParams, type CreatedApiKey, type CreatedDeveloperApiKey, type CreditBalance, type CreditCampaign, type CreditDirection, type CreditLedgerEntry, type CreditPlatform, type CreditSummary, type CreditTransfer, type CreditWriteParams, type DeveloperApiKey, type DeveloperProject, type DeveloperProjectEnvironment, type FileArtifact, type FileContent, type FileContentArtifact, type FileContentDownload, type FlagEvaluation, type GenerateImageParams, type GeneratedImageAsset, type Goal, type KnowledgeDocument, type KnowledgeFolder, type KnowledgeGrant, type KnowledgeGraph, type KnowledgeLink, type KnowledgePermission, type KnowledgeProviderDefinition, type KnowledgeProviderId, type KnowledgeSearchResult, type KnowledgeSpace, type LibraryGrant, type LibraryItem, type LibraryShareLink, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type OAuthConnection, type OAuthProvider, type OutputPresentation, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillAgentAssignment, type SkillIndex, type Space, type SpaceMember, type SpaceMessage, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UiPlugin, type UiPluginCapabilityGrant, type UiPluginCapabilityName, type UiPluginPermission, type UiPluginSurface, type UpdateMemoryParams, type UploadFileInput, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, type WorkflowValue, type WorkflowValueKind, buildWorkflowTemplate, listWorkflowTemplates };

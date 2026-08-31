@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WorkflowRunsPanel } from "./workflow-runs-panel";
 import { WorkflowIntegrationsPanel } from "./workflow-integrations-panel";
 import { WorkflowResult } from "@/components/workflows/result/workflow-result";
+import { TrajectoryView } from "@/components/provenance/trajectory-view";
 import {
   Accordion,
   AccordionContent,
@@ -29,6 +30,7 @@ import {
   AlertCircle,
   PanelRightClose,
   SquareTerminal,
+  ShieldCheck,
 } from "lucide-react";
 import {
   extractWorkflowInputSchema,
@@ -47,6 +49,10 @@ export function TestPanel({ workflowId }: TestPanelProps) {
   const [execution, setExecution] = useState<WorkflowExecution | null>(null);
   const [pendingExecutionId, setPendingExecutionId] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
+  const [approvalSubmitting, setApprovalSubmitting] = useState(false);
+  const [approvalReason, setApprovalReason] = useState("");
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("run");
   const [open, setOpen] = useState(false);
   const { nodes, edges } = useWorkflowStore();
 
@@ -82,6 +88,9 @@ export function TestPanel({ workflowId }: TestPanelProps) {
   const handleRun = async () => {
     setLoading(true);
     setExecution(null);
+    setApprovalReason("");
+    setApprovalError(null);
+    setActiveTab("run");
     try {
       const cleanInputs = Object.entries(inputs).reduce((acc, [k, v]) => {
         if (v !== "" && v !== undefined && v !== null) acc[k] = v;
@@ -108,6 +117,64 @@ export function TestPanel({ workflowId }: TestPanelProps) {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApproval = async (action: "approve" | "reject") => {
+    if (!execution?.executionId || !execution.approvalToken) {
+      setApprovalError("This approval request is no longer active. Refresh the run and try again.");
+      return;
+    }
+    setApprovalSubmitting(true);
+    setApprovalError(null);
+    try {
+      const response = await fetch(
+        `/api/workflows/${workflowId}/executions/${execution.executionId}/${action}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            action === "approve"
+              ? {
+                  approvalToken: execution.approvalToken,
+                  approvalData: {
+                    reviewedIn: "workflow-studio",
+                    ...(approvalReason.trim()
+                      ? { note: approvalReason.trim() }
+                      : {}),
+                  },
+                }
+              : {
+                  approvalToken: execution.approvalToken,
+                  reason: approvalReason.trim() || undefined,
+                },
+          ),
+        },
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(body.message ?? body.error ?? `Could not ${action} workflow`);
+      setExecution((current) =>
+        current
+          ? {
+              ...current,
+              status: action === "approve" ? "running" : "failed",
+              approvalToken: undefined,
+              error:
+                action === "reject"
+                  ? approvalReason.trim() || "Rejected by human reviewer"
+                  : undefined,
+            }
+          : current,
+      );
+      setApprovalReason("");
+      if (action === "reject") setPendingExecutionId(undefined);
+    } catch (error) {
+      setApprovalError(
+        error instanceof Error ? error.message : `Could not ${action} workflow`,
+      );
+    } finally {
+      setApprovalSubmitting(false);
     }
   };
 
@@ -223,7 +290,11 @@ export function TestPanel({ workflowId }: TestPanelProps) {
   };
 
   return (
-    <div className="pointer-events-none absolute inset-y-3 right-3 z-20 flex w-[380px] flex-col items-end gap-2">
+    <div
+      className={`pointer-events-none absolute inset-y-3 right-3 z-20 flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-2 transition-[width] ${
+        open && activeTab === "provenance" ? "w-[760px]" : "w-[380px]"
+      }`}
+    >
       {/* Command cluster — Run is always one click away */}
       <div className="floating-panel pointer-events-auto flex items-center gap-1 p-1.5">
         <Button
@@ -265,11 +336,12 @@ export function TestPanel({ workflowId }: TestPanelProps) {
 
       {open && (
       <div className="floating-panel pointer-events-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden">
-      <Tabs defaultValue="run" className="flex min-h-0 flex-1 flex-col">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
         <div className="border-b border-border p-1.5">
-          <TabsList className="grid h-8 w-full grid-cols-3">
+          <TabsList className="grid h-8 w-full grid-cols-4">
             <TabsTrigger value="run" className="text-xs">Run</TabsTrigger>
             <TabsTrigger value="logs" className="text-xs">Logs</TabsTrigger>
+            <TabsTrigger value="provenance" className="text-xs">Provenance</TabsTrigger>
             <TabsTrigger value="integrations" className="text-xs">Integrations</TabsTrigger>
           </TabsList>
         </div>
@@ -320,18 +392,55 @@ export function TestPanel({ workflowId }: TestPanelProps) {
 
               {/* Awaiting approval */}
               {execution.status === "awaiting_approval" && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-1">
-                  <p className="text-xs font-medium text-amber-700">Awaiting approval</p>
+                <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-amber-700 dark:text-amber-400" />
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Human review required</p>
+                  </div>
                   {execution.pausedAtNode && (
-                    <p className="text-[11px] text-amber-600">
+                    <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80">
                       Paused at: <code className="font-mono">{execution.pausedAtNode}</code>
                     </p>
                   )}
-                  {execution.approvalToken && (
-                    <p className="text-[11px] text-amber-600 break-all">
-                      Token: <code className="font-mono">{execution.approvalToken}</code>
+                  <Textarea
+                    value={approvalReason}
+                    onChange={(event) => setApprovalReason(event.target.value)}
+                    placeholder="Provenance note or rejection reason (optional; do not include secrets)"
+                    rows={2}
+                    className="bg-background text-xs"
+                    disabled={approvalSubmitting}
+                  />
+                  {approvalError && (
+                    <p role="alert" className="text-[11px] text-destructive">
+                      {approvalError}
                     </p>
                   )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={approvalSubmitting || !execution.approvalToken}
+                      onClick={() => handleApproval("reject")}
+                      className="h-8"
+                    >
+                      {approvalSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                      Reject
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={approvalSubmitting || !execution.approvalToken}
+                      onClick={() => handleApproval("approve")}
+                      className="h-8"
+                    >
+                      {approvalSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                      Approve
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Your identity, decision, time, and note are recorded in the provenance trail. Approval credentials are never displayed or exported.
+                  </p>
                 </div>
               )}
 
@@ -426,6 +535,17 @@ export function TestPanel({ workflowId }: TestPanelProps) {
             workflowId={workflowId}
             refreshKey={`${execution?.executionId ?? ""}:${execution?.status ?? ""}`}
           />
+        </TabsContent>
+
+        <TabsContent value="provenance" className="m-0 min-h-0 flex-1 overflow-hidden">
+          {execution?.executionId ? (
+            <TrajectoryView scopeType="workflow" scopeId={execution.executionId} />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
+              <ShieldCheck className="h-6 w-6" />
+              <span>Run the workflow to see its sources, contributors, decisions, and trajectory.</span>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="integrations" className="m-0 min-h-0 flex-1">

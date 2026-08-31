@@ -77,6 +77,19 @@ export AGC_AGENT_ID=agent_abc123                 # optional default agent
 
 Env vars take precedence over the config file.
 
+## Provenance reports
+
+Runs capture privacy-preserving provenance metadata by default. You can choose the policy per invocation and inspect a report without reading raw trace JSON:
+
+```bash
+agc run --agent <agentId> --provenance metadata "Research this topic"
+agc provenance session <sessionId>
+agc provenance workflow <executionId>
+agc provenance bundle <traceId> > provenance.json
+```
+
+`--provenance full` explicitly enables bounded prompt/output capture; credentials and private reasoning remain excluded. `--onchain-provenance` requests an optional anchor when enabled by the environment.
+
 ---
 
 ## Developer projects and API keys
@@ -132,13 +145,13 @@ agc chat --agent <agentId> --no-stream           # wait for full response before
 
 In-session slash commands:
 
-| Command  | Description                                      |
-|----------|--------------------------------------------------|
-| /help    | Show available slash commands                    |
-| /session | Print the current session ID (for later resume)  |
-| /tools   | Show local tools status and cached permissions   |
-| /clear   | Clear the terminal screen                        |
-| /quit    | Exit — session is preserved for future resume    |
+| Command  | Description                                     |
+| -------- | ----------------------------------------------- |
+| /help    | Show available slash commands                   |
+| /session | Print the current session ID (for later resume) |
+| /tools   | Show local tools status and cached permissions  |
+| /clear   | Clear the terminal screen                       |
+| /quit    | Exit — session is preserved for future resume   |
 
 File context: prefix any path with `@` to inject its contents into your message:
 
@@ -182,10 +195,10 @@ agc run --agent <agentId> "Now refactor main.ts" --session ses_abc123
 # ... response with full prior context ...
 ```
 
-| Flag | Description |
-|---|---|
+| Flag             | Description                                                  |
+| ---------------- | ------------------------------------------------------------ |
 | `--session <id>` | Resume an existing session. Validates the ID before running. |
-| `--new-session` | Create a new session, print its ID, use it for this run. |
+| `--new-session`  | Create a new session, print its ID, use it for this run.     |
 
 The session ID is printed at the end of every run that uses one, so you can copy it straight from the terminal.
 
@@ -201,27 +214,27 @@ agc run --agent <agentId> "Fix the lint errors in src/" --yes
 # → auto-approves all operations — no prompts
 ```
 
-| Flag | Description |
-|---|---|
-| `--local` | Enable local file system access with per-operation confirmation prompts |
-| `--yes` / `-y` | Enable local file system access and auto-approve all operations |
+| Flag           | Description                                                             |
+| -------------- | ----------------------------------------------------------------------- |
+| `--local`      | Enable local file system access with per-operation confirmation prompts |
+| `--yes` / `-y` | Enable local file system access and auto-approve all operations         |
 
 All file operations are sandboxed to the current working directory. Sensitive paths (`.ssh`, `.aws`, `.env`, credentials) are always blocked regardless of flags.
 
 When `--local` or `--yes` is active, the agent gains access to these tools:
 
-| Tool | Description |
-|---|---|
-| `cli_read_file` | Read a file (plain text, PDF, or Word doc) |
-| `cli_write_file` | Write or overwrite a file |
-| `cli_list_directory` | List directory contents |
-| `cli_search_files` | Find files by name pattern |
-| `cli_run_command` | Run a shell command and capture output |
-| `cli_start_process` | Start a long-running background command |
+| Tool                   | Description                                         |
+| ---------------------- | --------------------------------------------------- |
+| `cli_read_file`        | Read a file (plain text, PDF, or Word doc)          |
+| `cli_write_file`       | Write or overwrite a file                           |
+| `cli_list_directory`   | List directory contents                             |
+| `cli_search_files`     | Find files by name pattern                          |
+| `cli_run_command`      | Run a shell command and capture output              |
+| `cli_start_process`    | Start a long-running background command             |
 | `cli_wait_for_process` | Wait for a background process and stream its output |
-| `cli_process_status` | Check status of a background process |
-| `cli_kill_process` | Kill a background process |
-| `cli_list_processes` | List all background processes this session |
+| `cli_process_status`   | Check status of a background process                |
+| `cli_kill_process`     | Kill a background process                           |
+| `cli_list_processes`   | List all background processes this session          |
 
 ### Combining flags
 

@@ -40,4 +40,3 @@ LiveParticipantSchema.index({ sessionId: 1, lastSeenAt: -1 });
 
 export default mongoose.models.LiveParticipant ||
   mongoose.model<ILiveParticipant>("LiveParticipant", LiveParticipantSchema);
-

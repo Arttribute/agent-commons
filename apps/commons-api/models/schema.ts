@@ -902,6 +902,10 @@ export const libraryShareLink = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     useCount: integer('use_count').default(0).notNull(),
+    disclosure: jsonb('disclosure')
+      .$type<{ artifact: boolean; provenance: boolean; events: boolean }>()
+      .default({ artifact: true, provenance: true, events: false })
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .default(sql`timezone('utc', now())`)
       .notNull(),
@@ -930,6 +934,261 @@ export const libraryAuditEvent = pgTable(
   },
   (table) => ({
     itemIdx: index('idx_library_audit_item').on(table.itemId, table.createdAt),
+  }),
+);
+
+/* ─────────────────────────  KNOWLEDGE SPACES  ───────────────────────── */
+
+/**
+ * A human-and-agent editable Markdown knowledge boundary. "Knowledge Space"
+ * is the product term; providers keep the storage/sync implementation
+ * replaceable without changing grants, graph indexing, or agent tools.
+ */
+export const knowledgeSpace = pgTable(
+  'knowledge_space',
+  {
+    spaceId: uuid('space_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    ownerUserId: text('owner_user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    name: text('name').notNull(),
+    description: text('description'),
+    provider: text('provider').default('native').notNull(),
+    providerConfig: jsonb('provider_config')
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    color: text('color').default('teal').notNull(),
+    status: text('status').default('active').notNull(),
+    isDefault: pgBoolean('is_default').default(false).notNull(),
+    autoGrantNewAgents: pgBoolean('auto_grant_new_agents')
+      .default(false)
+      .notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    ownerIdx: index('idx_knowledge_space_owner').on(
+      table.ownerUserId,
+      table.updatedAt,
+    ),
+    workspaceIdx: index('idx_knowledge_space_workspace').on(
+      table.workspaceId,
+      table.updatedAt,
+    ),
+  }),
+);
+
+/** Explicit subject grants are the enterprise-ready authorization seam. */
+export const knowledgeSpaceGrant = pgTable(
+  'knowledge_space_grant',
+  {
+    grantId: uuid('grant_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => knowledgeSpace.spaceId, { onDelete: 'cascade' }),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
+    permission: text('permission').default('read').notNull(),
+    autoRetrieve: pgBoolean('auto_retrieve').default(true).notNull(),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    subjectIdx: index('idx_knowledge_space_grant_subject').on(
+      table.subjectType,
+      table.subjectId,
+    ),
+    uniqueSubject: uniqueIndex('idx_knowledge_space_grant_unique').on(
+      table.spaceId,
+      table.subjectType,
+      table.subjectId,
+    ),
+  }),
+);
+
+/** Durable folders, including empty folders created before their first note. */
+export const knowledgeFolder = pgTable(
+  'knowledge_folder',
+  {
+    folderId: uuid('folder_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => knowledgeSpace.spaceId, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    createdByType: text('created_by_type').default('user').notNull(),
+    createdById: text('created_by_id').notNull(),
+    updatedByType: text('updated_by_type').default('user').notNull(),
+    updatedById: text('updated_by_id').notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    spacePathIdx: index('idx_knowledge_folder_space_path').on(
+      table.spaceId,
+      table.path,
+    ),
+  }),
+);
+
+/** Canonical mutable Markdown document. Folder structure lives in `path`. */
+export const knowledgeDocument = pgTable(
+  'knowledge_document',
+  {
+    documentId: uuid('document_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => knowledgeSpace.spaceId, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    title: text('title').notNull(),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    revision: integer('revision').default(1).notNull(),
+    frontmatter: jsonb('frontmatter')
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    tags: text('tags')
+      .array()
+      .default(sql`'{}'::text[]`)
+      .notNull(),
+    providerDocumentId: text('provider_document_id'),
+    providerRevision: text('provider_revision'),
+    createdByType: text('created_by_type').default('user').notNull(),
+    createdById: text('created_by_id').notNull(),
+    updatedByType: text('updated_by_type').default('user').notNull(),
+    updatedById: text('updated_by_id').notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    spaceUpdatedIdx: index('idx_knowledge_document_space_updated').on(
+      table.spaceId,
+      table.updatedAt,
+    ),
+    hashIdx: index('idx_knowledge_document_hash').on(
+      table.spaceId,
+      table.contentHash,
+    ),
+  }),
+);
+
+/** Full snapshots make human/agent edits reversible and inspectable. */
+export const knowledgeDocumentRevision = pgTable(
+  'knowledge_document_revision',
+  {
+    revisionId: uuid('revision_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => knowledgeDocument.documentId, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    path: text('path').notNull(),
+    title: text('title').notNull(),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id').notNull(),
+    provenanceTraceId: uuid('provenance_trace_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    documentRevisionIdx: uniqueIndex(
+      'idx_knowledge_document_revision_unique',
+    ).on(table.documentId, table.revision),
+  }),
+);
+
+/** Explicit wikilinks/Markdown links form the inspectable graph. */
+export const knowledgeLink = pgTable(
+  'knowledge_link',
+  {
+    linkId: uuid('link_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => knowledgeSpace.spaceId, { onDelete: 'cascade' }),
+    fromDocumentId: uuid('from_document_id')
+      .notNull()
+      .references(() => knowledgeDocument.documentId, { onDelete: 'cascade' }),
+    toDocumentId: uuid('to_document_id').references(
+      () => knowledgeDocument.documentId,
+      { onDelete: 'set null' },
+    ),
+    targetPath: text('target_path').notNull(),
+    label: text('label'),
+    relation: text('relation').default('wikilink').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    fromIdx: index('idx_knowledge_link_from').on(table.fromDocumentId),
+    toIdx: index('idx_knowledge_link_to').on(table.toDocumentId),
+    spaceIdx: index('idx_knowledge_link_space').on(table.spaceId),
+  }),
+);
+
+/** Heading-aware citeable units used by lexical, vector, and graph retrieval. */
+export const knowledgeChunk = pgTable(
+  'knowledge_chunk',
+  {
+    chunkId: uuid('chunk_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => knowledgeDocument.documentId, { onDelete: 'cascade' }),
+    chunkIndex: integer('chunk_index').notNull(),
+    heading: text('heading'),
+    content: text('content').notNull(),
+    tokenCount: integer('token_count').notNull(),
+    embedding: vector('embedding', { dimensions: 1536 }),
+    embeddingModel: text('embedding_model'),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .default({})
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    documentChunkIdx: uniqueIndex('idx_knowledge_chunk_position').on(
+      table.documentId,
+      table.chunkIndex,
+    ),
   }),
 );
 
@@ -2059,6 +2318,141 @@ export const usageEvent = pgTable('usage_event', {
     .default(sql`timezone('utc', now())`)
     .notNull(),
 });
+
+/* ───────────────────────  AGENT PROVENANCE  ─────────────────────── */
+
+/**
+ * One durable trajectory per top-level agent invocation. The trace id is the
+ * same id already emitted by runAgent(), so usage, logs, SSE events and
+ * provenance can be correlated without another lookup.
+ */
+export const provenanceRun = pgTable(
+  'provenance_run',
+  {
+    traceId: uuid('trace_id').primaryKey(),
+    sessionId: uuid('session_id').references(() => session.sessionId, {
+      onDelete: 'set null',
+    }),
+    agentId: text('agent_id').references(() => agent.agentId, {
+      onDelete: 'cascade',
+    }),
+    scopeType: text('scope_type').notNull().default('agent_run'),
+    scopeId: text('scope_id'),
+    initiator: text('initiator'),
+    workspaceId: text('workspace_id'),
+    status: text('status').notNull().default('running'),
+    captureMode: text('capture_mode').notNull().default('metadata'),
+    provider: text('provider'),
+    modelId: text('model_id'),
+    onchainRequested: pgBoolean('onchain_requested').notNull().default(false),
+    eventCount: integer('event_count').notNull().default(0),
+    droppedEventCount: integer('dropped_event_count').notNull().default(0),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    cachedTokens: integer('cached_tokens').notNull().default(0),
+    costUsd: real('cost_usd').notNull().default(0),
+    durationMs: integer('duration_ms'),
+    bundleHash: text('bundle_hash'),
+    anchorProvider: text('anchor_provider'),
+    anchorStatus: text('anchor_status').notNull().default('not_requested'),
+    anchorRef: text('anchor_ref'),
+    anchorMetadata: jsonb('anchor_metadata').$type<Record<string, any>>(),
+    metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    sessionStartedIdx: index('idx_provenance_run_session_started').on(
+      table.sessionId,
+      table.startedAt,
+    ),
+    agentStartedIdx: index('idx_provenance_run_agent_started').on(
+      table.agentId,
+      table.startedAt,
+    ),
+    anchorStatusIdx: index('idx_provenance_run_anchor_status').on(
+      table.anchorStatus,
+      table.updatedAt,
+    ),
+    scopeStartedIdx: index('idx_provenance_run_scope_started').on(
+      table.scopeType,
+      table.scopeId,
+      table.startedAt,
+    ),
+  }),
+);
+
+/**
+ * Append-only facts within a run. Payload/result are deliberately nullable:
+ * metadata capture stores hashes, sizes and safe summaries while full capture
+ * is an explicit user choice.
+ */
+export const provenanceEvent = pgTable(
+  'provenance_event',
+  {
+    eventId: uuid('event_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    traceId: uuid('trace_id')
+      .notNull()
+      .references(() => provenanceRun.traceId, { onDelete: 'cascade' }),
+    sessionId: uuid('session_id').references(() => session.sessionId, {
+      onDelete: 'set null',
+    }),
+    sequence: integer('sequence').notNull(),
+    category: text('category').notNull(),
+    eventType: text('event_type').notNull(),
+    name: text('name').notNull(),
+    phase: text('phase'),
+    status: text('status').notNull().default('completed'),
+    spanId: text('span_id'),
+    parentSpanId: text('parent_span_id'),
+    summary: text('summary'),
+    payload: jsonb('payload').$type<Record<string, any>>(),
+    result: jsonb('result').$type<Record<string, any>>(),
+    contentHash: text('content_hash'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    cachedTokens: integer('cached_tokens'),
+    costUsd: real('cost_usd'),
+    durationMs: integer('duration_ms'),
+    eaaAction: jsonb('eaa_action').$type<Record<string, any>>(),
+    metadata: jsonb('metadata').$type<Record<string, any>>().default({}),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    traceSequenceUnique: uniqueIndex('uq_provenance_event_trace_sequence').on(
+      table.traceId,
+      table.sequence,
+    ),
+    traceStartedIdx: index('idx_provenance_event_trace_started').on(
+      table.traceId,
+      table.startedAt,
+    ),
+    sessionStartedIdx: index('idx_provenance_event_session_started').on(
+      table.sessionId,
+      table.startedAt,
+    ),
+    sessionCreatedIdx: index('idx_provenance_event_session_created').on(
+      table.sessionId,
+      table.createdAt,
+    ),
+    categoryIdx: index('idx_provenance_event_category').on(
+      table.category,
+      table.startedAt,
+    ),
+  }),
+);
 
 /* ─────────────────────────  RELATIONS  ───────────────────────── */
 

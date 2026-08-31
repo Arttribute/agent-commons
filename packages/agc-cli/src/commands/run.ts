@@ -1,36 +1,73 @@
-import { Command } from 'commander';
-import * as readline from 'readline';
-import { loadConfig, makeClient } from '../config.js';
-import { c, sym, spin, detail, printError, jsonOut } from '../ui.js';
+import { Command } from "commander";
+import * as readline from "readline";
+import { loadConfig, makeClient } from "../config.js";
+import { c, sym, spin, detail, printError, jsonOut } from "../ui.js";
 import {
   buildLocalToolsManifest,
   buildDirSnapshot,
   runLocalTool,
   type LocalToolsConfig,
-} from '../local-tools.js';
+} from "../local-tools.js";
 
 export function runCommand(): Command {
-  return new Command('run')
-    .description('Send a single prompt to an agent and stream the response')
-    .argument('<prompt>', 'Prompt text to send')
-    .option('--agent <agentId>', 'Agent ID')
-    .option('--session <sessionId>', 'Resume an existing session by ID')
-    .option('--new-session', 'Create a new session and print its ID for future use')
-    .option('--computer', "Give the agent access to its persistent cloud computer")
-    .option('--local', 'Enable local file system access (with permission prompts)')
-    .option('-y, --yes', 'Enable local file system access and auto-approve all operations')
-    .option('--no-stream', 'Disable streaming (wait for full response)')
-    .option('--json', 'Output raw event stream as JSON lines')
+  return new Command("run")
+    .description("Send a single prompt to an agent and stream the response")
+    .argument("<prompt>", "Prompt text to send")
+    .option("--agent <agentId>", "Agent ID")
+    .option("--session <sessionId>", "Resume an existing session by ID")
+    .option(
+      "--new-session",
+      "Create a new session and print its ID for future use",
+    )
+    .option(
+      "--computer",
+      "Give the agent access to its persistent cloud computer",
+    )
+    .option(
+      "--local",
+      "Enable local file system access (with permission prompts)",
+    )
+    .option(
+      "-y, --yes",
+      "Enable local file system access and auto-approve all operations",
+    )
+    .option("--no-stream", "Disable streaming (wait for full response)")
+    .option("--json", "Output raw event stream as JSON lines")
+    .option(
+      "--provenance <mode>",
+      "Provenance capture: off, metadata, or full",
+      "metadata",
+    )
+    .option(
+      "--onchain-provenance",
+      "Request an optional on-chain anchor for this run",
+    )
     .action(async (prompt: string, opts) => {
       const cfg = loadConfig();
       const agentId = opts.agent ?? cfg.defaultAgentId;
       if (!agentId) {
-        console.error(c.error('Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`'));
+        console.error(
+          c.error(
+            "Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`",
+          ),
+        );
         process.exit(1);
       }
 
       if (opts.session && opts.newSession) {
-        console.error(c.error('Cannot use --session and --new-session together.'));
+        console.error(
+          c.error("Cannot use --session and --new-session together."),
+        );
+        process.exit(1);
+      }
+      if (!["off", "metadata", "full"].includes(opts.provenance)) {
+        console.error(c.error("--provenance must be off, metadata, or full."));
+        process.exit(1);
+      }
+      if (opts.onchainProvenance && opts.provenance === "off") {
+        console.error(
+          c.error("--onchain-provenance requires metadata or full capture."),
+        );
         process.exit(1);
       }
 
@@ -39,7 +76,7 @@ export function runCommand(): Command {
 
       // Validate an existing session
       if (opts.session) {
-        const spinner = spin('Loading session…');
+        const spinner = spin("Loading session…");
         try {
           await client.sessions.get(opts.session);
           spinner.stop();
@@ -52,13 +89,13 @@ export function runCommand(): Command {
 
       // Create a new session when requested
       if (opts.newSession) {
-        const spinner = spin('Creating session…');
+        const spinner = spin("Creating session…");
         try {
           const res = await client.sessions.create({
             agentId,
-            initiator: cfg.initiator ?? '',
+            initiator: cfg.initiator ?? "",
             title: `agc run ${new Date().toISOString().slice(0, 16)}`,
-            source: 'cli',
+            source: "cli",
           });
           const session = (res as any)?.data ?? res;
           sessionId = session.sessionId;
@@ -80,39 +117,61 @@ export function runCommand(): Command {
         const rootDir = process.cwd();
         localToolsCfg = {
           rootDir,
-          sessionId: sessionId ?? 'run',
+          sessionId: sessionId ?? "run",
           appendLog: () => {},
           permissions: new Map(),
           agentId,
           autoApprove,
         };
         const snapshot = buildDirSnapshot(rootDir, 2);
-        cliContext = buildLocalToolsManifest(rootDir, snapshot, [], autoApprove);
+        cliContext = buildLocalToolsManifest(
+          rootDir,
+          snapshot,
+          [],
+          autoApprove,
+        );
       }
 
       // Show session header when a session is in use (unless outputting raw JSON)
       if (!opts.json) {
         const rows: [string, string][] = [];
         if (sessionId) {
-          const label = opts.newSession ? `${c.id(sessionId)}${c.dim(' (new)')}` : `${c.id(sessionId)}${c.dim(' (resumed)')}`;
-          rows.push(['Session', label]);
+          const label = opts.newSession
+            ? `${c.id(sessionId)}${c.dim(" (new)")}`
+            : `${c.id(sessionId)}${c.dim(" (resumed)")}`;
+          rows.push(["Session", label]);
         }
         if (localEnabled) {
-          rows.push(['Local tools', autoApprove ? c.warn('enabled  (auto-approve on)') : c.success('enabled')]);
+          rows.push([
+            "Local tools",
+            autoApprove
+              ? c.warn("enabled  (auto-approve on)")
+              : c.success("enabled"),
+          ]);
         }
         if (opts.computer) {
-          rows.push(['Cloud computer', c.success('enabled') + c.dim('  (persistent, remote)')]);
+          rows.push([
+            "Cloud computer",
+            c.success("enabled") + c.dim("  (persistent, remote)"),
+          ]);
         }
-        if (rows.length) { detail(rows); console.log(); }
+        if (rows.length) {
+          detail(rows);
+          console.log();
+        }
       }
 
       const params = {
         agentId,
         sessionId,
-        messages: [{ role: 'user' as const, content: prompt }],
+        messages: [{ role: "user" as const, content: prompt }],
         ...(cfg.initiator && { initiatorId: cfg.initiator }),
         ...(opts.computer && { computerRequest: { enabled: true } }),
         ...(cliContext && { cliContext }),
+        provenance: {
+          mode: opts.provenance,
+          onchain: Boolean(opts.onchainProvenance),
+        },
       };
 
       // Local tools require the SSE channel so the CLI can execute
@@ -120,14 +179,23 @@ export function runCommand(): Command {
       // Keep using the streaming transport when --local/--yes is enabled,
       // even if the caller requested presentation without streaming.
       if (opts.noStream && !localEnabled) {
-        const spinner = spin('Running…');
+        const spinner = spin("Running…");
         try {
           const result = await client.run.once(params);
           spinner.stop();
           if (opts.json) return jsonOut(result);
-          const text = result?.content ?? result?.text ?? result?.message ?? JSON.stringify(result);
+          const text =
+            result?.content ??
+            result?.text ??
+            result?.message ??
+            JSON.stringify(result);
           console.log(text);
-          if (sessionId) console.log(c.dim(`\nSession: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`));
+          if (sessionId)
+            console.log(
+              c.dim(
+                `\nSession: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`,
+              ),
+            );
         } catch (err) {
           spinner.stop();
           printError(err);
@@ -140,25 +208,31 @@ export function runCommand(): Command {
       try {
         let hasOutput = false;
         let toolStartMs = 0;
-        let lastToolName = '';
+        let lastToolName = "";
         for await (const event of client.agents.stream(params)) {
           if (opts.json) {
             console.log(JSON.stringify(event));
             continue;
           }
-          if (event.type === 'token') {
-            process.stdout.write((event as any).content ?? '');
+          if (event.type === "token") {
+            process.stdout.write((event as any).content ?? "");
             hasOutput = true;
-          } else if (event.type === 'cli_tool_request' && localToolsCfg) {
+          } else if (event.type === "cli_tool_request" && localToolsCfg) {
             const { requestId, tool: toolName, args } = event as any;
-            const displayName = String(toolName).replace('cli_', '');
-            if (hasOutput) { process.stdout.write('\n'); hasOutput = false; }
-            process.stdout.write(`  ${c.dim('─')} ${c.bold(displayName)}`);
+            const displayName = String(toolName).replace("cli_", "");
+            if (hasOutput) {
+              process.stdout.write("\n");
+              hasOutput = false;
+            }
+            process.stdout.write(`  ${c.dim("─")} ${c.bold(displayName)}`);
             const startMs = Date.now();
             let result: string;
             let toolOk = true;
             try {
-              result = await runLocalTool({ tool: displayName, args: args ?? {} }, localToolsCfg);
+              result = await runLocalTool(
+                { tool: displayName, args: args ?? {} },
+                localToolsCfg,
+              );
             } catch (err: any) {
               result = `Error: ${err?.message ?? String(err)}`;
               toolOk = false;
@@ -166,37 +240,54 @@ export function runCommand(): Command {
             const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
             readline.cursorTo(process.stdout, 0);
             readline.clearLine(process.stdout, 0);
-            process.stdout.write(`  ${c.dim('─')} ${c.bold(displayName)}  ${toolOk ? sym.ok : sym.fail}  ${c.dim('(' + elapsed + 's)')}\n`);
+            process.stdout.write(
+              `  ${c.dim("─")} ${c.bold(displayName)}  ${toolOk ? sym.ok : sym.fail}  ${c.dim("(" + elapsed + "s)")}\n`,
+            );
             try {
               await client.agents.submitCliToolResult(requestId, result);
-            } catch { /* non-fatal */ }
-          } else if (event.type === 'toolStart') {
-            lastToolName = (event as any).toolName ?? '';
+            } catch {
+              /* non-fatal */
+            }
+          } else if (event.type === "toolStart") {
+            lastToolName = (event as any).toolName ?? "";
             toolStartMs = Date.now();
-            if (hasOutput) { process.stdout.write('\n'); hasOutput = false; }
-            process.stdout.write(`  ${c.dim('─')} ${c.bold(lastToolName)}`);
-          } else if (event.type === 'toolEnd') {
+            if (hasOutput) {
+              process.stdout.write("\n");
+              hasOutput = false;
+            }
+            process.stdout.write(`  ${c.dim("─")} ${c.bold(lastToolName)}`);
+          } else if (event.type === "toolEnd") {
             const elapsed = ((Date.now() - toolStartMs) / 1000).toFixed(1);
             readline.cursorTo(process.stdout, 0);
             readline.clearLine(process.stdout, 0);
-            process.stdout.write(`  ${c.dim('─')} ${c.bold(lastToolName)}  ${sym.ok}  ${c.dim('(' + elapsed + 's)')}\n`);
-          } else if (event.type === 'final') {
-            if (hasOutput) process.stdout.write('\n');
+            process.stdout.write(
+              `  ${c.dim("─")} ${c.bold(lastToolName)}  ${sym.ok}  ${c.dim("(" + elapsed + "s)")}\n`,
+            );
+          } else if (event.type === "final") {
+            if (hasOutput) process.stdout.write("\n");
             const e = event as any;
-            const finalText = e.content
-              ?? e.payload?.content
-              ?? e.payload?.text
-              ?? e.payload?.message;
+            const finalText =
+              e.content ??
+              e.payload?.content ??
+              e.payload?.text ??
+              e.payload?.message;
             if (finalText && !hasOutput) console.log(finalText);
-            if (sessionId) console.log(c.dim(`\nSession: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`));
+            if (sessionId)
+              console.log(
+                c.dim(
+                  `\nSession: ${sessionId}  (resume with: agc run --session ${sessionId} "<prompt>")`,
+                ),
+              );
             break;
-          } else if (event.type === 'error') {
-            if (hasOutput) process.stdout.write('\n');
-            console.error(`\n${sym.fail} ${c.error((event as any).message ?? 'Error')}`);
+          } else if (event.type === "error") {
+            if (hasOutput) process.stdout.write("\n");
+            console.error(
+              `\n${sym.fail} ${c.error((event as any).message ?? "Error")}`,
+            );
             process.exit(1);
           }
         }
-        if (hasOutput && !opts.json) process.stdout.write('\n');
+        if (hasOutput && !opts.json) process.stdout.write("\n");
       } catch (err) {
         printError(err);
         process.exit(1);

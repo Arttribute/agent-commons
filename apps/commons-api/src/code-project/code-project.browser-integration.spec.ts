@@ -112,10 +112,7 @@ createRoot(document.getElementById('root')).render(<App />);`,
       ].join('; ');
       expect(preview.productionPolicies).toContain(productionCsp);
       expect(previewResponse.headers.get('content-security-policy')).toBe(
-        productionCsp.replace(
-          "connect-src 'none'",
-          `connect-src ${preview.origin}`,
-        ),
+        productionCsp,
       );
       expect(await previewResponse.text()).toContain(
         'name="agent-commons-runtime" content="2"',
@@ -220,6 +217,67 @@ createRoot(document.getElementById('root')).render(<App />);`,
       expect(
         result.screenshots.every((screenshot) => screenshot.content.length > 0),
       ).toBe(true);
+    } finally {
+      if (previousFrameAncestors === undefined) {
+        delete process.env.PLUGIN_FRAME_ANCESTORS;
+      } else {
+        process.env.PLUGIN_FRAME_ANCESTORS = previousFrameAncestors;
+      }
+      await preview?.close();
+    }
+  });
+
+  it('rejects a bundled CSS orientation lock without loosening the opaque-frame CSP', async () => {
+    const builder = new CodeProjectBuilder();
+    const verifier = new CodeProjectVerifier();
+    const build = await builder.build({
+      name: 'Orientation lock fixture',
+      entryFile: 'src/main.tsx',
+      files: [
+        {
+          path: 'src/main.tsx',
+          content: `import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { AppShell, Card } from '@agent-commons/ui';
+import './orientation.css';
+function App() { return <AppShell><Card className="orientation-lock p-4"><h1 className="m-0 text-lg font-semibold">Orientation check</h1><p className="text-sm">This app must work in either orientation.</p></Card></AppShell>; }
+createRoot(document.getElementById('root')).render(<App />);`,
+        },
+        {
+          path: 'src/orientation.css',
+          content:
+            '@media (orientation: landscape) { .orientation-lock { transform: rotate(90deg); } }',
+        },
+      ],
+    });
+
+    const previousFrameAncestors = process.env.PLUGIN_FRAME_ANCESTORS;
+    process.env.PLUGIN_FRAME_ANCESTORS = 'http://127.0.0.1:41737';
+    let preview:
+      | Awaited<ReturnType<typeof startProductionPreviewServer>>
+      | undefined;
+
+    try {
+      preview = await startProductionPreviewServer(build.assets);
+      const result = await verifier.verify(
+        preview.url,
+        [],
+        [{ type: 'widget', width: 380, height: 480 }],
+      );
+
+      expect(result.passed).toBe(false);
+      expect(result.consoleErrors).toEqual([]);
+      expect(result.requestFailures).toEqual([]);
+      expect(result.accessibilityViolations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'css-orientation-lock',
+            impact: 'serious',
+            nodes: 1,
+          }),
+        ]),
+      );
+      expect(result.checks.every((check) => !check.passed)).toBe(true);
     } finally {
       if (previousFrameAncestors === undefined) {
         delete process.env.PLUGIN_FRAME_ANCESTORS;
@@ -626,8 +684,11 @@ async function startProductionPreviewServer(assets: BuiltAsset[]) {
     }
 
     const path = decodeURIComponent(requestUrl.pathname.slice(rootPath.length));
-    const adapter = responseAdapter(response, requestUrl.origin, (policy) =>
-      productionPolicies.push(policy),
+    const adapter = responseAdapter(
+      response,
+      requestUrl.origin,
+      (policy) => productionPolicies.push(policy),
+      false,
     );
     const controllerRequest = {
       originalUrl: `${requestUrl.pathname}${requestUrl.search}`,
@@ -1000,11 +1061,13 @@ function responseAdapter(
       return adapter;
     },
     setHeader(name: string, value: string) {
+      if (name.toLocaleLowerCase() === 'content-security-policy') {
+        onProductionCsp(value);
+      }
       if (
         allowOpaqueLoopbackAssets &&
         name.toLocaleLowerCase() === 'content-security-policy'
       ) {
-        onProductionCsp(value);
         // A sandboxed document has an opaque origin. Chromium consequently
         // classifies its temporary loopback stylesheet fetch as connect-src.
         // Production stays `connect-src 'none'`; this opt-in local harness

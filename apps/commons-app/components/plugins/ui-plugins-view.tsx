@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AppWindow,
@@ -12,13 +12,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import {
+  CREATE_UI_PLUGIN_HASH,
+  openUiPluginCreator,
+} from "@/lib/commons-copilot-events";
 import { notifyUiPluginsChanged } from "@/lib/ui-plugin-events";
 import type { UiPlugin } from "./types";
 
 export function UiPluginsView() {
   const [plugins, setPlugins] = useState<UiPlugin[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<Set<string>>(() => new Set());
+  const savingIdsRef = useRef(new Set<string>());
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -31,7 +36,28 @@ export function UiPluginsView() {
   useEffect(() => void load(), [load]);
 
   const toggle = async (plugin: UiPlugin, active: boolean) => {
-    setSaving(plugin.pluginId);
+    if (savingIdsRef.current.has(plugin.pluginId)) return;
+    savingIdsRef.current.add(plugin.pluginId);
+    setSavingIds(new Set(savingIdsRef.current));
+    const optimisticPlugin: UiPlugin = {
+      ...plugin,
+      status: active ? "active" : "disabled",
+    };
+    setPlugins((items) =>
+      items.map((item) =>
+        item.pluginId === plugin.pluginId ? optimisticPlugin : item,
+      ),
+    );
+    // Removing a widget optimistically is safe and makes disabling feel
+    // immediate. Enabling waits for the API to re-check the pinned,
+    // verified deployment before the widget host is allowed to mount it.
+    if (!active) {
+      notifyUiPluginsChanged({
+        pluginId: plugin.pluginId,
+        status: optimisticPlugin.status,
+        plugin: optimisticPlugin,
+      });
+    }
     try {
       const response = await fetch(
         `/api/ui-plugins/${plugin.pluginId}/status`,
@@ -43,6 +69,16 @@ export function UiPluginsView() {
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        setPlugins((items) =>
+          items.map((item) =>
+            item.pluginId === plugin.pluginId ? plugin : item,
+          ),
+        );
+        notifyUiPluginsChanged({
+          pluginId: plugin.pluginId,
+          status: plugin.status,
+          plugin,
+        });
         toast({
           title: "Could not update app",
           description: payload.message || payload.error || "Please try again.",
@@ -61,24 +97,25 @@ export function UiPluginsView() {
         plugin: payload.data,
       });
     } catch {
+      setPlugins((items) =>
+        items.map((item) =>
+          item.pluginId === plugin.pluginId ? plugin : item,
+        ),
+      );
+      notifyUiPluginsChanged({
+        pluginId: plugin.pluginId,
+        status: plugin.status,
+        plugin,
+      });
       toast({
         title: "Could not update app",
         description: "The app registry could not be reached. Please try again.",
         variant: "destructive",
       });
     } finally {
-      setSaving(null);
+      savingIdsRef.current.delete(plugin.pluginId);
+      setSavingIds(new Set(savingIdsRef.current));
     }
-  };
-
-  const createWithCopilot = () => {
-    window.dispatchEvent(
-      new CustomEvent("commons-copilot-prompt", {
-        detail: {
-          text: "Help me create a custom Commons UI plugin. Infer sensible details from my request, match the Agent Commons look and feel unless I ask for another style, then build, test, and refine the smallest useful page or floating widget. Register the verified result as a draft for me to review here before it is enabled.",
-        },
-      }),
-    );
   };
 
   if (loading) {
@@ -100,10 +137,22 @@ export function UiPluginsView() {
           </p>
         </div>
       </div>
-      <div className="flex justify-end">
-        <Button onClick={createWithCopilot}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create with Commons Copilot
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <p className="text-xs text-muted-foreground">
+          Opens an editable brief; nothing runs until you send it.
+        </p>
+        <Button asChild>
+          <a
+            href={CREATE_UI_PLUGIN_HASH}
+            role="button"
+            onClick={(event) => {
+              event.preventDefault();
+              openUiPluginCreator();
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Open Commons Copilot
+          </a>
         </Button>
       </div>
       {!plugins.length ? (
@@ -169,7 +218,7 @@ export function UiPluginsView() {
                 <span className="text-xs text-muted-foreground">
                   {plugin.status === "active" ? "Enabled" : "Disabled"}
                 </span>
-                {saving === plugin.pluginId ? (
+                {savingIds.has(plugin.pluginId) ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Switch

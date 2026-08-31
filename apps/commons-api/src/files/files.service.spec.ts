@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { PDFDict, PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
 import sharp from 'sharp';
+import * as XLSX from 'xlsx';
 import {
   classifyFile,
   FilesService,
@@ -209,11 +210,31 @@ describe('FilesService document support', () => {
     expect(result.text).toContain('data/results.csv');
   });
 
-  it('creates valid DOCX, PPTX, and PDF artifact bytes', async () => {
+  it('creates valid XLSX, DOCX, PPTX, and PDF artifact bytes', async () => {
     const generationService = new FilesService({} as any, {} as any, {} as any);
     jest
       .spyOn(generationService as any, 'persistFile')
       .mockImplementation(async (input: any) => input);
+
+    const spreadsheet = (await generationService.createSpreadsheetFile({
+      fileName: 'bootcamps.xlsx',
+      sheets: [
+        {
+          name: 'Kenya',
+          rows: [
+            { name: 'Moringa School', city: 'Nairobi' },
+            { name: 'AkiraChix', city: 'Nairobi' },
+          ],
+        },
+      ],
+      agentId: 'agent-test',
+    })) as any;
+    const workbook = XLSX.read(spreadsheet.buffer, { type: 'buffer' });
+    expect(workbook.SheetNames).toEqual(['Kenya']);
+    expect(XLSX.utils.sheet_to_json(workbook.Sheets.Kenya)).toContainEqual({
+      name: 'Moringa School',
+      city: 'Nairobi',
+    });
 
     const document = (await generationService.createDocumentFile({
       fileName: 'brief.docx',

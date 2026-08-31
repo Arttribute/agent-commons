@@ -73,6 +73,15 @@ import {
   LibraryItem,
   LibraryGrant,
   LibraryShareLink,
+  KnowledgePermission,
+  KnowledgeProviderDefinition,
+  KnowledgeProviderId,
+  KnowledgeSpace,
+  KnowledgeGrant,
+  KnowledgeDocument,
+  KnowledgeFolder,
+  KnowledgeGraph,
+  KnowledgeSearchResult,
   Space,
   SpaceMember,
   SpaceMessage,
@@ -93,6 +102,7 @@ import {
   CapabilityProviderInput,
   UiPlugin,
   CreateUiPluginParams,
+  ProvenanceTrajectory,
 } from "./types";
 
 export interface CommonsRequestOptions {
@@ -113,9 +123,7 @@ export class CommonsClient {
       /\/$/,
       "",
     );
-    this.identityUrl = (
-      config.identityUrl ?? "https://auth.agentcommons.io"
-    )
+    this.identityUrl = (config.identityUrl ?? "https://auth.agentcommons.io")
       .replace(/\/api\/auth\/?$/, "")
       .replace(/\/$/, "");
     this.identityToken = config.identityToken;
@@ -302,7 +310,11 @@ export class CommonsClient {
         agentId: string,
         channel: string,
         action: string,
-        params: { pairingCode?: string; target?: string; message?: string } = {},
+        params: {
+          pairingCode?: string;
+          target?: string;
+          message?: string;
+        } = {},
       ): Promise<{ data: unknown }> =>
         this.request(
           "POST",
@@ -687,6 +699,39 @@ export class CommonsClient {
     };
   }
 
+  // ── Provenance & attribution ─────────────────────────────────────────────
+
+  get provenance() {
+    return {
+      session: (sessionId: string): Promise<{ data: ProvenanceTrajectory }> =>
+        this.request(
+          "GET",
+          `/v1/provenance/sessions/${encodeURIComponent(sessionId)}`,
+        ),
+      scope: (
+        scopeType: string,
+        scopeId: string,
+      ): Promise<{ data: ProvenanceTrajectory }> =>
+        this.request(
+          "GET",
+          `/v1/provenance/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}`,
+        ),
+      bundle: (traceId: string): Promise<{ data: Record<string, unknown> }> =>
+        this.request(
+          "GET",
+          `/v1/provenance/traces/${encodeURIComponent(traceId)}/bundle`,
+        ),
+      anchor: (
+        traceId: string,
+      ): Promise<{ data: { traceId: string; status: string } }> =>
+        this.request(
+          "POST",
+          `/v1/provenance/traces/${encodeURIComponent(traceId)}/anchor`,
+          {},
+        ),
+    };
+  }
+
   // ── Workflows ─────────────────────────────────────────────────────────────
 
   get workflows() {
@@ -771,9 +816,7 @@ export class CommonsClient {
           {},
         ),
 
-      disableWebhook: (
-        workflowId: string,
-      ): Promise<{ success: boolean }> =>
+      disableWebhook: (workflowId: string): Promise<{ success: boolean }> =>
         this.request(
           "DELETE",
           `/v1/workflows/${encodeURIComponent(workflowId)}/webhook-token`,
@@ -969,18 +1012,13 @@ export class CommonsClient {
         sessionId: string,
         title: string,
       ): Promise<{ data: import("./types").Session }> =>
-        this.request(
-          "PATCH",
-          `/v1/sessions/${encodeURIComponent(sessionId)}`,
-          { title },
-        ),
+        this.request("PATCH", `/v1/sessions/${encodeURIComponent(sessionId)}`, {
+          title,
+        }),
 
       /** Delete a session and its owned session data. */
       delete: (sessionId: string): Promise<{ data: unknown }> =>
-        this.request(
-          "DELETE",
-          `/v1/sessions/${encodeURIComponent(sessionId)}`,
-        ),
+        this.request("DELETE", `/v1/sessions/${encodeURIComponent(sessionId)}`),
 
       /** Get the full chat transcript for a session. */
       getChat: (sessionId: string): Promise<{ data: unknown }> =>
@@ -1133,10 +1171,7 @@ export class CommonsClient {
         this.request("POST", "/v1/tool-keys", params),
 
       get: (keyId: string): Promise<{ success: boolean; data: ToolKey }> =>
-        this.request(
-          "GET",
-          `/v1/tool-keys/${encodeURIComponent(keyId)}`,
-        ),
+        this.request("GET", `/v1/tool-keys/${encodeURIComponent(keyId)}`),
 
       updateMetadata: (
         keyId: string,
@@ -1163,9 +1198,7 @@ export class CommonsClient {
           { value },
         ),
 
-      test: (
-        keyId: string,
-      ): Promise<{ success: boolean; data: unknown }> =>
+      test: (keyId: string): Promise<{ success: boolean; data: unknown }> =>
         this.request(
           "POST",
           `/v1/tool-keys/${encodeURIComponent(keyId)}/test`,
@@ -1181,19 +1214,14 @@ export class CommonsClient {
       }): Promise<{ success: boolean; data: unknown }> =>
         this.request("POST", "/v1/tool-keys/map", params),
 
-      removeMapping: (
-        mappingId: string,
-      ): Promise<{ success: boolean }> =>
+      removeMapping: (mappingId: string): Promise<{ success: boolean }> =>
         this.request(
           "DELETE",
           `/v1/tool-keys/map/${encodeURIComponent(mappingId)}`,
         ),
 
       delete: (keyId: string): Promise<{ success: boolean }> =>
-        this.request(
-          "DELETE",
-          `/v1/tool-keys/${encodeURIComponent(keyId)}`,
-        ),
+        this.request("DELETE", `/v1/tool-keys/${encodeURIComponent(keyId)}`),
     };
   }
 
@@ -1223,10 +1251,7 @@ export class CommonsClient {
         subjectType: "user" | "agent",
       ): Promise<{ success: boolean; data: ToolPermission[] }> => {
         const query = new URLSearchParams({ subjectId, subjectType });
-        return this.request(
-          "GET",
-          `/v1/tool-permissions/subject?${query}`,
-        );
+        return this.request("GET", `/v1/tool-permissions/subject?${query}`);
       },
 
       accessibleTools: (
@@ -1297,11 +1322,7 @@ export class CommonsClient {
         newOwnerId: string;
         newOwnerType: "user" | "agent";
       }): Promise<{ success: boolean; data: Tool }> =>
-        this.request(
-          "POST",
-          "/v1/tool-permissions/transfer-ownership",
-          params,
-        ),
+        this.request("POST", "/v1/tool-permissions/transfer-ownership", params),
     };
   }
 
@@ -1414,14 +1435,9 @@ export class CommonsClient {
         ),
 
       getBySlug: (slug: string): Promise<{ data: UiPlugin }> =>
-        this.request(
-          "GET",
-          `/v1/ui-plugins/slug/${encodeURIComponent(slug)}`,
-        ),
+        this.request("GET", `/v1/ui-plugins/slug/${encodeURIComponent(slug)}`),
 
-      create: (
-        input: CreateUiPluginParams,
-      ): Promise<{ data: UiPlugin }> =>
+      create: (input: CreateUiPluginParams): Promise<{ data: UiPlugin }> =>
         this.request("PUT", "/v1/ui-plugins", input),
 
       setStatus: (
@@ -1534,9 +1550,7 @@ export class CommonsClient {
       }): Promise<{ data: DeveloperProject }> =>
         this.identityRequest("POST", "/api/platform/projects", params),
 
-      listApiKeys: (
-        projectId: string,
-      ): Promise<{ data: DeveloperApiKey[] }> =>
+      listApiKeys: (projectId: string): Promise<{ data: DeveloperApiKey[] }> =>
         this.identityRequest(
           "GET",
           `/api/platform/projects/${encodeURIComponent(projectId)}/api-keys`,
@@ -2102,10 +2116,7 @@ export class CommonsClient {
       },
 
       get: (itemId: string): Promise<{ data: LibraryItem }> =>
-        this.request(
-          "GET",
-          `/v1/library/${encodeURIComponent(itemId)}`,
-        ),
+        this.request("GET", `/v1/library/${encodeURIComponent(itemId)}`),
 
       download: (itemId: string): Promise<Record<string, unknown>> =>
         this.request(
@@ -2134,10 +2145,7 @@ export class CommonsClient {
         ),
 
       delete: (itemId: string): Promise<{ success?: boolean }> =>
-        this.request(
-          "DELETE",
-          `/v1/library/${encodeURIComponent(itemId)}`,
-        ),
+        this.request("DELETE", `/v1/library/${encodeURIComponent(itemId)}`),
 
       storagePreference: (): Promise<{
         data?: { defaultStorageProvider: "s3" | "ipfs" };
@@ -2205,6 +2213,202 @@ export class CommonsClient {
     };
   }
 
+  // ── Knowledge Spaces ────────────────────────────────────────────────────
+
+  get knowledge() {
+    const spacePath = (spaceId: string) =>
+      `/v1/knowledge/${encodeURIComponent(spaceId)}`;
+    const documentPath = (spaceId: string, documentId: string) =>
+      `${spacePath(spaceId)}/documents/${encodeURIComponent(documentId)}`;
+    return {
+      providers: (): Promise<{ data: KnowledgeProviderDefinition[] }> =>
+        this.request("GET", "/v1/knowledge/providers"),
+
+      listSpaces: (): Promise<{ data: KnowledgeSpace[] }> =>
+        this.request("GET", "/v1/knowledge"),
+
+      createSpace: (params: {
+        name: string;
+        description?: string;
+        provider?: KnowledgeProviderId;
+        providerConfig?: Record<string, unknown>;
+        color?: string;
+        allAgents?: boolean;
+        agentIds?: string[];
+      }): Promise<{ data: KnowledgeSpace }> =>
+        this.request("POST", "/v1/knowledge", params),
+
+      getSpace: (spaceId: string): Promise<{ data: KnowledgeSpace }> =>
+        this.request("GET", spacePath(spaceId)),
+
+      updateSpace: (
+        spaceId: string,
+        params: {
+          name?: string;
+          description?: string;
+          color?: string;
+          autoGrantNewAgents?: boolean;
+          status?: "active" | "disconnected";
+          providerConfig?: Record<string, unknown>;
+        },
+      ): Promise<{ data: KnowledgeSpace }> =>
+        this.request("PATCH", spacePath(spaceId), params),
+
+      deleteSpace: (spaceId: string): Promise<{ deleted: boolean }> =>
+        this.request("DELETE", spacePath(spaceId)),
+
+      grant: (
+        spaceId: string,
+        params: {
+          subjectType: "user" | "agent" | "workspace";
+          subjectId: string;
+          permission?: KnowledgePermission;
+          autoRetrieve?: boolean;
+        },
+      ): Promise<{ data: KnowledgeGrant }> =>
+        this.request("POST", `${spacePath(spaceId)}/grants`, params),
+
+      revokeGrant: (
+        spaceId: string,
+        grantId: string,
+      ): Promise<{ revoked: boolean }> =>
+        this.request(
+          "DELETE",
+          `${spacePath(spaceId)}/grants/${encodeURIComponent(grantId)}`,
+        ),
+
+      listFolders: (spaceId: string): Promise<{ data: KnowledgeFolder[] }> =>
+        this.request("GET", `${spacePath(spaceId)}/folders`),
+
+      createFolder: (
+        spaceId: string,
+        path: string,
+      ): Promise<{ data: KnowledgeFolder }> =>
+        this.request("POST", `${spacePath(spaceId)}/folders`, { path }),
+
+      moveFolder: (
+        spaceId: string,
+        folderId: string,
+        path: string,
+      ): Promise<{
+        data: {
+          folder?: KnowledgeFolder;
+          movedDocuments: Array<{
+            documentId: string;
+            fromPath: string;
+            path: string;
+          }>;
+        };
+      }> =>
+        this.request(
+          "PATCH",
+          `${spacePath(spaceId)}/folders/${encodeURIComponent(folderId)}`,
+          { path },
+        ),
+
+      deleteFolder: (
+        spaceId: string,
+        folderId: string,
+      ): Promise<{ deleted: boolean; deletedDocuments: number }> =>
+        this.request(
+          "DELETE",
+          `${spacePath(spaceId)}/folders/${encodeURIComponent(folderId)}`,
+        ),
+
+      listDocuments: (
+        spaceId: string,
+        options?: { query?: string; includeContent?: boolean; limit?: number },
+      ): Promise<{ data: KnowledgeDocument[] }> => {
+        const query = new URLSearchParams();
+        if (options?.query) query.set("query", options.query);
+        if (options?.includeContent !== undefined)
+          query.set("includeContent", String(options.includeContent));
+        if (options?.limit !== undefined)
+          query.set("limit", String(options.limit));
+        return this.request(
+          "GET",
+          `${spacePath(spaceId)}/documents${query.size ? `?${query}` : ""}`,
+        );
+      },
+
+      getDocument: (
+        spaceId: string,
+        documentId: string,
+      ): Promise<{ data: KnowledgeDocument }> =>
+        this.request("GET", documentPath(spaceId, documentId)),
+
+      createDocument: (
+        spaceId: string,
+        params: { path: string; title?: string; content: string },
+      ): Promise<{ data: KnowledgeDocument }> =>
+        this.request("POST", `${spacePath(spaceId)}/documents`, params),
+
+      updateDocument: (
+        spaceId: string,
+        documentId: string,
+        params: {
+          path: string;
+          title?: string;
+          content: string;
+          expectedRevision?: number;
+        },
+      ): Promise<{ data: KnowledgeDocument }> =>
+        this.request("PATCH", documentPath(spaceId, documentId), params),
+
+      deleteDocument: (
+        spaceId: string,
+        documentId: string,
+      ): Promise<{ deleted: boolean }> =>
+        this.request("DELETE", documentPath(spaceId, documentId)),
+
+      importMarkdown: (
+        spaceId: string,
+        documents: Array<{
+          path: string;
+          title?: string;
+          content: string;
+          modifiedAt?: string;
+        }>,
+        folders: string[] = [],
+      ): Promise<{
+        data: {
+          created: number;
+          updated: number;
+          unchanged: number;
+          remoteKept: number;
+          folders: number;
+          failed: Array<{ path: string; error: string }>;
+        };
+      }> =>
+        this.request("POST", `${spacePath(spaceId)}/import`, {
+          documents,
+          folders,
+        }),
+
+      graph: (spaceId: string): Promise<{ data: KnowledgeGraph }> =>
+        this.request("GET", `${spacePath(spaceId)}/graph`),
+
+      search: (params: {
+        query: string;
+        spaceIds?: string[];
+        limit?: number;
+      }): Promise<{
+        data: {
+          query: string;
+          algorithm: "hybrid_graph";
+          results: KnowledgeSearchResult[];
+        };
+      }> => {
+        const query = new URLSearchParams({ query: params.query });
+        if (params.spaceIds?.length)
+          query.set("spaceIds", params.spaceIds.join(","));
+        if (params.limit !== undefined)
+          query.set("limit", String(params.limit));
+        return this.request("GET", `/v1/knowledge/search?${query}`);
+      },
+    };
+  }
+
   // ── Spaces, projects, and goals ──────────────────────────────────────────
 
   get spaces() {
@@ -2264,16 +2468,10 @@ export class CommonsClient {
         }),
 
       get: (spaceId: string): Promise<{ data: Space }> =>
-        this.request(
-          "GET",
-          `/v1/spaces/${encodeURIComponent(spaceId)}`,
-        ),
+        this.request("GET", `/v1/spaces/${encodeURIComponent(spaceId)}`),
 
       getFull: (spaceId: string): Promise<{ data: Space }> =>
-        this.request(
-          "GET",
-          `/v1/spaces/${encodeURIComponent(spaceId)}/full`,
-        ),
+        this.request("GET", `/v1/spaces/${encodeURIComponent(spaceId)}/full`),
 
       update: (
         spaceId: string,
@@ -2294,10 +2492,7 @@ export class CommonsClient {
         ),
 
       delete: (spaceId: string): Promise<{ success?: boolean }> =>
-        this.request(
-          "DELETE",
-          `/v1/spaces/${encodeURIComponent(spaceId)}`,
-        ),
+        this.request("DELETE", `/v1/spaces/${encodeURIComponent(spaceId)}`),
 
       issueRtcTicket: (
         spaceId: string,
@@ -2308,9 +2503,7 @@ export class CommonsClient {
           {},
         ),
 
-      listMembers: (
-        spaceId: string,
-      ): Promise<{ data: SpaceMember[] }> =>
+      listMembers: (spaceId: string): Promise<{ data: SpaceMember[] }> =>
         this.request(
           "GET",
           `/v1/spaces/${encodeURIComponent(spaceId)}/members`,
@@ -2505,9 +2698,7 @@ export class CommonsClient {
 
   get goals() {
     return {
-      create: (
-        params: Record<string, unknown>,
-      ): Promise<{ data: Goal }> =>
+      create: (params: Record<string, unknown>): Promise<{ data: Goal }> =>
         this.request("POST", "/v1/goals", params),
 
       get: (goalId: string): Promise<{ data: Goal }> =>
@@ -2518,11 +2709,10 @@ export class CommonsClient {
         progress: number,
         status: Goal["status"],
       ): Promise<{ data: Goal }> =>
-        this.request(
-          "PUT",
-          `/v1/goals/${encodeURIComponent(goalId)}`,
-          { progress, status },
-        ),
+        this.request("PUT", `/v1/goals/${encodeURIComponent(goalId)}`, {
+          progress,
+          status,
+        }),
     };
   }
 

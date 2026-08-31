@@ -10,6 +10,7 @@ import {
   PanelLeft,
   PanelRight,
   LibraryBig,
+  Network,
   Loader2,
   Wrench,
   Workflow,
@@ -41,7 +42,7 @@ export function DashboardSideBar({ username }: { username: string }) {
     // normal expanded sidebar like the studio list pages.
     return (
       /^\/studio\/(agents|tools|workflows|skills)\/(?!create(?:\/|$))[^/]+/.test(
-        pathname
+        pathname,
       ) || /^\/studio\/customize\/skills\/[^/]+/.test(pathname)
     );
   }, [pathname]);
@@ -67,6 +68,7 @@ export function DashboardSideBar({ username }: { username: string }) {
     )
       return "customize";
     if (pathname.startsWith("/library")) return "library";
+    if (pathname.startsWith("/knowledge")) return "knowledge";
     if (pathname.startsWith("/logs")) return "logs";
     if (pathname.startsWith("/spaces")) return "spaces";
     return "agents";
@@ -75,7 +77,7 @@ export function DashboardSideBar({ username }: { username: string }) {
   const handleRename = async (sessionId: string, title: string) => {
     const prev = sessions;
     setSessions((list) =>
-      list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s))
+      list.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
     );
     const ok = await renameSession(sessionId, title);
     if (!ok) setSessions(prev);
@@ -94,7 +96,7 @@ export function DashboardSideBar({ username }: { username: string }) {
     <div
       className={cn(
         "h-screen bg-white border-r border-border flex flex-col transition-all duration-300",
-        sidebarOpen ? "w-[290px] min-w-[290px]" : "w-[60px] min-w-[60px]"
+        sidebarOpen ? "w-[290px] min-w-[290px]" : "w-[60px] min-w-[60px]",
       )}
     >
       <div className="px-3 pt-4">
@@ -171,6 +173,12 @@ export function DashboardSideBar({ username }: { username: string }) {
                   label: "Workflows",
                 },
                 {
+                  key: "knowledge",
+                  icon: Network,
+                  path: "/knowledge",
+                  label: "Knowledge",
+                },
+                {
                   key: "library",
                   icon: LibraryBig,
                   path: "/library",
@@ -187,7 +195,7 @@ export function DashboardSideBar({ username }: { username: string }) {
                   key={key}
                   className={cn(
                     "rounded-md p-1.5 hover:bg-accent text-foreground/70 hover:text-foreground",
-                    activeSection === key && "bg-accent text-accent-foreground"
+                    activeSection === key && "bg-accent text-accent-foreground",
                   )}
                   aria-label={label}
                   title={label}
@@ -250,7 +258,7 @@ export function DashboardSideBar({ username }: { username: string }) {
       <div
         className={cn(
           "mt-auto border-t border-border",
-          sidebarOpen ? "p-2" : "flex justify-center px-1.5 py-2"
+          sidebarOpen ? "p-2" : "flex justify-center px-1.5 py-2",
         )}
       >
         <SidebarAccount collapsed={!sidebarOpen} />

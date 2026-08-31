@@ -66,9 +66,7 @@ export function JoinLiveSession() {
     </main>
   );
 }
-
 function formatInput(code: string) {
   const clean = code.replace(/\D/g, "").slice(0, 6);
   return clean.length > 3 ? `${clean.slice(0, 3)} ${clean.slice(3)}` : clean;
 }
-

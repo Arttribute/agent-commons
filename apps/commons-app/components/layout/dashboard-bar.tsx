@@ -3,7 +3,14 @@
 
 import { FC, ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, LibraryBig, Wrench, Workflow, Settings2 } from "lucide-react";
+import {
+  Bot,
+  LibraryBig,
+  Network,
+  Wrench,
+  Workflow,
+  Settings2,
+} from "lucide-react";
 import { ClipboardClock } from "@/components/icons/clipboard-clock";
 import Link from "next/link";
 import Image from "next/image";
@@ -39,6 +46,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({
       icon: Workflow,
       path: "/studio/workflows",
     },
+    { key: "knowledge", label: "Knowledge", icon: Network, path: "/knowledge" },
     { key: "library", label: "Library", icon: LibraryBig, path: "/library" },
     {
       key: "customize",

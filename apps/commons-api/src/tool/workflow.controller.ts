@@ -17,7 +17,7 @@ import { Request } from 'express';
 import { Observable } from 'rxjs';
 import { WorkflowService } from './workflow.service';
 import { WorkflowExecutorService } from './workflow-executor.service';
-import { OwnerGuard, OwnerOnly, Public } from '~/modules/auth';
+import { OwnerGuard, OwnerOnly, Public, resolveCallerId } from '~/modules/auth';
 
 /**
  * WorkflowController
@@ -247,8 +247,8 @@ export class WorkflowController {
       taskId?: string;
       inputData?: Record<string, any>;
       inputs?: Record<string, any>; // Accept both inputData and inputs
-      userId?: string;
     },
+    @Req() req: Request,
   ) {
     const executionId = await this.workflowExecutor.executeWorkflow({
       workflowId,
@@ -256,7 +256,7 @@ export class WorkflowController {
       sessionId: body.sessionId,
       taskId: body.taskId,
       inputData: body.inputData || body.inputs || {},
-      userId: body.userId,
+      userId: resolveCallerId(req),
     });
 
     // Fetch and return the execution details
@@ -347,6 +347,7 @@ export class WorkflowController {
     @Param('id') workflowId: string,
     @Param('executionId') executionId: string,
     @Body() body: { approvalToken: string; approvalData?: Record<string, any> },
+    @Req() req: Request,
   ) {
     if (!body.approvalToken)
       throw new BadRequestException('approvalToken is required');
@@ -355,6 +356,7 @@ export class WorkflowController {
       body.approvalToken,
       body.approvalData,
       workflowId,
+      this.resolveReviewer(req),
     );
     return { success: true, executionId, action: 'approved' };
   }
@@ -370,6 +372,7 @@ export class WorkflowController {
     @Param('id') workflowId: string,
     @Param('executionId') executionId: string,
     @Body() body: { approvalToken: string; reason?: string },
+    @Req() req: Request,
   ) {
     if (!body.approvalToken)
       throw new BadRequestException('approvalToken is required');
@@ -378,6 +381,7 @@ export class WorkflowController {
       body.approvalToken,
       body.reason,
       workflowId,
+      this.resolveReviewer(req),
     );
     return { success: true, executionId, action: 'rejected' };
   }
@@ -499,5 +503,25 @@ export class WorkflowController {
     }
     const resolvedHost = Array.isArray(host) ? host[0] : host;
     return `${proto}://${resolvedHost}/v1/workflows/webhooks/${token}`;
+  }
+
+  private resolveReviewer(req: Request): {
+    id?: string;
+    type: 'user' | 'agent' | 'service';
+  } {
+    const principalType = (req as any).principal?.principalType;
+    const delegatedUser =
+      req.headers['x-owner-id'] ?? req.headers['x-initiator'];
+    return {
+      id: resolveCallerId(req),
+      type:
+        principalType === 'service' && delegatedUser
+          ? 'user'
+          : principalType === 'agent'
+            ? 'agent'
+            : principalType === 'service'
+              ? 'service'
+              : 'user',
+    };
   }
 }

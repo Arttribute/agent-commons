@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -29,6 +29,14 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { normalizeSessionHistory } from "@/lib/session-history";
+import {
+  COMMONS_COPILOT_PROMPT_EVENT,
+  CREATE_UI_PLUGIN_HASH,
+  CREATE_UI_PLUGIN_INTENT_ID,
+  CREATE_UI_PLUGIN_PROMPT,
+  takePendingCommonsCopilotPrompt,
+  type CommonsCopilotPromptDetail,
+} from "@/lib/commons-copilot-events";
 import { CopilotChangeList, type CopilotChange } from "./copilot-change-list";
 
 type CopilotAgent = {
@@ -76,6 +84,8 @@ function FloatingCommonsCopilotInner() {
   const { authenticated, ready, authState } = useAuth();
   const { clearMessages, setMessages } = useAgentContext();
   const [copilot, setCopilot] = useState<CopilotAgent | null>(null);
+  const [copilotLoading, setCopilotLoading] = useState(true);
+  const [copilotError, setCopilotError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"chat" | "sessions" | "settings">("chat");
   const [sessionId, setSessionId] = useState("");
@@ -93,6 +103,10 @@ function FloatingCommonsCopilotInner() {
   } | null>(null);
   const [uiContext, setUiContext] = useState<Record<string, unknown>>({});
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
+  const recentExternalIntentRef = useRef<{
+    intentId: string;
+    openedAt: number;
+  } | null>(null);
 
   useEffect(() => {
     const stored = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
@@ -140,13 +154,29 @@ function FloatingCommonsCopilotInner() {
 
   const loadCopilot = useCallback(async () => {
     if (!authenticated) return;
-    const response = await fetch("/api/copilot", { cache: "no-store" });
-    if (!response.ok) return;
-    const payload = await response.json();
-    const agent = payload?.data ?? null;
-    setCopilot(agent);
-    setMode(agent?.copilotAccessMode ?? "confirm");
-    setScopes(Array.isArray(agent?.copilotScopes) ? agent.copilotScopes : []);
+    setCopilotLoading(true);
+    setCopilotError(null);
+    try {
+      const response = await fetch("/api/copilot", { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      const agent = response.ok ? payload?.data ?? null : null;
+      if (!agent?.agentId) {
+        throw new Error(
+          payload?.message || "Commons Copilot is not available right now.",
+        );
+      }
+      setCopilot(agent);
+      setMode(agent.copilotAccessMode ?? "confirm");
+      setScopes(Array.isArray(agent.copilotScopes) ? agent.copilotScopes : []);
+    } catch (error) {
+      setCopilotError(
+        error instanceof Error
+          ? error.message
+          : "Commons Copilot is not available right now.",
+      );
+    } finally {
+      setCopilotLoading(false);
+    }
   }, [authenticated]);
 
   const loadChanges = useCallback(async () => {
@@ -186,25 +216,55 @@ function FloatingCommonsCopilotInner() {
   }, [loadChanges]);
 
   useEffect(() => {
-    const openWithPrompt = (event: Event) => {
-      const detail = (
-        event as CustomEvent<{
-          text?: string;
-          mode?: "send" | "draft";
-        }>
-      ).detail;
-      if (!detail?.text?.trim()) return;
+    const openWithPrompt = (detail: CommonsCopilotPromptDetail) => {
+      const text = detail?.text?.trim();
+      if (!text) return;
       setOpen(true);
       setView("chat");
+      const intentId = detail.intentId?.trim();
+      const now = Date.now();
+      if (
+        intentId &&
+        recentExternalIntentRef.current?.intentId === intentId &&
+        now - recentExternalIntentRef.current.openedAt < 2_000
+      ) {
+        return;
+      }
+      recentExternalIntentRef.current = intentId
+        ? { intentId, openedAt: now }
+        : null;
       setExternalPrompt({
         id: `external:${Date.now()}`,
-        text: detail.text.trim(),
+        text,
         mode: detail.mode === "draft" ? "draft" : "send",
       });
     };
-    window.addEventListener("commons-copilot-prompt", openWithPrompt);
-    return () =>
-      window.removeEventListener("commons-copilot-prompt", openWithPrompt);
+    const onPrompt = (event: Event) => {
+      takePendingCommonsCopilotPrompt();
+      openWithPrompt((event as CustomEvent<CommonsCopilotPromptDetail>).detail);
+    };
+    window.addEventListener(COMMONS_COPILOT_PROMPT_EVENT, onPrompt);
+    const pendingPrompt = takePendingCommonsCopilotPrompt();
+    if (pendingPrompt) openWithPrompt(pendingPrompt);
+    const openCreatorFromLocation = () => {
+      if (window.location.hash !== CREATE_UI_PLUGIN_HASH) return;
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+      openWithPrompt({
+        text: CREATE_UI_PLUGIN_PROMPT,
+        mode: "draft",
+        intentId: CREATE_UI_PLUGIN_INTENT_ID,
+      });
+    };
+    window.addEventListener("hashchange", openCreatorFromLocation);
+    openCreatorFromLocation();
+    return () => {
+      window.removeEventListener(COMMONS_COPILOT_PROMPT_EVENT, onPrompt);
+      window.removeEventListener("hashchange", openCreatorFromLocation);
+    };
   }, []);
 
   useEffect(() => {
@@ -239,7 +299,46 @@ function FloatingCommonsCopilotInner() {
     };
   }, [pathname]);
 
-  if (hidden || !copilot) return null;
+  if (hidden) return null;
+
+  if (!copilot) {
+    if (!open) return null;
+    return (
+      <aside className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-xl lg:w-[var(--copilot-panel-width,360px)]">
+        <div className="flex h-14 shrink-0 items-center justify-between border-b px-4">
+          <p className="text-sm font-medium">Commons Copilot</p>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close Copilot"
+            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          {copilotLoading ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <p className="text-sm text-muted-foreground">
+                Opening Commons Copilot…
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium">Couldn’t open Copilot</p>
+              <p className="max-w-xs text-xs leading-5 text-muted-foreground">
+                {copilotError || "Commons Copilot could not be loaded."}
+              </p>
+              <Button size="sm" variant="outline" onClick={loadCopilot}>
+                Try again
+              </Button>
+            </>
+          )}
+        </div>
+      </aside>
+    );
+  }
 
   const pending = changes.filter((change) => change.status === "pending");
   const recentlyApplied = changes
@@ -265,6 +364,7 @@ function FloatingCommonsCopilotInner() {
     clearMessages();
     setSessionId("");
     setExternalPrompt(null);
+    recentExternalIntentRef.current = null;
     setView("chat");
   };
 
@@ -443,6 +543,7 @@ function FloatingCommonsCopilotInner() {
                 userId={authState.userId || authState.walletAddress || ""}
                 onSessionCreated={(createdSessionId) => {
                   setSessionId(createdSessionId);
+                  recentExternalIntentRef.current = null;
                   loadSessions();
                 }}
                 isLoadingSession={loadingSession}

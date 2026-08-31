@@ -1,0 +1,1399 @@
+import * as crypto from 'node:crypto';
+import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
+import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import type {
+  Action,
+  Attribution,
+  Entity,
+  ProvenanceBundle,
+  Resource,
+} from '@provenancekit/eaa-types';
+import { CONTEXT_URI } from '@provenancekit/eaa-types';
+import * as schema from '#/models/schema';
+import { DatabaseService } from '~/modules/database/database.service';
+import type {
+  FinishProvenanceRunInput,
+  ProvenanceCaptureMode,
+  RecordProvenanceEventInput,
+  StartProvenanceRunInput,
+  ProvenanceLineageMetadata,
+} from './provenance.types';
+
+const DEFAULT_BATCH_SIZE = 200;
+const DEFAULT_FLUSH_MS = 40;
+const DEFAULT_QUEUE_LIMIT = 5_000;
+const MAX_CAPTURE_BYTES = 24_000;
+const MAX_DEPTH = 6;
+
+const SENSITIVE_KEY =
+  /^(authorization|cookie|set-cookie|password|secret|api[-_]?key|private[-_]?key|access[-_]?token|refresh[-_]?token|approval[-_]?token|permission[-_]?token|authorization[-_]?code)$/i;
+const PRIVATE_REASONING_KEY =
+  /^(reasoning|thinking|chain[-_ ]?of[-_ ]?thought|internal[-_ ]?thoughts?)$/i;
+
+type RunContext = {
+  input: StartProvenanceRunInput;
+  mode: Exclude<ProvenanceCaptureMode, 'off'>;
+  onchain: boolean;
+  sequence: number;
+  dropped: number;
+  startedAt: Date;
+};
+
+type QueuedStart = {
+  kind: 'start';
+  value: typeof schema.provenanceRun.$inferInsert;
+};
+type QueuedEvent = {
+  kind: 'event';
+  value: typeof schema.provenanceEvent.$inferInsert;
+};
+type QueuedFinish = {
+  kind: 'finish';
+  traceId: string;
+  value: Partial<typeof schema.provenanceRun.$inferInsert>;
+  shouldExport: boolean;
+};
+type QueueItem = QueuedStart | QueuedEvent | QueuedFinish;
+
+function sha256(value: unknown): string | undefined {
+  try {
+    const input =
+      typeof value === 'string' ? value : JSON.stringify(value ?? null);
+    return `sha256:${crypto.createHash('sha256').update(input).digest('hex')}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function truncate(value: string, limit = MAX_CAPTURE_BYTES): string {
+  if (value.length <= limit) return value;
+  return `${value.slice(0, limit)}…[truncated ${value.length - limit} chars]`;
+}
+
+/** JSON-safe, bounded and secret-aware copy used only for explicit full capture. */
+function sanitize(
+  value: unknown,
+  depth = 0,
+  seen = new WeakSet<object>(),
+): unknown {
+  if (value === null || value === undefined) return value ?? null;
+  if (typeof value === 'string') return truncate(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'function' || typeof value === 'symbol')
+    return `[${typeof value}]`;
+  if (depth >= MAX_DEPTH) return '[max-depth]';
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Uint8Array || Buffer.isBuffer(value)) {
+    return { type: 'bytes', size: value.byteLength, sha256: sha256(value) };
+  }
+  if (typeof value !== 'object') return String(value);
+  if (seen.has(value)) return '[circular]';
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.slice(0, 100).map((item) => sanitize(item, depth + 1, seen));
+  }
+  const output: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value).slice(0, 100)) {
+    output[key] = PRIVATE_REASONING_KEY.test(key)
+      ? '[not captured]'
+      : SENSITIVE_KEY.test(key)
+        ? '[redacted]'
+        : sanitize(child, depth + 1, seen);
+  }
+  return output;
+}
+
+/** Privacy-preserving structural description used by the default mode. */
+function describe(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) return { type: 'null' };
+  if (typeof value === 'string')
+    return { type: 'string', characters: value.length, sha256: sha256(value) };
+  if (typeof value === 'number' || typeof value === 'boolean')
+    return { type: typeof value };
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      length: value.length,
+      ...(depth < 2
+        ? { items: value.slice(0, 20).map((item) => describe(item, depth + 1)) }
+        : {}),
+    };
+  }
+  if (value instanceof Uint8Array || Buffer.isBuffer(value))
+    return { type: 'bytes', size: value.byteLength, sha256: sha256(value) };
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    return {
+      type: 'object',
+      keys: entries
+        .map(([key]) => key)
+        .filter(
+          (key) => !SENSITIVE_KEY.test(key) && !PRIVATE_REASONING_KEY.test(key),
+        )
+        .slice(0, 50),
+      ...(depth < 2
+        ? {
+            fields: Object.fromEntries(
+              entries
+                .filter(
+                  ([key]) =>
+                    !SENSITIVE_KEY.test(key) &&
+                    !PRIVATE_REASONING_KEY.test(key),
+                )
+                .slice(0, 30)
+                .map(([key, child]) => [key, describe(child, depth + 1)]),
+            ),
+          }
+        : {}),
+    };
+  }
+  return { type: typeof value };
+}
+
+function asRecord(value: unknown): Record<string, any> | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, any>;
+    if (typeof record.content === 'string') {
+      try {
+        const parsed = JSON.parse(record.content);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch {
+        // The outer tool envelope is still useful.
+      }
+    }
+    return record;
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function canonicalSource(value: any, rank: number) {
+  if (!value || typeof value.url !== 'string') return undefined;
+  try {
+    const url = new URL(value.url);
+    url.hash = '';
+    return {
+      url: url.toString(),
+      domain: url.hostname.toLowerCase().replace(/^www\./, ''),
+      title: typeof value.title === 'string' ? value.title : undefined,
+      rank,
+      publishedAt:
+        typeof value.publishedAt === 'string' ? value.publishedAt : undefined,
+      contentHash: sha256(value.description ?? value.content ?? value.snippet),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Derive stable, readable provenance from common tool envelopes. */
+function deriveToolLineage(
+  event: RecordProvenanceEventInput,
+): ProvenanceLineageMetadata | undefined {
+  if (event.category !== 'tool') return undefined;
+  const toolName = event.name || 'tool';
+  const normalized = toolName.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const input = asRecord(event.payload);
+  const output = asRecord(event.result);
+
+  if (
+    normalized.includes('askuserquestion') ||
+    normalized.includes('requestuserinput') ||
+    normalized.includes('humanapproval')
+  ) {
+    const questions = Array.isArray(input?.questions) ? input.questions : [];
+    const response = asRecord(output?.answers) ?? output;
+    const responseFieldNames = response
+      ? Object.keys(response)
+          .filter((key) => !SENSITIVE_KEY.test(key))
+          .slice(0, 50)
+      : [];
+    return {
+      schemaVersion: 1,
+      kind: 'decision',
+      tool: { name: toolName, invocationId: event.spanId },
+      decision: {
+        type: 'human_approval',
+        outcome: output?.approved ?? output?.decision ?? 'responded',
+        alternatives: questions
+          .flatMap((question: any) =>
+            Array.isArray(question?.options)
+              ? question.options.map((option: any) =>
+                  String(option?.label ?? option),
+                )
+              : [],
+          )
+          .slice(0, 50),
+        approval: {
+          prompt:
+            typeof input?.question === 'string'
+              ? input.question
+              : typeof questions[0]?.question === 'string'
+                ? questions[0].question
+                : undefined,
+          questionIds: questions
+            .map((question: any) => question?.id)
+            .filter((id: unknown): id is string => typeof id === 'string')
+            .slice(0, 50),
+          responseFieldNames,
+          responseHash: response ? sha256(sanitize(response)) : undefined,
+        },
+      },
+    };
+  }
+
+  if (normalized.includes('websearch') || normalized.includes('deepsearch')) {
+    const envelope = asRecord(output?.result) ?? output;
+    const results = Array.isArray(envelope?.results) ? envelope!.results : [];
+    const sources = results
+      .map((item, index) => canonicalSource(item, index + 1))
+      .filter(
+        (source): source is NonNullable<ReturnType<typeof canonicalSource>> =>
+          Boolean(source),
+      )
+      .slice(0, 50);
+    const query = String(envelope?.query ?? input?.query ?? '').trim();
+    return {
+      schemaVersion: 1,
+      kind: 'web_search',
+      tool: {
+        name: toolName,
+        provider: envelope?.provider,
+        invocationId: event.spanId,
+      },
+      ...(query ? { query: { text: query, sha256: sha256(query) } } : {}),
+      sources,
+    };
+  }
+
+  if (normalized.includes('searchlibrary')) {
+    const rows = Array.isArray(event.result)
+      ? event.result
+      : Array.isArray(output?.results)
+        ? output.results
+        : [];
+    const query = String(input?.query ?? '').trim();
+    const defaultEmbeddingModel =
+      process.env.ARTIFACT_EMBEDDING_MODEL || 'text-embedding-3-small';
+    const normalizationVersion = 'agent-commons-library-v1';
+    return {
+      schemaVersion: 1,
+      kind: 'library_retrieval',
+      tool: { name: toolName, invocationId: event.spanId },
+      library: {
+        query,
+        algorithm: 'hybrid',
+        semanticWeight: 0.75,
+        lexicalWeight: 0.25,
+        embedding: {
+          model: defaultEmbeddingModel,
+          dimensions: 1536,
+          normalizationVersion,
+          computedBy: 'agent-commons',
+          vectorIncluded: false,
+        },
+        results: rows.slice(0, 50).map((row: any, index: number) => {
+          const score = Number(row?.score ?? 0);
+          const embeddingModel = row?.embeddingModel ?? defaultEmbeddingModel;
+          const embeddingCacheKey = row?.contentHash
+            ? sha256(
+                `${row.contentHash}:${embeddingModel}:1536:${normalizationVersion}`,
+              )
+            : undefined;
+          return {
+            itemId: String(row?.itemId ?? 'unknown'),
+            name: row?.name,
+            kind: row?.kind,
+            sourceSessionId: row?.sourceSessionId,
+            sourceUri: row?.sourceUri,
+            sourceType: row?.sourceType,
+            contentHash: row?.contentHash,
+            embeddingModel,
+            embeddingCacheKey,
+            chunkIndex: row?.chunkIndex,
+            score: Number.isFinite(score) ? score : 0,
+            percentageMatch: Number.isFinite(score)
+              ? Math.round(Math.max(0, Math.min(1, score)) * 10_000) / 100
+              : 0,
+            rank: index + 1,
+          };
+        }),
+      },
+    };
+  }
+
+  if (
+    normalized.includes('searchknowledge') ||
+    normalized.includes('searchbrain')
+  ) {
+    const envelope = asRecord(output?.result) ?? output;
+    const rows = Array.isArray(envelope?.results) ? envelope.results : [];
+    const query = String(envelope?.query ?? input?.query ?? '').trim();
+    const embeddingModel =
+      process.env.BRAIN_EMBEDDING_MODEL ||
+      process.env.ARTIFACT_EMBEDDING_MODEL ||
+      'text-embedding-3-small';
+    return {
+      schemaVersion: 1,
+      kind: 'knowledge_retrieval',
+      tool: { name: toolName, invocationId: event.spanId },
+      knowledge: {
+        query,
+        algorithm:
+          envelope?.algorithm === 'lexical' ||
+          envelope?.algorithm === 'semantic' ||
+          envelope?.algorithm === 'graph'
+            ? envelope.algorithm
+            : 'hybrid_graph',
+        semanticWeight: 0.68,
+        lexicalWeight: 0.22,
+        graphExpansion: true,
+        embedding: {
+          model: embeddingModel,
+          dimensions: 1536,
+          normalizationVersion: 'agent-commons-knowledge-v1',
+          computedBy: 'agent-commons',
+          vectorIncluded: false,
+        },
+        results: rows.slice(0, 50).map((row: any, index: number) => {
+          const score = Number(row?.score ?? 0);
+          return {
+            spaceId: String(row?.spaceId ?? 'unknown'),
+            documentId: String(row?.documentId ?? 'unknown'),
+            path: row?.path,
+            title: row?.title,
+            heading: row?.heading,
+            contentHash: row?.contentHash,
+            revision: row?.revision,
+            embeddingModel: row?.embeddingModel,
+            chunkIndex: row?.chunkIndex,
+            score: Number.isFinite(score) ? score : 0,
+            percentageMatch: Number.isFinite(Number(row?.percentageMatch))
+              ? Number(row.percentageMatch)
+              : Number.isFinite(score)
+                ? Math.round(Math.max(0, Math.min(1, score)) * 10_000) / 100
+                : 0,
+            rank: Number(row?.rank ?? index + 1),
+            matchedBy: Array.isArray(row?.matchedBy)
+              ? row.matchedBy.map(String).slice(0, 10)
+              : undefined,
+          };
+        }),
+      },
+    };
+  }
+
+  if (normalized.includes('runworkflow')) {
+    return {
+      schemaVersion: 1,
+      kind: 'workflow',
+      tool: { name: toolName, invocationId: event.spanId },
+      workflow: {
+        workflowId: String(
+          output?.workflowId ?? input?.workflowId ?? 'unknown',
+        ),
+        executionId: output?.executionId,
+      },
+    };
+  }
+
+  return {
+    schemaVersion: 1,
+    kind: 'tool',
+    tool: { name: toolName, invocationId: event.spanId },
+  };
+}
+
+/**
+ * Older native-agent runs persisted tool disclosures in session history but
+ * missed the equivalent provenance callback. Reconcile that already-visible
+ * data at read time so historical trajectories remain complete. New runs
+ * persist native tool events and therefore do not need this fallback.
+ */
+function reconcileSessionHistory(
+  runs: Array<Record<string, any>>,
+  persistedEvents: Array<Record<string, any>>,
+  history: Array<Record<string, any>>,
+) {
+  const events = persistedEvents.map((event) => ({ ...event }));
+  const userMessages = history.filter((entry) =>
+    ['human', 'user'].includes(String(entry?.role).toLowerCase()),
+  );
+  const assistantMessages = history.filter((entry) => {
+    if (!['ai', 'assistant'].includes(String(entry?.role).toLowerCase()))
+      return false;
+    const hasContent =
+      typeof entry?.content === 'string' && entry.content.trim().length > 0;
+    return hasContent || Array.isArray(entry?.metadata?.toolCalls);
+  });
+
+  runs.forEach((run, runIndex) => {
+    const traceId = run.traceId;
+    const userMessage = userMessages[runIndex];
+    const assistantMessage = assistantMessages[runIndex];
+    const inputEvent = events.find(
+      (event) =>
+        event.traceId === traceId && event.eventType === 'user.message',
+    );
+    if (inputEvent && typeof userMessage?.content === 'string') {
+      inputEvent.displayContent = userMessage.content;
+    }
+    const outputEvent = events.find(
+      (event) =>
+        event.traceId === traceId && event.eventType === 'assistant.message',
+    );
+    if (outputEvent && typeof assistantMessage?.content === 'string') {
+      outputEvent.displayContent = assistantMessage.content;
+    }
+
+    const existingTools = events.filter(
+      (event) => event.traceId === traceId && event.category === 'tool',
+    );
+    const disclosedCalls = Array.isArray(assistantMessage?.metadata?.toolCalls)
+      ? assistantMessage.metadata.toolCalls
+      : [];
+    disclosedCalls.forEach((call: Record<string, any>, callIndex: number) => {
+      const invocationId =
+        typeof call.toolCallId === 'string' ? call.toolCallId : undefined;
+      const existing = existingTools.find(
+        (event) =>
+          (invocationId && event.spanId === invocationId) ||
+          (!invocationId && event.name === call.name),
+      );
+      if (existing) {
+        existing.disclosedPayload = sanitize(call.args);
+        existing.disclosedResult = sanitize(call.result);
+        return;
+      }
+      const durationMs = Number.isFinite(Number(call.duration))
+        ? Math.max(0, Math.round(Number(call.duration)))
+        : undefined;
+      const endedAt = new Date(
+        assistantMessage?.timestamp ?? run.endedAt ?? run.startedAt,
+      );
+      const startedAt = durationMs
+        ? new Date(endedAt.getTime() - durationMs)
+        : endedAt;
+      const failed = ['error', 'failed'].includes(
+        String(call.status).toLowerCase(),
+      );
+      const failureMessage =
+        failed && typeof call.result?.error === 'string'
+          ? call.result.error
+          : undefined;
+      const synthetic: Record<string, any> = {
+        eventId: `session-history:${traceId}:${invocationId ?? callIndex}`,
+        traceId,
+        sessionId: run.sessionId,
+        sequence:
+          Math.max(
+            0,
+            ...events
+              .filter((event) => event.traceId === traceId)
+              .map((event) => Number(event.sequence) || 0),
+          ) +
+          callIndex +
+          1,
+        category: 'tool',
+        eventType: 'tool.execute',
+        name: call.name ?? 'Tool call',
+        phase: 'commentary',
+        status: failed ? 'failed' : 'completed',
+        spanId: invocationId,
+        summary: failed
+          ? `${call.name ?? 'Tool'} failed${failureMessage ? `: ${failureMessage}` : ''}`
+          : `${call.name ?? 'Tool'} completed`,
+        payload: sanitize(call.args),
+        result: sanitize(call.result),
+        contentHash: sha256(sanitize(call.result)),
+        durationMs,
+        startedAt,
+        endedAt,
+        createdAt: endedAt,
+        metadata: {
+          reconstructedFrom: 'session_history',
+        },
+      };
+      const lineage = deriveToolLineage({
+        category: 'tool',
+        eventType: 'tool.execute',
+        name: synthetic.name,
+        status: synthetic.status,
+        spanId: invocationId,
+        payload: call.args,
+        result: call.result,
+      });
+      if (lineage) synthetic.metadata.lineage = sanitize(lineage);
+      events.push(synthetic);
+    });
+  });
+
+  return events.sort(
+    (left, right) =>
+      new Date(left.startedAt).getTime() -
+        new Date(right.startedAt).getTime() ||
+      Number(left.sequence ?? 0) - Number(right.sequence ?? 0),
+  );
+}
+
+@Injectable()
+export class ProvenanceService implements OnApplicationShutdown {
+  private readonly logger = new Logger(ProvenanceService.name);
+  private readonly runs = new Map<string, RunContext>();
+  private readonly queue: QueueItem[] = [];
+  private flushTimer?: ReturnType<typeof setTimeout>;
+  private flushPromise?: Promise<void>;
+  private retryMs = 100;
+
+  constructor(private readonly db: DatabaseService) {}
+
+  startRun(input: StartProvenanceRunInput): boolean {
+    const requested = input.options?.mode ?? this.defaultMode();
+    if (requested === 'off') return false;
+    const mode: RunContext['mode'] =
+      requested === 'full' &&
+      process.env.PROVENANCE_FULL_CAPTURE_ENABLED !== 'false'
+        ? 'full'
+        : 'metadata';
+    const onchainRequested = Boolean(input.options?.onchain);
+    const onchain =
+      onchainRequested && process.env.PROVENANCE_ONCHAIN_ENABLED === 'true';
+    const startedAt = new Date();
+    const context: RunContext = {
+      input,
+      mode,
+      onchain,
+      sequence: 0,
+      dropped: 0,
+      startedAt,
+    };
+    this.runs.set(input.traceId, context);
+    this.enqueue({
+      kind: 'start',
+      value: {
+        traceId: input.traceId,
+        sessionId: input.sessionId,
+        agentId: input.agentId,
+        scopeType: input.scopeType ?? 'agent_run',
+        scopeId: input.scopeId ?? input.traceId,
+        initiator: input.initiator,
+        workspaceId: input.workspaceId,
+        captureMode: mode,
+        provider: input.provider,
+        modelId: input.modelId,
+        onchainRequested,
+        anchorStatus: onchain
+          ? 'pending'
+          : onchainRequested
+            ? 'unavailable'
+            : 'not_requested',
+        startedAt,
+        metadata: {
+          schema: 'https://provenancekit.com/context/v2',
+          framework: 'langgraph',
+          runtime: 'agent-commons',
+          requestedMode: requested,
+          onchainEnabled: process.env.PROVENANCE_ONCHAIN_ENABLED === 'true',
+          ...input.metadata,
+        },
+      },
+    });
+    if (input.input !== undefined) {
+      this.recordEvent(input.traceId, {
+        category: 'input',
+        eventType: 'user.message',
+        name: 'User input',
+        phase: 'input',
+        summary: 'User message admitted to the agent run',
+        content: input.input,
+        payload: input.input,
+        startedAt,
+      });
+    }
+    if (input.lineage) {
+      this.recordEvent(input.traceId, {
+        category: 'system',
+        eventType: `${input.lineage.kind}.context`,
+        name: 'Execution lineage',
+        phase: 'input',
+        status: 'running',
+        summary: 'Linked this run to its caller and parent execution',
+        lineage: input.lineage,
+      });
+    }
+    return true;
+  }
+
+  recordEvent(traceId: string, event: RecordProvenanceEventInput): void {
+    const context = this.runs.get(traceId);
+    if (!context) return;
+    const startedAt = event.startedAt ?? new Date();
+    const endedAt =
+      event.endedAt ??
+      (event.durationMs !== undefined
+        ? new Date(startedAt.getTime() + event.durationMs)
+        : undefined);
+    // Strip private reasoning and credentials before hashing as well as before
+    // persistence, so even an opaque commitment to those fields is not kept.
+    const contentHash = sha256(
+      sanitize(event.content ?? event.result ?? event.payload),
+    );
+    const sequence = ++context.sequence;
+    const actionId = `urn:agentcommons:event:${traceId}:${sequence}`;
+    const derivedLineage = event.lineage ?? deriveToolLineage(event);
+    if (
+      derivedLineage?.decision?.type === 'human_approval' &&
+      derivedLineage.decision.outcome !== 'pending'
+    ) {
+      derivedLineage.decision.approval = {
+        reviewerId: context.input.initiator,
+        reviewerType: 'human',
+        ...derivedLineage.decision.approval,
+      };
+    }
+    const actorId = event.performedBy
+      ? `${event.performedBy.type}:${event.performedBy.id ?? 'unknown'}`
+      : derivedLineage?.decision?.type === 'human_approval' &&
+          derivedLineage.decision.outcome !== 'pending'
+        ? `human:${context.input.initiator ?? 'unknown'}`
+        : event.category === 'input'
+          ? `user:${context.input.initiator ?? 'unknown'}`
+          : context.input.agentId
+            ? `agent:${context.input.agentId}`
+            : `${context.input.scopeType ?? 'runtime'}:${context.input.scopeId ?? traceId}`;
+    const workflowContext = event.metadata?.workflow;
+    const lineage =
+      derivedLineage && workflowContext
+        ? {
+            ...derivedLineage,
+            workflow:
+              derivedLineage.workflow ??
+              (sanitize(
+                workflowContext,
+              ) as ProvenanceLineageMetadata['workflow']),
+          }
+        : derivedLineage;
+    const action: Action = {
+      id: actionId,
+      type: this.actionType(event.category),
+      performedBy: actorId,
+      timestamp: startedAt.toISOString(),
+      inputs: [],
+      outputs: contentHash
+        ? [{ ref: contentHash, scheme: 'hash' as const }]
+        : [],
+      extensions: {
+        'ext:session@1.0.0': {
+          sessionId: context.input.sessionId,
+          traceId,
+          sequence,
+        },
+        'ext:agentcommons:trajectory@1.0.0': {
+          category: event.category,
+          eventType: event.eventType,
+          phase: event.phase,
+          status: event.status ?? 'completed',
+          spanId: event.spanId,
+          parentSpanId: event.parentSpanId,
+          durationMs: event.durationMs,
+        },
+        ...(event.category === 'model'
+          ? {
+              'ext:ai@1.0.0': {
+                tool: {
+                  provider: context.input.provider,
+                  model: context.input.modelId,
+                  tokensUsed:
+                    (event.inputTokens ?? 0) + (event.outputTokens ?? 0),
+                  generationTime: event.durationMs,
+                },
+              },
+            }
+          : {}),
+        ...(event.category === 'tool'
+          ? {
+              'ext:tool-attestation@1.0.0': {
+                level: 'self-declared',
+                outputHash: contentHash,
+              },
+            }
+          : {}),
+        ...(lineage
+          ? { 'ext:agentcommons:lineage@1.0.0': sanitize(lineage) }
+          : {}),
+        ...(event.performedBy?.role
+          ? { 'ext:agentcommons:actor@1.0.0': { role: event.performedBy.role } }
+          : {}),
+      },
+    };
+    this.enqueue({
+      kind: 'event',
+      value: {
+        traceId,
+        sessionId: context.input.sessionId,
+        sequence,
+        category: event.category,
+        eventType: event.eventType,
+        name: event.name,
+        phase: event.phase,
+        status: event.status ?? 'completed',
+        spanId: event.spanId,
+        parentSpanId: event.parentSpanId,
+        summary: event.summary,
+        payload: this.capture(context.mode, event.payload),
+        result: this.capture(context.mode, event.result),
+        contentHash,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cachedTokens: event.cachedTokens,
+        costUsd: event.costUsd,
+        durationMs: event.durationMs,
+        eaaAction: action as unknown as Record<string, unknown>,
+        metadata: sanitize({
+          ...event.metadata,
+          ...(lineage ? { lineage } : {}),
+        }) as Record<string, unknown>,
+        startedAt,
+        endedAt,
+      },
+    });
+  }
+
+  finishRun(traceId: string, finish: FinishProvenanceRunInput): void {
+    const context = this.runs.get(traceId);
+    if (!context) return;
+    const endedAt = new Date();
+    if (finish.output !== undefined) {
+      this.recordEvent(traceId, {
+        category: finish.status === 'completed' ? 'output' : 'error',
+        eventType:
+          finish.status === 'completed' ? 'assistant.message' : 'run.error',
+        name: finish.status === 'completed' ? 'Final answer' : 'Run failed',
+        phase: 'final_answer',
+        status: finish.status === 'completed' ? 'completed' : 'failed',
+        summary:
+          finish.status === 'completed'
+            ? 'Final answer emitted'
+            : (finish.error ?? 'Agent run failed'),
+        result: finish.output,
+        content: finish.output,
+        startedAt: endedAt,
+      });
+    }
+    this.enqueue({
+      kind: 'finish',
+      traceId,
+      shouldExport:
+        context.onchain || process.env.PROVENANCEKIT_EXPORT_ENABLED === 'true',
+      value: {
+        status: finish.status,
+        endedAt,
+        durationMs:
+          finish.durationMs ?? endedAt.getTime() - context.startedAt.getTime(),
+        eventCount: context.sequence,
+        droppedEventCount: context.dropped,
+        inputTokens: finish.inputTokens ?? 0,
+        outputTokens: finish.outputTokens ?? 0,
+        cachedTokens: finish.cachedTokens ?? 0,
+        costUsd: finish.costUsd ?? 0,
+        updatedAt: endedAt,
+      },
+    });
+    this.runs.delete(traceId);
+    this.scheduleFlush(0);
+  }
+
+  async getSessionTrajectory(sessionId: string, since?: Date) {
+    const runs = await this.db.query.provenanceRun.findMany({
+      where: eq(schema.provenanceRun.sessionId, sessionId),
+      orderBy: [asc(schema.provenanceRun.startedAt)],
+    });
+    if (!runs.length) {
+      return {
+        sessionId,
+        runs: [],
+        events: [],
+        summary: this.summarize([], []),
+      };
+    }
+    const persistedEvents = await this.db.query.provenanceEvent.findMany({
+      where: since
+        ? and(
+            eq(schema.provenanceEvent.sessionId, sessionId),
+            gte(schema.provenanceEvent.createdAt, since),
+          )
+        : eq(schema.provenanceEvent.sessionId, sessionId),
+      orderBy: [
+        asc(schema.provenanceEvent.startedAt),
+        asc(schema.provenanceEvent.sequence),
+      ],
+    });
+    const sessionRecord = !since
+      ? await this.db.query.session.findFirst({
+          where: eq(schema.session.sessionId, sessionId),
+          columns: { history: true },
+        })
+      : undefined;
+    const events = sessionRecord?.history
+      ? reconcileSessionHistory(
+          runs as Array<Record<string, any>>,
+          persistedEvents as Array<Record<string, any>>,
+          sessionRecord.history as Array<Record<string, any>>,
+        )
+      : persistedEvents;
+    return {
+      sessionId,
+      runs,
+      events,
+      incremental: Boolean(since),
+      cursor:
+        persistedEvents.at(-1)?.createdAt?.toISOString() ??
+        since?.toISOString(),
+      summary: this.summarize(runs, events),
+    };
+  }
+
+  async getRun(traceId: string) {
+    return this.db.query.provenanceRun.findFirst({
+      where: eq(schema.provenanceRun.traceId, traceId),
+    });
+  }
+
+  async getScopeTrajectory(scopeType: string, scopeId: string) {
+    const runs = await this.db.query.provenanceRun.findMany({
+      where: and(
+        eq(schema.provenanceRun.scopeType, scopeType),
+        eq(schema.provenanceRun.scopeId, scopeId),
+      ),
+      orderBy: [asc(schema.provenanceRun.startedAt)],
+    });
+    const events = runs.length
+      ? await this.db.query.provenanceEvent.findMany({
+          where: sql`${schema.provenanceEvent.traceId} in (${sql.join(
+            runs.map((run) => sql`${run.traceId}`),
+            sql`, `,
+          )})`,
+          orderBy: [
+            asc(schema.provenanceEvent.startedAt),
+            asc(schema.provenanceEvent.sequence),
+          ],
+        })
+      : [];
+    return {
+      scopeType,
+      scopeId,
+      runs,
+      events,
+      summary: this.summarize(runs, events),
+    };
+  }
+
+  async buildBundle(traceId: string): Promise<ProvenanceBundle> {
+    const run = await this.getRun(traceId);
+    if (!run) throw new Error('Provenance run not found');
+    const events = await this.db.query.provenanceEvent.findMany({
+      where: eq(schema.provenanceEvent.traceId, traceId),
+      orderBy: [asc(schema.provenanceEvent.sequence)],
+    });
+    const artifactLinks = await this.db.query.libraryLink.findMany({
+      where: (table) =>
+        and(
+          eq(table.scopeType, 'provenance_trace'),
+          eq(table.scopeId, traceId),
+        ),
+    });
+    const artifactItems = artifactLinks.length
+      ? await this.db.query.libraryItem.findMany({
+          where: (table) =>
+            inArray(
+              table.itemId,
+              artifactLinks.map((link) => link.itemId),
+            ),
+        })
+      : [];
+    const attachmentFileIds = Array.isArray(run.metadata?.attachmentFileIds)
+      ? run.metadata.attachmentFileIds.filter(
+          (value): value is string => typeof value === 'string',
+        )
+      : [];
+    const inputArtifacts = attachmentFileIds.length
+      ? await this.db.query.libraryItem.findMany({
+          where: (table) => inArray(table.itemId, attachmentFileIds),
+        })
+      : [];
+    const userId = `user:${run.initiator ?? 'unknown'}`;
+    const agentId = run.agentId
+      ? `agent:${run.agentId}`
+      : `${run.scopeType ?? 'runtime'}:${run.scopeId ?? traceId}`;
+    const entities: Entity[] = [
+      { id: userId, role: 'human', name: run.initiator ?? 'User' },
+      {
+        id: agentId,
+        role: 'ai',
+        name:
+          run.modelId ??
+          run.agentId ??
+          run.scopeType ??
+          'Agent Commons runtime',
+        extensions: {
+          'ext:ai@1.0.0': {
+            agent: {
+              framework: 'langgraph',
+              sessionId: run.sessionId,
+              model: { provider: run.provider, model: run.modelId },
+              delegatedBy: userId,
+              autonomyLevel: 'supervised',
+            },
+          },
+        },
+      },
+    ];
+    const actions = events
+      .map((event) => event.eaaAction as Action | null)
+      .filter((action): action is Action => Boolean(action));
+    for (const artifact of inputArtifacts) {
+      actions.push({
+        id: `urn:agentcommons:artifact-use:${traceId}:${artifact.itemId}`,
+        type: 'ext:agentcommons:context' as Action['type'],
+        performedBy: agentId,
+        timestamp: run.startedAt.toISOString(),
+        inputs: [{ ref: `sha256:${artifact.sha256}`, scheme: 'hash' as const }],
+        outputs: [],
+        extensions: {
+          'ext:agentcommons:artifact@1.0.0': {
+            itemId: artifact.itemId,
+            name: artifact.name,
+            kind: artifact.kind,
+            role: 'input',
+          },
+        },
+      });
+    }
+    for (const artifact of artifactItems) {
+      const sourceFileId =
+        typeof artifact.metadata?.sourceFileId === 'string'
+          ? artifact.metadata.sourceFileId
+          : undefined;
+      const sourceHash = sourceFileId
+        ? await this.db.query.libraryItem
+            .findFirst({
+              where: (table) => eq(table.itemId, sourceFileId),
+            })
+            .then((source) => (source ? `sha256:${source.sha256}` : undefined))
+        : undefined;
+      actions.push({
+        id: `urn:agentcommons:artifact-action:${artifact.itemId}`,
+        type: (sourceHash ? 'transform' : 'create') as Action['type'],
+        performedBy: artifact.sourceAgentId
+          ? `agent:${artifact.sourceAgentId}`
+          : `user:${artifact.ownerUserId}`,
+        timestamp: artifact.createdAt.toISOString(),
+        inputs: sourceHash
+          ? [{ ref: sourceHash, scheme: 'hash' as const }]
+          : [],
+        outputs: [
+          { ref: `sha256:${artifact.sha256}`, scheme: 'hash' as const },
+        ],
+        extensions: {
+          'ext:agentcommons:artifact@1.0.0': {
+            itemId: artifact.itemId,
+            name: artifact.name,
+            kind: artifact.kind,
+            mimeType: artifact.mimeType,
+            sizeBytes: artifact.sizeBytes,
+            revisionOf: artifact.metadata?.sourceFileId,
+          },
+        },
+      });
+    }
+    const knownEntityIds = new Set(entities.map((entity) => entity.id));
+    const actorIds = actions
+      .map((action) => action.performedBy)
+      .filter((actorId): actorId is string => Boolean(actorId));
+    for (const actorId of new Set(actorIds)) {
+      if (knownEntityIds.has(actorId)) continue;
+      const [prefix, ...parts] = actorId.split(':');
+      entities.push({
+        id: actorId,
+        role:
+          prefix === 'human' || prefix === 'user'
+            ? 'human'
+            : prefix === 'agent'
+              ? 'ai'
+              : 'ext:agentcommons:runtime',
+        name: parts.join(':') || actorId,
+      });
+      knownEntityIds.add(actorId);
+    }
+    const resources: Resource[] = events
+      .filter((event) => Boolean(event.contentHash && event.eaaAction))
+      .map((event) => ({
+        address: { ref: event.contentHash!, scheme: 'hash' as const },
+        type:
+          event.category === 'tool' || event.category === 'system'
+            ? 'other'
+            : 'text',
+        locations: [],
+        createdAt: event.startedAt.toISOString(),
+        createdBy: (event.eaaAction as Action).performedBy ?? agentId,
+        rootAction: (event.eaaAction as Action).id,
+        extensions: {
+          'ext:agentcommons:disclosure@1.0.0': {
+            captureMode: run.captureMode,
+            rawContentIncluded: run.captureMode === 'full',
+          },
+        },
+      }));
+    resources.push(
+      ...artifactItems.map((artifact) => ({
+        address: {
+          ref: `sha256:${artifact.sha256}`,
+          scheme: 'hash' as const,
+        },
+        type: 'other' as const,
+        locations: [],
+        createdAt: artifact.createdAt.toISOString(),
+        createdBy: artifact.sourceAgentId
+          ? `agent:${artifact.sourceAgentId}`
+          : `user:${artifact.ownerUserId}`,
+        rootAction: `urn:agentcommons:artifact-action:${artifact.itemId}`,
+        extensions: {
+          'ext:agentcommons:artifact@1.0.0': {
+            itemId: artifact.itemId,
+            name: artifact.name,
+            kind: artifact.kind,
+            mimeType: artifact.mimeType,
+            sizeBytes: artifact.sizeBytes,
+            revisionOf: artifact.metadata?.sourceFileId,
+            license:
+              artifact.metadata?.provenance?.license ??
+              artifact.metadata?.license ??
+              'not_specified',
+            aiTraining:
+              artifact.metadata?.provenance?.aiTraining ??
+              artifact.metadata?.aiTraining ??
+              'not_specified',
+          },
+        },
+      })),
+    );
+    const producedHashes = new Set(artifactItems.map((item) => item.sha256));
+    resources.push(
+      ...inputArtifacts
+        .filter((artifact) => !producedHashes.has(artifact.sha256))
+        .map((artifact) => ({
+          address: {
+            ref: `sha256:${artifact.sha256}`,
+            scheme: 'hash' as const,
+          },
+          type: 'other' as const,
+          locations: [],
+          createdAt: artifact.createdAt.toISOString(),
+          createdBy: artifact.sourceAgentId
+            ? `agent:${artifact.sourceAgentId}`
+            : `user:${artifact.ownerUserId}`,
+          rootAction: `urn:agentcommons:artifact-use:${traceId}:${artifact.itemId}`,
+          extensions: {
+            'ext:agentcommons:artifact@1.0.0': {
+              itemId: artifact.itemId,
+              name: artifact.name,
+              kind: artifact.kind,
+              mimeType: artifact.mimeType,
+              sizeBytes: artifact.sizeBytes,
+              role: 'input',
+            },
+          },
+        })),
+    );
+    const attributions: Attribution[] = actions.flatMap((action) => [
+      {
+        actionId: action.id,
+        entityId: action.performedBy,
+        role: 'creator' as const,
+      },
+      ...(action.performedBy === agentId
+        ? [
+            {
+              actionId: action.id,
+              entityId: userId,
+              role: 'contributor' as const,
+              note: 'Human requester/delegator',
+            },
+          ]
+        : []),
+    ]);
+    return {
+      context: CONTEXT_URI,
+      entities,
+      resources,
+      actions,
+      attributions,
+      extensions: {
+        'ext:agentcommons:run@1.0.0': {
+          traceId,
+          sessionId: run.sessionId,
+          status: run.status,
+          durationMs: run.durationMs,
+          captureMode: run.captureMode,
+          tokenUsage: {
+            input: run.inputTokens,
+            output: run.outputTokens,
+            cached: run.cachedTokens,
+          },
+          costUsd: run.costUsd,
+        },
+      },
+    };
+  }
+
+  async requestAnchor(traceId: string) {
+    const run = await this.getRun(traceId);
+    if (!run) throw new Error('Provenance run not found');
+    if (process.env.PROVENANCE_ONCHAIN_ENABLED !== 'true') {
+      throw new Error(
+        'On-chain provenance is not enabled for this environment',
+      );
+    }
+    await this.db
+      .update(schema.provenanceRun)
+      .set({
+        onchainRequested: true,
+        anchorStatus: 'pending',
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.provenanceRun.traceId, traceId));
+    void this.exportTrace(traceId, true);
+    return { traceId, status: 'pending' };
+  }
+
+  async onApplicationShutdown() {
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    await this.flush();
+  }
+
+  private defaultMode(): ProvenanceCaptureMode {
+    const value = process.env.PROVENANCE_DEFAULT_MODE;
+    return value === 'off' || value === 'full' ? value : 'metadata';
+  }
+
+  private capture(mode: RunContext['mode'], value: unknown) {
+    if (value === undefined) return undefined;
+    return (mode === 'full' ? sanitize(value) : describe(value)) as Record<
+      string,
+      unknown
+    >;
+  }
+
+  private actionType(
+    category: RecordProvenanceEventInput['category'],
+  ): Action['type'] {
+    if (category === 'model') return 'transform';
+    if (category === 'output') return 'create';
+    if (category === 'system') return 'verify';
+    return `ext:agentcommons:${category}` as Action['type'];
+  }
+
+  private enqueue(item: QueueItem) {
+    if (this.queue.length >= this.queueLimit()) {
+      if (item.kind === 'event') {
+        const run = this.runs.get(item.value.traceId);
+        if (run) run.dropped += 1;
+      }
+      return;
+    }
+    this.queue.push(item);
+    if (this.queue.length >= this.batchSize()) this.scheduleFlush(0);
+    else this.scheduleFlush(this.flushInterval());
+  }
+
+  private scheduleFlush(delay: number) {
+    if (this.flushTimer) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = undefined;
+      void this.flush();
+    }, delay);
+    this.flushTimer.unref?.();
+  }
+
+  private async flush(): Promise<void> {
+    if (this.flushPromise) return this.flushPromise;
+    this.flushPromise = this.flushBatch().finally(() => {
+      this.flushPromise = undefined;
+      if (this.queue.length) this.scheduleFlush(this.flushInterval());
+    });
+    return this.flushPromise;
+  }
+
+  private async flushBatch() {
+    if (!this.queue.length) return;
+    const batch = this.queue.splice(0, this.batchSize());
+    const starts = batch.filter(
+      (item): item is QueuedStart => item.kind === 'start',
+    );
+    const events = batch.filter(
+      (item): item is QueuedEvent => item.kind === 'event',
+    );
+    const finishes = batch.filter(
+      (item): item is QueuedFinish => item.kind === 'finish',
+    );
+    try {
+      if (starts.length) {
+        await this.db
+          .insert(schema.provenanceRun)
+          .values(starts.map((item) => item.value))
+          .onConflictDoNothing();
+      }
+      if (events.length) {
+        await this.db
+          .insert(schema.provenanceEvent)
+          .values(events.map((item) => item.value))
+          .onConflictDoNothing();
+      }
+      for (const finish of finishes) {
+        await this.db
+          .update(schema.provenanceRun)
+          .set(finish.value)
+          .where(eq(schema.provenanceRun.traceId, finish.traceId));
+      }
+      this.retryMs = 100;
+      for (const finish of finishes) {
+        if (finish.shouldExport) void this.exportTrace(finish.traceId);
+        else void this.storeBundleHash(finish.traceId);
+      }
+    } catch (error) {
+      this.queue.unshift(...batch);
+      this.logger.warn(
+        `Provenance batch deferred: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      this.scheduleFlush(this.retryMs);
+      this.retryMs = Math.min(this.retryMs * 2, 10_000);
+    }
+  }
+
+  private async storeBundleHash(traceId: string) {
+    try {
+      const bundle = await this.buildBundle(traceId);
+      const bundleHash = sha256(bundle);
+      await this.db
+        .update(schema.provenanceRun)
+        .set({ bundleHash, updatedAt: new Date() })
+        .where(eq(schema.provenanceRun.traceId, traceId));
+    } catch (error) {
+      this.logger.debug(
+        `Bundle hash deferred for ${traceId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private async exportTrace(traceId: string, forceOnchain?: boolean) {
+    const apiUrl = process.env.PROVENANCEKIT_API_URL?.replace(/\/$/, '');
+    const apiKey = process.env.PROVENANCEKIT_API_KEY;
+    try {
+      const run = await this.getRun(traceId);
+      if (!run) return;
+      const bundle = await this.buildBundle(traceId);
+      const bundleHash = sha256(bundle);
+      const onchain = Boolean(forceOnchain ?? run.onchainRequested);
+      if (!apiUrl) {
+        await this.db
+          .update(schema.provenanceRun)
+          .set({
+            bundleHash,
+            anchorStatus: onchain ? 'failed' : run.anchorStatus,
+            anchorMetadata: onchain
+              ? { error: 'ProvenanceKit sink is not configured' }
+              : run.anchorMetadata,
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.provenanceRun.traceId, traceId));
+        return;
+      }
+      const response = await fetch(`${apiUrl}/v1/actions/batch`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({ bundle, onchain }),
+      });
+      const data = (await response.json().catch(() => ({}))) as Record<
+        string,
+        any
+      >;
+      if (!response.ok)
+        throw new Error(data?.error?.message ?? `HTTP ${response.status}`);
+      await this.db
+        .update(schema.provenanceRun)
+        .set({
+          bundleHash,
+          anchorProvider: 'provenancekit',
+          anchorStatus: onchain
+            ? data.onchain?.txHash
+              ? 'submitted'
+              : 'failed'
+            : 'exported',
+          anchorRef: data.onchain?.txHash ?? data.batchId ?? bundleHash,
+          anchorMetadata: data,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.provenanceRun.traceId, traceId));
+    } catch (error) {
+      await this.db
+        .update(schema.provenanceRun)
+        .set({
+          anchorStatus: 'failed',
+          anchorMetadata: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.provenanceRun.traceId, traceId))
+        .catch(() => undefined);
+    }
+  }
+
+  private summarize(runs: any[], events: any[]) {
+    return {
+      runs: runs.length,
+      events: events.length,
+      modelCalls: events.filter((event) => event.category === 'model').length,
+      toolCalls: events.filter((event) => event.category === 'tool').length,
+      durationMs: runs.reduce((total, run) => total + (run.durationMs ?? 0), 0),
+      inputTokens: runs.reduce(
+        (total, run) => total + (run.inputTokens ?? 0),
+        0,
+      ),
+      outputTokens: runs.reduce(
+        (total, run) => total + (run.outputTokens ?? 0),
+        0,
+      ),
+      cachedTokens: runs.reduce(
+        (total, run) => total + (run.cachedTokens ?? 0),
+        0,
+      ),
+      costUsd: runs.reduce((total, run) => total + Number(run.costUsd ?? 0), 0),
+      droppedEvents: runs.reduce(
+        (total, run) => total + (run.droppedEventCount ?? 0),
+        0,
+      ),
+    };
+  }
+
+  private batchSize() {
+    return Number(process.env.PROVENANCE_BATCH_SIZE) || DEFAULT_BATCH_SIZE;
+  }
+  private flushInterval() {
+    return Number(process.env.PROVENANCE_FLUSH_MS) || DEFAULT_FLUSH_MS;
+  }
+  private queueLimit() {
+    return Number(process.env.PROVENANCE_QUEUE_LIMIT) || DEFAULT_QUEUE_LIMIT;
+  }
+}

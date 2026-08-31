@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { backendAuthHeaders } from "@/lib/api-headers";
+import {
+  backendAuthHeaders,
+  invalidateBackendServiceAuthCache,
+} from "@/lib/api-headers";
 import { auth } from "@/auth";
 import { normalizePrincipalId } from "@/lib/principal-id";
 
@@ -39,15 +42,23 @@ export async function proxyBackend(
         cache: options.cache ?? "no-store",
         headers: {
           ...(hasBody ? { "Content-Type": "application/json" } : {}),
-          ...await backendAuthHeaders({ session, preferUserToken }),
+          ...(await backendAuthHeaders({ session, preferUserToken })),
         },
         body,
       });
 
     // Service-token caches and upstream key rotation can briefly disagree.
-    // Retry one 401 with the signed user's OIDC token before surfacing it.
+    // Remint the service token first, then fall back to the user's OIDC token.
     let res = await request();
-    if (res.status === 401 && session.accessToken && !session.accessTokenError) {
+    if (res.status === 401) {
+      invalidateBackendServiceAuthCache();
+      res = await request();
+    }
+    if (
+      res.status === 401 &&
+      session.accessToken &&
+      !session.accessTokenError
+    ) {
       res = await request(true);
     }
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
