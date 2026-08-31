@@ -7,7 +7,8 @@ const OWNER_EMAIL = "bashybaranaba@gmail.com";
 const PREVIEW_EMAIL = "bashybaranaba@gmail.com";
 const CHECK_IN_TITLE = "Your AI Quick Wins outcome check-in";
 const CHECK_IN_INSTRUCTIONS =
-  "Look back at your outcome contract, then share: (1) the concrete steps you have taken since the workshop; (2) what changed as a result; (3) how you are measuring progress, including any baseline, current measure, or evidence; (4) your next step and when you will take it; and (5) any blocker or support you need. Small, specific progress is useful.";
+  "Look back at your outcome contract, choose a one-on-one time, then share: (1) the concrete steps you have taken since the workshop; (2) what changed as a result; (3) how you are measuring progress, including any baseline, current measure, or evidence; (4) your next step and when you will take it; and (5) any blocker or support you need. Small, specific progress is useful.";
+const MEETING_SLOTS = buildMeetingSlots();
 
 const args = new Set(process.argv.slice(2));
 const apply = args.has("--apply");
@@ -87,6 +88,8 @@ try {
     personalizedContracts: targetContexts.length,
     missingContracts: missing.map((participant) => participant.email),
     previewRecipient: PREVIEW_EMAIL,
+    oneOnOneSlots: MEETING_SLOTS.length,
+    oneOnOneWindow: "Tuesday and Thursday evenings through September 17, 2026 · Africa/Nairobi",
     prompt: CHECK_IN_INSTRUCTIONS,
   };
   if (!apply) {
@@ -104,6 +107,8 @@ try {
       acceptsUrl: true,
       kind: "follow_up",
       sourceLiveSessionId: session._id,
+      meetingSlots: MEETING_SLOTS,
+      meetingSlotRequired: true,
       updatedAt: now,
     };
     const draft = await db.collection("assignments").findOneAndUpdate(
@@ -191,4 +196,22 @@ try {
   }
 } finally {
   await mongoose.disconnect();
+}
+
+function buildMeetingSlots() {
+  const days = ["2026-09-01", "2026-09-03", "2026-09-08", "2026-09-10", "2026-09-15", "2026-09-17"];
+  const times = [
+    { id: "1730", start: "14:30:00.000Z", end: "15:00:00.000Z" },
+    { id: "1830", start: "15:30:00.000Z", end: "16:00:00.000Z" },
+    { id: "1930", start: "16:30:00.000Z", end: "17:00:00.000Z" },
+  ];
+  return days.flatMap((day) =>
+    times.map((time) => ({
+      id: `${day}-${time.id}`,
+      startAt: new Date(`${day}T${time.start}`),
+      endAt: new Date(`${day}T${time.end}`),
+      timezone: "Africa/Nairobi",
+      capacity: 1,
+    })),
+  );
 }

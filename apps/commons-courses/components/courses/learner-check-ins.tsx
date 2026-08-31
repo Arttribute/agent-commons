@@ -22,6 +22,14 @@ type CheckIn = {
   instructions: string;
   context?: string;
   dueAt?: string;
+  meetingSlotRequired?: boolean;
+  meetingSlots?: Array<{
+    id: string;
+    startAt: string;
+    endAt: string;
+    timezone: string;
+    available: boolean;
+  }>;
 };
 
 type Submission = {
@@ -31,6 +39,7 @@ type Submission = {
   url?: string;
   status: string;
   checkInStatus?: CheckInStatus;
+  selectedMeetingSlotId?: string;
   feedback?: string;
   submittedAt: string;
 };
@@ -156,6 +165,9 @@ function CheckInForm({
   );
   const [text, setText] = useState(submission?.text || "");
   const [url, setUrl] = useState(submission?.url || "");
+  const [selectedMeetingSlotId, setSelectedMeetingSlotId] = useState(
+    submission?.selectedMeetingSlotId || "",
+  );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(Boolean(submission));
   const [error, setError] = useState("");
@@ -178,7 +190,12 @@ function CheckInForm({
     const response = await fetch(`/api/assignments/${checkIn.id}/submissions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, url, checkInStatus }),
+      body: JSON.stringify({
+        text,
+        url,
+        checkInStatus,
+        selectedMeetingSlotId,
+      }),
     });
     const data = await response.json();
     setSaving(false);
@@ -247,6 +264,41 @@ function CheckInForm({
           </div>
         </div>
 
+        {Boolean(checkIn.meetingSlots?.length) && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+            <label htmlFor={`meeting-slot-${checkIn.id}`} className="text-sm font-bold text-slate-900">
+              Choose your one-on-one check-in time
+            </label>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Pick one available 30-minute Tuesday or Thursday evening slot. Times are shown in Nairobi time.
+            </p>
+            <span className="relative mt-3 block">
+              <CalendarDays className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <select
+                id={`meeting-slot-${checkIn.id}`}
+                required={checkIn.meetingSlotRequired}
+                value={selectedMeetingSlotId}
+                onChange={(event) => {
+                  setSelectedMeetingSlotId(event.target.value);
+                  if (event.target.value) markStarted();
+                }}
+                className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-sm font-semibold text-slate-800 outline-none focus:border-slate-500"
+              >
+                <option value="">Choose a date and time</option>
+                {(checkIn.meetingSlots || []).map((slot) => (
+                  <option
+                    key={slot.id}
+                    value={slot.id}
+                    disabled={!slot.available && selectedMeetingSlotId !== slot.id}
+                  >
+                    {formatMeetingSlot(slot)}{slot.available || selectedMeetingSlotId === slot.id ? "" : " · booked"}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </div>
+        )}
+
         <div>
           <label htmlFor={`check-in-${checkIn.id}`} className="text-sm font-bold text-slate-900">Tell your facilitators how it is going</label>
           <p className="mt-1 text-sm leading-6 text-slate-500">{checkIn.instructions}</p>
@@ -267,7 +319,7 @@ function CheckInForm({
         {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-500">{saved ? "Your update is saved. You can return and revise it." : "Only your course educators can see this response."}</p>
-          <button disabled={saving || !text.trim()} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 text-sm font-bold text-white disabled:opacity-40"><Send className="h-4 w-4" />{saving ? "Saving…" : saved ? "Update check-in" : "Send update"}</button>
+          <button disabled={saving || !text.trim() || Boolean(checkIn.meetingSlotRequired && !selectedMeetingSlotId)} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 text-sm font-bold text-white disabled:opacity-40"><Send className="h-4 w-4" />{saving ? "Saving…" : saved ? "Update check-in" : "Send update"}</button>
         </div>
       </form>
     </section>
@@ -280,4 +332,30 @@ function statusLabel(status?: CheckInStatus) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(value));
+}
+
+function formatMeetingSlot(slot: {
+  startAt: string;
+  endAt: string;
+  timezone: string;
+}) {
+  const date = new Date(slot.startAt);
+  const end = new Date(slot.endAt);
+  const day = new Intl.DateTimeFormat("en", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: slot.timezone,
+  }).format(date);
+  const time = new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: slot.timezone,
+  }).format(date);
+  const endTime = new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: slot.timezone,
+  }).format(end);
+  return `${day} · ${time}–${endTime}`;
 }

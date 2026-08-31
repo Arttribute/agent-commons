@@ -83,6 +83,14 @@ export default async function CourseCheckInsPage({
         userId: currentUser.user.id,
       }).lean()
     : [];
+  const meetingReservations = assignmentIds.length
+    ? await Submission.find({
+        assignmentId: { $in: assignmentIds },
+        selectedMeetingSlotId: { $exists: true, $ne: "" },
+      })
+        .select("assignmentId userId selectedMeetingSlotId")
+        .lean()
+    : [];
   const sourceSessionIds = assignments
     .map((assignment) => assignment.sourceLiveSessionId)
     .filter(Boolean);
@@ -115,6 +123,9 @@ export default async function CourseCheckInsPage({
         String(response.sessionId) === String(assignment.sourceLiveSessionId) &&
         reflectionIds.has(response.activityId),
     );
+    const ownSubmission = submissions.find(
+      (submission) => String(submission.assignmentId) === String(assignment._id),
+    );
     return {
       id: String(assignment._id),
       title: assignment.title,
@@ -129,6 +140,30 @@ export default async function CourseCheckInsPage({
       dueAt: assignment.dueAt
         ? new Date(assignment.dueAt).toISOString()
         : undefined,
+      meetingSlotRequired: assignment.meetingSlotRequired,
+      meetingSlots: (assignment.meetingSlots || []).map((slot: {
+        id: string;
+        startAt: Date | string;
+        endAt: Date | string;
+        timezone: string;
+        capacity: number;
+      }) => {
+        const reservations = meetingReservations.filter(
+          (reservation) =>
+            String(reservation.assignmentId) === String(assignment._id) &&
+            reservation.selectedMeetingSlotId === slot.id,
+        );
+        const selectedByCurrentLearner =
+          ownSubmission?.selectedMeetingSlotId === slot.id;
+        return {
+          id: slot.id,
+          startAt: new Date(slot.startAt).toISOString(),
+          endAt: new Date(slot.endAt).toISOString(),
+          timezone: slot.timezone,
+          available:
+            selectedByCurrentLearner || reservations.length < slot.capacity,
+        };
+      }),
     };
   });
   const serializedSubmissions = submissions.map((submission) => ({
@@ -138,6 +173,7 @@ export default async function CourseCheckInsPage({
     url: submission.url,
     status: submission.status,
     checkInStatus: submission.checkInStatus,
+    selectedMeetingSlotId: submission.selectedMeetingSlotId,
     feedback: submission.feedback,
     submittedAt: new Date(submission.submittedAt).toISOString(),
   }));
