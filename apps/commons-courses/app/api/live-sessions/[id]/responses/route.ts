@@ -1,0 +1,167 @@
+import { NextRequest, NextResponse } from "next/server";
+import { Types } from "mongoose";
+import { auth } from "@/lib/auth";
+import { connectDB } from "@/lib/db";
+import LiveParticipant from "@/models/LiveParticipant";
+import LiveResponse from "@/models/LiveResponse";
+import LiveSession from "@/models/LiveSession";
+import type { LiveActivity, LiveActivityOption } from "@/types/live-session";
+import {
+  isValidLiveResponse,
+  normalizeCardCollectionResponse,
+  normalizeLinkedScorecardResponse,
+  normalizePrioritizationResponse,
+  normalizeWorksheetResponse,
+} from "@/lib/live-response-policy";
+import {
+  effectiveActivityPace,
+  isActivityPartOpen,
+} from "@/lib/live-session-parts";
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const currentUser = await auth();
+  if (!currentUser?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+  const { id } = await params;
+  if (!Types.ObjectId.isValid(id)) {
+    return NextResponse.json({ error: "Session not found." }, { status: 404 });
+  }
+  const body = await req.json().catch(() => ({}));
+  const activityId = typeof body.activityId === "string" ? body.activityId : "";
+  const value = body.value;
+  if (
+    !activityId ||
+    (!Array.isArray(value) &&
+      typeof value !== "string" &&
+      (!value || typeof value !== "object"))
+  ) {
+    return NextResponse.json(
+      { error: "activityId and a response are required." },
+      { status: 400 },
+    );
+  }
+  if (typeof value === "string" && (!value.trim() || value.length > 10_000)) {
+    return NextResponse.json(
+      { error: "Enter a response under 10,000 characters." },
+      { status: 400 },
+    );
+  }
+  await connectDB();
+  const session = await LiveSession.findById(id);
+  const activity = session?.activities.find(
+    (item: LiveActivity) => item.id === activityId,
+  );
+  if (!session || !activity) {
+    return NextResponse.json({ error: "Activity not found." }, { status: 404 });
+  }
+  if (!isActivityPartOpen(session, activity.id)) {
+    return NextResponse.json(
+      { error: "This programme session is not open yet." },
+      { status: 409 },
+    );
+  }
+  if (activity.status !== "open") {
+    return NextResponse.json(
+      { error: "This activity is not open." },
+      { status: 409 },
+    );
+  }
+  if (
+    effectiveActivityPace(session, activity.id) === "facilitator" &&
+    session.currentActivityId !== activity.id
+  ) {
+    return NextResponse.json(
+      { error: "Wait for the facilitator to open this activity." },
+      { status: 409 },
+    );
+  }
+  const participant = await LiveParticipant.findOne({
+    sessionId: session._id,
+    userId: currentUser.user.id,
+  });
+  if (!participant) {
+    return NextResponse.json(
+      { error: "Join the session before responding." },
+      { status: 403 },
+    );
+  }
+  const sourceResponse = activity.sourceActivityId
+    ? await LiveResponse.findOne({
+        sessionId: session._id,
+        activityId: activity.sourceActivityId,
+        participantId: participant._id,
+      }).lean()
+    : null;
+  const sourceValue =
+    sourceResponse && !Array.isArray(sourceResponse)
+      ? (sourceResponse as unknown as { value?: unknown }).value
+      : undefined;
+  if (!isValidLiveResponse(activity, value, sourceValue)) {
+    return NextResponse.json(
+      { error: "Choose a valid response before submitting." },
+      { status: 400 },
+    );
+  }
+  const responseValue =
+    activity.type === "prioritization"
+      ? normalizePrioritizationResponse(activity, value)
+      : activity.type === "worksheet"
+        ? normalizeWorksheetResponse(activity, value)
+        : activity.type === "card_collection"
+          ? normalizeCardCollectionResponse(activity, value)
+          : activity.type === "linked_scorecard"
+            ? normalizeLinkedScorecardResponse(activity, value, sourceValue)
+            : value;
+  if (responseValue === undefined) {
+    return NextResponse.json(
+      { error: "Add a valid response before saving." },
+      { status: 400 },
+    );
+  }
+  const selectedValues = Array.isArray(responseValue)
+    ? responseValue.map(String)
+    : typeof responseValue === "string"
+      ? [responseValue]
+      : [];
+  const correctOptions = activity.options
+    .filter((option: LiveActivityOption) => option.isCorrect)
+    .map((option: LiveActivityOption) => option.id);
+  const isQuiz = activity.type === "quiz" && correctOptions.length > 0;
+  const correct = isQuiz
+    ? selectedValues.length === correctOptions.length &&
+      selectedValues.every((selected) => correctOptions.includes(selected))
+    : undefined;
+  const response = await LiveResponse.findOneAndUpdate(
+    { sessionId: session._id, activityId, participantId: participant._id },
+    {
+      $set: {
+        courseId: session.courseId,
+        userId: currentUser.user.id,
+        value: responseValue,
+        correct,
+        pointsAwarded: correct ? activity.points : 0,
+        submittedAt: new Date(),
+      },
+    },
+    { new: true, upsert: true },
+  );
+  participant.lastSeenAt = new Date();
+  participant.status = "active";
+  await participant.save();
+  return NextResponse.json({
+    response: {
+      activityId,
+      value: response.value,
+      correct:
+        activity.showResults && activity.status === "closed"
+          ? response.correct
+          : undefined,
+      pointsAwarded: response.pointsAwarded,
+      submittedAt: response.submittedAt,
+    },
+  });
+}

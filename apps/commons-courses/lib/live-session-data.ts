@@ -1,0 +1,392 @@
+import type { Types } from "mongoose";
+import { normalizeCourseTheme, type CourseTheme } from "@/lib/course-theme";
+import { normalizeLiveLearnerCopilotPolicy } from "@/lib/live-copilot-policy";
+import LiveParticipant from "@/models/LiveParticipant";
+import LiveResponse from "@/models/LiveResponse";
+import type { ILiveSession } from "@/models/LiveSession";
+export { learnerSafeActivities } from "@/lib/live-activity-serialization";
+import type {
+  LiveActivity,
+  LiveActivityResults,
+  LiveParticipantRecord,
+  LiveResponseRecord,
+  LiveSessionRecord,
+  LiveResponseValue,
+} from "@/types/live-session";
+import {
+  decodeOtherResponse,
+  normalizeCardCollectionResponse,
+  normalizeLinkedScorecardResponse,
+  normalizePrioritizationResponse,
+  normalizeWorksheetResponse,
+} from "@/lib/live-response-policy";
+
+type LiveSessionDocumentLike = ILiveSession & {
+  _id: Types.ObjectId;
+  courseId: Types.ObjectId;
+};
+
+export async function serializeEducatorLiveSession(
+  session: LiveSessionDocumentLike,
+  courseTitle: string,
+  courseTheme?: Partial<CourseTheme>,
+): Promise<LiveSessionRecord> {
+  const [participantCount, responseCountRows] = await Promise.all([
+    LiveParticipant.countDocuments({ sessionId: session._id }),
+    LiveResponse.aggregate([
+      { $match: { sessionId: session._id } },
+      { $group: { _id: "$activityId", count: { $sum: 1 } } },
+    ]),
+  ]);
+  const responseCounts = Object.fromEntries(
+    responseCountRows.map((row: { _id: string; count: number }) => [
+      row._id,
+      row.count,
+    ]),
+  );
+  return serializeBase(
+    session,
+    courseTitle,
+    courseTheme,
+    participantCount,
+    responseCounts,
+  );
+}
+
+export async function getParticipants(sessionId: Types.ObjectId) {
+  const participants = await LiveParticipant.find({ sessionId })
+    .sort({ joinedAt: 1 })
+    .lean();
+  return participants.map(
+    (participant): LiveParticipantRecord => ({
+      id: String(participant._id),
+      displayName: participant.displayName,
+      status: participant.status,
+      joinedAt: participant.joinedAt.toISOString(),
+      lastSeenAt: participant.lastSeenAt.toISOString(),
+    }),
+  );
+}
+
+export async function getSessionResults(
+  session: LiveSessionDocumentLike,
+  revealNames: boolean,
+) {
+  const responses = await LiveResponse.find({ sessionId: session._id })
+    .populate("participantId", "displayName")
+    .sort({ submittedAt: 1 })
+    .lean();
+  const results: Record<string, LiveActivityResults> = {};
+  for (const activity of session.activities) {
+    const activityResponses = responses.filter(
+      (response) => response.activityId === activity.id,
+    );
+    results[activity.id] = buildActivityResults(
+      activity,
+      activityResponses as unknown as Array<{
+        _id: Types.ObjectId;
+        value: LiveResponseValue;
+        correct?: boolean;
+        participantId?: { displayName?: string };
+      }>,
+      revealNames,
+      session.activities.find((item) => item.id === activity.sourceActivityId),
+      responses.filter(
+        (response) => response.activityId === activity.sourceActivityId,
+      ) as unknown as Array<{
+        _id: Types.ObjectId;
+        value: LiveResponseValue;
+        participantId?: { _id?: Types.ObjectId; displayName?: string };
+      }>,
+    );
+  }
+  return results;
+}
+
+export async function getLearnerResponses(
+  sessionId: Types.ObjectId,
+  participantId: Types.ObjectId,
+) {
+  const responses = await LiveResponse.find({
+    sessionId,
+    participantId,
+  }).lean();
+  return Object.fromEntries(
+    responses.map((response) => [
+      response.activityId,
+      {
+        activityId: response.activityId,
+        value: response.value as LiveResponseValue,
+        correct: response.correct,
+        pointsAwarded: response.pointsAwarded,
+        submittedAt: response.submittedAt.toISOString(),
+      } satisfies LiveResponseRecord,
+    ]),
+  );
+}
+
+function serializeBase(
+  session: LiveSessionDocumentLike,
+  courseTitle: string,
+  courseTheme: Partial<CourseTheme> | undefined,
+  participantCount: number,
+  responseCounts: Record<string, number>,
+): LiveSessionRecord {
+  const currentActivityId = resolveCurrentActivityId(session);
+  return {
+    id: String(session._id),
+    courseId: String(session.courseId),
+    courseSlug: session.courseSlug,
+    courseTitle,
+    courseTheme: normalizeCourseTheme(courseTheme),
+    title: session.title,
+    description: session.description,
+    joinCode: session.joinCode,
+    status: session.status,
+    pace: session.pace,
+    access: session.access,
+    invitedEmails: session.invitedEmails || [],
+    scheduledStart: session.scheduledStart?.toISOString(),
+    currentActivityId,
+    currentPartId: session.currentPartId,
+    stateVersion: session.stateVersion || 0,
+    activities: session.activities || [],
+    parts: session.parts || [],
+    settings: {
+      allowLateJoin: session.settings?.allowLateJoin !== false,
+      showParticipantNames: Boolean(session.settings?.showParticipantNames),
+      showLeaderboard: Boolean(session.settings?.showLeaderboard),
+      learnerCopilot: normalizeLiveLearnerCopilotPolicy(
+        session.settings?.learnerCopilot,
+      ),
+    },
+    participantCount,
+    responseCounts,
+    createdAt: session.createdAt.toISOString(),
+    updatedAt: session.updatedAt.toISOString(),
+  };
+}
+
+export function resolveCurrentActivityId(
+  session: Pick<ILiveSession, "status" | "currentActivityId" | "activities">,
+) {
+  if (session.status !== "live" && session.status !== "ended") return undefined;
+  const selected = session.activities.find(
+    (activity) =>
+      activity.id === session.currentActivityId && activity.status !== "draft",
+  );
+  return (
+    selected?.id ||
+    session.activities.find((activity) => activity.status === "open")?.id
+  );
+}
+
+function buildActivityResults(
+  activity: LiveActivity,
+  responses: Array<{
+    _id: Types.ObjectId;
+    value: LiveResponseValue;
+    correct?: boolean;
+    participantId?: { _id?: Types.ObjectId; displayName?: string };
+  }>,
+  revealNames: boolean,
+  sourceActivity?: LiveActivity,
+  sourceResponses: Array<{
+    _id: Types.ObjectId;
+    value: LiveResponseValue;
+    participantId?: { _id?: Types.ObjectId; displayName?: string };
+  }> = [],
+): LiveActivityResults {
+  if (activity.type === "prioritization") {
+    return {
+      total: responses.length,
+      prioritizations: responses.flatMap((response) => {
+        const value = normalizePrioritizationResponse(activity, response.value);
+        if (!value) return [];
+        return [
+          {
+            id: String(response._id),
+            participantName: revealNames
+              ? response.participantId?.displayName || "Learner"
+              : undefined,
+            items: value.items.map((item) => item.text),
+            selectedItems: value.items
+              .filter((item) => item.selected)
+              .map((item) => item.text),
+            finalized: value.finalized,
+          },
+        ];
+      }),
+    };
+  }
+  if (activity.type === "worksheet") {
+    return {
+      total: responses.length,
+      worksheets: responses.flatMap((response) => {
+        const value = normalizeWorksheetResponse(activity, response.value);
+        if (!value) return [];
+        return [
+          {
+            id: String(response._id),
+            participantName: revealNames
+              ? response.participantId?.displayName || "Learner"
+              : undefined,
+            values: (activity.worksheetFields || []).flatMap((field) => {
+              const answer = value.values[field.id];
+              return answer === undefined
+                ? []
+                : [
+                    {
+                      fieldId: field.id,
+                      label: field.label,
+                      value: String(answer),
+                    },
+                  ];
+            }),
+            finalized: value.finalized,
+          },
+        ];
+      }),
+    };
+  }
+  if (activity.type === "card_collection") {
+    return {
+      total: responses.length,
+      cardCollections: responses.flatMap((response) => {
+        const value = normalizeCardCollectionResponse(activity, response.value);
+        if (!value) return [];
+        return [
+          {
+            id: String(response._id),
+            participantName: revealNames
+              ? response.participantId?.displayName || "Learner"
+              : undefined,
+            items: value.items.map((item) => ({
+              id: item.id,
+              title: String(
+                item.values[activity.itemTitleFieldId || ""] || "Untitled card",
+              ),
+              values: (activity.worksheetFields || []).flatMap((field) => {
+                const answer = item.values[field.id];
+                return answer === undefined
+                  ? []
+                  : [
+                      {
+                        fieldId: field.id,
+                        label: field.label,
+                        value: String(answer),
+                      },
+                    ];
+              }),
+            })),
+            finalized: value.finalized,
+          },
+        ];
+      }),
+    };
+  }
+  if (activity.type === "linked_scorecard" && sourceActivity) {
+    return {
+      total: responses.length,
+      scorecards: responses.flatMap((response) => {
+        const participantId = String(response.participantId?._id || "");
+        const sourceRecord = sourceResponses.find(
+          (candidate) =>
+            String(candidate.participantId?._id || "") === participantId,
+        );
+        const source = normalizeCardCollectionResponse(
+          sourceActivity,
+          sourceRecord?.value,
+        );
+        const value = normalizeLinkedScorecardResponse(
+          activity,
+          response.value,
+          sourceRecord?.value,
+        );
+        if (!source || !value) return [];
+        const titleFieldId =
+          sourceActivity.itemTitleFieldId ||
+          sourceActivity.worksheetFields?.[0]?.id ||
+          "";
+        const titleFor = (id: string) =>
+          String(
+            source.items.find((item) => item.id === id)?.values[titleFieldId] ||
+              "Untitled card",
+          );
+        return [
+          {
+            id: String(response._id),
+            participantName: revealNames
+              ? response.participantId?.displayName || "Learner"
+              : undefined,
+            selectedItemId: value.selectedItemId,
+            selectedTitle: value.selectedItemId
+              ? titleFor(value.selectedItemId)
+              : undefined,
+            selectionReason: value.selectionReason,
+            items: value.items.map((item) => ({
+              sourceItemId: item.sourceItemId,
+              title: titleFor(item.sourceItemId),
+              total: Object.values(item.scores).reduce(
+                (sum, score) => sum + score,
+                0,
+              ),
+            })),
+            finalized: value.finalized,
+          },
+        ];
+      }),
+    };
+  }
+  if (activity.options.length) {
+    const otherResponses = responses.flatMap((response) => {
+      const values = Array.isArray(response.value)
+        ? response.value
+        : [response.value];
+      return values.flatMap((value) => {
+        const decoded = decodeOtherResponse(value);
+        return decoded === undefined
+          ? []
+          : [
+              {
+                id: String(response._id),
+                participantName: revealNames
+                  ? response.participantId?.displayName || "Learner"
+                  : undefined,
+                value: decoded,
+              },
+            ];
+      });
+    });
+    return {
+      total: responses.length,
+      correct:
+        activity.type === "quiz"
+          ? responses.filter((response) => response.correct).length
+          : undefined,
+      options: activity.options.map((option) => ({
+        id: option.id,
+        label: option.label,
+        count: responses.filter((response) => {
+          const values = Array.isArray(response.value)
+            ? response.value
+            : [response.value];
+          return values.includes(option.id);
+        }).length,
+      })),
+      textResponses: otherResponses.length ? otherResponses : undefined,
+    };
+  }
+  return {
+    total: responses.length,
+    textResponses: responses.map((response) => ({
+      id: String(response._id),
+      participantName: revealNames
+        ? response.participantId?.displayName || "Learner"
+        : undefined,
+      value: Array.isArray(response.value)
+        ? response.value.join(", ")
+        : String(response.value),
+    })),
+  };
+}

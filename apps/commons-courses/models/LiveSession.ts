@@ -1,0 +1,217 @@
+import mongoose, { Document, Schema } from "mongoose";
+import type {
+  LiveActivity,
+  LiveSessionAccess,
+  LiveSessionPace,
+  LiveSessionPart,
+  LiveSessionSettings,
+  LiveSessionStatus,
+} from "@/types/live-session";
+
+export interface ILiveSession extends Document {
+  courseId: mongoose.Types.ObjectId;
+  courseSlug: string;
+  title: string;
+  description?: string;
+  joinCode: string;
+  status: LiveSessionStatus;
+  pace: LiveSessionPace;
+  access: LiveSessionAccess;
+  invitedEmails: string[];
+  scheduledStart?: Date;
+  currentActivityId?: string;
+  currentPartId?: string;
+  stateVersion: number;
+  activities: LiveActivity[];
+  parts: LiveSessionPart[];
+  settings: LiveSessionSettings;
+  createdBy: mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const LiveActivityOptionSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    label: { type: String, required: true, trim: true },
+    isCorrect: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+const LiveWorksheetFieldSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    label: { type: String, required: true, trim: true },
+    type: {
+      type: String,
+      enum: ["short_text", "long_text", "scale", "date"],
+      required: true,
+    },
+    section: { type: String, trim: true },
+    description: { type: String, trim: true },
+    placeholder: { type: String, trim: true },
+    required: { type: Boolean, default: false },
+    min: Number,
+    max: Number,
+    lowLabel: { type: String, trim: true },
+    highLabel: { type: String, trim: true },
+  },
+  { _id: false },
+);
+
+const LiveScoreCriterionSchema = new Schema(
+  {
+    id: { type: String, required: true, trim: true },
+    label: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+    min: { type: Number, required: true, min: 0, max: 20 },
+    max: { type: Number, required: true, min: 1, max: 20 },
+    lowLabel: { type: String, trim: true },
+    highLabel: { type: String, trim: true },
+  },
+  { _id: false },
+);
+
+const LiveActivitySchema = new Schema<LiveActivity>(
+  {
+    id: { type: String, required: true, trim: true },
+    type: {
+      type: String,
+      enum: [
+        "content",
+        "setup_check",
+        "poll",
+        "quiz",
+        "prioritization",
+        "worksheet",
+        "card_collection",
+        "linked_scorecard",
+        "reflection",
+        "task",
+        "break",
+      ],
+      required: true,
+    },
+    title: { type: String, required: true, trim: true },
+    prompt: { type: String, trim: true },
+    instructions: { type: String, trim: true },
+    successCriteria: { type: String, trim: true },
+    facilitatorNotes: { type: String, trim: true },
+    resourceUrl: { type: String, trim: true },
+    materialId: { type: String, trim: true },
+    materialStartSlide: { type: Number, min: 1, max: 500 },
+    labWorkspaceId: { type: String, trim: true },
+    labEntryPath: { type: String, trim: true },
+    estimatedMinutes: { type: Number, min: 1, max: 480 },
+    status: {
+      type: String,
+      enum: ["draft", "open", "closed"],
+      default: "draft",
+    },
+    required: { type: Boolean, default: false },
+    randomizeOptions: { type: Boolean, default: false },
+    showResults: { type: Boolean, default: false },
+    allowOther: { type: Boolean, default: false },
+    responseStyle: {
+      type: String,
+      enum: ["cards", "scale"],
+      default: "cards",
+    },
+    entryLabel: { type: String, trim: true },
+    selectionPrompt: { type: String, trim: true },
+    minItems: { type: Number, min: 1, max: 50 },
+    maxSelections: { type: Number, min: 1, max: 10 },
+    worksheetFields: { type: [LiveWorksheetFieldSchema], default: [] },
+    itemTitleFieldId: { type: String, trim: true },
+    sourceActivityId: { type: String, trim: true },
+    scoreCriteria: { type: [LiveScoreCriterionSchema], default: [] },
+    points: { type: Number, default: 0, min: 0 },
+    options: { type: [LiveActivityOptionSchema], default: [] },
+  },
+  { _id: false },
+);
+
+const LiveSessionSettingsSchema = new Schema<LiveSessionSettings>(
+  {
+    allowLateJoin: { type: Boolean, default: true },
+    showParticipantNames: { type: Boolean, default: false },
+    showLeaderboard: { type: Boolean, default: false },
+    learnerCopilot: {
+      type: new Schema(
+        {
+          enabled: { type: Boolean, default: true },
+          explainCurrentActivity: { type: Boolean, default: true },
+          coachResponses: { type: Boolean, default: true },
+          useCourseMaterials: { type: Boolean, default: true },
+          giveDirectExplanations: { type: Boolean, default: false },
+        },
+        { _id: false },
+      ),
+      default: () => ({}),
+    },
+  },
+  { _id: false },
+);
+
+const LiveSessionPartSchema = new Schema<LiveSessionPart>(
+  {
+    id: { type: String, required: true, trim: true },
+    title: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+    status: {
+      type: String,
+      enum: ["open", "closed"],
+      default: "closed",
+    },
+    pace: {
+      type: String,
+      enum: ["facilitator", "learner"],
+      default: "facilitator",
+    },
+    activityIds: { type: [String], default: [] },
+  },
+  { _id: false },
+);
+
+const LiveSessionSchema = new Schema<ILiveSession>(
+  {
+    courseId: { type: Schema.Types.ObjectId, ref: "Course", required: true },
+    courseSlug: { type: String, required: true, trim: true },
+    title: { type: String, required: true, trim: true },
+    description: { type: String, trim: true },
+    joinCode: { type: String, required: true, unique: true, trim: true },
+    status: {
+      type: String,
+      enum: ["draft", "lobby", "live", "ended"],
+      default: "draft",
+    },
+    pace: {
+      type: String,
+      enum: ["facilitator", "learner"],
+      default: "facilitator",
+    },
+    access: {
+      type: String,
+      enum: ["enrolled", "invited", "open"],
+      default: "enrolled",
+    },
+    invitedEmails: { type: [String], default: [] },
+    scheduledStart: Date,
+    currentActivityId: String,
+    currentPartId: String,
+    stateVersion: { type: Number, default: 0, min: 0 },
+    activities: { type: [LiveActivitySchema], default: [] },
+    parts: { type: [LiveSessionPartSchema], default: [] },
+    settings: { type: LiveSessionSettingsSchema, default: () => ({}) },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  },
+  { timestamps: true },
+);
+
+LiveSessionSchema.index({ courseId: 1, createdAt: -1 });
+LiveSessionSchema.index({ courseSlug: 1, status: 1 });
+LiveSessionSchema.index({ status: 1, scheduledStart: 1 });
+
+export default mongoose.models.LiveSession ||
+  mongoose.model<ILiveSession>("LiveSession", LiveSessionSchema);

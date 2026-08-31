@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
+  ChevronLeft,
+  ChevronRight,
   Code2,
   Download,
   Eye,
@@ -10,6 +12,7 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  MousePointer2,
   PencilLine,
   RefreshCw,
   X,
@@ -43,6 +46,7 @@ export function ArtifactSurface({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
+  const surfaceRef = useRef<HTMLElement>(null);
   const [view, setView] = useState<"preview" | "source" | "provenance">(
     "preview",
   );
@@ -82,6 +86,32 @@ export function ArtifactSurface({
     setView("preview");
     load();
   }, [load]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setFullscreen(document.fullscreenElement === surfaceRef.current);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  async function toggleFullscreen() {
+    if (document.fullscreenElement === surfaceRef.current) {
+      await document.exitFullscreen();
+      return;
+    }
+    if (fullscreen) {
+      setFullscreen(false);
+      return;
+    }
+    try {
+      await surfaceRef.current?.requestFullscreen({ navigationUI: "hide" });
+    } catch {
+      // Preserve the in-app fullscreen mode when the browser denies the native API.
+      setFullscreen(true);
+    }
+  }
 
   useEffect(() => {
     if (view !== "provenance" || provenance || provenanceLoading) return;
@@ -130,6 +160,7 @@ export function ArtifactSurface({
 
   return (
     <aside
+      ref={surfaceRef}
       className={cn(
         "relative z-40 flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-stone-200 bg-stone-50 shadow-2xl max-lg:absolute max-lg:inset-0 max-lg:w-full",
         fullscreen
@@ -137,7 +168,15 @@ export function ArtifactSurface({
           : "w-[min(760px,58vw)] min-w-[460px]",
       )}
     >
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-3">
+      <header
+        className={cn(
+          "flex h-14 shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-3",
+          fullscreen &&
+            view === "preview" &&
+            artifactKind(resolved) === "presentation" &&
+            "hidden",
+        )}
+      >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-600">
           <ArtifactIcon artifact={resolved} className="h-4.5 w-4.5" />
         </span>
@@ -199,7 +238,7 @@ export function ArtifactSurface({
           )}
           <ToolbarButton
             label={fullscreen ? "Exit full screen" : "Full screen"}
-            onClick={() => setFullscreen((value) => !value)}
+            onClick={() => void toggleFullscreen()}
           >
             {fullscreen ? (
               <Minimize2 className="h-4 w-4" />
@@ -214,7 +253,15 @@ export function ArtifactSurface({
       </header>
 
       {!loading && !error && preview ? (
-        <nav className="flex h-10 shrink-0 items-center gap-1 border-b border-stone-200 bg-white px-3">
+        <nav
+          className={cn(
+            "flex h-10 shrink-0 items-center gap-1 border-b border-stone-200 bg-white px-3",
+            fullscreen &&
+              view === "preview" &&
+              artifactKind(resolved) === "presentation" &&
+              "hidden",
+          )}
+        >
           <SurfaceTab
             active={view === "preview"}
             onClick={() => setView("preview")}
@@ -289,6 +336,9 @@ function ArtifactPreviewBody({ preview }: { preview: ArtifactPreview }) {
   const inlineUrl = preview.inline?.url || preview.download?.url;
   const visualPages = (preview.artifacts || []).filter(
     (artifact) => artifact.url && artifact.kind !== "image",
+  );
+  const presentationSlides = (preview.artifacts || []).filter(
+    (artifact) => artifact.url && artifact.kind === "presentation_slide_image",
   );
   const pageCount =
     typeof preview.metadata?.pages === "number"
@@ -427,31 +477,13 @@ function ArtifactPreviewBody({ preview }: { preview: ArtifactPreview }) {
   }
 
   if (kind === "presentation") {
-    if (visualPages.length) {
+    if (presentationSlides.length) {
       return (
-        <div className="min-h-0 flex-1 overflow-y-auto bg-stone-200/70 p-4 sm:p-6">
-          <div className="mx-auto max-w-4xl space-y-5">
-            {visualPages.map((slide, index) => (
-              <figure key={slide.artifactId}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={slide.url}
-                  alt={`${preview.name}, slide ${slide.pageNumber || index + 1}`}
-                  className="aspect-video w-full rounded-md bg-white object-contain shadow-lg"
-                />
-                <figcaption className="mt-1 text-center text-[10px] text-stone-500">
-                  Slide {slide.pageNumber || index + 1}
-                </figcaption>
-              </figure>
-            ))}
-            {pageCount > visualPages.length ? (
-              <p className="py-3 text-center text-xs text-stone-500">
-                Previewing {visualPages.length} of {pageCount} slides. Download
-                to view the complete presentation.
-              </p>
-            ) : null}
-          </div>
-        </div>
+        <PresentationSlides
+          name={preview.name}
+          slides={presentationSlides}
+          totalSlides={pageCount || presentationSlides.length}
+        />
       );
     }
     const slides = splitPresentation(
@@ -667,6 +699,141 @@ function CenteredMessage({
         {message}
       </div>
     </div>
+  );
+}
+
+function PresentationSlides({
+  name,
+  slides,
+  totalSlides,
+}: {
+  name: string;
+  slides: NonNullable<ArtifactPreview["artifacts"]>;
+  totalSlides: number;
+}) {
+  const [index, setIndex] = useState(0);
+  const [pointerEnabled, setPointerEnabled] = useState(false);
+  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
+  const lastIndex = Math.max(0, slides.length - 1);
+
+  useEffect(() => {
+    setIndex(0);
+  }, [name]);
+
+  const previous = () => setIndex((value) => Math.max(0, value - 1));
+  const next = () => setIndex((value) => Math.min(lastIndex, value + 1));
+  const current = slides[Math.min(index, lastIndex)];
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      if (["ArrowLeft", "PageUp"].includes(event.key)) {
+        event.preventDefault();
+        setIndex((value) => Math.max(0, value - 1));
+      }
+      if (["ArrowRight", "PageDown", " "].includes(event.key)) {
+        event.preventDefault();
+        setIndex((value) => Math.min(lastIndex, value + 1));
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        setIndex(0);
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        setIndex(lastIndex);
+      }
+      if (event.key.toLowerCase() === "l") {
+        setPointerEnabled((value) => !value);
+        setPointer(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lastIndex]);
+
+  return (
+    <div
+      className="flex min-h-0 flex-1 flex-col bg-stone-950"
+      tabIndex={0}
+      aria-label={`${name} presentation viewer`}
+    >
+      <div
+        className={cn(
+          "relative flex min-h-0 flex-1 items-center justify-center p-3 sm:p-6",
+          pointerEnabled && "cursor-none",
+        )}
+        onPointerMove={(event) => {
+          if (!pointerEnabled) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          setPointer({
+            x: ((event.clientX - bounds.left) / bounds.width) * 100,
+            y: ((event.clientY - bounds.top) / bounds.height) * 100,
+          });
+        }}
+        onPointerLeave={() => setPointer(null)}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={current?.url}
+          alt={`${name}, slide ${current?.pageNumber || index + 1}`}
+          className="max-h-full max-w-full rounded-sm bg-white object-contain shadow-2xl"
+        />
+        {pointerEnabled && pointer ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500 shadow-[0_0_8px_3px_rgba(239,68,68,0.75)]"
+            style={{ left: `${pointer.x}%`, top: `${pointer.y}%` }}
+          />
+        ) : null}
+      </div>
+      <div className="flex h-14 shrink-0 items-center justify-between border-t border-white/10 px-4 text-white">
+        <button
+          type="button"
+          onClick={previous}
+          disabled={index === 0}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium hover:bg-white/10 disabled:opacity-30"
+        >
+          <ChevronLeft className="h-4 w-4" /> Previous
+        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setPointerEnabled((value) => !value);
+              setPointer(null);
+            }}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium hover:bg-white/10",
+              pointerEnabled && "bg-red-500/20 text-red-200",
+            )}
+            title="Toggle laser pointer (L)"
+          >
+            <MousePointer2 className="h-3.5 w-3.5" /> Pointer
+          </button>
+          <span className="text-xs tabular-nums text-stone-300">
+            {index + 1} / {slides.length}
+            {totalSlides > slides.length ? ` · ${totalSlides} total` : ""}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={next}
+          disabled={index === lastIndex}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium hover:bg-white/10 disabled:opacity-30"
+        >
+          Next <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  const element = target instanceof HTMLElement ? target : null;
+  return Boolean(
+    element?.isContentEditable ||
+      element?.closest("input, textarea, select, [contenteditable='true']"),
   );
 }
 

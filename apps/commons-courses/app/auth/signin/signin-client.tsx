@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { signIn } from "next-auth/react";
 import { GoogleLogo } from "@/components/auth/google-logo";
 
 type SignInClientProps = {
@@ -13,6 +14,7 @@ type SignInClientProps = {
   initialOauthQuery: string;
   error: string;
   registered: boolean;
+  directGoogle: boolean;
 };
 
 export function SignInClient({
@@ -22,11 +24,13 @@ export function SignInClient({
   initialOauthQuery,
   error,
   registered,
+  directGoogle,
 }: SignInClientProps) {
   const router = useRouter();
   const { status } = useSession();
   const [oauthQuery, setOauthQuery] = useState(initialOauthQuery);
   const [prepareError, setPrepareError] = useState("");
+  const [googleStarting, setGoogleStarting] = useState(false);
   const preparing = !oauthQuery && !prepareError;
   const returnTo = useMemo(
     () => `${appUrl}/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`,
@@ -68,6 +72,17 @@ export function SignInClient({
     };
   }, [callbackUrl, oauthQuery]);
 
+  async function continueWithGoogle() {
+    if (!directGoogle || googleStarting) return;
+    setGoogleStarting(true);
+    try {
+      await signIn("google", { callbackUrl });
+    } catch {
+      setPrepareError("Google sign-in could not start. Please try again.");
+      setGoogleStarting(false);
+    }
+  }
+
   return (
     <>
       {registered && (
@@ -84,7 +99,14 @@ export function SignInClient({
           {error || prepareError}
         </p>
       )}
-      <a
+      {directGoogle ? <button
+        type="button"
+        onClick={() => void continueWithGoogle()}
+        disabled={googleStarting}
+        className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+      >
+        <GoogleLogo /> {googleStarting ? "Opening Google…" : "Continue with Google"}
+      </button> : <a
         aria-disabled={preparing}
         className={`mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 ${
           preparing ? "pointer-events-none opacity-60" : ""
@@ -96,7 +118,7 @@ export function SignInClient({
         }
       >
         <GoogleLogo /> {preparing ? "Preparing sign-in..." : "Continue with Google"}
-      </a>
+      </a>}
       <Divider />
       <form method="post" action={`${identityUrl}/native/sign-in/email`} className="space-y-4">
         <input type="hidden" name="app" value="commonlabs" />

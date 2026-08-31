@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Nav } from "@/components/nav";
@@ -8,6 +8,7 @@ import { AssignmentSubmissions } from "@/components/courses/assignment-submissio
 import { AnalyticsTracker, useAnalytics } from "@/components/analytics/analytics-tracker";
 import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
 import { LearningStudio } from "@/components/learning/learning-studio";
+import { LearnerLabWorkspace } from "@/components/labs/learner-lab-workspace";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import {
   CheckCircle,
@@ -16,9 +17,11 @@ import {
   Circle,
   Lock,
   Menu,
+  Presentation,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getCourseThemeStyle, type CourseTheme } from "@/lib/course-theme";
 import type { CourseAgentConfig } from "@/types/course-agent";
 
 interface Props {
@@ -31,6 +34,7 @@ interface LessonData {
   description?: string;
   assetUrl?: string;
   assetAlt?: string;
+  labWorkspaceId?: string;
   isFree: boolean;
 }
 
@@ -51,6 +55,7 @@ interface CourseLearnData {
   hasStarted?: boolean;
   modules: ModuleData[];
   agents?: CourseAgentConfig[];
+  theme?: CourseTheme;
 }
 
 export default function LearnPage({ params }: Props) {
@@ -382,7 +387,7 @@ export default function LearnPage({ params }: Props) {
     totalLessons > 0 ? Math.round((completedLessons.length / totalLessons) * 100) : 0;
 
   return (
-    <div className="h-dvh bg-white flex flex-col overflow-hidden">
+    <div style={getCourseThemeStyle(course.theme) as CSSProperties} className="h-dvh bg-[var(--course-background)] text-[var(--course-text)] flex flex-col overflow-hidden">
       <AnalyticsTracker
         courseSlug={slug}
         page="course.learn"
@@ -532,6 +537,7 @@ export default function LearnPage({ params }: Props) {
                 {currentLesson?.title}
               </h1>
             </div>
+            <Link href={`/courses/${slug}/materials`} className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"><Presentation className="h-3.5 w-3.5" /><span className="hidden sm:inline">Materials</span></Link>
             <span className="text-xs text-slate-400 flex-shrink-0">{currentLesson?.duration}</span>
           </div>
 
@@ -577,6 +583,10 @@ export default function LearnPage({ params }: Props) {
                   <RichTextRenderer value={currentLesson.description} />
                 </div>
               )}
+
+              {currentLesson?.labWorkspaceId ? (
+                <LearnerLabWorkspace workspaceId={currentLesson.labWorkspaceId} />
+              ) : null}
 
               {/* Module assignment (show on last lesson of each module) */}
               {lessonIdx === currentModule?.lessons.length - 1 &&

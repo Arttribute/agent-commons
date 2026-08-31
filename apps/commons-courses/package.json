@@ -15,7 +15,13 @@
     "seed:make-agent-powerful-skill": "node scripts/seed-make-agent-powerful-skill.mjs",
     "seed:intro-multi-agent-systems-skill": "node scripts/seed-intro-multi-agent-systems-skill.mjs",
     "repair:payments-index": "node scripts/repair-payments-index.mjs",
-    "set:ai-quick-wins-start-date": "node scripts/set-ai-quick-wins-start-date.mjs"
+    "set:ai-quick-wins-start-date": "node scripts/set-ai-quick-wins-start-date.mjs",
+    "migrate:moringa-workshop-course": "node scripts/migrate-moringa-workshop-course.mjs",
+    "import:moringa-lab-workspace": "node scripts/import-moringa-lab-workspace.mjs",
+    "replace:moringa-lab-workspace": "node --experimental-strip-types scripts/replace-moringa-lab-workspace.mjs",
+    "set:moringa-lab-entry-paths": "node scripts/set-moringa-lab-entry-paths.mjs",
+    "replace:moringa-presentation": "node scripts/replace-moringa-presentation.mjs",
+    "polish:moringa-live-session": "node scripts/polish-moringa-live-session.mjs"
   },
   "dependencies": {
     "@agent-commons/sdk": "workspace:*",
@@ -30,6 +36,7 @@
     "bcryptjs": "^2.4.3",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.474.0",
     "mongoose": "^8.9.5",
     "next": "16.2.12",

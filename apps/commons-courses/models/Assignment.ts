@@ -12,6 +12,10 @@ export interface IAssignment extends Document {
   acceptsText: boolean;
   acceptsUrl: boolean;
   published: boolean;
+  kind: "coursework" | "follow_up";
+  sourceLiveSessionId?: mongoose.Types.ObjectId;
+  targetUserIds: mongoose.Types.ObjectId[];
+  context?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,11 +33,20 @@ const AssignmentSchema = new Schema<IAssignment>(
     acceptsText: { type: Boolean, default: true },
     acceptsUrl: { type: Boolean, default: true },
     published: { type: Boolean, default: true },
+    kind: {
+      type: String,
+      enum: ["coursework", "follow_up"],
+      default: "coursework",
+    },
+    sourceLiveSessionId: { type: Schema.Types.ObjectId, ref: "LiveSession" },
+    targetUserIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
+    context: { type: String, trim: true, maxlength: 12_000 },
   },
   { timestamps: true }
 );
 
 AssignmentSchema.index({ courseId: 1, moduleIndex: 1, lessonIndex: 1 });
+AssignmentSchema.index({ courseId: 1, kind: 1, createdAt: -1 });
 
 export default mongoose.models.Assignment ||
   mongoose.model<IAssignment>("Assignment", AssignmentSchema);

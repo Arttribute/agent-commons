@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { signIn } from "next-auth/react";
 import { GoogleLogo } from "@/components/auth/google-logo";
 
 type SignUpClientProps = {
@@ -9,6 +10,7 @@ type SignUpClientProps = {
   appUrl: string;
   callbackUrl: string;
   initialOauthQuery: string;
+  directGoogle: boolean;
 };
 
 export function SignUpClient({
@@ -16,9 +18,11 @@ export function SignUpClient({
   appUrl,
   callbackUrl,
   initialOauthQuery,
+  directGoogle,
 }: SignUpClientProps) {
   const [oauthQuery, setOauthQuery] = useState(initialOauthQuery);
   const [prepareError, setPrepareError] = useState("");
+  const [googleStarting, setGoogleStarting] = useState(false);
   const preparing = !oauthQuery && !prepareError;
   const returnTo = useMemo(
     () => `${appUrl}/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`,
@@ -56,6 +60,17 @@ export function SignUpClient({
     };
   }, [callbackUrl, oauthQuery]);
 
+  async function continueWithGoogle() {
+    if (!directGoogle || googleStarting) return;
+    setGoogleStarting(true);
+    try {
+      await signIn("google", { callbackUrl });
+    } catch {
+      setPrepareError("Google sign-up could not start. Please try again.");
+      setGoogleStarting(false);
+    }
+  }
+
   return (
     <>
       <h1 className="mb-1 text-center text-2xl font-bold text-slate-900">Create your account</h1>
@@ -65,7 +80,14 @@ export function SignUpClient({
       {prepareError ? (
         <p className="mb-4 text-center text-sm text-red-600">{prepareError}</p>
       ) : null}
-      <a
+      {directGoogle ? <button
+        type="button"
+        onClick={() => void continueWithGoogle()}
+        disabled={googleStarting}
+        className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+      >
+        <GoogleLogo /> {googleStarting ? "Opening Google…" : "Continue with Google"}
+      </button> : <a
         aria-disabled={preparing}
         className={`mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 ${
           preparing ? "pointer-events-none opacity-60" : ""
@@ -77,7 +99,7 @@ export function SignUpClient({
         }
       >
         <GoogleLogo /> {preparing ? "Preparing sign-up..." : "Continue with Google"}
-      </a>
+      </a>}
       <div className="mb-4 flex items-center gap-3">
         <span className="h-px flex-1 bg-slate-200" />
         <span className="text-xs font-bold uppercase text-slate-400">or</span>

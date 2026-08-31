@@ -7,6 +7,7 @@ import {
   ClipboardList,
   CreditCard,
   GraduationCap,
+  Radio,
 } from "lucide-react";
 import { requireEducatorCourse } from "@/lib/educator-auth";
 import Enrollment from "@/models/Enrollment";
@@ -59,12 +60,18 @@ export default async function CourseDashboardPage({
         <Metric icon={ClipboardList} label="Assignments" value={assignments} />
       </div>
 
-      <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <ActionCard
           icon={BookOpen}
           title="Build course content"
           body="Organize modules, lesson details, preview access, and course structure."
           href={`/educator/courses/${slug}/content`}
+        />
+        <ActionCard
+          icon={Radio}
+          title="Facilitate live"
+          body="Run paced workbooks, setup checks, practice, polls, quizzes, and reflections in one room."
+          href={`/educator/courses/${slug}/live`}
         />
         <ActionCard
           icon={Award}

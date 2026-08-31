@@ -33,8 +33,8 @@ type ChatBody = {
 export const maxDuration = 300;
 
 const maxFiles = 8;
-const maxTotalBytes = 18 * 1024 * 1024;
-const maxTextChars = 60000;
+const maxTotalBytes = 50 * 1024 * 1024;
+const maxTextChars = 120000;
 
 export async function POST(req: NextRequest) {
   const result = await requireEducator();
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   if (totalBytes > maxTotalBytes) {
     return NextResponse.json(
-      { error: "Uploaded files must be smaller than 18 MB total." },
+      { error: "Uploaded files must be smaller than 50 MB total." },
       { status: 400 }
     );
   }

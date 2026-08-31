@@ -1,0 +1,273 @@
+export type LiveSessionStatus = "draft" | "lobby" | "live" | "ended";
+
+export type LiveSessionPace = "facilitator" | "learner";
+
+export type LiveSessionPartStatus = "open" | "closed";
+
+export type LiveSessionPart = {
+  id: string;
+  title: string;
+  description?: string;
+  status: LiveSessionPartStatus;
+  pace: LiveSessionPace;
+  activityIds: string[];
+};
+
+export type LiveSessionAccess = "enrolled" | "invited" | "open";
+
+export type LiveActivityType =
+  | "content"
+  | "setup_check"
+  | "poll"
+  | "quiz"
+  | "prioritization"
+  | "worksheet"
+  | "card_collection"
+  | "linked_scorecard"
+  | "reflection"
+  | "task"
+  | "break";
+
+export type LiveActivityStatus = "draft" | "open" | "closed";
+
+export type LiveActivityResponseStyle = "cards" | "scale";
+
+export type LiveWorksheetFieldType =
+  | "short_text"
+  | "long_text"
+  | "scale"
+  | "date";
+
+export type LiveWorksheetField = {
+  id: string;
+  label: string;
+  type: LiveWorksheetFieldType;
+  section?: string;
+  description?: string;
+  placeholder?: string;
+  required: boolean;
+  min?: number;
+  max?: number;
+  lowLabel?: string;
+  highLabel?: string;
+};
+
+export type LiveScoreCriterion = {
+  id: string;
+  label: string;
+  description?: string;
+  min: number;
+  max: number;
+  lowLabel?: string;
+  highLabel?: string;
+};
+
+export type LiveActivityOption = {
+  id: string;
+  label: string;
+  isCorrect?: boolean;
+};
+
+export type LiveActivity = {
+  id: string;
+  type: LiveActivityType;
+  title: string;
+  prompt?: string;
+  instructions?: string;
+  successCriteria?: string;
+  facilitatorNotes?: string;
+  resourceUrl?: string;
+  materialId?: string;
+  /** One-based slide number used when this activity first opens. */
+  materialStartSlide?: number;
+  labWorkspaceId?: string;
+  labEntryPath?: string;
+  estimatedMinutes?: number;
+  status: LiveActivityStatus;
+  required: boolean;
+  randomizeOptions: boolean;
+  showResults: boolean;
+  allowOther?: boolean;
+  responseStyle?: LiveActivityResponseStyle;
+  entryLabel?: string;
+  selectionPrompt?: string;
+  minItems?: number;
+  maxSelections?: number;
+  worksheetFields?: LiveWorksheetField[];
+  /** Field used as the visible title for each repeatable card. */
+  itemTitleFieldId?: string;
+  /** Activity whose card collection supplies the scorecard candidates. */
+  sourceActivityId?: string;
+  scoreCriteria?: LiveScoreCriterion[];
+  points: number;
+  options: LiveActivityOption[];
+};
+
+export type LivePrioritizationItem = {
+  id: string;
+  text: string;
+  selected: boolean;
+};
+
+export type LivePrioritizationResponse = {
+  items: LivePrioritizationItem[];
+  finalized: boolean;
+};
+
+export type LiveWorksheetResponse = {
+  values: Record<string, string | number>;
+  finalized: boolean;
+};
+
+export type LiveCardCollectionItem = {
+  id: string;
+  values: Record<string, string | number>;
+};
+
+export type LiveCardCollectionResponse = {
+  items: LiveCardCollectionItem[];
+  finalized: boolean;
+};
+
+export type LiveScorecardItem = {
+  sourceItemId: string;
+  scores: Record<string, number>;
+};
+
+export type LiveLinkedScorecardResponse = {
+  items: LiveScorecardItem[];
+  selectedItemId?: string;
+  selectionReason?: string;
+  finalized: boolean;
+};
+
+export type LiveResponseValue =
+  | string
+  | string[]
+  | LivePrioritizationResponse
+  | LiveWorksheetResponse
+  | LiveCardCollectionResponse
+  | LiveLinkedScorecardResponse;
+
+export type LiveSessionSettings = {
+  allowLateJoin: boolean;
+  showParticipantNames: boolean;
+  showLeaderboard: boolean;
+  learnerCopilot: LiveLearnerCopilotPolicy;
+};
+
+export type LiveLearnerCopilotPolicy = {
+  enabled: boolean;
+  explainCurrentActivity: boolean;
+  coachResponses: boolean;
+  useCourseMaterials: boolean;
+  giveDirectExplanations: boolean;
+};
+
+export type LiveSessionRecord = {
+  id: string;
+  courseId: string;
+  courseSlug: string;
+  courseTitle: string;
+  courseTheme: import("@/lib/course-theme").CourseTheme;
+  title: string;
+  description?: string;
+  joinCode: string;
+  status: LiveSessionStatus;
+  pace: LiveSessionPace;
+  access: LiveSessionAccess;
+  invitedEmails: string[];
+  scheduledStart?: string;
+  currentActivityId?: string;
+  currentPartId?: string;
+  stateVersion: number;
+  activities: LiveActivity[];
+  parts: LiveSessionPart[];
+  settings: LiveSessionSettings;
+  participantCount: number;
+  responseCounts: Record<string, number>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LiveSessionState = {
+  status: LiveSessionStatus;
+  pace: LiveSessionPace;
+  currentActivityId?: string;
+  currentPartId?: string;
+  currentActivity?: LiveActivity;
+  parts: LiveSessionPart[];
+  learnerCopilot: LiveLearnerCopilotPolicy;
+  stateVersion: number;
+  activityStatuses: Record<string, LiveActivityStatus>;
+  serverTime: string;
+};
+
+export type LiveParticipantRecord = {
+  id: string;
+  displayName: string;
+  status: "joined" | "active" | "completed";
+  joinedAt: string;
+  lastSeenAt: string;
+};
+
+export type LiveResponseRecord = {
+  activityId: string;
+  value: LiveResponseValue;
+  correct?: boolean;
+  pointsAwarded?: number;
+  submittedAt: string;
+};
+
+export type LiveActivityResults = {
+  total: number;
+  correct?: number;
+  options?: Array<{ id: string; label: string; count: number }>;
+  textResponses?: Array<{
+    id: string;
+    participantName?: string;
+    value: string;
+  }>;
+  prioritizations?: Array<{
+    id: string;
+    participantName?: string;
+    items: string[];
+    selectedItems: string[];
+    finalized: boolean;
+  }>;
+  worksheets?: Array<{
+    id: string;
+    participantName?: string;
+    values: Array<{ fieldId: string; label: string; value: string }>;
+    finalized: boolean;
+  }>;
+  cardCollections?: Array<{
+    id: string;
+    participantName?: string;
+    items: Array<{
+      id: string;
+      title: string;
+      values: Array<{ fieldId: string; label: string; value: string }>;
+    }>;
+    finalized: boolean;
+  }>;
+  scorecards?: Array<{
+    id: string;
+    participantName?: string;
+    selectedItemId?: string;
+    selectedTitle?: string;
+    selectionReason?: string;
+    items: Array<{ sourceItemId: string; title: string; total: number }>;
+    finalized: boolean;
+  }>;
+};
+
+export type LearnerLiveSession = Omit<
+  LiveSessionRecord,
+  "invitedEmails" | "responseCounts" | "participantCount"
+> & {
+  participantCount: number;
+  participant: LiveParticipantRecord;
+  responses: Record<string, LiveResponseRecord>;
+  results: Record<string, LiveActivityResults>;
+};
