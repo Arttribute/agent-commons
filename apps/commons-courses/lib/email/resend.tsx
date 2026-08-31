@@ -44,6 +44,8 @@ type AssignmentEmailContext = {
   instructions?: string;
   context?: string;
   kind?: "coursework" | "follow_up";
+  meetingSlotCount?: number;
+  meetingTimezone?: string;
 };
 
 const resend = process.env.RESEND_API_KEY
@@ -333,6 +335,12 @@ export async function sendAssignmentNotification({
                 [isCheckIn ? "Check-in" : "Assignment", assignment.title],
                 ["Course", course.title],
                 ["Due", formatDate(assignment.dueAt)],
+                [
+                  "One-on-one",
+                  isCheckIn && assignment.meetingSlotCount
+                    ? `Choose from ${assignment.meetingSlotCount} available times · ${assignment.meetingTimezone || "course time"}`
+                    : undefined,
+                ],
                 [
                   "Points",
                   !isCheckIn && assignment.points

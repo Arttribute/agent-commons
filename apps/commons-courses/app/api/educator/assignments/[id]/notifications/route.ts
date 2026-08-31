@@ -81,6 +81,8 @@ export async function POST(
               checkInContextForUser(assignment.targetContexts, user._id)
                 ?.context || assignment.context,
             kind: "follow_up",
+            meetingSlotCount: assignment.meetingSlots?.length,
+            meetingTimezone: assignment.meetingSlots?.[0]?.timezone,
           },
           event: "updated",
           force: true,

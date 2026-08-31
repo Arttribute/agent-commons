@@ -18,6 +18,12 @@ type Assignment = {
     context: string;
     source?: string;
   }>;
+  meetingSlots?: Array<{
+    id: string;
+    startAt: string;
+    endAt: string;
+    timezone: string;
+  }>;
   targetUserIds?: Person[];
 };
 
@@ -32,6 +38,7 @@ type Submission = {
   score?: number;
   feedback?: string;
   checkInStatus?: "not_started" | "in_progress" | "blocked" | "completed";
+  selectedMeetingSlotId?: string;
   userId?: Person;
 };
 
@@ -291,6 +298,9 @@ function CheckInProgress({
                 const personalizedContext = assignment.targetContexts?.find(
                   (item) => String(item.userId) === String(learner._id),
                 );
+                const selectedMeetingSlot = assignment.meetingSlots?.find(
+                  (slot) => slot.id === submission?.selectedMeetingSlotId,
+                );
                 return (
                   <div key={learner._id} className="py-4 first:pt-4 last:pb-0">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -328,6 +338,9 @@ function CheckInProgress({
                           <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Final response</p>
                           {submission.checkInStatus && <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold capitalize text-slate-600">{submission.checkInStatus.replace("_", " ")}</span>}
                         </div>
+                        {selectedMeetingSlot && (
+                          <p className="mt-2 text-sm font-bold text-slate-900">One-on-one: {formatMeetingSlot(selectedMeetingSlot)}</p>
+                        )}
                         {submission.text && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{submission.text}</p>}
                         {submission.url && <a href={submission.url} target="_blank" className="mt-2 inline-block text-sm font-bold text-slate-900 underline">Open evidence</a>}
                       </div>
@@ -374,6 +387,32 @@ function formatDate(value: string) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatMeetingSlot(slot: {
+  startAt: string;
+  endAt: string;
+  timezone: string;
+}) {
+  const date = new Date(slot.startAt);
+  const end = new Date(slot.endAt);
+  const day = new Intl.DateTimeFormat("en", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: slot.timezone,
+  }).format(date);
+  const time = new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: slot.timezone,
+  }).format(date);
+  const endTime = new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: slot.timezone,
+  }).format(end);
+  return `${day} · ${time}–${endTime}`;
 }
 
 function SubmissionReview({

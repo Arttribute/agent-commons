@@ -7,6 +7,14 @@ export type AssignmentTargetContext = {
   source?: CheckInContextSource;
 };
 
+export type AssignmentMeetingSlot = {
+  id: string;
+  startAt: Date;
+  endAt: Date;
+  timezone: string;
+  capacity: number;
+};
+
 export interface IAssignment extends Document {
   courseId: mongoose.Types.ObjectId;
   educatorId: mongoose.Types.ObjectId;
@@ -24,6 +32,8 @@ export interface IAssignment extends Document {
   targetUserIds: mongoose.Types.ObjectId[];
   targetContexts: AssignmentTargetContext[];
   checkInKey?: string;
+  meetingSlots: AssignmentMeetingSlot[];
+  meetingSlotRequired: boolean;
   context?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -68,6 +78,17 @@ const AssignmentSchema = new Schema<IAssignment>(
       },
     ],
     checkInKey: { type: String, trim: true },
+    meetingSlots: [
+      {
+        _id: false,
+        id: { type: String, required: true, trim: true },
+        startAt: { type: Date, required: true },
+        endAt: { type: Date, required: true },
+        timezone: { type: String, required: true, default: "Africa/Nairobi" },
+        capacity: { type: Number, min: 1, default: 1 },
+      },
+    ],
+    meetingSlotRequired: { type: Boolean, default: false },
     context: { type: String, trim: true, maxlength: 12_000 },
   },
   { timestamps: true }

@@ -153,6 +153,8 @@ export async function POST(
                 )?.context || assignment.context,
               kind: "follow_up",
               id: String(assignment._id),
+              meetingSlotCount: assignment.meetingSlots?.length,
+              meetingTimezone: assignment.meetingSlots?.[0]?.timezone,
             },
             event: "created",
           }),
