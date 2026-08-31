@@ -1,4 +1,29 @@
-import { LibraryService } from './library.service';
+import { LibraryService, resolveArtifactShareBaseUrl } from './library.service';
+
+describe('artifact share URL configuration', () => {
+  it('builds deployed links from the canonical application origin', () => {
+    expect(
+      resolveArtifactShareBaseUrl({
+        APP_ORIGIN: 'https://www.agentcommons.io/',
+      }),
+    ).toBe('https://www.agentcommons.io/shared/artifacts');
+  });
+
+  it('honors an explicit artifact share base URL', () => {
+    expect(
+      resolveArtifactShareBaseUrl({
+        APP_ORIGIN: 'https://www.agentcommons.io',
+        ARTIFACT_SHARE_BASE_URL: 'https://share.agentcommons.io/artifacts/',
+      }),
+    ).toBe('https://share.agentcommons.io/artifacts');
+  });
+
+  it('keeps localhost as a development-only fallback', () => {
+    expect(resolveArtifactShareBaseUrl({})).toBe(
+      'http://localhost:3000/shared/artifacts',
+    );
+  });
+});
 
 describe('LibraryService preview ownership', () => {
   it('passes a delegated service principal through as the file owner', async () => {

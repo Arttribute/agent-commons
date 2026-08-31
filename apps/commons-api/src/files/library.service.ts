@@ -754,10 +754,7 @@ export class LibraryService {
       shareId: share.shareId,
       disclosure,
     });
-    const base = (
-      process.env.ARTIFACT_SHARE_BASE_URL ||
-      'http://localhost:3000/shared/artifacts'
-    ).replace(/\/$/, '');
+    const base = resolveArtifactShareBaseUrl();
     return { ...share, token: undefined, disclosure, url: `${base}/${token}` };
   }
 
@@ -1240,6 +1237,16 @@ export class LibraryService {
 
 function hashToken(token: string) {
   return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+export function resolveArtifactShareBaseUrl(
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  const explicitBase = environment.ARTIFACT_SHARE_BASE_URL?.trim();
+  if (explicitBase) return explicitBase.replace(/\/+$/, '');
+
+  const appOrigin = environment.APP_ORIGIN?.trim() || 'http://localhost:3000';
+  return `${appOrigin.replace(/\/+$/, '')}/shared/artifacts`;
 }
 
 function clamp(value: number, min: number, max: number) {
