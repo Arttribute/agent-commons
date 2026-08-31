@@ -496,7 +496,7 @@ export class AgentService implements OnModuleInit {
 
       ### Resources
       Resources are shared files, datasets, and tools on the platform.
-      - **searchLibraryArtifacts** — semantic + lexical search across only the library artifacts explicitly available to you. Results contain file IDs and citeable excerpts.
+      - **searchLibraryArtifacts** — on-demand access to the calling user's Library. Omit query to list recent files, or search once by filename, type, or topic. Results are deliberately compact; do not probe with many generic queries. Use the returned fileId with readUploadedFile only when exact contents are needed.
       - **readUploadedFile** — read a selected library artifact in bounded chunks after permission checks.
       - **generateImage** — create an image with the stable GPT Image API. The result is stored in the owner's artifact library using their storage preference (Private S3 by default).
       - **uploadFileToIPFS** — explicit-only public IPFS publishing. Never call this for ordinary uploads, generated files, or library storage unless the user specifically asks for IPFS.

@@ -35,6 +35,7 @@ phases:
         pnpm --filter commons-api test -- --runInBand --forceExit
         src/files/files.service.spec.ts
         src/files/library.service.spec.ts
+        src/tool/tools/common-tool.library.spec.ts
         src/code-project/code-project.builder.spec.ts
         src/code-project/code-project.service.spec.ts
         src/provenance/provenance.service.spec.ts
