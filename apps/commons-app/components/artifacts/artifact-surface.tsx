@@ -55,6 +55,7 @@ export function ArtifactSurface({
   );
   const [provenanceLoading, setProvenanceLoading] = useState(false);
   const [provenanceError, setProvenanceError] = useState("");
+  const provenanceAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,10 +82,18 @@ export function ArtifactSurface({
   }, [artifact.fileId]);
 
   useEffect(() => {
+    provenanceAbortRef.current?.abort("artifact-changed");
+    provenanceAbortRef.current = null;
     setPreview(null);
     setProvenance(null);
+    setProvenanceLoading(false);
+    setProvenanceError("");
     setView("preview");
-    load();
+    void load();
+    return () => {
+      provenanceAbortRef.current?.abort("artifact-changed");
+      provenanceAbortRef.current = null;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -113,39 +122,55 @@ export function ArtifactSurface({
     }
   }
 
-  useEffect(() => {
-    if (view !== "provenance" || provenance || provenanceLoading) return;
-    let cancelled = false;
+  const loadProvenance = useCallback(async () => {
+    if (provenance || provenanceAbortRef.current) return;
+    const controller = new AbortController();
+    provenanceAbortRef.current = controller;
+    const timeoutId = window.setTimeout(
+      () => controller.abort("timeout"),
+      8_000,
+    );
     setProvenanceLoading(true);
     setProvenanceError("");
-    fetch(`/api/library/${encodeURIComponent(artifact.fileId)}/provenance`, {
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(
-            data?.message || data?.error || "Could not load provenance",
-          );
-        }
-        if (!cancelled) setProvenance(data?.data ?? data);
-      })
-      .catch((cause) => {
-        if (!cancelled) {
-          setProvenanceError(
-            cause instanceof Error
-              ? cause.message
-              : "Could not load provenance",
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setProvenanceLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [artifact.fileId, provenance, provenanceLoading, view]);
+    try {
+      const response = await fetch(
+        `/api/library/${encodeURIComponent(artifact.fileId)}/provenance?eventLimit=40`,
+        { cache: "no-store", signal: controller.signal },
+      );
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          data?.message || data?.error || "Could not load provenance",
+        );
+      }
+      setProvenance(data?.data ?? data);
+    } catch (cause) {
+      if (controller.signal.reason === "artifact-changed") return;
+      setProvenanceError(
+        controller.signal.reason === "timeout"
+          ? "Provenance took too long to load. Please try again."
+          : cause instanceof Error
+            ? cause.message
+            : "Could not load provenance",
+      );
+    } finally {
+      window.clearTimeout(timeoutId);
+      if (provenanceAbortRef.current === controller) {
+        provenanceAbortRef.current = null;
+        setProvenanceLoading(false);
+      }
+    }
+  }, [artifact.fileId, provenance]);
+
+  useEffect(() => {
+    if (view === "provenance") void loadProvenance();
+  }, [loadProvenance, view]);
+
+  useEffect(() => {
+    if (!preview || provenance || provenanceError) return;
+    const timeoutId = window.setTimeout(() => void loadProvenance(), 150);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadProvenance, preview, provenance, provenanceError]);
 
   const resolved = useMemo<ArtifactRef>(
     () => ({
@@ -203,7 +228,10 @@ export function ArtifactSurface({
         <div className="ml-auto flex items-center gap-0.5">
           <ToolbarButton
             label="View provenance"
-            onClick={() => setView("provenance")}
+            onClick={() => {
+              setView("provenance");
+              void loadProvenance();
+            }}
           >
             <span className="text-[10px] font-semibold">Pr</span>
           </ToolbarButton>
@@ -282,7 +310,10 @@ export function ArtifactSurface({
           ) : null}
           <SurfaceTab
             active={view === "provenance"}
-            onClick={() => setView("provenance")}
+            onClick={() => {
+              setView("provenance");
+              void loadProvenance();
+            }}
             icon={BadgeCheck}
           >
             Provenance
@@ -320,7 +351,11 @@ export function ArtifactSurface({
         provenanceLoading ? (
           <CenteredMessage message="Loading provenance…" loading />
         ) : provenanceError ? (
-          <CenteredMessage message={provenanceError} />
+          <CenteredMessage
+            message={provenanceError}
+            actionLabel="Try again"
+            onAction={() => void loadProvenance()}
+          />
         ) : provenance ? (
           <ArtifactProvenance record={provenance} itemId={artifact.fileId} />
         ) : null
@@ -686,9 +721,13 @@ function SurfaceTab({
 function CenteredMessage({
   message,
   loading = false,
+  actionLabel,
+  onAction,
 }: {
   message: string;
   loading?: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center text-xs text-stone-500">
@@ -696,7 +735,16 @@ function CenteredMessage({
         {loading ? (
           <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" />
         ) : null}
-        {message}
+        <p>{message}</p>
+        {actionLabel && onAction ? (
+          <button
+            type="button"
+            onClick={onAction}
+            className="mt-3 inline-flex items-center rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-[11px] font-medium text-stone-700 shadow-sm hover:bg-stone-50"
+          >
+            {actionLabel}
+          </button>
+        ) : null}
       </div>
     </div>
   );

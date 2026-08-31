@@ -753,6 +753,9 @@ export const libraryItem = pgTable(
       table.ownerUserId,
       table.sha256,
     ),
+    revisionSourceIdx: index('idx_library_item_revision_source')
+      .on(sql`(${table.metadata}->>'sourceFileId')`)
+      .where(sql`${table.deletedAt} is null`),
   }),
 );
 
@@ -2397,7 +2400,7 @@ export const provenanceEvent = pgTable(
   'provenance_event',
   {
     eventId: uuid('event_id')
-      .default(sql`uuid_generate_v4()`)
+      .default(sql`gen_random_uuid()`)
       .primaryKey(),
     traceId: uuid('trace_id')
       .notNull()
