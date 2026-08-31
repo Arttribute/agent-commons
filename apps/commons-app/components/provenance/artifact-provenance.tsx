@@ -104,6 +104,8 @@ export type ArtifactProvenanceRecord = {
   }>;
   disclosure: {
     eventsIncluded: boolean;
+    eventsReturned?: number;
+    eventsTruncated?: boolean;
     privateReasoningIncluded: false;
     credentialsIncluded: false;
   };
@@ -296,7 +298,18 @@ export function ArtifactProvenance({
         ) : null}
 
         <section className="mt-4 rounded-xl border border-stone-200 bg-white p-4">
-          <SectionTitle icon={Clock3}>Trail</SectionTitle>
+          <div className="flex items-center justify-between gap-3">
+            <SectionTitle icon={Clock3}>Trail</SectionTitle>
+            {record.disclosure.eventsTruncated ? (
+              <span className="text-[10px] text-stone-400">
+                Latest{" "}
+                {record.disclosure.eventsReturned ?? record.actions.length}
+                {record.capture.eventCount
+                  ? ` of ${record.capture.eventCount}`
+                  : ""}
+              </span>
+            ) : null}
+          </div>
           <div className="mt-3 divide-y divide-stone-100">
             {actionRows.length ? (
               actionRows.slice(-40).map((action) => (

@@ -235,17 +235,24 @@ export class LibraryService {
     };
   }
 
-  async provenance(itemId: string, principal: LibraryPrincipal) {
+  async provenance(
+    itemId: string,
+    principal: LibraryPrincipal,
+    requestedEventLimit = 40,
+  ) {
     const item = await this.getAccessible(itemId, principal);
-    const result = await this.buildArtifactProvenance(item, true);
-    await this.audit(itemId, principal, 'provenance_viewed');
+    const eventLimit = clamp(Math.floor(requestedEventLimit), 0, 100);
+    const [result] = await Promise.all([
+      this.buildArtifactProvenance(item, eventLimit),
+      this.audit(itemId, principal, 'provenance_viewed'),
+    ]);
     return result;
   }
 
   /** A safe EAA-oriented projection for compact UI, export, and sharing. */
   private async buildArtifactProvenance(
     item: typeof schema.libraryItem.$inferSelect,
-    includeEvents: boolean,
+    eventLimit?: number,
   ) {
     const links = await this.db.query.libraryLink.findMany({
       where: (table) => eq(table.itemId, item.itemId),
@@ -265,38 +272,48 @@ export class LibraryService {
           })
         : [];
     const traceIds = runs.map((run) => run.traceId);
-    const [events, audits, grants, shares] = await Promise.all([
-      includeEvents && traceIds.length
-        ? this.db.query.provenanceEvent.findMany({
-            where: (table) => inArray(table.traceId, traceIds),
-            orderBy: (table) => [asc(table.startedAt), asc(table.sequence)],
-          })
-        : Promise.resolve([]),
-      this.db.query.libraryAuditEvent.findMany({
-        where: (table) => eq(table.itemId, item.itemId),
-        orderBy: (table) => asc(table.createdAt),
-      }),
-      this.db.query.libraryGrant.findMany({
-        where: (table) => eq(table.itemId, item.itemId),
-      }),
-      this.db.query.libraryShareLink.findMany({
-        where: (table) => eq(table.itemId, item.itemId),
-      }),
-    ]);
     const sourceFileId = stringValue(
       item.metadata?.sourceFileId ?? item.metadata?.revisionOf,
     );
-    const source = sourceFileId
-      ? await this.db.query.libraryItem.findFirst({
-          where: (table) => eq(table.itemId, sourceFileId),
-        })
-      : undefined;
-    const revisions = await this.db.query.libraryItem.findMany({
-      where: (table) =>
-        sql`${table.metadata}->>'sourceFileId' = ${item.itemId}`,
-      orderBy: (table) => asc(table.createdAt),
-      limit: 25,
-    });
+    const [events, audits, grants, shares, source, revisions] =
+      await Promise.all([
+        eventLimit !== 0 && traceIds.length
+          ? this.db.query.provenanceEvent.findMany({
+              where: (table) => inArray(table.traceId, traceIds),
+              orderBy: (table) =>
+                eventLimit === undefined
+                  ? [asc(table.startedAt), asc(table.sequence)]
+                  : [desc(table.startedAt), desc(table.sequence)],
+              ...(eventLimit === undefined ? {} : { limit: eventLimit }),
+            })
+          : Promise.resolve([]),
+        this.db.query.libraryAuditEvent.findMany({
+          where: (table) => eq(table.itemId, item.itemId),
+          orderBy: (table) => asc(table.createdAt),
+        }),
+        this.db.query.libraryGrant.findMany({
+          where: (table) => eq(table.itemId, item.itemId),
+        }),
+        this.db.query.libraryShareLink.findMany({
+          where: (table) => eq(table.itemId, item.itemId),
+        }),
+        sourceFileId
+          ? this.db.query.libraryItem.findFirst({
+              where: (table) => eq(table.itemId, sourceFileId),
+            })
+          : Promise.resolve(undefined),
+        this.db.query.libraryItem.findMany({
+          where: (table) =>
+            and(
+              isNull(table.deletedAt),
+              sql`${table.metadata}->>'sourceFileId' = ${item.itemId}`,
+            ),
+          orderBy: (table) => asc(table.createdAt),
+          limit: 25,
+        }),
+      ]);
+    const orderedEvents =
+      eventLimit === undefined ? events : [...events].reverse();
     const metadataProvenance = recordValue(item.metadata?.provenance);
     const contentHash = `sha256:${item.sha256}`;
 
@@ -346,26 +363,27 @@ export class LibraryService {
         anchorProvider: run.anchorProvider,
         anchorRef: run.anchorRef,
       })),
-      actions: includeEvents
-        ? events.map((event) => ({
-            id:
-              stringValue((event.eaaAction as any)?.id) ??
-              `urn:agentcommons:event:${event.traceId}:${event.sequence}`,
-            traceId: event.traceId,
-            sequence: event.sequence,
-            category: event.category,
-            eventType: event.eventType,
-            name: event.name,
-            summary: event.summary,
-            status: event.status,
-            performedBy: stringValue((event.eaaAction as any)?.performedBy),
-            contentHash: event.contentHash,
-            startedAt: event.startedAt,
-            endedAt: event.endedAt,
-            durationMs: event.durationMs,
-            lineage: recordValue(event.metadata)?.lineage,
-          }))
-        : [],
+      actions:
+        eventLimit !== 0
+          ? orderedEvents.map((event) => ({
+              id:
+                stringValue((event.eaaAction as any)?.id) ??
+                `urn:agentcommons:event:${event.traceId}:${event.sequence}`,
+              traceId: event.traceId,
+              sequence: event.sequence,
+              category: event.category,
+              eventType: event.eventType,
+              name: event.name,
+              summary: event.summary,
+              status: event.status,
+              performedBy: stringValue((event.eaaAction as any)?.performedBy),
+              contentHash: event.contentHash,
+              startedAt: event.startedAt,
+              endedAt: event.endedAt,
+              durationMs: event.durationMs,
+              lineage: recordValue(event.metadata)?.lineage,
+            }))
+          : [],
       derivation: {
         source: source
           ? {
@@ -437,7 +455,12 @@ export class LibraryService {
         traceId: stringValue(event.metadata?.traceId),
       })),
       disclosure: {
-        eventsIncluded: includeEvents,
+        eventsIncluded: eventLimit !== 0,
+        eventsReturned: orderedEvents.length,
+        eventsTruncated:
+          eventLimit !== undefined &&
+          runs.reduce((total, run) => total + Number(run.eventCount ?? 0), 0) >
+            orderedEvents.length,
         privateReasoningIncluded: false,
         credentialsIncluded: false,
       },
@@ -795,9 +818,10 @@ export class LibraryService {
         ? this.files.createShareDownloadUrl(item.itemId)
         : Promise.resolve(undefined),
       disclosure.provenance
-        ? this.buildArtifactProvenance(item, disclosure.events).then(
-            redactSharedProvenance,
-          )
+        ? this.buildArtifactProvenance(
+            item,
+            disclosure.events ? undefined : 0,
+          ).then(redactSharedProvenance)
         : Promise.resolve(undefined),
     ]);
     const download = settledValue(downloadResult);

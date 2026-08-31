@@ -81,8 +81,18 @@ export class LibraryController {
 
   @Get(':itemId/provenance')
   @RateLimit({ limit: 120, windowMs: 60_000, keyStrategy: 'user' })
-  provenance(@Req() req: Request, @Param('itemId') itemId: string) {
-    return this.library.provenance(itemId, principalFrom(req));
+  provenance(
+    @Req() req: Request,
+    @Param('itemId') itemId: string,
+    @Query('eventLimit') eventLimit?: string,
+  ) {
+    const parsedEventLimit =
+      eventLimit === undefined ? undefined : Number(eventLimit);
+    return this.library.provenance(
+      itemId,
+      principalFrom(req),
+      Number.isFinite(parsedEventLimit) ? parsedEventLimit : undefined,
+    );
   }
 
   @Patch(':itemId')
