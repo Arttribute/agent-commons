@@ -136,6 +136,7 @@ export async function POST(
     inviterName: result.session.email,
     role,
     course: {
+      id: String(result.course._id),
       title: result.course.title,
       slug: result.course.slug,
       instructor: result.course.instructor,

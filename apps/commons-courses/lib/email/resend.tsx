@@ -3,9 +3,14 @@ import "server-only";
 import { render } from "@react-email/render";
 import { Resend } from "resend";
 import { getAppBaseUrl } from "@/lib/app-url";
-import { CommonsEmail, DetailList, Paragraph } from "@/lib/email/templates";
+import { Callout, CommonsEmail, DetailList, Paragraph } from "@/lib/email/templates";
+import { truncateEmailText } from "@/lib/email/truncate";
+import type { EmailBranding } from "@/lib/email/branding";
+import { resolveCourseEmailBranding } from "@/lib/educator-entitlements";
+import CheckInNotification from "@/models/CheckInNotification";
 
 type Recipient = {
+  userId?: string | null;
   email?: string | null;
   name?: string | null;
 };
@@ -19,9 +24,11 @@ type CourseEmailSettings = {
   agentManaged?: boolean;
   replyTo?: string;
   customIntro?: string;
+  branding?: EmailBranding;
 };
 
 type CourseEmailContext = {
+  id?: string;
   title: string;
   slug: string;
   instructor?: string;
@@ -30,10 +37,13 @@ type CourseEmailContext = {
 };
 
 type AssignmentEmailContext = {
+  id?: string;
   title: string;
   dueAt?: Date | string | null;
   points?: number;
   instructions?: string;
+  context?: string;
+  kind?: "coursework" | "follow_up";
 };
 
 const resend = process.env.RESEND_API_KEY
@@ -65,11 +75,13 @@ async function sendEmail({
   subject,
   react,
   replyTo,
+  senderName,
 }: {
   to: string[];
   subject: string;
   react: React.ReactElement;
   replyTo?: string;
+  senderName?: string;
 }) {
   const recipients = to.filter(Boolean);
   if (!recipients.length) return { skipped: true, reason: "missing_recipient" };
@@ -84,7 +96,7 @@ async function sendEmail({
       render(react, { plainText: true }),
     ]);
     const { data, error } = await resend.emails.send({
-      from: fromAddress,
+      from: getFromAddress(senderName),
       to: recipients,
       subject,
       html,
@@ -195,11 +207,16 @@ export async function sendPasswordResetEmail({
 
 export async function sendEnrollmentEmail(user: Recipient, course: CourseEmailContext) {
   if (!course.settings?.enrollmentEnabled || !user.email) return;
+  const branding = await resolveCourseEmailBranding(
+    course.id,
+    course.settings.branding,
+  );
 
   await sendEmail({
     to: [user.email],
     subject: `You're enrolled in ${course.title}`,
     replyTo: course.settings.replyTo,
+    senderName: branding?.senderName,
     react: (
       <CommonsEmail
         preview={`You're enrolled in ${course.title}.`}
@@ -213,6 +230,7 @@ export async function sendEnrollmentEmail(user: Recipient, course: CourseEmailCo
           label: "Go to course",
           href: absoluteUrl(`/courses/${course.slug}/learn`),
         }}
+        branding={branding}
       >
         <DetailList
           items={[
@@ -231,59 +249,153 @@ export async function sendAssignmentNotification({
   course,
   assignment,
   event,
+  force = false,
 }: {
   recipients: Recipient[];
   course: CourseEmailContext;
   assignment: AssignmentEmailContext;
   event: "created" | "updated";
+  force?: boolean;
 }) {
   const enabled =
     event === "created"
       ? course.settings?.assignmentCreatedEnabled
       : course.settings?.assignmentUpdatedEnabled;
-  if (!enabled) return;
+  if (!enabled && !force) return [];
 
-  const subjectPrefix = event === "created" ? "New assignment" : "Assignment updated";
-  const to = recipients
-    .map((recipient) => recipient.email)
-    .filter((email): email is string => Boolean(email));
-  if (!to.length) return;
+  const isCheckIn = assignment.kind === "follow_up";
+  const branding = await resolveCourseEmailBranding(
+    course.id,
+    course.settings?.branding,
+  );
+  const subjectPrefix = isCheckIn
+    ? "Your check-in"
+    : event === "created"
+      ? "New assignment"
+      : "Assignment updated";
+  const deliverable = recipients.filter(
+    (recipient): recipient is Recipient & { email: string } =>
+      Boolean(recipient.email),
+  );
+  if (!deliverable.length) return [];
 
-  await Promise.all(
-    to.map((email) =>
-      sendEmail({
-        to: [email],
+  return Promise.all(
+    deliverable.map(async (recipient) => {
+      const tracking =
+        isCheckIn && assignment.id && course.id && recipient.userId
+          ? await CheckInNotification.findOneAndUpdate(
+              {
+                assignmentId: assignment.id,
+                userId: recipient.userId,
+              },
+              {
+                $set: {
+                  courseId: course.id,
+                  email: recipient.email,
+                  emailStatus: "pending",
+                },
+                $unset: { lastError: 1 },
+              },
+              { upsert: true, new: true, runValidators: true },
+            )
+          : null;
+      const actionHref = absoluteUrl(
+        isCheckIn
+          ? `/courses/${course.slug}/check-ins${assignment.id ? `?checkIn=${assignment.id}` : ""}`
+          : `/courses/${course.slug}/learn`,
+      );
+      const result = await sendEmail({
+        to: [recipient.email],
         subject: `${subjectPrefix}: ${assignment.title}`,
         replyTo: course.settings?.replyTo,
+        senderName: branding?.senderName,
         react: (
           <CommonsEmail
             preview={`${subjectPrefix} in ${course.title}: ${assignment.title}.`}
-            eyebrow={course.title}
-            title={subjectPrefix}
-            intro={`${assignment.title} is ${
-              event === "created" ? "now available" : "updated"
-            } in ${course.title}.`}
+            eyebrow={isCheckIn ? "CommonLab follow-up" : course.title}
+            title={isCheckIn ? "How is your commitment going?" : subjectPrefix}
+            intro={
+              isCheckIn
+                ? `Your facilitators from ${course.title} are checking in on the next step you planned.`
+                : `${assignment.title} is ${
+                    event === "created" ? "now available" : "updated"
+                  } in ${course.title}.`
+            }
             action={{
-              label: "View assignment",
-              href: absoluteUrl(`/courses/${course.slug}/learn`),
+              label: isCheckIn ? "Open your check-in" : "View assignment",
+              href: actionHref,
             }}
             footerNote="You are receiving this course notification because you are enrolled in this CommonLab course."
+            branding={branding}
           >
             <DetailList
               items={[
-                ["Assignment", assignment.title],
+                [isCheckIn ? "Check-in" : "Assignment", assignment.title],
+                ["Course", course.title],
                 ["Due", formatDate(assignment.dueAt)],
-                ["Points", assignment.points ? String(assignment.points) : undefined],
+                [
+                  "Points",
+                  !isCheckIn && assignment.points
+                    ? String(assignment.points)
+                    : undefined,
+                ],
               ]}
             />
+            {isCheckIn && assignment.context ? (
+              <Callout label="What you committed to">
+                {truncateEmailText(assignment.context)}
+              </Callout>
+            ) : null}
             {assignment.instructions ? (
-              <Paragraph>{assignment.instructions.slice(0, 320)}</Paragraph>
+              <Paragraph>{truncateEmailText(assignment.instructions, 320)}</Paragraph>
             ) : null}
           </CommonsEmail>
         ),
-      })
-    )
+      });
+
+      if (tracking) {
+        const providerMessageId =
+          "data" in result && result.data?.id ? result.data.id : undefined;
+        const skipped = "skipped" in result && result.skipped;
+        const errorMessage =
+          "error" in result && result.error
+            ? getErrorMessage(result.error)
+            : undefined;
+        await CheckInNotification.updateOne(
+          { _id: tracking._id },
+          providerMessageId
+            ? {
+                $set: {
+                  emailStatus: "sent",
+                  providerMessageId,
+                  sentAt: new Date(),
+                },
+                $unset: { lastError: 1 },
+              }
+            : {
+                $set: {
+                  emailStatus: skipped ? "skipped" : "failed",
+                  lastError: errorMessage,
+                },
+              },
+        );
+      }
+
+      return {
+        userId: recipient.userId,
+        email: recipient.email,
+        sent: "data" in result && Boolean(result.data?.id),
+      };
+    }),
   );
+}
+
+function getErrorMessage(value: unknown) {
+  if (value instanceof Error) return value.message;
+  if (value && typeof value === "object" && "message" in value) {
+    return String(value.message);
+  }
+  return "Email could not be sent.";
 }
 
 export async function sendCourseCollaboratorInvite({
@@ -298,11 +410,16 @@ export async function sendCourseCollaboratorInvite({
   role: "co_owner" | "editor";
 }) {
   if (!recipient.email) return;
+  const branding = await resolveCourseEmailBranding(
+    course.id,
+    course.settings?.branding,
+  );
 
   await sendEmail({
     to: [recipient.email],
     subject: `You're invited to collaborate on ${course.title}`,
     replyTo: course.settings?.replyTo,
+    senderName: branding?.senderName,
     react: (
       <CommonsEmail
         preview={`You've been invited to help manage ${course.title} on CommonLab.`}
@@ -313,6 +430,7 @@ export async function sendCourseCollaboratorInvite({
           label: "Open course",
           href: absoluteUrl(`/educator/courses/${course.slug}/edit`),
         }}
+        branding={branding}
       >
         <DetailList
           items={[
@@ -328,4 +446,11 @@ export async function sendCourseCollaboratorInvite({
       </CommonsEmail>
     ),
   });
+}
+
+function getFromAddress(senderName?: string) {
+  if (!senderName) return fromAddress;
+  const address = fromAddress.match(/<([^>]+)>/)?.[1] || fromAddress.trim();
+  const safeName = senderName.replace(/[<>\r\n]/g, "").trim();
+  return safeName ? `${safeName} <${address}>` : fromAddress;
 }

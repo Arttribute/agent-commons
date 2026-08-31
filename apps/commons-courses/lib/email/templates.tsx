@@ -1,5 +1,6 @@
 import * as React from "react";
 import { getAppBaseUrl } from "@/lib/app-url";
+import type { EmailBranding } from "@/lib/email/branding";
 
 export type EmailAction = {
   label: string;
@@ -14,6 +15,7 @@ type CommonsEmailProps = {
   children?: React.ReactNode;
   action?: EmailAction;
   footerNote?: string;
+  branding?: EmailBranding;
 };
 
 const colors = {
@@ -38,7 +40,11 @@ export function CommonsEmail({
   children,
   action,
   footerNote,
+  branding,
 }: CommonsEmailProps) {
+  const accentColor = branding?.accentColor;
+  const brandName = branding?.senderName || "CommonLab";
+  const logoUrl = branding?.logoUrl || `${baseUrl}/icon.svg`;
   return (
     <html lang="en">
       <body style={styles.body}>
@@ -54,10 +60,10 @@ export function CommonsEmail({
                         <table role="presentation" width="100%" cellPadding="0" cellSpacing="0">
                           <tbody>
                             <tr>
-                              <td style={{ ...styles.colorCell, backgroundColor: colors.lime }} />
-                              <td style={{ ...styles.colorCell, backgroundColor: colors.cyan }} />
-                              <td style={{ ...styles.colorCell, backgroundColor: colors.violet }} />
-                              <td style={{ ...styles.colorCell, backgroundColor: colors.rose }} />
+                              <td style={{ ...styles.colorCell, backgroundColor: accentColor || colors.lime }} />
+                              <td style={{ ...styles.colorCell, backgroundColor: accentColor || colors.cyan }} />
+                              <td style={{ ...styles.colorCell, backgroundColor: accentColor || colors.violet }} />
+                              <td style={{ ...styles.colorCell, backgroundColor: accentColor || colors.rose }} />
                             </tr>
                           </tbody>
                         </table>
@@ -71,16 +77,16 @@ export function CommonsEmail({
                               <td style={styles.logoMark}>
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                  src={`${baseUrl}/icon.svg`}
-                                  alt="CommonLab"
+                                  src={logoUrl}
+                                  alt={brandName}
                                   width="42"
                                   height="42"
                                   style={styles.logoImage}
                                 />
                               </td>
                               <td style={styles.logoText}>
-                                <p style={styles.brand}>CommonLab</p>
-                                <p style={styles.tagline}>Courses and learning sandboxes</p>
+                                <p style={styles.brand}>{brandName}</p>
+                                <p style={styles.tagline}>{branding ? "Powered by CommonLab" : "Courses and learning sandboxes"}</p>
                               </td>
                             </tr>
                           </tbody>
@@ -95,7 +101,18 @@ export function CommonsEmail({
                         {children ? <div style={styles.section}>{children}</div> : null}
                         {action ? (
                           <p style={styles.actionRow}>
-                            <a href={action.href} style={styles.button}>
+                            <a
+                              href={action.href}
+                              style={
+                                accentColor
+                                  ? {
+                                      ...styles.button,
+                                      backgroundColor: accentColor,
+                                      color: getReadableTextColor(accentColor),
+                                    }
+                                  : styles.button
+                              }
+                            >
                               {action.label}
                             </a>
                           </p>
@@ -104,6 +121,9 @@ export function CommonsEmail({
                     </tr>
                     <tr>
                       <td style={styles.footer}>
+                        {branding?.footerText ? (
+                          <p style={styles.brandFooterText}>{branding.footerText}</p>
+                        ) : null}
                         <p style={styles.footerText}>
                           {footerNote ||
                             "You are receiving this because you use CommonLab courses."}
@@ -146,6 +166,21 @@ export function DetailList({ items }: { items: Array<[string, string | undefined
 
 export function Paragraph({ children }: { children: React.ReactNode }) {
   return <p style={styles.paragraph}>{children}</p>;
+}
+
+export function Callout({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={styles.callout}>
+      <p style={styles.calloutLabel}>{label}</p>
+      <p style={styles.calloutText}>{children}</p>
+    </div>
+  );
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -252,6 +287,29 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "15px",
     lineHeight: "24px",
   },
+  callout: {
+    margin: "0 0 18px",
+    padding: "18px 20px",
+    backgroundColor: "#f0fdf4",
+    border: "1px solid #bbf7d0",
+    borderRadius: "10px",
+  },
+  calloutLabel: {
+    margin: "0 0 7px",
+    color: "#047857",
+    fontSize: "11px",
+    lineHeight: "16px",
+    fontWeight: 800,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+  },
+  calloutText: {
+    margin: 0,
+    color: colors.ink,
+    fontSize: "15px",
+    lineHeight: "24px",
+    fontWeight: 700,
+  },
   actionRow: {
     margin: "28px 0 0",
   },
@@ -299,9 +357,25 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "12px",
     lineHeight: "18px",
   },
+  brandFooterText: {
+    margin: "0 0 10px",
+    color: colors.ink,
+    fontSize: "13px",
+    lineHeight: "19px",
+    fontWeight: 700,
+  },
   footerLink: {
     color: colors.ink,
     textDecoration: "none",
     fontWeight: 800,
   },
 };
+
+function getReadableTextColor(color: string) {
+  const red = Number.parseInt(color.slice(1, 3), 16);
+  const green = Number.parseInt(color.slice(3, 5), 16);
+  const blue = Number.parseInt(color.slice(5, 7), 16);
+  return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255 > 0.57
+    ? colors.ink
+    : "#ffffff";
+}

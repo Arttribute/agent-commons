@@ -330,4 +330,82 @@ describe('ComputerService', () => {
       'agent_1',
     );
   });
+
+  it('starts a fresh metering window when a persistent computer wakes', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-16T20:13:29.000Z'));
+    const returning = jest.fn().mockResolvedValue([
+      {
+        computerId: '11111111-1111-4111-8111-111111111111',
+        status: 'running',
+      },
+    ]);
+    const set = jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({ returning }),
+    });
+    db.update.mockReturnValue({ set });
+    jest.spyOn(service as any, 'commonOsConfigured').mockReturnValue(true);
+    jest.spyOn(service as any, 'recordEvent').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'commonOsComputerRequest').mockResolvedValue({
+      _id: 'commonos_agent_1',
+      status: 'running',
+      desiredState: 'running',
+      // Providers may retain the original runtime timestamp across a wake.
+      startedAt: '2026-08-16T09:31:29.000Z',
+    });
+
+    try {
+      await (service as any).deployWithCommonOs({
+        agent: {
+          agentId: 'agent_1',
+          name: 'Test agent',
+          runtimeType: 'native',
+          runtimeConfig: {},
+          runtimeSecrets: {},
+          modelApiKey: null,
+          modelProvider: 'openai',
+          modelId: 'gpt-5',
+          ownerUserId: 'user_1',
+          owner: null,
+          workspaceId: null,
+        },
+        config: {
+          image: null,
+          region: null,
+          resourceProfile: 'standard',
+          resourceMode: 'elastic',
+          cpuRequest: '500m',
+          cpuLimit: '2',
+          memoryRequest: '1Gi',
+          memoryLimit: '4Gi',
+          storageLimit: '20Gi',
+          gpuType: null,
+          gpuCount: 0,
+          idleTtlMinutes: 60,
+          allowBrowser: true,
+          allowTerminal: true,
+          allowFilesystem: true,
+          networkAccess: 'standard',
+        },
+        computer: {
+          computerId: '11111111-1111-4111-8111-111111111111',
+          sessionId: null,
+          runtimeGeneration: 1,
+          persistentVolumeId: 'volume_1',
+          computeTenantId: null,
+          computeCellId: null,
+        },
+        name: 'Test agent computer',
+      });
+
+      expect(set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startedAt: new Date('2026-08-16T09:31:29.000Z'),
+          meteredThroughAt: new Date('2026-08-16T20:13:29.000Z'),
+          stoppedAt: null,
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

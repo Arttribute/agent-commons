@@ -11,7 +11,10 @@ async function getCourses(): Promise<CourseCardData[]> {
   try {
     const session = await auth();
     await connectDB();
-    const courses = await Course.find({ published: true })
+    const courses = await Course.find({
+      published: true,
+      catalogVisibility: { $ne: "private" },
+    })
       .select("-modules -longDescription")
       .sort({ createdAt: -1 })
       .lean();
@@ -28,7 +31,7 @@ async function getCourses(): Promise<CourseCardData[]> {
       enrollments.map((enrollment) => [
         enrollment.courseId.toString(),
         enrollment.progress ?? 0,
-      ])
+      ]),
     );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return courses.map((c: any) => ({
@@ -147,12 +150,12 @@ export default async function CoursesPage() {
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-slate-600 sm:flex-row sm:px-6 lg:px-8">
-        <div className="flex items-center gap-2.5">
-          <div className="h-5 w-5 rounded bg-slate-950 flex items-center justify-center">
-            <FlaskConical className="h-3 w-3 text-white" />
+          <div className="flex items-center gap-2.5">
+            <div className="h-5 w-5 rounded bg-slate-950 flex items-center justify-center">
+              <FlaskConical className="h-3 w-3 text-white" />
+            </div>
+            <span>© 2026 CommonLab</span>
           </div>
-          <span>© 2026 CommonLab</span>
-        </div>
         </div>
       </footer>
     </div>

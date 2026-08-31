@@ -1661,6 +1661,11 @@ export class ComputerService {
       throw new Error('CommonOS did not return an agent id');
     }
 
+    // A successful deploy can be either the first boot or a wake of the same
+    // persistent workspace. Start a fresh billing window in both cases. The
+    // previous metering cursor belongs to the prior runtime window and must
+    // never make sleeping time look like active computer use.
+    const meteringStartedAt = new Date();
     const [updated] = await this.db
       .update(schema.agentComputerInstance)
       .set({
@@ -1706,8 +1711,10 @@ export class ComputerService {
         errorMessage: commonOsAgent.pod?.lastError ?? null,
         startedAt: commonOsAgent.startedAt
           ? new Date(commonOsAgent.startedAt)
-          : new Date(),
-        updatedAt: new Date(),
+          : meteringStartedAt,
+        meteredThroughAt: meteringStartedAt,
+        stoppedAt: null,
+        updatedAt: meteringStartedAt,
       })
       .where(
         eq(schema.agentComputerInstance.computerId, args.computer.computerId),

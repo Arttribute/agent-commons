@@ -5,16 +5,29 @@ import type { CopilotUser } from "@/lib/educator-copilot-agent";
 import { buildManagedCoursesFilter } from "@/lib/educator-auth";
 import { resolveEducatorCopilotImageUrl } from "@/lib/educator-copilot-files";
 import {
+  defaultLiveLearnerCopilotPolicy,
+  normalizeLiveLearnerCopilotPolicy,
+} from "@/lib/live-copilot-policy";
+import {
   describeExperienceCopilotImpact,
   EXPERIENCE_COPILOT_WORLD_GUIDE,
 } from "@/lib/experience-ai";
 import { normalizeExperienceDocument } from "@/lib/experience-schema";
 import { uploadCourseMediaToS3 } from "@/lib/media-storage";
+import {
+  createJoinCode,
+  normalizeActivities,
+  normalizeSessionParts,
+} from "@/lib/live-session-input";
 import { indexCourseForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
 import Course from "@/models/Course";
+import CourseMaterial from "@/models/CourseMaterial";
 import Enrollment from "@/models/Enrollment";
 import ExperienceProject from "@/models/ExperienceProject";
+import LiveParticipant from "@/models/LiveParticipant";
+import LiveResponse from "@/models/LiveResponse";
+import LiveSession from "@/models/LiveSession";
 import Submission from "@/models/Submission";
 import type { IEducatorCopilotMaterial } from "@/models/EducatorCopilotSession";
 import type {
@@ -24,6 +37,11 @@ import type {
   EducatorCopilotPageContext,
 } from "@/types/educator-copilot";
 import type { SkillChallenge, SkillPack, SkillQuestion } from "@/types/skills";
+import type {
+  LiveActivity,
+  LiveSessionPart,
+  LiveSessionSettings,
+} from "@/types/live-session";
 
 /** JSON-schema tool catalog handed to the agent run as cliTools. */
 export type CopilotToolDefinition = {
@@ -49,7 +67,8 @@ const lessonPatchProperties = {
   duration: { type: "string", description: 'e.g. "12 min"' },
   description: {
     type: "string",
-    description: "Full lesson body in markdown. Write complete content, not placeholders.",
+    description:
+      "Full lesson body in markdown. Write complete content, not placeholders.",
   },
   assetUrl: { type: "string" },
   assetAttachmentName: {
@@ -78,7 +97,8 @@ const skillChallengeProperties = {
   streakBoost: { type: "number" },
   assetUrl: {
     type: "string",
-    description: "Existing durable course-media URL. Prefer assetAttachmentName for a chat upload.",
+    description:
+      "Existing durable course-media URL. Prefer assetAttachmentName for a chat upload.",
   },
   assetAttachmentName: {
     type: "string",
@@ -109,13 +129,15 @@ const skillPathProperties = {
   slug: { type: "string" },
   enabled: {
     type: "boolean",
-    description: "Whether the skill path is published to learners (defaults to true when creating).",
+    description:
+      "Whether the skill path is published to learners (defaults to true when creating).",
   },
   title: { type: "string" },
   subtitle: { type: "string" },
   coverUrl: {
     type: "string",
-    description: "Existing durable course-media URL. Prefer coverAttachmentName for a chat upload.",
+    description:
+      "Existing durable course-media URL. Prefer coverAttachmentName for a chat upload.",
   },
   coverAttachmentName: {
     type: "string",
@@ -147,7 +169,10 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     parameters: {
       type: "object",
       properties: {
-        courseSlug: { type: "string", description: "Course slug from list_courses" },
+        courseSlug: {
+          type: "string",
+          description: "Course slug from list_courses",
+        },
         detail: {
           type: "string",
           enum: ["structure", "full"],
@@ -196,7 +221,10 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
       type: "object",
       properties: {
         courseSlug: { type: "string" },
-        limit: { type: "number", description: "Max students per course (default 30)" },
+        limit: {
+          type: "number",
+          description: "Max students per course (default 30)",
+        },
       },
       required: [],
     },
@@ -208,8 +236,14 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     parameters: {
       type: "object",
       properties: {
-        student: { type: "string", description: "Email address or (partial) name" },
-        courseSlug: { type: "string", description: "Optional: restrict to one course" },
+        student: {
+          type: "string",
+          description: "Email address or (partial) name",
+        },
+        courseSlug: {
+          type: "string",
+          description: "Optional: restrict to one course",
+        },
       },
       required: ["student"],
     },
@@ -235,14 +269,62 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     },
   },
   {
+    name: "list_live_sessions",
+    description:
+      "List live and in-person course sessions with their run of show, room status, join code, participation, and response counts. Use this for facilitation prep, live room checks, and post-session reflection.",
+    parameters: {
+      type: "object",
+      properties: {
+        courseSlug: {
+          type: "string",
+          description: "Optional course slug from list_courses",
+        },
+        status: {
+          type: "string",
+          enum: ["draft", "lobby", "live", "ended"],
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_live_session",
+    description:
+      "Read one complete managed live programme, including stateVersion, every activity and structured field, programme-session parts, independent open/closed state, pacing, learner-copilot policy, and material references. Always call this before update_live_session.",
+    parameters: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string" },
+      },
+      required: ["sessionId"],
+    },
+  },
+  {
+    name: "list_course_materials",
+    description:
+      "List the private presentations and PDFs already attached to a managed course. Use returned material IDs when mapping slides or documents to live activities.",
+    parameters: {
+      type: "object",
+      properties: { courseSlug: { type: "string" } },
+      required: ["courseSlug"],
+    },
+  },
+  {
     name: "read_attachment",
     description:
       "Read the full extracted text of a file the educator uploaded in this chat session. Use whenever the educator refers to an uploaded file.",
     parameters: {
       type: "object",
       properties: {
-        name: { type: "string", description: "File name (or part of it). Defaults to the most recent upload." },
-        offset: { type: "number", description: "Character offset to continue reading from (default 0)" },
+        name: {
+          type: "string",
+          description:
+            "File name (or part of it). Defaults to the most recent upload.",
+        },
+        offset: {
+          type: "number",
+          description: "Character offset to continue reading from (default 0)",
+        },
       },
       required: [],
     },
@@ -258,9 +340,256 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
         moduleIndex: { type: "number" },
         lessonIndex: { type: "number" },
         patch: { type: "object", properties: lessonPatchProperties },
-        reason: { type: "string", description: "One line: why this change helps" },
+        reason: {
+          type: "string",
+          description: "One line: why this change helps",
+        },
       },
       required: ["courseSlug", "moduleIndex", "lessonIndex", "patch"],
+    },
+  },
+  {
+    name: "create_live_session",
+    description:
+      "Create a complete live or in-person facilitation plan for a managed course. Use after reading source material and the course. Build an intentional run of show from workbook pages, setup checks, polls, quizzes, reflections, practice tasks, and breaks. This is approval-gated in manual mode.",
+    parameters: {
+      type: "object",
+      properties: {
+        courseSlug: { type: "string" },
+        title: { type: "string" },
+        description: { type: "string" },
+        pace: { type: "string", enum: ["facilitator", "learner"] },
+        access: { type: "string", enum: ["enrolled", "invited", "open"] },
+        activities: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "content",
+                  "setup_check",
+                  "poll",
+                  "quiz",
+                  "prioritization",
+                  "worksheet",
+                  "card_collection",
+                  "linked_scorecard",
+                  "reflection",
+                  "task",
+                  "break",
+                ],
+              },
+              id: {
+                type: "string",
+                description:
+                  "Stable activity ID. Always provide one when activities are grouped into programme sessions or when updating an existing programme.",
+              },
+              title: { type: "string" },
+              prompt: { type: "string" },
+              instructions: { type: "string" },
+              successCriteria: { type: "string" },
+              facilitatorNotes: { type: "string" },
+              resourceUrl: { type: "string" },
+              materialId: {
+                type: "string",
+                description:
+                  "ID of a private course material to present inside this activity.",
+              },
+              materialAttachmentName: {
+                type: "string",
+                description:
+                  "Exact uploaded PowerPoint or PDF filename to attach to the course and present in this activity. Prefer this for a source file uploaded in the current chat.",
+              },
+              materialStartSlide: {
+                type: "number",
+                description:
+                  "Optional one-based slide number where this activity should begin.",
+              },
+              labWorkspaceId: {
+                type: "string",
+                description:
+                  "ID of a private lab workspace to embed in this activity.",
+              },
+              labEntryPath: {
+                type: "string",
+                description:
+                  "Optional learner-visible file or folder path inside the selected lab workspace. Use this to land learners directly at the materials needed for the activity.",
+              },
+              estimatedMinutes: { type: "number" },
+              required: { type: "boolean" },
+              randomizeOptions: { type: "boolean" },
+              showResults: { type: "boolean" },
+              allowOther: {
+                type: "boolean",
+                description:
+                  "Allow learners to choose Other and type a response.",
+              },
+              responseStyle: {
+                type: "string",
+                enum: ["cards", "scale"],
+              },
+              entryLabel: {
+                type: "string",
+                description:
+                  "For prioritization activities, the label learners see while capturing ideas or routines.",
+              },
+              selectionPrompt: {
+                type: "string",
+                description:
+                  "For prioritization activities, the instruction learners see when choosing their shortlist.",
+              },
+              minItems: {
+                type: "number",
+                description:
+                  "For prioritization activities, the minimum number of captured items required before finalising.",
+              },
+              maxSelections: {
+                type: "number",
+                description:
+                  "For prioritization activities, the maximum number of items learners may shortlist.",
+              },
+              worksheetFields: {
+                type: "array",
+                description:
+                  "For worksheet activities, the structured fields learners fill in and can save as progress.",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    label: { type: "string" },
+                    type: {
+                      type: "string",
+                      enum: ["short_text", "long_text", "scale", "date"],
+                    },
+                    section: { type: "string" },
+                    description: { type: "string" },
+                    placeholder: { type: "string" },
+                    required: { type: "boolean" },
+                    min: { type: "number" },
+                    max: { type: "number" },
+                    lowLabel: { type: "string" },
+                    highLabel: { type: "string" },
+                  },
+                  required: ["label", "type"],
+                },
+              },
+              itemTitleFieldId: {
+                type: "string",
+                description:
+                  "For repeatable cards, the field used as each card's visible title.",
+              },
+              sourceActivityId: {
+                type: "string",
+                description:
+                  "For a linked scorecard, the repeatable-card activity supplying its candidates.",
+              },
+              scoreCriteria: {
+                type: "array",
+                description:
+                  "For a linked scorecard, the scales applied to every source card.",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" },
+                    label: { type: "string" },
+                    description: { type: "string" },
+                    min: { type: "number" },
+                    max: { type: "number" },
+                    lowLabel: { type: "string" },
+                    highLabel: { type: "string" },
+                  },
+                  required: ["label", "min", "max"],
+                },
+              },
+              points: { type: "number" },
+              options: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    label: { type: "string" },
+                    isCorrect: { type: "boolean" },
+                  },
+                  required: ["label"],
+                },
+              },
+            },
+            required: ["type", "title"],
+          },
+        },
+        sourceMaterials: {
+          type: "array",
+          description:
+            "Exact uploaded PowerPoint/PDF filenames that should become private course/live materials. Activities can reference them with materialAttachmentName.",
+          items: { type: "string" },
+        },
+        parts: {
+          type: "array",
+          description:
+            "Programme sessions or days. Each part has independent availability and pacing; multiple parts may be open at once.",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              title: { type: "string" },
+              description: { type: "string" },
+              status: { type: "string", enum: ["open", "closed"] },
+              pace: { type: "string", enum: ["facilitator", "learner"] },
+              activityIds: { type: "array", items: { type: "string" } },
+            },
+            required: ["id", "title", "status", "pace", "activityIds"],
+          },
+        },
+        learnerCopilot: {
+          type: "object",
+          description:
+            "Whether the learner copilot appears and what it may do during this programme.",
+          properties: {
+            enabled: { type: "boolean" },
+            explainCurrentActivity: { type: "boolean" },
+            coachResponses: { type: "boolean" },
+            useCourseMaterials: { type: "boolean" },
+            giveDirectExplanations: { type: "boolean" },
+          },
+        },
+        reason: { type: "string" },
+      },
+      required: ["courseSlug", "title", "activities"],
+    },
+  },
+  {
+    name: "update_live_session",
+    description:
+      "Update an existing live programme after reading it with get_live_session. Supports the complete run of show, independent programme-session parts, pacing, availability, learner-copilot policy, and uploaded deck/PDF attachment mapping. Preserve stable activity IDs so learner responses remain connected. This is approval-gated in manual mode.",
+    parameters: {
+      type: "object",
+      properties: {
+        courseSlug: { type: "string" },
+        sessionId: { type: "string" },
+        baseVersion: { type: "number" },
+        title: { type: "string" },
+        description: { type: "string" },
+        pace: { type: "string", enum: ["facilitator", "learner"] },
+        access: { type: "string", enum: ["enrolled", "invited", "open"] },
+        activities: {
+          type: "array",
+          description:
+            "Complete replacement activity list. Use the same activity object structure as create_live_session and preserve IDs.",
+          items: { type: "object" },
+        },
+        parts: {
+          type: "array",
+          description:
+            "Complete replacement programme-session list. Multiple parts can have status open simultaneously.",
+          items: { type: "object" },
+        },
+        sourceMaterials: { type: "array", items: { type: "string" } },
+        learnerCopilot: { type: "object" },
+        reason: { type: "string" },
+      },
+      required: ["courseSlug", "sessionId", "baseVersion"],
     },
   },
   {
@@ -307,7 +636,10 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
           },
           required: ["title", "lessons"],
         },
-        position: { type: "number", description: "Insert index (default: append at end)" },
+        position: {
+          type: "number",
+          description: "Insert index (default: append at end)",
+        },
         reason: { type: "string" },
       },
       required: ["courseSlug", "module"],
@@ -348,7 +680,10 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
             tagline: { type: "string" },
             description: { type: "string" },
             longDescription: { type: "string" },
-            level: { type: "string", enum: ["beginner", "intermediate", "advanced"] },
+            level: {
+              type: "string",
+              enum: ["beginner", "intermediate", "advanced"],
+            },
             duration: { type: "string" },
             tags: { type: "array", items: { type: "string" } },
           },
@@ -473,8 +808,14 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     parameters: {
       type: "object",
       properties: {
-        href: { type: "string", description: 'e.g. "/educator/courses/my-course/content"' },
-        label: { type: "string", description: 'Short button label, e.g. "Open course content"' },
+        href: {
+          type: "string",
+          description: 'e.g. "/educator/courses/my-course/content"',
+        },
+        label: {
+          type: "string",
+          description: 'Short button label, e.g. "Open course content"',
+        },
         reason: { type: "string" },
       },
       required: ["href"],
@@ -487,8 +828,14 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     parameters: {
       type: "object",
       properties: {
-        target: { type: "string", description: "Visible label of the element (preferred)" },
-        selector: { type: "string", description: "Exact CSS selector (alternative)" },
+        target: {
+          type: "string",
+          description: "Visible label of the element (preferred)",
+        },
+        selector: {
+          type: "string",
+          description: "Exact CSS selector (alternative)",
+        },
         reason: { type: "string" },
       },
       required: [],
@@ -501,11 +848,15 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
     parameters: {
       type: "object",
       properties: {
-        content: { type: "string", description: "The fact/preference, written to be useful later" },
+        content: {
+          type: "string",
+          description: "The fact/preference, written to be useful later",
+        },
         kind: {
           type: "string",
           enum: ["semantic", "episodic", "procedural"],
-          description: "semantic = fact/preference (default), episodic = event, procedural = how-to",
+          description:
+            "semantic = fact/preference (default), episodic = event, procedural = how-to",
         },
       },
       required: ["content"],
@@ -529,7 +880,7 @@ export const educatorCopilotToolCatalog: CopilotToolDefinition[] = [
 export async function executeEducatorCopilotTool(
   ctx: CopilotToolContext,
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
 ): Promise<string> {
   try {
     const result = await runTool(ctx, name, args || {});
@@ -544,7 +895,7 @@ export async function executeEducatorCopilotTool(
 async function runTool(
   ctx: CopilotToolContext,
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
 ): Promise<unknown> {
   switch (name) {
     case "list_courses":
@@ -563,6 +914,12 @@ async function runTool(
       return toolCourseAnalytics(ctx, args);
     case "list_assignments":
       return toolListAssignments(ctx, args);
+    case "list_live_sessions":
+      return toolListLiveSessions(ctx, args);
+    case "get_live_session":
+      return toolGetLiveSession(ctx, args);
+    case "list_course_materials":
+      return toolListCourseMaterials(ctx, args);
     case "read_attachment":
       return toolReadAttachment(ctx, args);
     case "update_lesson":
@@ -573,6 +930,8 @@ async function runTool(
     case "create_skill_path":
     case "update_skill_path":
     case "update_skill_challenge":
+    case "create_live_session":
+    case "update_live_session":
       return toolContentWrite(ctx, name, args);
     case "update_experience_world":
       return toolExperienceWrite(ctx, args);
@@ -620,7 +979,9 @@ async function loadCourseMetrics(courseIds: Types.ObjectId[]) {
         $group: {
           _id: "$courseId",
           assignments: { $sum: 1 },
-          publishedAssignments: { $sum: { $cond: [{ $eq: ["$published", true] }, 1, 0] } },
+          publishedAssignments: {
+            $sum: { $cond: [{ $eq: ["$published", true] }, 1, 0] },
+          },
         },
       },
     ]),
@@ -630,7 +991,9 @@ async function loadCourseMetrics(courseIds: Types.ObjectId[]) {
         $group: {
           _id: "$courseId",
           submissions: { $sum: 1 },
-          pendingReviews: { $sum: { $cond: [{ $eq: ["$status", "submitted"] }, 1, 0] } },
+          pendingReviews: {
+            $sum: { $cond: [{ $eq: ["$status", "submitted"] }, 1, 0] },
+          },
         },
       },
     ]),
@@ -648,11 +1011,15 @@ async function loadCourseMetrics(courseIds: Types.ObjectId[]) {
 
 async function toolListCourses(ctx: CopilotToolContext) {
   const courses = await Course.find(managedFilter(ctx.user))
-    .select("_id title slug tagline published courseType level modules skillPack skillPacks updatedAt")
+    .select(
+      "_id title slug tagline published courseType level modules skillPack skillPacks updatedAt",
+    )
     .sort({ updatedAt: -1 })
     .limit(60)
     .lean();
-  const metrics = await loadCourseMetrics(courses.map((c) => c._id as Types.ObjectId));
+  const metrics = await loadCourseMetrics(
+    courses.map((c) => c._id as Types.ObjectId),
+  );
   return {
     totalCourses: courses.length,
     courses: courses.map((course) => {
@@ -671,9 +1038,13 @@ async function toolListCourses(ctx: CopilotToolContext) {
         level: course.level,
         students: m.students || 0,
         activeStudents: m.active || 0,
-        avgProgressPct: m.avgProgress != null ? Math.round(m.avgProgress) : null,
+        avgProgressPct:
+          m.avgProgress != null ? Math.round(m.avgProgress) : null,
         moduleCount: modules.length,
-        lessonCount: modules.reduce((sum, mod) => sum + (mod.lessons?.length || 0), 0),
+        lessonCount: modules.reduce(
+          (sum, mod) => sum + (mod.lessons?.length || 0),
+          0,
+        ),
         skillPackCount: packs.length,
         pendingReviews: m.pendingReviews || 0,
         updatedAt: course.updatedAt,
@@ -689,13 +1060,20 @@ async function toolListCourses(ctx: CopilotToolContext) {
   };
 }
 
-async function toolGetCourse(ctx: CopilotToolContext, args: Record<string, unknown>) {
+async function toolGetCourse(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
   const slug = cleanString(args.courseSlug);
   if (!slug) return { error: "courseSlug is required." };
-  const course = (await Course.findOne({ slug, ...managedFilter(ctx.user) }).lean()) as
-    | (Record<string, unknown> & { _id: Types.ObjectId })
-    | null;
-  if (!course) return { error: `No managed course with slug "${slug}". Call list_courses first.` };
+  const course = (await Course.findOne({
+    slug,
+    ...managedFilter(ctx.user),
+  }).lean()) as (Record<string, unknown> & { _id: Types.ObjectId }) | null;
+  if (!course)
+    return {
+      error: `No managed course with slug "${slug}". Call list_courses first.`,
+    };
   const full = args.detail === "full";
   const textLimit = full ? 6000 : 500;
   const metrics = await loadCourseMetrics([course._id as Types.ObjectId]);
@@ -728,38 +1106,40 @@ async function toolGetCourse(ctx: CopilotToolContext, args: Record<string, unkno
           duration: lesson.duration,
           isFree: lesson.isFree,
           description: truncate(lesson.description as string, textLimit),
-        })
+        }),
       ),
     })),
     skillPacks: packs.map((pack, packIndex) => ({
-      skillPackSlug: pack.slug || (packIndex === 0 && course.skillPack ? course.slug : undefined),
+      skillPackSlug:
+        pack.slug ||
+        (packIndex === 0 && course.skillPack ? course.slug : undefined),
       storage: packIndex === 0 && course.skillPack ? "primary" : "additional",
       title: pack.title,
       enabled: pack.enabled,
       subtitle: pack.subtitle,
       coverUrl: pack.coverUrl,
       learnerPromise: truncate(pack.learnerPromise as string, textLimit),
-      challenges: ((pack.challenges as Array<Record<string, unknown>>) || []).map(
-        (challenge) => ({
-          challengeId: challenge.id,
-          day: challenge.day,
-          title: challenge.title,
-          hook: truncate(challenge.hook as string, full ? 1200 : 200),
-          lesson: truncate(challenge.lesson as string, textLimit),
-          minutes: challenge.minutes,
-          points: challenge.points,
-          streakBoost: challenge.streakBoost,
-          assetUrl: challenge.assetUrl,
-          assetAlt: challenge.assetAlt,
-          accentColor: challenge.accentColor,
-          audioCue: challenge.audioCue,
-          keyIdeas: challenge.keyIdeas,
-          microTask: truncate(challenge.microTask as string, full ? 1200 : 200),
-          questionCount: Array.isArray(challenge.questions)
-            ? challenge.questions.length
-            : 0,
-        })
-      ),
+      challenges: (
+        (pack.challenges as Array<Record<string, unknown>>) || []
+      ).map((challenge) => ({
+        challengeId: challenge.id,
+        day: challenge.day,
+        title: challenge.title,
+        hook: truncate(challenge.hook as string, full ? 1200 : 200),
+        lesson: truncate(challenge.lesson as string, textLimit),
+        minutes: challenge.minutes,
+        points: challenge.points,
+        streakBoost: challenge.streakBoost,
+        assetUrl: challenge.assetUrl,
+        assetAlt: challenge.assetAlt,
+        accentColor: challenge.accentColor,
+        audioCue: challenge.audioCue,
+        keyIdeas: challenge.keyIdeas,
+        microTask: truncate(challenge.microTask as string, full ? 1200 : 200),
+        questionCount: Array.isArray(challenge.questions)
+          ? challenge.questions.length
+          : 0,
+      })),
     })),
   };
 }
@@ -820,6 +1200,169 @@ async function toolListExperiences(
   };
 }
 
+async function toolListLiveSessions(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const courseSlug = cleanString(args.courseSlug);
+  const status = cleanString(args.status);
+  const courses = await Course.find({
+    ...(courseSlug ? { slug: courseSlug } : {}),
+    ...managedFilter(ctx.user),
+  })
+    .select("_id title slug")
+    .lean();
+  if (!courses.length) {
+    return {
+      error: courseSlug
+        ? `No managed course with slug "${courseSlug}".`
+        : "No managed courses were found.",
+    };
+  }
+  const courseById = new Map(
+    courses.map((course) => [String(course._id), course]),
+  );
+  const sessions = await LiveSession.find({
+    courseId: { $in: courses.map((course) => course._id) },
+    ...(status && ["draft", "lobby", "live", "ended"].includes(status)
+      ? { status }
+      : {}),
+  })
+    .sort({ updatedAt: -1 })
+    .limit(80)
+    .lean();
+  const sessionIds = sessions.map((session) => session._id);
+  const [participantRows, responseRows] = await Promise.all([
+    LiveParticipant.aggregate([
+      { $match: { sessionId: { $in: sessionIds } } },
+      { $group: { _id: "$sessionId", count: { $sum: 1 } } },
+    ]),
+    LiveResponse.aggregate([
+      { $match: { sessionId: { $in: sessionIds } } },
+      {
+        $group: {
+          _id: { sessionId: "$sessionId", activityId: "$activityId" },
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+  ]);
+  const participantsBySession = new Map(
+    participantRows.map((row: { _id: Types.ObjectId; count: number }) => [
+      String(row._id),
+      row.count,
+    ]),
+  );
+  const responsesBySession = new Map<string, Map<string, number>>();
+  for (const row of responseRows as Array<{
+    _id: { sessionId: Types.ObjectId; activityId: string };
+    count: number;
+  }>) {
+    const key = String(row._id.sessionId);
+    const counts = responsesBySession.get(key) || new Map<string, number>();
+    counts.set(row._id.activityId, row.count);
+    responsesBySession.set(key, counts);
+  }
+  return {
+    totalSessions: sessions.length,
+    sessions: sessions.map((session) => {
+      const course = courseById.get(String(session.courseId));
+      const responseCounts = responsesBySession.get(String(session._id));
+      return {
+        sessionId: String(session._id),
+        title: session.title,
+        courseTitle: course?.title,
+        courseSlug: course?.slug,
+        status: session.status,
+        stateVersion: session.stateVersion,
+        pace: session.pace,
+        access: session.access,
+        joinCode: session.joinCode,
+        participants: participantsBySession.get(String(session._id)) || 0,
+        scheduledStart: session.scheduledStart,
+        currentActivityId: session.currentActivityId,
+        currentPartId: session.currentPartId,
+        parts: session.parts,
+        settings: session.settings,
+        activities: session.activities.map(
+          (activity: LiveActivity, index: number) => ({
+            index,
+            id: activity.id,
+            type: activity.type,
+            title: activity.title,
+            status: activity.status,
+            estimatedMinutes: activity.estimatedMinutes,
+            required: activity.required,
+            responses: responseCounts?.get(activity.id) || 0,
+          }),
+        ),
+        facilitatorHref: `/educator/courses/${course?.slug}/live/${String(session._id)}`,
+        updatedAt: session.updatedAt,
+      };
+    }),
+  };
+}
+
+async function toolGetLiveSession(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const sessionId = cleanString(args.sessionId);
+  if (!sessionId || !Types.ObjectId.isValid(sessionId)) {
+    return { error: "A valid sessionId from list_live_sessions is required." };
+  }
+  const session = await findManagedLiveSession(ctx.user, sessionId);
+  if (!session) {
+    return {
+      error:
+        "Live programme not found or it does not belong to a managed course.",
+    };
+  }
+  return {
+    sessionId: String(session._id),
+    courseSlug: session.courseSlug,
+    title: session.title,
+    description: session.description,
+    status: session.status,
+    stateVersion: session.stateVersion,
+    pace: session.pace,
+    access: session.access,
+    currentActivityId: session.currentActivityId,
+    currentPartId: session.currentPartId,
+    activities: session.activities,
+    parts: session.parts,
+    settings: session.settings,
+    facilitatorHref: `/educator/courses/${session.courseSlug}/live/${String(session._id)}`,
+  };
+}
+
+async function toolListCourseMaterials(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const courseSlug = cleanString(args.courseSlug);
+  if (!courseSlug) return { error: "courseSlug is required." };
+  const course = await findManagedCourse(ctx.user, courseSlug);
+  if (!course) return { error: `No managed course "${courseSlug}".` };
+  const materials = await CourseMaterial.find({ courseId: course._id })
+    .sort({ createdAt: -1 })
+    .lean();
+  return {
+    courseSlug,
+    total: materials.length,
+    materials: materials.map((material) => ({
+      materialId: String(material._id),
+      name: material.name,
+      kind: material.kind,
+      mimeType: material.mimeType,
+      size: material.size,
+      visibility: material.visibility,
+      status: material.status,
+      textPreview: truncate(material.textPreview, 800),
+    })),
+  };
+}
+
 async function toolGetExperience(
   ctx: CopilotToolContext,
   args: Record<string, unknown>,
@@ -827,8 +1370,7 @@ async function toolGetExperience(
   const experienceId = cleanString(args.experienceId);
   if (!experienceId || !Types.ObjectId.isValid(experienceId)) {
     return {
-      error:
-        "A valid experienceId from list_experiences is required.",
+      error: "A valid experienceId from list_experiences is required.",
     };
   }
   const project = await findManagedExperience(ctx.user, experienceId);
@@ -850,7 +1392,10 @@ async function toolGetExperience(
   };
 }
 
-async function toolListStudents(ctx: CopilotToolContext, args: Record<string, unknown>) {
+async function toolListStudents(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
   const slug = cleanString(args.courseSlug);
   const limit = Math.min(Math.max(Number(args.limit) || 30, 1), 100);
   const courses = await Course.find({
@@ -860,10 +1405,16 @@ async function toolListStudents(ctx: CopilotToolContext, args: Record<string, un
     .select("_id title slug")
     .lean();
   if (!courses.length) {
-    return { error: slug ? `No managed course "${slug}".` : "No managed courses." };
+    return {
+      error: slug ? `No managed course "${slug}".` : "No managed courses.",
+    };
   }
-  const rows = await Enrollment.find({ courseId: { $in: courses.map((c) => c._id) } })
-    .select("courseId userId status progress points streak completedChallenges lastChallengeCompletedAt enrolledAt updatedAt")
+  const rows = await Enrollment.find({
+    courseId: { $in: courses.map((c) => c._id) },
+  })
+    .select(
+      "courseId userId status progress points streak completedChallenges lastChallengeCompletedAt enrolledAt updatedAt",
+    )
     .populate({ path: "userId", select: "name email" })
     .sort({ updatedAt: -1 })
     .limit(600)
@@ -878,7 +1429,9 @@ async function toolListStudents(ctx: CopilotToolContext, args: Record<string, un
   }
   const perCourse = courses.map((course) => {
     const students = byCourse.get(String(course._id)) || [];
-    const total = rows.filter((r) => String(r.courseId) === String(course._id)).length;
+    const total = rows.filter(
+      (r) => String(r.courseId) === String(course._id),
+    ).length;
     return {
       course: course.title,
       courseSlug: course.slug,
@@ -892,7 +1445,10 @@ async function toolListStudents(ctx: CopilotToolContext, args: Record<string, un
   };
 }
 
-async function toolGetStudent(ctx: CopilotToolContext, args: Record<string, unknown>) {
+async function toolGetStudent(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
   const query = cleanString(args.student)?.toLowerCase();
   if (!query) return { error: "student (email or name) is required." };
   const slug = cleanString(args.courseSlug);
@@ -902,8 +1458,12 @@ async function toolGetStudent(ctx: CopilotToolContext, args: Record<string, unkn
   })
     .select("_id title slug")
     .lean();
-  const rows = await Enrollment.find({ courseId: { $in: courses.map((c) => c._id) } })
-    .select("courseId userId status progress points streak completedChallenges lastChallengeCompletedAt enrolledAt")
+  const rows = await Enrollment.find({
+    courseId: { $in: courses.map((c) => c._id) },
+  })
+    .select(
+      "courseId userId status progress points streak completedChallenges lastChallengeCompletedAt enrolledAt",
+    )
     .populate({ path: "userId", select: "name email" })
     .lean();
   const matches = rows.filter((row) => {
@@ -913,9 +1473,17 @@ async function toolGetStudent(ctx: CopilotToolContext, args: Record<string, unkn
       u?.name?.toLowerCase().includes(query)
     );
   });
-  if (!matches.length) return { found: false, message: `No enrolled student matching "${args.student}".` };
+  if (!matches.length)
+    return {
+      found: false,
+      message: `No enrolled student matching "${args.student}".`,
+    };
 
-  const userIds = [...new Set(matches.map((m) => String((m.userId as { _id?: unknown })?._id)))];
+  const userIds = [
+    ...new Set(
+      matches.map((m) => String((m.userId as { _id?: unknown })?._id)),
+    ),
+  ];
   const submissions = await Submission.find({
     courseId: { $in: courses.map((c) => c._id) },
     userId: { $in: userIds },
@@ -926,7 +1494,8 @@ async function toolGetStudent(ctx: CopilotToolContext, args: Record<string, unkn
     .lean();
 
   const courseTitle = (id: unknown) =>
-    courses.find((c) => String(c._id) === String(id))?.title || "Unknown course";
+    courses.find((c) => String(c._id) === String(id))?.title ||
+    "Unknown course";
 
   return {
     found: true,
@@ -943,7 +1512,10 @@ async function toolGetStudent(ctx: CopilotToolContext, args: Record<string, unkn
   };
 }
 
-async function toolCourseAnalytics(ctx: CopilotToolContext, args: Record<string, unknown>) {
+async function toolCourseAnalytics(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
   const slug = cleanString(args.courseSlug);
   const courses = await Course.find({
     ...(slug ? { slug } : {}),
@@ -952,7 +1524,9 @@ async function toolCourseAnalytics(ctx: CopilotToolContext, args: Record<string,
     .select("_id title slug published")
     .lean();
   if (!courses.length) {
-    return { error: slug ? `No managed course "${slug}".` : "No managed courses." };
+    return {
+      error: slug ? `No managed course "${slug}".` : "No managed courses.",
+    };
   }
   const courseIds = courses.map((c) => c._id);
   const now = Date.now();
@@ -975,7 +1549,9 @@ async function toolCourseAnalytics(ctx: CopilotToolContext, args: Record<string,
     scope: slug ? courses[0].title : `All ${courses.length} managed courses`,
     newEnrollmentsLast7Days: recent7,
     newEnrollmentsLast30Days: recent30,
-    enrollmentStatusMix: Object.fromEntries(statusMix.map((row) => [row._id || "unknown", row.count])),
+    enrollmentStatusMix: Object.fromEntries(
+      statusMix.map((row) => [row._id || "unknown", row.count]),
+    ),
     perCourse: courses.map((course) => ({
       course: course.title,
       courseSlug: course.slug,
@@ -987,7 +1563,7 @@ async function toolCourseAnalytics(ctx: CopilotToolContext, args: Record<string,
 
 async function toolListAssignments(
   ctx: CopilotToolContext,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
 ) {
   const slug = cleanString(args.courseSlug);
   const courses = await Course.find({
@@ -997,10 +1573,15 @@ async function toolListAssignments(
     .select("_id title slug")
     .lean();
   if (!courses.length) {
-    return { error: slug ? `No managed course "${slug}".` : "No managed courses." };
+    return {
+      error: slug ? `No managed course "${slug}".` : "No managed courses.",
+    };
   }
   const courseById = new Map(
-    courses.map((course) => [String(course._id), { title: course.title, slug: course.slug }])
+    courses.map((course) => [
+      String(course._id),
+      { title: course.title, slug: course.slug },
+    ]),
   );
   const assignments = await Assignment.find({
     courseId: { $in: courses.map((course) => course._id) },
@@ -1021,7 +1602,7 @@ async function toolListAssignments(
     },
   ]);
   const counts = new Map(
-    submissionCounts.map((item) => [String(item._id), item])
+    submissionCounts.map((item) => [String(item._id), item]),
   );
   return {
     total: assignments.length,
@@ -1043,7 +1624,10 @@ async function toolListAssignments(
   };
 }
 
-function toolReadAttachment(ctx: CopilotToolContext, args: Record<string, unknown>) {
+function toolReadAttachment(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
   if (!ctx.materials.length) {
     return { error: "No files have been uploaded in this session." };
   }
@@ -1071,7 +1655,7 @@ function toolReadAttachment(ctx: CopilotToolContext, args: Record<string, unknow
 async function toolContentWrite(
   ctx: CopilotToolContext,
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
 ) {
   const requestedCourseSlug = cleanString(args.courseSlug);
   if (!requestedCourseSlug) {
@@ -1094,7 +1678,10 @@ async function toolContentWrite(
   }
 
   if (ctx.actionMode === "auto") {
-    const applied = await applyEducatorCopilotAction({ user: ctx.user, action });
+    const applied = await applyEducatorCopilotAction({
+      user: ctx.user,
+      action,
+    });
     ctx.recordAction(applied);
     return {
       status: applied.status,
@@ -1117,8 +1704,11 @@ async function toolContentWrite(
 async function persistContentAttachments(
   ctx: CopilotToolContext,
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
 ) {
+  if (name === "create_live_session" || name === "update_live_session") {
+    return prepareLiveSessionMaterials(ctx, args);
+  }
   if (
     name !== "update_lesson" &&
     name !== "add_lesson" &&
@@ -1137,15 +1727,18 @@ async function persistContentAttachments(
     if (!candidate) return undefined;
     return ctx.materials.find(
       (material) =>
-        material.type.startsWith("image/") && material.name.toLowerCase() === candidate
+        material.type.startsWith("image/") &&
+        material.name.toLowerCase() === candidate,
     )?.name;
   };
   const collect = (value: unknown): void => {
     const input = asRecord(value);
     const coverName =
-      cleanString(input.coverAttachmentName) || uploadedImageName(input.coverUrl);
+      cleanString(input.coverAttachmentName) ||
+      uploadedImageName(input.coverUrl);
     const assetName =
-      cleanString(input.assetAttachmentName) || uploadedImageName(input.assetUrl);
+      cleanString(input.assetAttachmentName) ||
+      uploadedImageName(input.assetUrl);
     if (coverName) attachmentNames.add(coverName);
     if (assetName) attachmentNames.add(assetName);
     for (const key of ["challenges", "lessons"] as const) {
@@ -1163,21 +1756,26 @@ async function persistContentAttachments(
   if (!attachmentNames.size) return prepared;
   const persisted = new Map(
     await Promise.all(
-      [...attachmentNames].map(async (attachmentName) => [
-        attachmentName,
-        await persistUploadedCopilotImage(ctx, attachmentName),
-      ] as const)
-    )
+      [...attachmentNames].map(
+        async (attachmentName) =>
+          [
+            attachmentName,
+            await persistUploadedCopilotImage(ctx, attachmentName),
+          ] as const,
+      ),
+    ),
   );
 
   const replace = (value: unknown): Record<string, unknown> => {
     const input = { ...asRecord(value) };
     const coverName =
-      cleanString(input.coverAttachmentName) || uploadedImageName(input.coverUrl);
+      cleanString(input.coverAttachmentName) ||
+      uploadedImageName(input.coverUrl);
     if (coverName) input.coverUrl = persisted.get(coverName);
     delete input.coverAttachmentName;
     const assetName =
-      cleanString(input.assetAttachmentName) || uploadedImageName(input.assetUrl);
+      cleanString(input.assetAttachmentName) ||
+      uploadedImageName(input.assetUrl);
     if (assetName) input.assetUrl = persisted.get(assetName);
     delete input.assetAttachmentName;
     for (const key of ["challenges", "lessons"] as const) {
@@ -1188,27 +1786,126 @@ async function persistContentAttachments(
     return input;
   };
 
-  if (name === "create_skill_path") prepared.skillPath = replace(args.skillPath);
+  if (name === "create_skill_path")
+    prepared.skillPath = replace(args.skillPath);
   else if (name === "add_lesson") prepared.lesson = replace(args.lesson);
   else if (name === "add_module") prepared.module = replace(args.module);
   else prepared.patch = replace(args.patch);
   return prepared;
 }
 
+async function prepareLiveSessionMaterials(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  const courseSlug = cleanString(args.courseSlug);
+  const course = courseSlug
+    ? await findManagedCourse(ctx.user, courseSlug)
+    : null;
+  if (!course) return args;
+  const requestedNames = new Set(
+    (Array.isArray(args.sourceMaterials) ? args.sourceMaterials : [])
+      .map(cleanString)
+      .filter((name): name is string => Boolean(name)),
+  );
+  for (const raw of Array.isArray(args.activities) ? args.activities : []) {
+    const name = cleanString(asRecord(raw).materialAttachmentName);
+    if (name) requestedNames.add(name);
+  }
+  if (!requestedNames.size) return args;
+
+  const planned: Array<
+    NonNullable<
+      Extract<
+        EducatorCopilotAction,
+        { type: "create_live_session" }
+      >["session"]["materials"]
+    >[number]
+  > = [];
+  const materialIds = new Map<string, string>();
+  for (const requestedName of requestedNames) {
+    const normalized = requestedName.toLowerCase();
+    const material = ctx.materials.find(
+      (candidate) => candidate.name.toLowerCase() === normalized,
+    );
+    if (!material) {
+      throw new Error(
+        `Source material “${requestedName}” was not uploaded in this chat. Use an exact filename from read_attachment.`,
+      );
+    }
+    const isPdf =
+      material.type === "application/pdf" || /\.pdf$/i.test(material.name);
+    const isPresentation =
+      material.type.includes("presentation") || /\.pptx?$/i.test(material.name);
+    if (!isPdf && !isPresentation) {
+      throw new Error(
+        `Source material “${material.name}” cannot be presented directly. Use its PDF or PowerPoint version; Word files can still be read to design activities.`,
+      );
+    }
+    if (!material.fileId) {
+      throw new Error(
+        `Source material “${material.name}” is not in durable file storage. Upload it again and retry.`,
+      );
+    }
+    const existing = await CourseMaterial.findOne({ fileId: material.fileId });
+    if (existing && String(existing.courseId) !== String(course._id)) {
+      throw new Error(
+        `Source material “${material.name}” is already attached to another course. Upload a new copy for this course.`,
+      );
+    }
+    const id = existing ? String(existing._id) : String(new Types.ObjectId());
+    materialIds.set(normalized, id);
+    planned.push({
+      id,
+      fileId: material.fileId,
+      name: material.name,
+      mimeType: material.type,
+      size: material.size,
+      kind: isPdf ? "pdf" : "presentation",
+      visibility: "course",
+      textPreview: material.text.slice(0, 30_000),
+      ownerPrincipalId:
+        ctx.user.identityUserId || ctx.user.email || ctx.user.id,
+      existing: Boolean(existing),
+    });
+  }
+
+  const preparedActivities = (Array.isArray(args.activities)
+    ? args.activities
+    : []
+  ).map((raw) => {
+    const activity = { ...asRecord(raw) };
+    const attachmentName = cleanString(activity.materialAttachmentName);
+    if (attachmentName) {
+      activity.materialId = materialIds.get(attachmentName.toLowerCase());
+    }
+    delete activity.materialAttachmentName;
+    return activity;
+  });
+  return {
+    ...args,
+    activities: preparedActivities,
+    _plannedMaterials: planned,
+  };
+}
+
 async function persistUploadedCopilotImage(
   ctx: CopilotToolContext,
-  attachmentName: string
+  attachmentName: string,
 ) {
   const query = attachmentName.toLowerCase();
-  const exact = ctx.materials.find((material) => material.name.toLowerCase() === query);
+  const exact = ctx.materials.find(
+    (material) => material.name.toLowerCase() === query,
+  );
   const partial = ctx.materials.filter((material) =>
-    material.name.toLowerCase().includes(query)
+    material.name.toLowerCase().includes(query),
   );
   const material = exact || (partial.length === 1 ? partial[0] : undefined);
   if (!material) {
-    const detail = partial.length > 1 ? "matches more than one upload" : "was not uploaded";
+    const detail =
+      partial.length > 1 ? "matches more than one upload" : "was not uploaded";
     throw new Error(
-      `Image attachment “${attachmentName}” ${detail}. Use an exact filename from read_attachment.`
+      `Image attachment “${attachmentName}” ${detail}. Use an exact filename from read_attachment.`,
     );
   }
   if (!material.type.startsWith("image/")) {
@@ -1216,7 +1913,7 @@ async function persistUploadedCopilotImage(
   }
   if (!material.fileId || !ctx.client || !ctx.agentId) {
     throw new Error(
-      `Attachment “${material.name}” is not available from durable file storage. Upload it again and retry.`
+      `Attachment “${material.name}” is not available from durable file storage. Upload it again and retry.`,
     );
   }
 
@@ -1229,20 +1926,30 @@ async function persistUploadedCopilotImage(
   });
   const sourceUrl = resolveEducatorCopilotImageUrl(content.data);
   if (!sourceUrl) {
-    throw new Error(`Attachment “${material.name}” has no downloadable image source.`);
+    throw new Error(
+      `Attachment “${material.name}” has no downloadable image source.`,
+    );
   }
   const source = await fetch(sourceUrl);
   if (!source.ok) {
-    throw new Error(`Could not download attachment “${material.name}” (${source.status}).`);
+    throw new Error(
+      `Could not download attachment “${material.name}” (${source.status}).`,
+    );
   }
   const responseType = source.headers.get("content-type") || "";
-  const mimeType = responseType.startsWith("image/") ? responseType : material.type;
+  const mimeType = responseType.startsWith("image/")
+    ? responseType
+    : material.type;
   if (!mimeType.startsWith("image/")) {
-    throw new Error(`Attachment “${material.name}” did not resolve to an image.`);
+    throw new Error(
+      `Attachment “${material.name}” did not resolve to an image.`,
+    );
   }
   const data = Buffer.from(await source.arrayBuffer());
   if (!data.length || data.length > 20 * 1024 * 1024) {
-    throw new Error(`Attachment “${material.name}” has an unsupported image size.`);
+    throw new Error(
+      `Attachment “${material.name}” has an unsupported image size.`,
+    );
   }
   return uploadCourseMediaToS3({
     file: { name: material.name, type: mimeType },
@@ -1270,8 +1977,7 @@ async function toolExperienceWrite(
   const project = await findManagedExperience(ctx.user, experienceId);
   if (!project) {
     return {
-      error:
-        "Experience not found or it does not belong to a managed course.",
+      error: "Experience not found or it does not belong to a managed course.",
     };
   }
   if (project.draftVersion !== baseVersion) {
@@ -1334,8 +2040,7 @@ async function toolExperienceWrite(
     actionLabel: action.label,
     impact: action.preview,
     studioHref: `/educator/experience-studio/${experienceId}`,
-    note:
-      "Manual mode: the complete validated world edit is queued for educator approval. Do not claim it is already applied.",
+    note: "Manual mode: the complete validated world edit is queued for educator approval. Do not claim it is already applied.",
   };
 }
 
@@ -1350,13 +2055,15 @@ type ContentWriteAction = Extract<
       | "update_course_overview"
       | "create_skill_path"
       | "update_skill_path"
-      | "update_skill_challenge";
+      | "update_skill_challenge"
+      | "create_live_session"
+      | "update_live_session";
   }
 >;
 
 function buildContentAction(
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
 ): ContentWriteAction | null {
   const courseSlug = cleanString(args.courseSlug);
   if (!courseSlug) return null;
@@ -1368,11 +2075,95 @@ function buildContentAction(
     safety: "content_write" as const,
   };
 
+  if (name === "create_live_session") {
+    const title = cleanString(args.title);
+    const activities = normalizeActivities(args.activities);
+    if (!title || !activities.length) return null;
+    const pace = args.pace === "learner" ? "learner" : "facilitator";
+    const access =
+      args.access === "open" || args.access === "invited"
+        ? args.access
+        : "enrolled";
+    return {
+      ...base,
+      type: "create_live_session",
+      label: `Create live session “${title}”`,
+      courseSlug,
+      session: {
+        title,
+        description: cleanString(args.description),
+        pace,
+        access,
+        activities,
+        parts: normalizeSessionParts(args.parts, activities),
+        settings: normalizeCopilotLiveSettings(args.learnerCopilot),
+        materials: normalizePlannedMaterials(args._plannedMaterials),
+      },
+      preview: previewLiveProgramme(
+        activities,
+        normalizeSessionParts(args.parts, activities),
+      ),
+    };
+  }
+
+  if (name === "update_live_session") {
+    const sessionId = cleanString(args.sessionId);
+    const baseVersion = toIndex(args.baseVersion);
+    if (!sessionId || !Types.ObjectId.isValid(sessionId) || baseVersion === null)
+      return null;
+    const patch: Extract<
+      EducatorCopilotAction,
+      { type: "update_live_session" }
+    >["patch"] = {};
+    const title = cleanString(args.title);
+    if (title) patch.title = title;
+    if ("description" in args)
+      patch.description = cleanString(args.description);
+    if (args.pace === "learner" || args.pace === "facilitator")
+      patch.pace = args.pace;
+    if (
+      args.access === "open" ||
+      args.access === "invited" ||
+      args.access === "enrolled"
+    )
+      patch.access = args.access;
+    if (Array.isArray(args.activities)) {
+      patch.activities = normalizeActivities(args.activities);
+      if (!patch.activities.length) return null;
+    }
+    if (Array.isArray(args.parts)) {
+      if (!patch.activities) return null;
+      patch.parts = normalizeSessionParts(args.parts, patch.activities);
+    }
+    if (args.learnerCopilot && typeof args.learnerCopilot === "object")
+      patch.settings = normalizeCopilotLiveSettings(args.learnerCopilot);
+    const materials = normalizePlannedMaterials(args._plannedMaterials);
+    if (materials.length) patch.materials = materials;
+    if (!Object.keys(patch).length) return null;
+    return {
+      ...base,
+      type: "update_live_session",
+      label: `Update live programme${title ? ` “${title}”` : ""}`,
+      courseSlug,
+      sessionId,
+      baseVersion,
+      patch,
+      preview: patch.activities
+        ? previewLiveProgramme(patch.activities, patch.parts || [])
+        : previewFromPatch(patch as Record<string, unknown>),
+    };
+  }
+
   if (name === "update_lesson") {
     const patch = sanitizeLessonPatch(args.patch);
     const moduleIndex = toIndex(args.moduleIndex);
     const lessonIndex = toIndex(args.lessonIndex);
-    if (moduleIndex === null || lessonIndex === null || !Object.keys(patch).length) return null;
+    if (
+      moduleIndex === null ||
+      lessonIndex === null ||
+      !Object.keys(patch).length
+    )
+      return null;
     return {
       ...base,
       type: "update_course_lesson",
@@ -1407,9 +2198,13 @@ function buildContentAction(
         : null;
     const title = cleanString(moduleInput?.title);
     if (!moduleInput || !title) return null;
-    const lessons = (Array.isArray(moduleInput.lessons) ? moduleInput.lessons : [])
+    const lessons = (
+      Array.isArray(moduleInput.lessons) ? moduleInput.lessons : []
+    )
       .map(sanitizeLessonDraft)
-      .filter((lesson): lesson is EducatorCopilotLessonDraft => Boolean(lesson));
+      .filter((lesson): lesson is EducatorCopilotLessonDraft =>
+        Boolean(lesson),
+      );
     return {
       ...base,
       type: "add_module",
@@ -1422,7 +2217,9 @@ function buildContentAction(
         lessons,
       },
       position: toIndex(args.position) ?? undefined,
-      preview: lessons.map((lesson, i) => `${i + 1}. ${lesson.title}`).join("\n"),
+      preview: lessons
+        .map((lesson, i) => `${i + 1}. ${lesson.title}`)
+        .join("\n"),
     };
   }
 
@@ -1431,7 +2228,8 @@ function buildContentAction(
       args.patch && typeof args.patch === "object"
         ? (args.patch as Record<string, unknown>)
         : {};
-    const patch: { title?: string; description?: string; assignment?: string } = {};
+    const patch: { title?: string; description?: string; assignment?: string } =
+      {};
     for (const key of ["title", "description", "assignment"] as const) {
       const value = cleanString(input[key]);
       if (value !== undefined) patch[key] = value;
@@ -1454,13 +2252,25 @@ function buildContentAction(
       args.patch && typeof args.patch === "object"
         ? (args.patch as Record<string, unknown>)
         : {};
-    const patch: Extract<EducatorCopilotAction, { type: "update_course_overview" }>["patch"] = {};
-    for (const key of ["tagline", "description", "longDescription", "duration"] as const) {
+    const patch: Extract<
+      EducatorCopilotAction,
+      { type: "update_course_overview" }
+    >["patch"] = {};
+    for (const key of [
+      "tagline",
+      "description",
+      "longDescription",
+      "duration",
+    ] as const) {
       const value = cleanString(input[key]);
       if (value !== undefined) patch[key] = value;
     }
     const level = cleanString(input.level);
-    if (level === "beginner" || level === "intermediate" || level === "advanced") {
+    if (
+      level === "beginner" ||
+      level === "intermediate" ||
+      level === "advanced"
+    ) {
       patch.level = level;
     }
     if (Array.isArray(input.tags)) {
@@ -1481,7 +2291,9 @@ function buildContentAction(
   }
 
   if (name === "create_skill_path") {
-    const skillPath = sanitizeSkillPathDraft(args.skillPath, { requireChallenges: true });
+    const skillPath = sanitizeSkillPathDraft(args.skillPath, {
+      requireChallenges: true,
+    });
     if (!skillPath) return null;
     return {
       ...base,
@@ -1492,8 +2304,9 @@ function buildContentAction(
       preview: [
         skillPath.enabled ? "Published to learners" : "Saved as unpublished",
         skillPath.coverUrl ? "Banner image included" : "No banner image",
-        ...skillPath.challenges.map((challenge, index) =>
-          `${index + 1}. ${challenge.title}${challenge.assetUrl ? " · image included" : ""}`
+        ...skillPath.challenges.map(
+          (challenge, index) =>
+            `${index + 1}. ${challenge.title}${challenge.assetUrl ? " · image included" : ""}`,
         ),
       ]
         .join("\n")
@@ -1538,7 +2351,10 @@ function buildContentAction(
 function toolNavigate(ctx: CopilotToolContext, args: Record<string, unknown>) {
   const href = cleanString(args.href);
   if (!href || !isAllowedHref(href)) {
-    return { error: "href must be an in-app path (e.g. /educator/courses/<slug>/content)." };
+    return {
+      error:
+        "href must be an in-app path (e.g. /educator/courses/<slug>/content).",
+    };
   }
   const action: EducatorCopilotAction = {
     id: randomUUID(),
@@ -1564,21 +2380,26 @@ function toolHighlight(ctx: CopilotToolContext, args: Record<string, unknown>) {
   const target = cleanString(args.target)?.toLowerCase();
   if (!selector && target) {
     const match = ctx.pageContext?.uiMap?.find((item) =>
-      item.label.toLowerCase().includes(target)
+      item.label.toLowerCase().includes(target),
     );
     selector = match?.selector;
     if (!selector) {
       return {
         error: `No element labeled like "${args.target}" on the current page.`,
-        visibleTargets: (ctx.pageContext?.uiMap || []).slice(0, 40).map((item) => item.label),
+        visibleTargets: (ctx.pageContext?.uiMap || [])
+          .slice(0, 40)
+          .map((item) => item.label),
       };
     }
   }
-  if (!selector) return { error: "Provide target (visible label) or selector." };
+  if (!selector)
+    return { error: "Provide target (visible label) or selector." };
   const action: EducatorCopilotAction = {
     id: randomUUID(),
     type: "highlight",
-    label: cleanString(args.target) ? `Highlight "${args.target}"` : "Highlight on page",
+    label: cleanString(args.target)
+      ? `Highlight "${args.target}"`
+      : "Highlight on page",
     selector,
     reason: cleanString(args.reason),
     status: "proposed",
@@ -1588,10 +2409,14 @@ function toolHighlight(ctx: CopilotToolContext, args: Record<string, unknown>) {
   return { status: ctx.actionMode === "auto" ? "highlighting" : "proposed" };
 }
 
-async function toolRemember(ctx: CopilotToolContext, args: Record<string, unknown>) {
+async function toolRemember(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
   const content = cleanString(args.content);
   if (!content) return { error: "content is required." };
-  if (!ctx.client || !ctx.agentId) return { error: "Memory is unavailable right now." };
+  if (!ctx.client || !ctx.agentId)
+    return { error: "Memory is unavailable right now." };
   const kind = cleanString(args.kind);
   const memoryType =
     kind === "episodic" || kind === "procedural" ? kind : "semantic";
@@ -1607,8 +2432,12 @@ async function toolRemember(ctx: CopilotToolContext, args: Record<string, unknow
   return { saved: true, content };
 }
 
-async function toolRecallMemories(ctx: CopilotToolContext, args: Record<string, unknown>) {
-  if (!ctx.client || !ctx.agentId) return { error: "Memory is unavailable right now." };
+async function toolRecallMemories(
+  ctx: CopilotToolContext,
+  args: Record<string, unknown>,
+) {
+  if (!ctx.client || !ctx.agentId)
+    return { error: "Memory is unavailable right now." };
   const query = cleanString(args.query) || "educator preferences";
   const result = await ctx.client.memory.retrieve(ctx.agentId, query, 8);
   return {
@@ -1630,7 +2459,11 @@ export async function applyEducatorCopilotAction({
   action: EducatorCopilotAction;
 }): Promise<EducatorCopilotAction> {
   if (action.type === "navigate" || action.type === "highlight") {
-    return { ...action, status: "applied", result: "Client-side action ready." };
+    return {
+      ...action,
+      status: "applied",
+      result: "Client-side action ready.",
+    };
   }
   if (action.safety === "sensitive_blocked") {
     return {
@@ -1691,11 +2524,94 @@ export async function applyEducatorCopilotAction({
   }
 
   try {
+    if (action.type === "create_live_session") {
+      await ensureCourseMaterials(
+        course,
+        ctxUserObjectId(user),
+        action.session.materials || [],
+      );
+      let joinCode = createJoinCode();
+      while (await LiveSession.exists({ joinCode }))
+        joinCode = createJoinCode();
+      const session = { ...action.session };
+      delete session.materials;
+      const liveSession = await LiveSession.create({
+        ...session,
+        courseId: course._id,
+        courseSlug: course.slug,
+        joinCode,
+        settings: {
+          allowLateJoin: true,
+          showParticipantNames: false,
+          showLeaderboard: false,
+          learnerCopilot: {
+            enabled: true,
+            explainCurrentActivity: true,
+            coachResponses: true,
+            useCourseMaterials: true,
+            giveDirectExplanations: false,
+          },
+        },
+        createdBy: user.id,
+      });
+      return {
+        ...action,
+        status: "applied",
+        result: `Created the live session. Review and facilitate it at /educator/courses/${course.slug}/live/${String(liveSession._id)}.`,
+      };
+    }
+    if (action.type === "update_live_session") {
+      const liveSession = await findManagedLiveSession(user, action.sessionId);
+      if (!liveSession || String(liveSession.courseId) !== String(course._id)) {
+        return {
+          ...action,
+          status: "failed",
+          result: "Live programme not found.",
+        };
+      }
+      if (liveSession.stateVersion !== action.baseVersion) {
+        return {
+          ...action,
+          status: "failed",
+          result:
+            "The live programme changed after this proposal was created. Ask the copilot to reread it and prepare a fresh edit.",
+        };
+      }
+      await ensureCourseMaterials(
+        course,
+        ctxUserObjectId(user),
+        action.patch.materials || [],
+      );
+      const patch = { ...action.patch };
+      delete patch.materials;
+      if (patch.activities) {
+        const validIds = new Set(patch.activities.map((activity) => activity.id));
+        if (
+          liveSession.currentActivityId &&
+          !validIds.has(liveSession.currentActivityId)
+        ) {
+          liveSession.currentActivityId = undefined;
+        }
+      }
+      Object.assign(liveSession, patch);
+      liveSession.stateVersion += 1;
+      liveSession.markModified("activities");
+      liveSession.markModified("parts");
+      liveSession.markModified("settings");
+      await liveSession.save();
+      return {
+        ...action,
+        status: "applied",
+        result: `Updated the live programme. Review it at /educator/courses/${course.slug}/live/${String(liveSession._id)}. Existing learner responses remain stored against their stable activity IDs.`,
+      };
+    }
     switch (action.type) {
       case "update_course_lesson": {
         const modules = Array.isArray(course.modules) ? course.modules : [];
-        const lesson = modules[action.moduleIndex]?.lessons?.[action.lessonIndex];
-        if (!lesson) return { ...action, status: "failed", result: "Lesson not found." };
+        const lesson =
+          modules[action.moduleIndex]?.lessons?.[action.lessonIndex];
+        if (!lesson)
+          return { ...action, status: "failed", result: "Lesson not found." };
         Object.assign(lesson, action.patch);
         course.modules = modules;
         recountCourse(course);
@@ -1704,7 +2620,8 @@ export async function applyEducatorCopilotAction({
       case "add_lesson": {
         const modules = Array.isArray(course.modules) ? course.modules : [];
         const courseModule = modules[action.moduleIndex];
-        if (!courseModule) return { ...action, status: "failed", result: "Module not found." };
+        if (!courseModule)
+          return { ...action, status: "failed", result: "Module not found." };
         courseModule.lessons = courseModule.lessons || [];
         courseModule.lessons.push(normalizeLessonForSave(action.lesson));
         course.modules = modules;
@@ -1720,7 +2637,9 @@ export async function applyEducatorCopilotAction({
           lessons: action.module.lessons.map(normalizeLessonForSave),
         };
         const position =
-          action.position != null && action.position >= 0 && action.position <= modules.length
+          action.position != null &&
+          action.position >= 0 &&
+          action.position <= modules.length
             ? action.position
             : modules.length;
         modules.splice(position, 0, newModule as never);
@@ -1731,7 +2650,8 @@ export async function applyEducatorCopilotAction({
       case "update_module": {
         const modules = Array.isArray(course.modules) ? course.modules : [];
         const courseModule = modules[action.moduleIndex];
-        if (!courseModule) return { ...action, status: "failed", result: "Module not found." };
+        if (!courseModule)
+          return { ...action, status: "failed", result: "Module not found." };
         Object.assign(courseModule, action.patch);
         course.modules = modules;
         break;
@@ -1749,7 +2669,8 @@ export async function applyEducatorCopilotAction({
           existingPacks.some(
             (pack) =>
               pack.slug === action.skillPath.slug ||
-              pack.title?.toLowerCase() === action.skillPath.title.toLowerCase()
+              pack.title?.toLowerCase() ===
+                action.skillPath.title.toLowerCase(),
           )
         ) {
           return {
@@ -1786,15 +2707,24 @@ export async function applyEducatorCopilotAction({
             (!primary.slug && action.skillPackSlug === course.slug))
             ? primary
             : undefined) ||
-          additional.find((candidate) => candidate.slug === action.skillPackSlug);
+          additional.find(
+            (candidate) => candidate.slug === action.skillPackSlug,
+          );
         if (!pack) {
-          return { ...action, status: "failed", result: "Skill path not found." };
+          return {
+            ...action,
+            status: "failed",
+            result: "Skill path not found.",
+          };
         }
         if (
           action.patch.slug &&
           action.patch.slug !== pack.slug &&
           ([primary, ...additional].some(
-            (candidate) => candidate && candidate !== pack && candidate.slug === action.patch.slug
+            (candidate) =>
+              candidate &&
+              candidate !== pack &&
+              candidate.slug === action.patch.slug,
           ) ||
             (await skillPathSlugExists(action.patch.slug, course._id)))
         ) {
@@ -1820,10 +2750,18 @@ export async function applyEducatorCopilotAction({
         }>;
         const pack =
           packs.find((p) => p.slug === action.skillPackSlug) ||
-          packs.find((p) => p.challenges?.some((c) => c.id === action.challengeId));
-        const challenge = pack?.challenges?.find((c) => c.id === action.challengeId);
+          packs.find((p) =>
+            p.challenges?.some((c) => c.id === action.challengeId),
+          );
+        const challenge = pack?.challenges?.find(
+          (c) => c.id === action.challengeId,
+        );
         if (!pack || !challenge) {
-          return { ...action, status: "failed", result: "Challenge not found." };
+          return {
+            ...action,
+            status: "failed",
+            result: "Challenge not found.",
+          };
         }
         Object.assign(challenge, action.patch);
         course.markModified("skillPack");
@@ -1846,7 +2784,10 @@ export async function applyEducatorCopilotAction({
     return {
       ...action,
       status: "failed",
-      result: error instanceof Error ? error.message : "The change could not be saved.",
+      result:
+        error instanceof Error
+          ? error.message
+          : "The change could not be saved.",
     };
   }
 }
@@ -1894,7 +2835,7 @@ async function skillPathSlugExists(slug: string, currentCourseId: unknown) {
     await Course.exists({
       _id: { $ne: currentCourseId },
       $or: [{ slug }, { "skillPack.slug": slug }, { "skillPacks.slug": slug }],
-    })
+    }),
   );
 }
 
@@ -1908,6 +2849,60 @@ async function findManagedExperience(user: CopilotUser, experienceId: string) {
   return course ? project : null;
 }
 
+async function findManagedLiveSession(user: CopilotUser, sessionId: string) {
+  const session = await LiveSession.findById(sessionId);
+  if (!session) return null;
+  const course = await Course.exists({
+    _id: session.courseId,
+    ...managedFilter(user),
+  });
+  return course ? session : null;
+}
+
+function ctxUserObjectId(user: CopilotUser) {
+  if (!Types.ObjectId.isValid(user.id)) {
+    throw new Error("The educator account has an invalid local user ID.");
+  }
+  return new Types.ObjectId(user.id);
+}
+
+async function ensureCourseMaterials(
+  course: { _id: unknown; slug: string },
+  ownerUserId: Types.ObjectId,
+  materials: NonNullable<
+    Extract<
+      EducatorCopilotAction,
+      { type: "create_live_session" }
+    >["session"]["materials"]
+  >,
+) {
+  for (const material of materials) {
+    if (material.existing) continue;
+    await CourseMaterial.updateOne(
+      { _id: new Types.ObjectId(material.id) },
+      {
+        $setOnInsert: {
+          courseId: course._id,
+          courseSlug: course.slug,
+          ownerUserId,
+          ownerPrincipalId: material.ownerPrincipalId,
+          fileId: material.fileId,
+          storage: "commons",
+          slideGridFsIds: [],
+          name: material.name,
+          mimeType: material.mimeType,
+          size: material.size,
+          kind: material.kind,
+          visibility: material.visibility,
+          status: "uploaded",
+          textPreview: material.textPreview,
+        },
+      },
+      { upsert: true },
+    );
+  }
+}
+
 function recountCourse(course: {
   modules?: Array<{ lessons?: unknown[] }>;
   lessonsCount?: number;
@@ -1915,7 +2910,10 @@ function recountCourse(course: {
 }) {
   const modules = course.modules || [];
   course.modulesCount = modules.length;
-  course.lessonsCount = modules.reduce((sum, mod) => sum + (mod.lessons?.length || 0), 0);
+  course.lessonsCount = modules.reduce(
+    (sum, mod) => sum + (mod.lessons?.length || 0),
+    0,
+  );
 }
 
 function normalizeLessonForSave(lesson: EducatorCopilotLessonDraft) {
@@ -1951,14 +2949,26 @@ function summarizeEnrollment(row: Record<string, unknown>) {
 function isAllowedHref(href: string) {
   if (!href.startsWith("/")) return false;
   return ["/educator", "/courses", "/skills", "/dashboard"].some(
-    (prefix) => href === prefix || href.startsWith(`${prefix}/`) || href.startsWith(`${prefix}?`)
+    (prefix) =>
+      href === prefix ||
+      href.startsWith(`${prefix}/`) ||
+      href.startsWith(`${prefix}?`),
   );
 }
 
 function sanitizeLessonPatch(value: unknown) {
-  const input = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const input =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
   const patch: Partial<EducatorCopilotLessonDraft> = {};
-  for (const key of ["title", "duration", "description", "assetUrl", "assetAlt"] as const) {
+  for (const key of [
+    "title",
+    "duration",
+    "description",
+    "assetUrl",
+    "assetAlt",
+  ] as const) {
     const next = cleanString(input[key]);
     if (next !== undefined) patch[key] = next;
   }
@@ -1966,7 +2976,9 @@ function sanitizeLessonPatch(value: unknown) {
   return patch;
 }
 
-function sanitizeLessonDraft(value: unknown): EducatorCopilotLessonDraft | null {
+function sanitizeLessonDraft(
+  value: unknown,
+): EducatorCopilotLessonDraft | null {
   const patch = sanitizeLessonPatch(value);
   if (!patch.title) return null;
   return { ...patch, title: patch.title };
@@ -1990,7 +3002,8 @@ function sanitizeSkillChallengePatch(value: unknown) {
   }
   for (const key of ["minutes", "points", "streakBoost"] as const) {
     const next = nonNegativeInteger(input[key]);
-    if (next !== undefined && (key !== "minutes" || next > 0)) patch[key] = next;
+    if (next !== undefined && (key !== "minutes" || next > 0))
+      patch[key] = next;
   }
   const audioCue = cleanString(input.audioCue);
   if (audioCue === "spark" || audioCue === "focus" || audioCue === "complete") {
@@ -2010,7 +3023,10 @@ function sanitizeSkillChallengePatch(value: unknown) {
   return patch;
 }
 
-function sanitizeSkillQuestion(value: unknown, index = 0): SkillQuestion | null {
+function sanitizeSkillQuestion(
+  value: unknown,
+  index = 0,
+): SkillQuestion | null {
   const input = asRecord(value);
   const prompt = cleanString(input.prompt);
   const options = Array.isArray(input.options)
@@ -2020,7 +3036,12 @@ function sanitizeSkillQuestion(value: unknown, index = 0): SkillQuestion | null 
         .slice(0, 8)
     : [];
   const answerIndex = toIndex(input.answerIndex);
-  if (!prompt || options.length < 2 || answerIndex === null || answerIndex >= options.length) {
+  if (
+    !prompt ||
+    options.length < 2 ||
+    answerIndex === null ||
+    answerIndex >= options.length
+  ) {
     return null;
   }
   return {
@@ -2032,7 +3053,10 @@ function sanitizeSkillQuestion(value: unknown, index = 0): SkillQuestion | null 
   };
 }
 
-function sanitizeSkillChallengeDraft(value: unknown, index: number): SkillChallenge | null {
+function sanitizeSkillChallengeDraft(
+  value: unknown,
+  index: number,
+): SkillChallenge | null {
   const input = asRecord(value);
   const title = cleanString(input.title);
   const lesson = cleanString(input.lesson);
@@ -2060,7 +3084,7 @@ function sanitizeSkillChallengeDraft(value: unknown, index: number): SkillChalle
 
 function sanitizeSkillPathDraft(
   value: unknown,
-  options: { requireChallenges: boolean }
+  options: { requireChallenges: boolean },
 ): SkillPack | null {
   const input = asRecord(value);
   const title = cleanString(input.title);
@@ -2096,7 +3120,12 @@ function sanitizeSkillPathPatch(value: unknown) {
     EducatorCopilotAction,
     { type: "update_skill_path" }
   >["patch"] = {};
-  for (const key of ["title", "subtitle", "coverUrl", "learnerPromise"] as const) {
+  for (const key of [
+    "title",
+    "subtitle",
+    "coverUrl",
+    "learnerPromise",
+  ] as const) {
     const next = cleanString(input[key]);
     if (next !== undefined) patch[key] = next;
   }
@@ -2112,7 +3141,7 @@ function sanitizeSkillPathPatch(value: unknown) {
 }
 
 function previewSkillPathPatch(
-  patch: Extract<EducatorCopilotAction, { type: "update_skill_path" }>["patch"]
+  patch: Extract<EducatorCopilotAction, { type: "update_skill_path" }>["patch"],
 ) {
   const metadata = Object.entries(patch)
     .filter(([key]) => key !== "challenges")
@@ -2120,16 +3149,78 @@ function previewSkillPathPatch(
   if (patch.challenges) {
     metadata.push(
       `Challenges (${patch.challenges.length}):`,
-      ...patch.challenges.map((challenge, index) => `${index + 1}. ${challenge.title}`)
+      ...patch.challenges.map(
+        (challenge, index) => `${index + 1}. ${challenge.title}`,
+      ),
     );
   }
   return metadata.join("\n").slice(0, 1200);
 }
 
+function normalizeCopilotLiveSettings(value: unknown): LiveSessionSettings {
+  return {
+    allowLateJoin: true,
+    showParticipantNames: false,
+    showLeaderboard: false,
+    learnerCopilot: normalizeLiveLearnerCopilotPolicy(
+      value && typeof value === "object"
+        ? value
+        : defaultLiveLearnerCopilotPolicy,
+    ),
+  };
+}
+
+function normalizePlannedMaterials(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is NonNullable<
+      Extract<
+        EducatorCopilotAction,
+        { type: "create_live_session" }
+      >["session"]["materials"]
+    >[number] =>
+      Boolean(
+        item &&
+          typeof item === "object" &&
+          cleanString(asRecord(item).id) &&
+          cleanString(asRecord(item).fileId) &&
+          cleanString(asRecord(item).name),
+      ),
+  );
+}
+
+function previewLiveProgramme(
+  activities: LiveActivity[],
+  parts: LiveSessionPart[],
+) {
+  const activityById = new Map(
+    activities.map((activity) => [activity.id, activity]),
+  );
+  const rows = parts.length
+    ? parts.flatMap((part) => [
+        `${part.status === "open" ? "Open" : "Closed"} · ${part.title} · ${part.pace === "learner" ? "learner-paced" : "facilitator-paced"}`,
+        ...part.activityIds.flatMap((id, index) => {
+          const activity = activityById.get(id);
+          return activity
+            ? [
+                `  ${index + 1}. ${activity.title} · ${activity.type}${activity.estimatedMinutes ? ` · ${activity.estimatedMinutes} min` : ""}`,
+              ]
+            : [];
+        }),
+      ])
+    : activities.map(
+        (activity, index) =>
+          `${index + 1}. ${activity.title} · ${activity.type}${activity.estimatedMinutes ? ` · ${activity.estimatedMinutes} min` : ""}`,
+      );
+  return rows.join("\n").slice(0, 2_000);
+}
+
 function previewFromPatch(patch: Record<string, unknown>) {
   return Object.entries(patch)
     .map(([key, value]) => {
-      const text = Array.isArray(value) ? value.join(", ") : String(value ?? "");
+      const text = Array.isArray(value)
+        ? value.join(", ")
+        : String(value ?? "");
       return `${key}: ${text.length > 220 ? `${text.slice(0, 220)}…` : text}`;
     })
     .join("\n")
@@ -2160,7 +3251,9 @@ function cleanString(value: unknown) {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function safeSlug(value: string) {
@@ -2173,7 +3266,8 @@ function safeSlug(value: string) {
 
 function nonNegativeInteger(value: unknown) {
   const num = typeof value === "string" ? Number(value) : value;
-  if (typeof num !== "number" || !Number.isFinite(num) || num < 0) return undefined;
+  if (typeof num !== "number" || !Number.isFinite(num) || num < 0)
+    return undefined;
   return Math.floor(num);
 }
 

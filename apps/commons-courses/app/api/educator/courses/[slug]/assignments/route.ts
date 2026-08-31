@@ -3,6 +3,7 @@ import { requireEducatorCourse } from "@/lib/educator-auth";
 import { sendAssignmentNotification } from "@/lib/email/resend";
 import { indexAssignmentForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
+import CheckInNotification from "@/models/CheckInNotification";
 import Enrollment from "@/models/Enrollment";
 import Submission from "@/models/Submission";
 
@@ -15,14 +16,21 @@ export async function GET(
   if (result.error) return result.error;
 
   const assignments = await Assignment.find({ courseId: result.course._id })
+    .populate("targetUserIds", "name email")
     .sort({ moduleIndex: 1, lessonIndex: 1, createdAt: -1 })
     .lean();
   const submissions = await Submission.find({ courseId: result.course._id })
     .populate("userId", "name email")
     .sort({ submittedAt: -1 })
     .lean();
+  const checkInNotifications = await CheckInNotification.find({
+    courseId: result.course._id,
+  })
+    .populate("userId", "name email")
+    .sort({ updatedAt: -1 })
+    .lean();
 
-  return NextResponse.json({ assignments, submissions });
+  return NextResponse.json({ assignments, submissions, checkInNotifications });
 }
 
 export async function POST(
@@ -77,6 +85,7 @@ export async function POST(
         return { name: user?.name, email: user?.email };
       }),
       course: {
+        id: String(result.course._id),
         title: result.course.title,
         slug: result.course.slug,
         settings: result.course.emailSettings,

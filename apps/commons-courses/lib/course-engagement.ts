@@ -1,0 +1,242 @@
+import type { LiveActivity } from "../types/live-session";
+import type { LiveResponseValue } from "../types/live-session";
+import {
+  normalizeCardCollectionResponse,
+  normalizeLinkedScorecardResponse,
+  normalizePrioritizationResponse,
+  normalizeWorksheetResponse,
+} from "./live-response-policy.ts";
+import type {
+  EngagementActivity,
+  EngagementLearner,
+  EngagementSummary,
+} from "../types/course-engagement";
+
+const OTHER_RESPONSE_PREFIX = "__other__:";
+
+export type CourseEngagementParticipant = {
+  _id: unknown;
+  userId: unknown;
+  displayName: string;
+  email: string;
+  status: string;
+  joinedAt: Date | string;
+  lastSeenAt: Date | string;
+};
+
+export type CourseEngagementResponse = {
+  participantId: unknown;
+  userId: unknown;
+  activityId: string;
+  value: LiveResponseValue;
+  correct?: boolean;
+  submittedAt: Date | string;
+};
+
+function id(value: unknown) {
+  return String(value ?? "");
+}
+
+function percent(value: number, total: number) {
+  return total ? Math.round((value / total) * 100) : 0;
+}
+
+function responseLabel(activity: LiveActivity, value: LiveResponseValue) {
+  if (activity.type === "prioritization") {
+    const response = normalizePrioritizationResponse(activity, value);
+    if (!response) return "No routines saved";
+    const selected = response.items
+      .filter((item) => item.selected)
+      .map((item) => item.text);
+    return selected.length
+      ? `Shortlisted: ${selected.join("; ")} · ${response.items.length} captured`
+      : `${response.items.length} routines captured · shortlist in progress`;
+  }
+  if (activity.type === "worksheet") {
+    const response = normalizeWorksheetResponse(activity, value);
+    if (!response) return "No worksheet progress saved";
+    const answered = Object.keys(response.values).length;
+    const total = activity.worksheetFields?.length || 0;
+    const preview = (activity.worksheetFields || [])
+      .flatMap((field) => {
+        const answer = response.values[field.id];
+        if (answer === undefined) return [];
+        const text = String(answer).replace(/\s+/g, " ").trim();
+        const concise = text.length > 160 ? `${text.slice(0, 157)}…` : text;
+        return [`${field.label}: ${concise}`];
+      })
+      .slice(0, 3)
+      .join(" · ");
+    return `${response.finalized ? "Completed" : "In progress"} · ${answered}/${total} fields${preview ? ` · ${preview}` : ""}`;
+  }
+  if (activity.type === "card_collection") {
+    const response = normalizeCardCollectionResponse(activity, value);
+    if (!response) return "No cards saved";
+    const titleFieldId =
+      activity.itemTitleFieldId || activity.worksheetFields?.[0]?.id || "";
+    const preview = response.items
+      .map((item) => String(item.values[titleFieldId] || "Untitled card"))
+      .slice(0, 3)
+      .join("; ");
+    return `${response.finalized ? "Completed" : "In progress"} · ${response.items.length} cards${preview ? ` · ${preview}` : ""}`;
+  }
+  if (activity.type === "linked_scorecard") {
+    const sourceLike = {
+      items: [{ id: "placeholder", values: {} }],
+      finalized: false,
+    };
+    const raw =
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as {
+            items?: Array<{ sourceItemId?: string }>;
+            selectedItemId?: string;
+            finalized?: boolean;
+          })
+        : undefined;
+    if (!raw?.items?.length) return "No scorecard progress saved";
+    sourceLike.items = raw.items.flatMap((item) =>
+      typeof item.sourceItemId === "string"
+        ? [{ id: item.sourceItemId, values: {} }]
+        : [],
+    );
+    const response = normalizeLinkedScorecardResponse(
+      activity,
+      value,
+      sourceLike,
+    );
+    if (!response) return "Scorecard in progress";
+    return `${response.finalized ? "Confirmed" : "In progress"} · ${response.items.length} candidates scored${response.selectedItemId ? " · first task selected" : ""}`;
+  }
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .map((item) => {
+      const other = String(item).startsWith(OTHER_RESPONSE_PREFIX)
+        ? String(item).slice(OTHER_RESPONSE_PREFIX.length)
+        : undefined;
+      if (other !== undefined) return other;
+      if (item === "complete") return "Completed";
+      return (
+        activity.options.find((option) => option.id === item)?.label ||
+        String(item)
+      );
+    })
+    .join(", ");
+}
+
+export function buildCourseEngagement(args: {
+  activities: LiveActivity[];
+  participants: CourseEngagementParticipant[];
+  responses: CourseEngagementResponse[];
+}) {
+  const { activities, participants, responses } = args;
+  const participantById = new Map(
+    participants.map((item) => [id(item._id), item]),
+  );
+  const responseActivities = activities.filter(
+    (activity) =>
+      activity.status !== "draft" &&
+      activity.type !== "content" &&
+      activity.type !== "break",
+  );
+  const responseActivityIds = new Set(
+    responseActivities.map((activity) => activity.id),
+  );
+  const meaningfulResponses = responses.filter((response) =>
+    responseActivityIds.has(response.activityId),
+  );
+  const engaged = new Set(
+    meaningfulResponses.map((response) => id(response.userId)),
+  );
+  const quizResponses = responses.filter((response) =>
+    activities.some(
+      (activity) =>
+        activity.id === response.activityId && activity.type === "quiz",
+    ),
+  );
+  const quizCorrect = quizResponses.filter(
+    (response) => response.correct,
+  ).length;
+
+  const summary: EngagementSummary = {
+    attendees: participants.length,
+    engagedLearners: engaged.size,
+    participationRate: percent(engaged.size, participants.length),
+    responseCount: responses.length,
+    quizAccuracy: quizResponses.length
+      ? percent(quizCorrect, quizResponses.length)
+      : undefined,
+  };
+
+  const activityInsights: EngagementActivity[] = activities.map(
+    (activity, index) => {
+      const activityResponses = responses.filter(
+        (response) => response.activityId === activity.id,
+      );
+      const correct = activityResponses.filter(
+        (response) => response.correct,
+      ).length;
+      const values = activityResponses.flatMap((response) =>
+        Array.isArray(response.value)
+          ? response.value
+          : typeof response.value === "string"
+            ? [response.value]
+            : [],
+      );
+      return {
+        id: activity.id,
+        index: index + 1,
+        title: activity.title,
+        type: activity.type,
+        responseCount: activityResponses.length,
+        responseRate: percent(activityResponses.length, participants.length),
+        correctRate:
+          activity.type === "quiz" && activityResponses.length
+            ? percent(correct, activityResponses.length)
+            : undefined,
+        options: activity.options.map((option) => {
+          const count = values.filter((value) => value === option.id).length;
+          return {
+            label: option.label,
+            count,
+            percent: percent(count, activityResponses.length),
+          };
+        }),
+        responses: activityResponses.map((response) => ({
+          participantName:
+            participantById.get(id(response.participantId))?.displayName ||
+            "Learner",
+          userId: id(response.userId),
+          value: responseLabel(activity, response.value),
+          submittedAt: new Date(response.submittedAt).toISOString(),
+        })),
+      };
+    },
+  );
+
+  const learners: EngagementLearner[] = participants.map((participant) => {
+    const learnerResponses = meaningfulResponses.filter(
+      (response) => id(response.userId) === id(participant.userId),
+    );
+    const learnerQuiz = quizResponses.filter(
+      (response) => id(response.userId) === id(participant.userId),
+    );
+    return {
+      participantId: id(participant._id),
+      userId: id(participant.userId),
+      name: participant.displayName,
+      email: participant.email,
+      status: participant.status,
+      joinedAt: new Date(participant.joinedAt).toISOString(),
+      lastSeenAt: new Date(participant.lastSeenAt).toISOString(),
+      responseCount: learnerResponses.length,
+      responseRate: percent(learnerResponses.length, responseActivities.length),
+      quizCorrect: learnerQuiz.filter((response) => response.correct).length,
+      quizTotal: learnerQuiz.length,
+    };
+  });
+
+  learners.sort(
+    (a, b) => b.responseCount - a.responseCount || a.name.localeCompare(b.name),
+  );
+  return { summary, activities: activityInsights, learners };
+}

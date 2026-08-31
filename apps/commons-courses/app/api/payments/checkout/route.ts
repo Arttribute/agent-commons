@@ -411,6 +411,7 @@ export async function GET(req: NextRequest) {
       await sendEnrollmentEmail(
         { name: checkoutUser.name, email: checkoutUser.email },
         {
+          id: String(dbCourse._id),
           title: dbCourse.title,
           slug: dbCourse.slug,
           instructor: dbCourse.instructor,
@@ -514,6 +515,7 @@ export async function GET(req: NextRequest) {
       await sendEnrollmentEmail(
         { name: checkoutUser.name, email: checkoutUser.email },
         {
+          id: String(dbCourse._id),
           title: dbCourse.title,
           slug: dbCourse.slug,
           instructor: dbCourse.instructor,

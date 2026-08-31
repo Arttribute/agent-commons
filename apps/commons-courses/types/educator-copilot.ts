@@ -1,5 +1,12 @@
 import type { ExperienceDocument } from "@/types/experience";
 import type { SkillChallenge, SkillPack } from "@/types/skills";
+import type {
+  LiveActivity,
+  LiveSessionAccess,
+  LiveSessionPace,
+  LiveSessionPart,
+  LiveSessionSettings,
+} from "@/types/live-session";
 
 export type EducatorCopilotActionMode = "manual" | "auto";
 
@@ -32,6 +39,30 @@ export type EducatorCopilotLessonDraft = {
   assetUrl?: string;
   assetAlt?: string;
   isFree?: boolean;
+};
+
+export type EducatorCopilotCourseMaterialDraft = {
+  id: string;
+  fileId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: "presentation" | "pdf";
+  visibility: "course" | "live" | "educator";
+  textPreview?: string;
+  ownerPrincipalId: string;
+  existing?: boolean;
+};
+
+export type EducatorCopilotLiveSessionDraft = {
+  title: string;
+  description?: string;
+  pace: LiveSessionPace;
+  access: LiveSessionAccess;
+  activities: LiveActivity[];
+  parts: LiveSessionPart[];
+  settings: LiveSessionSettings;
+  materials?: EducatorCopilotCourseMaterialDraft[];
 };
 
 export type EducatorCopilotAction =
@@ -115,6 +146,18 @@ export type EducatorCopilotAction =
       experienceId: string;
       baseVersion: number;
       document: ExperienceDocument;
+    })
+  | (ActionBase & {
+      type: "create_live_session";
+      courseSlug: string;
+      session: EducatorCopilotLiveSessionDraft;
+    })
+  | (ActionBase & {
+      type: "update_live_session";
+      courseSlug: string;
+      sessionId: string;
+      baseVersion: number;
+      patch: Partial<EducatorCopilotLiveSessionDraft>;
     });
 
 export type EducatorCopilotToolActivity = {

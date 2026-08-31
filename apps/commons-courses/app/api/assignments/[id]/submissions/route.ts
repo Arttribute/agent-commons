@@ -3,7 +3,9 @@ import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { indexSubmissionForSearch } from "@/lib/search-indexers";
 import Assignment from "@/models/Assignment";
+import CheckInNotification from "@/models/CheckInNotification";
 import Enrollment from "@/models/Enrollment";
+import LiveParticipant from "@/models/LiveParticipant";
 import Submission from "@/models/Submission";
 
 export async function POST(
@@ -33,11 +35,33 @@ export async function POST(
     );
   }
 
+  if (
+    assignment.targetUserIds?.length > 0 &&
+    !assignment.targetUserIds.some(
+      (userId: { toString(): string }) => userId.toString() === session.user.id,
+    )
+  ) {
+    return NextResponse.json(
+      { error: "This check-in is not assigned to you." },
+      { status: 403 },
+    );
+  }
+
   const enrollment = await Enrollment.findOne({
     userId: session.user.id,
     courseId: assignment.courseId,
   });
-  if (!enrollment) {
+  const participatedInSourceSession =
+    !enrollment &&
+    assignment.kind === "follow_up" &&
+    assignment.sourceLiveSessionId
+      ? await LiveParticipant.exists({
+          sessionId: assignment.sourceLiveSessionId,
+          userId: session.user.id,
+          courseId: assignment.courseId,
+        })
+      : false;
+  if (!enrollment && !participatedInSourceSession) {
     return NextResponse.json({ error: "Not enrolled." }, { status: 403 });
   }
 
@@ -49,11 +73,33 @@ export async function POST(
       userId: session.user.id,
       text: body.text,
       url: body.url,
+      checkInStatus:
+        assignment.kind === "follow_up" &&
+        ["not_started", "in_progress", "blocked", "completed"].includes(
+          body.checkInStatus,
+        )
+          ? body.checkInStatus
+          : undefined,
       status: "submitted",
       submittedAt: new Date(),
     },
     { upsert: true, new: true, runValidators: true }
   );
+  if (assignment.kind === "follow_up") {
+    await CheckInNotification.findOneAndUpdate(
+      { assignmentId: assignment._id, userId: session.user.id },
+      {
+        $set: { submittedAt: submission.submittedAt },
+        $min: { startedAt: submission.submittedAt },
+        $setOnInsert: {
+          courseId: assignment.courseId,
+          email: session.user.email,
+          emailStatus: "not_sent",
+        },
+      },
+      { upsert: true, runValidators: true },
+    );
+  }
   await indexSubmissionForSearch(submission);
 
   return NextResponse.json({ submission }, { status: 201 });

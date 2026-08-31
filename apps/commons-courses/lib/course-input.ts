@@ -1,4 +1,5 @@
 import { normalizeCourseAgents } from "@/lib/course-agent-defaults";
+import { normalizeCourseTheme, type CourseTheme } from "@/lib/course-theme";
 import {
   getLiveScheduleSummary,
   normalizeCourseStartDate,
@@ -6,6 +7,7 @@ import {
 } from "@/lib/course-schedule";
 import { sanitizeRichTextHtml } from "@/lib/rich-text";
 import type { CourseAgentConfig } from "@/types/course-agent";
+import { normalizeEmailBranding } from "@/lib/email/branding";
 import type {
   AgentSandboxCapability,
   AgentSandboxConfig,
@@ -69,6 +71,8 @@ export type CourseInput = {
   imageUrl?: string;
   bannerImageUrl?: string;
   previewImageUrl?: string;
+  catalogVisibility?: "public" | "private";
+  theme?: CourseTheme;
   modules?: Array<{
     title: string;
     description?: string;
@@ -79,6 +83,7 @@ export type CourseInput = {
       description?: string;
       assetUrl?: string;
       assetAlt?: string;
+      labWorkspaceId?: string;
       isFree?: boolean;
     }>;
   }>;
@@ -115,6 +120,13 @@ export type CourseInput = {
     agentManaged?: boolean;
     replyTo?: string;
     customIntro?: string;
+    branding?: {
+      enabled?: boolean;
+      senderName?: string;
+      logoUrl?: string;
+      accentColor?: string;
+      footerText?: string;
+    };
   };
 };
 
@@ -635,6 +647,7 @@ export function normalizeCourseInput(input: CourseInput) {
               description: sanitizeRichTextHtml(lesson.description) || undefined,
               assetUrl: normalizeImageUrl(lesson.assetUrl),
               assetAlt: lesson.assetAlt?.trim() || undefined,
+              labWorkspaceId: lesson.labWorkspaceId?.trim() || undefined,
             }))
           : [],
       }))
@@ -670,6 +683,8 @@ export function normalizeCourseInput(input: CourseInput) {
     imageUrl: normalizeImageUrl(input.imageUrl),
     bannerImageUrl: normalizeImageUrl(input.bannerImageUrl),
     previewImageUrl: normalizeImageUrl(input.previewImageUrl),
+    catalogVisibility: input.catalogVisibility === "private" || input.catalogVisibility === "public" ? input.catalogVisibility : undefined,
+    theme: input.theme ? normalizeCourseTheme(input.theme) : undefined,
     modules,
     skillPack: normalizeSkillPack(input.skillPack),
     skillPacks: normalizeSkillPacks(input.skillPacks),
@@ -699,6 +714,7 @@ export function normalizeCourseInput(input: CourseInput) {
       agentManaged: Boolean(input.emailSettings?.agentManaged),
       replyTo: input.emailSettings?.replyTo?.trim() || undefined,
       customIntro: input.emailSettings?.customIntro?.trim() || undefined,
+      branding: normalizeEmailBranding(input.emailSettings?.branding),
     },
   };
 }

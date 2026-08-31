@@ -34,9 +34,10 @@ export type EducatorCopilotFileContent = {
 type AgentFileAccess = {
   accessToken: string;
   principalId: string;
-  agentId: string;
+  agentId?: string;
   sessionId?: string;
   workspaceId?: string;
+  storageProvider?: "s3" | "ipfs";
 };
 
 function agentCommonsBaseUrl() {
@@ -65,9 +66,10 @@ export async function uploadEducatorCopilotFiles(
   try {
     const formData = new FormData();
     for (const file of files) formData.append("files", file, file.name);
-    formData.append("agentId", access.agentId);
+    if (access.agentId) formData.append("agentId", access.agentId);
     if (access.sessionId) formData.append("sessionId", access.sessionId);
     if (access.workspaceId) formData.append("workspaceId", access.workspaceId);
+    if (access.storageProvider) formData.append("storageProvider", access.storageProvider);
 
     const response = await fetch(`${agentCommonsBaseUrl()}/v1/files/upload`, {
       method: "POST",
@@ -97,7 +99,7 @@ export async function readEducatorCopilotFile(
   } = {}
 ) {
   const query = new URLSearchParams({
-    agentId: access.agentId,
+    ...(access.agentId ? { agentId: access.agentId } : {}),
     ...(access.sessionId ? { sessionId: access.sessionId } : {}),
     offset: String(Math.max(0, options.offset || 0)),
     maxChars: String(Math.max(1, options.maxChars || 24000)),

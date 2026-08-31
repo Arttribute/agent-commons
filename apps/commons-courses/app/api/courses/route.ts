@@ -5,7 +5,10 @@ import Course from "@/models/Course";
 export async function GET() {
   try {
     await connectDB();
-    const courses = await Course.find({ published: true })
+    const courses = await Course.find({
+      published: true,
+      catalogVisibility: { $ne: "private" },
+    })
       .select("-modules")
       .sort({ createdAt: -1 })
       .lean();

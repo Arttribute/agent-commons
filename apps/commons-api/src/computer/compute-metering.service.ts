@@ -110,11 +110,28 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
     const cursor: Date = inst.meteredThroughAt ?? inst.startedAt;
     if (!cursor) return; // never started — nothing to meter
     const elapsedMs = now.getTime() - new Date(cursor).getTime();
-    let minutes = Math.floor(elapsedMs / 60_000);
-    if (minutes <= 0) return;
+    const elapsedMinutes = Math.floor(elapsedMs / 60_000);
+    if (elapsedMinutes <= 0) return;
 
-    const intervalStart = new Date(cursor);
-    let intervalEnd = new Date(new Date(cursor).getTime() + minutes * 60_000);
+    // Metering normally runs every minute. A much older cursor indicates a
+    // lifecycle discontinuity or an extended metering outage; blindly billing
+    // the entire gap can charge sleeping time and empty a user's account in a
+    // single tick. Bound catch-up and rebase the cursor to now so the same gap
+    // cannot be charged repeatedly on subsequent ticks.
+    const maxCatchUpMinutes = this.maxCatchUpMinutes();
+    const rebased = elapsedMinutes > maxCatchUpMinutes;
+    let minutes = Math.min(elapsedMinutes, maxCatchUpMinutes);
+    let intervalStart = rebased
+      ? new Date(now.getTime() - minutes * 60_000)
+      : new Date(cursor);
+    let intervalEnd = rebased
+      ? now
+      : new Date(new Date(cursor).getTime() + minutes * 60_000);
+    if (rebased) {
+      this.logger.warn(
+        `Capping computer ${inst.computerId} catch-up from ${elapsedMinutes} to ${minutes} minutes`,
+      );
+    }
     const perMin = creditsPerMinute(inst.resourceProfile);
     const principalId = inst.ownerUserId;
     if (!principalId) {
@@ -123,7 +140,10 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const idempotencyKey = `compute:${inst.computerId}:${intervalStart.toISOString()}`;
+    // Keep the persisted cursor in the key even when the displayed/billed
+    // interval is rebased. Concurrent API tasks that observe the same stale
+    // cursor must still converge on one ledger debit.
+    const idempotencyKey = `compute:${inst.computerId}:${new Date(cursor).toISOString()}`;
     const balance = await this.credits.getBalance({
       principalId,
     });
@@ -134,7 +154,12 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
     }
     const exhaustedAfterCharge = affordableMinutes < minutes;
     minutes = Math.min(minutes, affordableMinutes);
-    intervalEnd = new Date(new Date(cursor).getTime() + minutes * 60_000);
+    if (rebased) {
+      intervalStart = new Date(now.getTime() - minutes * 60_000);
+      intervalEnd = now;
+    } else {
+      intervalEnd = new Date(new Date(cursor).getTime() + minutes * 60_000);
+    }
     const charge = perMin * minutes;
 
     const entry: any = await this.credits.record({
@@ -148,7 +173,12 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
       idempotencyKey,
       description: `Computer use (${inst.resourceProfile}) ${minutes}m`,
       agentId: inst.agentId,
-      metadata: { computerId: inst.computerId, minutes, perMin },
+      metadata: {
+        computerId: inst.computerId,
+        minutes,
+        perMin,
+        ...(rebased ? { catchUpCappedFromMinutes: elapsedMinutes } : undefined),
+      },
       createdBy: 'metering',
     });
 
@@ -176,6 +206,12 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
     await this.advanceCursor(inst.computerId, intervalEnd);
 
     if (exhaustedAfterCharge) await this.handleExhausted(inst, principalId);
+  }
+
+  private maxCatchUpMinutes(): number {
+    const configured = Number(process.env.COMPUTE_MAX_CATCH_UP_MINUTES ?? 10);
+    if (!Number.isFinite(configured)) return 10;
+    return Math.min(Math.max(Math.floor(configured), 1), 60);
   }
 
   private async advanceCursor(computerId: string, through: Date) {
