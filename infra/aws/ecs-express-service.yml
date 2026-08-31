@@ -212,6 +212,8 @@ Resources:
             Value: !Ref AgentCommonsApiUrl
           - Name: APP_ORIGIN
             Value: !Ref AppOrigin
+          - Name: ARTIFACT_SHARE_BASE_URL
+            Value: !Sub "${AppOrigin}/shared/artifacts"
           # Pricing and rate-limit controls are operational configuration, not
           # secrets. Keeping them as ordinary task environment values lets a
           # deployment use safe defaults even when an older runtime secret has
