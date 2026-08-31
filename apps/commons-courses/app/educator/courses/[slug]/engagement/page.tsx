@@ -100,6 +100,7 @@ export default async function CourseEngagementPage({
   const followUps = followUpDocuments.map((item) => ({
     id: String(item._id),
     title: item.title,
+    published: item.published,
     dueAt: item.dueAt ? new Date(item.dueAt).toISOString() : undefined,
     targetCount: item.targetUserIds?.length || 0,
     submissionCount: submissionMap.get(String(item._id))?.count || 0,

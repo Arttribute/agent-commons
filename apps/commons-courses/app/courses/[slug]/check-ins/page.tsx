@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
+import { checkInContextForUser } from "@/lib/check-in-context";
 import { getCourseThemeStyle } from "@/lib/course-theme";
 import { Nav } from "@/components/nav";
 import { LearnerCheckIns } from "@/components/courses/learner-check-ins";
@@ -119,6 +120,10 @@ export default async function CourseCheckInsPage({
       title: assignment.title,
       instructions: assignment.instructions,
       context:
+        checkInContextForUser(
+          assignment.targetContexts,
+          currentUser.user.id,
+        )?.context ||
         assignment.context ||
         (reflection ? formatResponseValue(reflection.value) : undefined),
       dueAt: assignment.dueAt
