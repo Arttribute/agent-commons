@@ -136,3 +136,103 @@ describe('LibraryService preview ownership', () => {
     expect(builder.buildInlinePreview).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('LibraryService agent discovery', () => {
+  const item = {
+    itemId: 'item-1',
+    ownerUserId: 'user-1',
+    name: 'Kenyan coding bootcamps.xlsx',
+    description: 'Research workbook',
+    kind: 'spreadsheet',
+    mimeType:
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    sizeBytes: 2048,
+    sha256: 'a'.repeat(64),
+    source: 'agent',
+    status: 'ready',
+    sourceAgentId: 'agent-1',
+    sourceSessionId: 'session-1',
+    textPreview: 'Provider Location Format',
+    metadata: {},
+    isFavorite: false,
+    deletedAt: null,
+    createdAt: new Date('2026-08-30T00:00:00.000Z'),
+    updatedAt: new Date('2026-08-31T00:00:00.000Z'),
+  };
+
+  function harness(items = [item]) {
+    const db = {
+      query: {
+        agent: {
+          findFirst: jest.fn().mockResolvedValue({
+            agentId: 'agent-1',
+            ownerUserId: 'user-1',
+            workspaceId: null,
+          }),
+        },
+        session: { findFirst: jest.fn() },
+        libraryItem: { findMany: jest.fn().mockResolvedValue(items) },
+      },
+    } as any;
+    const openAI = { embeddings: { create: jest.fn() } } as any;
+    return {
+      db,
+      openAI,
+      service: new LibraryService(db, {} as any, openAI, {} as any),
+    };
+  }
+
+  it('lists recent owner artifacts for an empty query without embeddings', async () => {
+    const { service, openAI } = harness();
+
+    const results = await service.searchForAgent({
+      agentId: 'agent-1',
+      sessionId: 'session-2',
+      ownerId: 'user-1',
+      query: '',
+      limit: 10,
+    });
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        itemId: 'item-1',
+        fileId: 'item-1',
+        name: 'Kenyan coding bootcamps.xlsx',
+        match: 'recent',
+      }),
+    ]);
+    expect(openAI.embeddings.create).not.toHaveBeenCalled();
+  });
+
+  it('finds binary artifacts by filename or type before semantic search', async () => {
+    const { service, openAI } = harness();
+
+    const results = await service.searchForAgent({
+      agentId: 'agent-1',
+      ownerId: 'user-1',
+      query: 'xlsx',
+      limit: 1,
+    });
+
+    expect(results[0]).toEqual(
+      expect.objectContaining({
+        fileId: 'item-1',
+        kind: 'spreadsheet',
+        match: 'metadata',
+        excerpt: 'Provider Location Format',
+      }),
+    );
+    expect(openAI.embeddings.create).not.toHaveBeenCalled();
+  });
+
+  it('uses the agent record as the canonical owner boundary', async () => {
+    const { service } = harness();
+
+    const context = await (service as any).resolveAgentLibraryContext({
+      agentId: 'agent-1',
+      ownerId: 'another-user',
+    });
+
+    expect(context).toEqual({ ownerId: 'user-1', workspaceId: undefined });
+  });
+});

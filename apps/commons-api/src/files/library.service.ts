@@ -823,12 +823,21 @@ export class LibraryService {
   async searchForAgent(input: {
     agentId: string;
     sessionId?: string;
-    query: string;
+    ownerId?: string;
+    query?: string;
     limit?: number;
   }) {
-    const query = input.query.trim();
-    if (!query) throw new BadRequestException('query is required');
+    const query = input.query?.trim() ?? '';
+    const limit = clamp(input.limit ?? 8, 1, 20);
+    const context = await this.resolveAgentLibraryContext(input);
     const access = or(
+      context.ownerId
+        ? this.userAccess(schema.libraryItem, {
+            principalId: context.ownerId,
+            principalType: 'user',
+            workspaceId: context.workspaceId,
+          })
+        : undefined,
       input.sessionId
         ? and(
             eq(schema.libraryItem.sourceAgentId, input.agentId),
@@ -842,7 +851,59 @@ export class LibraryService {
           AND g.subject_id = ${input.agentId}
           AND (g.expires_at IS NULL OR g.expires_at > now())
       )`,
+    )!;
+    const available = and(
+      isNull(schema.libraryItem.deletedAt),
+      or(
+        eq(schema.libraryItem.status, 'ready'),
+        eq(schema.libraryItem.status, 'partial'),
+      ),
+      access,
     );
+
+    // Browsing the Library should be one cheap indexed query and must include
+    // images/apps that have no extracted text chunks.
+    if (isArtifactBrowseQuery(query)) {
+      const recent = await this.db.query.libraryItem.findMany({
+        where: available,
+        orderBy: (table) => desc(table.updatedAt),
+        limit,
+      });
+      return recent.map((item) => compactArtifactResult(item, 'recent'));
+    }
+
+    // Filename/type matches are both faster and more intuitive than embedding
+    // a query such as "presentation" or "xlsx". They also find binary files
+    // without chunks. Only fall through to content search when needed.
+    const escaped = `%${escapeLike(query)}%`;
+    const metadataMatches = await this.db.query.libraryItem.findMany({
+      where: and(
+        available,
+        or(
+          ilike(schema.libraryItem.name, escaped),
+          ilike(schema.libraryItem.description, escaped),
+          ilike(schema.libraryItem.kind, escaped),
+          ilike(schema.libraryItem.mimeType, escaped),
+          ilike(schema.libraryItem.source, escaped),
+          ilike(schema.libraryItem.textPreview, escaped),
+        ),
+      ),
+      orderBy: (table) => desc(table.updatedAt),
+      limit: Math.min(limit * 2, 40),
+    });
+    const compactMetadata = metadataMatches
+      .map((item) =>
+        compactArtifactResult(
+          item,
+          'metadata',
+          metadataArtifactScore(item, query),
+        ),
+      )
+      .sort(compareArtifactResults);
+    if (compactMetadata.length >= limit) {
+      return compactMetadata.slice(0, limit);
+    }
+
     const embedding = await this.embedQuery(query);
     const semantic = embedding
       ? sql<number>`coalesce(1 - (${cosineDistance(schema.libraryChunk.embedding, embedding)}), 0)`
@@ -857,9 +918,16 @@ export class LibraryService {
         name: schema.libraryItem.name,
         kind: schema.libraryItem.kind,
         mimeType: schema.libraryItem.mimeType,
+        description: schema.libraryItem.description,
+        sizeBytes: schema.libraryItem.sizeBytes,
         sourceSessionId: schema.libraryItem.sourceSessionId,
+        sourceAgentId: schema.libraryItem.sourceAgentId,
         sourceType: schema.libraryItem.source,
         contentHash: schema.libraryItem.sha256,
+        status: schema.libraryItem.status,
+        isFavorite: schema.libraryItem.isFavorite,
+        createdAt: schema.libraryItem.createdAt,
+        updatedAt: schema.libraryItem.updatedAt,
         itemMetadata: schema.libraryItem.metadata,
         chunkIndex: schema.libraryChunk.chunkIndex,
         embeddingModel: schema.libraryChunk.embeddingModel,
@@ -873,12 +941,7 @@ export class LibraryService {
       )
       .where(
         and(
-          isNull(schema.libraryItem.deletedAt),
-          or(
-            eq(schema.libraryItem.status, 'ready'),
-            eq(schema.libraryItem.status, 'partial'),
-          ),
-          access,
+          available,
           embedding
             ? or(
                 sql`${schema.libraryChunk.embedding} IS NOT NULL`,
@@ -888,17 +951,68 @@ export class LibraryService {
         ),
       )
       .orderBy(desc(score))
-      .limit(clamp(input.limit ?? 8, 1, 20));
-    return rows.map(({ itemMetadata, ...row }) => ({
-      ...row,
-      sourceUri:
-        typeof itemMetadata?.sourceUrl === 'string'
-          ? itemMetadata.sourceUrl
-          : typeof itemMetadata?.url === 'string'
-            ? itemMetadata.url
-            : undefined,
-      excerpt: row.excerpt.slice(0, 1_200),
-    }));
+      .limit(Math.min(limit * 3, 60));
+    const combined = new Map<string, ReturnType<typeof compactArtifactResult>>(
+      compactMetadata.map((result) => [result.itemId, result]),
+    );
+    for (const { itemMetadata, sourceType, ...row } of rows) {
+      const candidate = compactArtifactResult(
+        {
+          ...row,
+          source: sourceType,
+          sha256: row.contentHash,
+          metadata: itemMetadata,
+          textPreview: row.excerpt,
+        },
+        'content',
+        Number(row.score ?? 0),
+        row.excerpt,
+        {
+          chunkIndex: row.chunkIndex,
+          embeddingModel: row.embeddingModel,
+        },
+      );
+      const current = combined.get(candidate.itemId);
+      if (!current || candidate.score > current.score) {
+        combined.set(candidate.itemId, candidate);
+      }
+    }
+    return [...combined.values()].sort(compareArtifactResults).slice(0, limit);
+  }
+
+  private async resolveAgentLibraryContext(input: {
+    agentId: string;
+    sessionId?: string;
+    ownerId?: string;
+  }) {
+    const agent = await this.db.query.agent.findFirst({
+      where: (table) => eq(table.agentId, input.agentId),
+    });
+    let ownerId = stringValue(agent?.ownerUserId);
+    const suppliedOwner = stringValue(input.ownerId);
+    if (!ownerId && suppliedOwner) {
+      // Child-agent runs can carry the parent agent as initiator. Resolve it
+      // back to the human owner before falling back to the supplied identity.
+      const parent = await this.db.query.agent.findFirst({
+        where: (table) => eq(table.agentId, suppliedOwner),
+      });
+      ownerId = stringValue(parent?.ownerUserId) ?? suppliedOwner;
+    }
+    if (!ownerId && input.sessionId) {
+      const session = await this.db.query.session.findFirst({
+        where: (table) =>
+          and(
+            eq(table.sessionId, input.sessionId!),
+            eq(table.agentId, input.agentId),
+          ),
+      });
+      ownerId = stringValue(session?.initiator);
+    }
+    ownerId ??= stringValue(agent?.owner);
+    return {
+      ownerId,
+      workspaceId: stringValue(agent?.workspaceId),
+    };
   }
 
   async getStoragePreference(principal: LibraryPrincipal) {
@@ -1114,6 +1228,98 @@ function same(left: string, right: string) {
 
 function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+type ArtifactSearchItem = {
+  itemId: string;
+  name: string;
+  description?: string | null;
+  kind: string;
+  mimeType: string;
+  sizeBytes?: number | null;
+  source?: string | null;
+  status?: string | null;
+  sourceAgentId?: string | null;
+  sourceSessionId?: string | null;
+  sha256?: string | null;
+  metadata?: Record<string, any> | null;
+  textPreview?: string | null;
+  isFavorite?: boolean | null;
+  createdAt?: Date | string | null;
+  updatedAt?: Date | string | null;
+};
+
+function isArtifactBrowseQuery(query: string) {
+  return (
+    !query ||
+    /^(?:\*|all|recent|most recent|latest|files?|artifacts?|library)$/i.test(
+      query,
+    )
+  );
+}
+
+function compactArtifactResult(
+  item: ArtifactSearchItem,
+  match: 'recent' | 'metadata' | 'content',
+  score = 0,
+  excerpt = item.textPreview ?? item.description ?? '',
+  details: { chunkIndex?: number | null; embeddingModel?: string | null } = {},
+) {
+  const metadata = item.metadata ?? {};
+  const sourceUri =
+    typeof metadata.sourceUrl === 'string'
+      ? metadata.sourceUrl
+      : typeof metadata.url === 'string'
+        ? metadata.url
+        : undefined;
+  return {
+    itemId: item.itemId,
+    fileId: item.itemId,
+    name: item.name,
+    kind: item.kind,
+    mimeType: item.mimeType,
+    sizeBytes: item.sizeBytes ?? 0,
+    source: item.source,
+    status: item.status,
+    isFavorite: Boolean(item.isFavorite),
+    sourceAgentId: item.sourceAgentId,
+    sourceSessionId: item.sourceSessionId,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    contentHash: item.sha256 ? `sha256:${item.sha256}` : undefined,
+    sourceUri,
+    match,
+    score: Number(score.toFixed(4)),
+    excerpt: excerpt.replace(/\s+/g, ' ').trim().slice(0, 480),
+    ...(match === 'content'
+      ? {
+          chunkIndex: details.chunkIndex,
+          embeddingModel: details.embeddingModel,
+        }
+      : {}),
+  };
+}
+
+function metadataArtifactScore(item: ArtifactSearchItem, query: string) {
+  const needle = query.toLowerCase();
+  const name = item.name.toLowerCase();
+  if (name === needle) return 2;
+  if (name.startsWith(needle)) return 1.8;
+  if (name.includes(needle)) return 1.6;
+  if (item.kind.toLowerCase().includes(needle)) return 1.4;
+  if (item.mimeType.toLowerCase().includes(needle)) return 1.3;
+  if (item.description?.toLowerCase().includes(needle)) return 1.1;
+  return 0.8;
+}
+
+function compareArtifactResults(
+  left: ReturnType<typeof compactArtifactResult>,
+  right: ReturnType<typeof compactArtifactResult>,
+) {
+  if (right.score !== left.score) return right.score - left.score;
+  const rightTime = right.updatedAt ? new Date(right.updatedAt).valueOf() : 0;
+  const leftTime = left.updatedAt ? new Date(left.updatedAt).valueOf() : 0;
+  return rightTime - leftTime;
 }
 
 function stringValue(value: unknown): string | undefined {

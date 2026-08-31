@@ -461,9 +461,14 @@ export interface CommonTool {
     }>;
   }>;
 
-  /** Search only artifacts explicitly available to this agent. */
+  /**
+   * Search the calling user's Library without loading it into the conversation.
+   * Omit query (or pass an empty string) to list recently updated artifacts.
+   * Results are compact metadata and short excerpts; call readUploadedFile only
+   * for the specific file whose contents are needed.
+   */
   searchLibraryArtifacts(props: {
-    query: string;
+    query?: string;
     limit?: number;
     agentId: string;
     sessionId?: string;
@@ -1578,7 +1583,7 @@ export class CommonToolService {
 
   async searchLibraryArtifacts(
     props: {
-      query: string;
+      query?: string;
       limit?: number;
       agentId: string;
       sessionId?: string;
@@ -1589,6 +1594,7 @@ export class CommonToolService {
     return this.library.searchForAgent({
       agentId,
       sessionId: props.sessionId ?? metadata?.sessionId,
+      ownerId: metadata?.ownerId,
       query: props.query,
       limit: props.limit,
     });
