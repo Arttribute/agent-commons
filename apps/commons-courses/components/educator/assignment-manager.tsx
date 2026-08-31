@@ -13,6 +13,17 @@ type Assignment = {
   published: boolean;
   kind?: "coursework" | "follow_up";
   context?: string;
+  targetContexts?: Array<{
+    userId: string;
+    context: string;
+    source?: string;
+  }>;
+  meetingSlots?: Array<{
+    id: string;
+    startAt: string;
+    endAt: string;
+    timezone: string;
+  }>;
   targetUserIds?: Person[];
 };
 
@@ -27,6 +38,7 @@ type Submission = {
   score?: number;
   feedback?: string;
   checkInStatus?: "not_started" | "in_progress" | "blocked" | "completed";
+  selectedMeetingSlotId?: string;
   userId?: Person;
 };
 
@@ -181,7 +193,10 @@ export function AssignmentManager({ slug }: { slug: string }) {
                     {assignment.kind === "follow_up" && <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Continuity check-in</p>}
                     <h3 className="font-bold text-slate-900">{assignment.title}</h3>
                   </div>
-                  <span className="text-xs text-slate-500">{assignment.points} pts</span>
+                  <div className="flex items-center gap-2">
+                    {!assignment.published && <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">Draft</span>}
+                    <span className="text-xs text-slate-500">{assignment.points} pts</span>
+                  </div>
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{assignment.instructions}</p>
               </div>
@@ -280,6 +295,12 @@ function CheckInProgress({
                     personId(item.userId) === learner._id,
                 );
                 const key = `${assignment._id}:${learner._id}`;
+                const personalizedContext = assignment.targetContexts?.find(
+                  (item) => String(item.userId) === String(learner._id),
+                );
+                const selectedMeetingSlot = assignment.meetingSlots?.find(
+                  (slot) => slot.id === submission?.selectedMeetingSlotId,
+                );
                 return (
                   <div key={learner._id} className="py-4 first:pt-4 last:pb-0">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -296,6 +317,12 @@ function CheckInProgress({
                         {sendingKey === key ? "Sending…" : notification?.sentAt ? "Resend check-in" : "Send check-in"}
                       </button>
                     </div>
+                    {personalizedContext?.context && (
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">What this learner will recall</p>
+                        <p className="mt-2 max-h-28 overflow-y-auto whitespace-pre-wrap pr-2 text-sm leading-6 text-slate-700">{personalizedContext.context}</p>
+                      </div>
+                    )}
                     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                       <ProgressStep label="Sent" active={Boolean(notification?.sentAt)} date={notification?.sentAt} />
                       <ProgressStep label="Opened" active={Boolean(notification?.openedAt)} date={notification?.openedAt} />
@@ -311,6 +338,9 @@ function CheckInProgress({
                           <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Final response</p>
                           {submission.checkInStatus && <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold capitalize text-slate-600">{submission.checkInStatus.replace("_", " ")}</span>}
                         </div>
+                        {selectedMeetingSlot && (
+                          <p className="mt-2 text-sm font-bold text-slate-900">One-on-one: {formatMeetingSlot(selectedMeetingSlot)}</p>
+                        )}
                         {submission.text && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{submission.text}</p>}
                         {submission.url && <a href={submission.url} target="_blank" className="mt-2 inline-block text-sm font-bold text-slate-900 underline">Open evidence</a>}
                       </div>
@@ -357,6 +387,32 @@ function formatDate(value: string) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatMeetingSlot(slot: {
+  startAt: string;
+  endAt: string;
+  timezone: string;
+}) {
+  const date = new Date(slot.startAt);
+  const end = new Date(slot.endAt);
+  const day = new Intl.DateTimeFormat("en", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: slot.timezone,
+  }).format(date);
+  const time = new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: slot.timezone,
+  }).format(date);
+  const endTime = new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: slot.timezone,
+  }).format(end);
+  return `${day} · ${time}–${endTime}`;
 }
 
 function SubmissionReview({

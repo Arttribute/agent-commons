@@ -65,26 +65,69 @@ export async function POST(
     return NextResponse.json({ error: "Not enrolled." }, { status: 403 });
   }
 
-  const submission = await Submission.findOneAndUpdate(
-    { assignmentId: assignment._id, userId: session.user.id },
-    {
+  const selectedMeetingSlotId = String(body.selectedMeetingSlotId || "").trim();
+  const meetingSlots = assignment.meetingSlots || [];
+  if (assignment.meetingSlotRequired && !selectedMeetingSlotId) {
+    return NextResponse.json(
+      { error: "Choose a one-on-one check-in time before submitting." },
+      { status: 400 },
+    );
+  }
+  if (
+    selectedMeetingSlotId &&
+    !meetingSlots.some((slot: { id: string }) => slot.id === selectedMeetingSlotId)
+  ) {
+    return NextResponse.json(
+      { error: "That one-on-one time is not available for this check-in." },
+      { status: 400 },
+    );
+  }
+  if (selectedMeetingSlotId) {
+    const occupied = await Submission.exists({
       assignmentId: assignment._id,
-      courseId: assignment.courseId,
-      userId: session.user.id,
-      text: body.text,
-      url: body.url,
-      checkInStatus:
-        assignment.kind === "follow_up" &&
-        ["not_started", "in_progress", "blocked", "completed"].includes(
-          body.checkInStatus,
-        )
-          ? body.checkInStatus
-          : undefined,
-      status: "submitted",
-      submittedAt: new Date(),
-    },
-    { upsert: true, new: true, runValidators: true }
-  );
+      selectedMeetingSlotId,
+      userId: { $ne: session.user.id },
+    });
+    if (occupied) {
+      return NextResponse.json(
+        { error: "That time was just booked. Please choose another slot." },
+        { status: 409 },
+      );
+    }
+  }
+
+  let submission;
+  try {
+    submission = await Submission.findOneAndUpdate(
+      { assignmentId: assignment._id, userId: session.user.id },
+      {
+        assignmentId: assignment._id,
+        courseId: assignment.courseId,
+        userId: session.user.id,
+        text: body.text,
+        url: body.url,
+        selectedMeetingSlotId: selectedMeetingSlotId || undefined,
+        checkInStatus:
+          assignment.kind === "follow_up" &&
+          ["not_started", "in_progress", "blocked", "completed"].includes(
+            body.checkInStatus,
+          )
+            ? body.checkInStatus
+            : undefined,
+        status: "submitted",
+        submittedAt: new Date(),
+      },
+      { upsert: true, new: true, runValidators: true },
+    );
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) {
+      return NextResponse.json(
+        { error: "That time was just booked. Please choose another slot." },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
   if (assignment.kind === "follow_up") {
     await CheckInNotification.findOneAndUpdate(
       { assignmentId: assignment._id, userId: session.user.id },

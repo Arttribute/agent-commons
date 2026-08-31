@@ -10,6 +10,7 @@ export interface ISubmission extends Document {
   score?: number;
   feedback?: string;
   checkInStatus?: "not_started" | "in_progress" | "blocked" | "completed";
+  selectedMeetingSlotId?: string;
   submittedAt: Date;
   reviewedAt?: Date;
   createdAt: Date;
@@ -38,6 +39,7 @@ const SubmissionSchema = new Schema<ISubmission>(
       type: String,
       enum: ["not_started", "in_progress", "blocked", "completed"],
     },
+    selectedMeetingSlotId: { type: String, trim: true },
     submittedAt: { type: Date, default: Date.now },
     reviewedAt: Date,
   },
@@ -46,6 +48,13 @@ const SubmissionSchema = new Schema<ISubmission>(
 
 SubmissionSchema.index({ assignmentId: 1, userId: 1 }, { unique: true });
 SubmissionSchema.index({ courseId: 1, submittedAt: -1 });
+SubmissionSchema.index(
+  { assignmentId: 1, selectedMeetingSlotId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { selectedMeetingSlotId: { $type: "string" } },
+  },
+);
 
 export default mongoose.models.Submission ||
   mongoose.model<ISubmission>("Submission", SubmissionSchema);
