@@ -236,3 +236,140 @@ describe('LibraryService agent discovery', () => {
     expect(context).toEqual({ ownerId: 'user-1', workspaceId: undefined });
   });
 });
+
+describe('LibraryService artifact provenance', () => {
+  const item = {
+    itemId: '11111111-1111-4111-8111-111111111111',
+    ownerUserId: 'user-1',
+    workspaceId: null,
+    sourceAgentId: 'agent-1',
+    sourceSessionId: null,
+    kind: 'document',
+    name: 'Fast provenance.docx',
+    description: null,
+    mimeType:
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    sizeBytes: 1024,
+    sha256: 'a'.repeat(64),
+    source: 'agent_generated',
+    status: 'ready',
+    visibility: 'private',
+    textPreview: 'Fast provenance',
+    extractedTextChars: 15,
+    extractionError: null,
+    metadata: {},
+    isFavorite: false,
+    deletedAt: null,
+    createdAt: new Date('2026-08-31T00:00:00.000Z'),
+    updatedAt: new Date('2026-08-31T00:00:00.000Z'),
+  };
+
+  function harness() {
+    const eventRows = Array.from({ length: 40 }, (_, index) => {
+      const sequence = 50 - index;
+      return {
+        eventId: `event-${sequence}`,
+        traceId: '22222222-2222-4222-8222-222222222222',
+        sessionId: null,
+        sequence,
+        category: 'tool',
+        eventType: 'tool.completed',
+        name: `Event ${sequence}`,
+        phase: null,
+        status: 'completed',
+        spanId: null,
+        parentSpanId: null,
+        summary: null,
+        payload: null,
+        result: null,
+        contentHash: null,
+        inputTokens: null,
+        outputTokens: null,
+        cachedTokens: null,
+        costUsd: null,
+        durationMs: 1,
+        eaaAction: null,
+        metadata: {},
+        startedAt: new Date(
+          `2026-08-31T00:00:${String(sequence).padStart(2, '0')}.000Z`,
+        ),
+        endedAt: null,
+        createdAt: new Date('2026-08-31T00:01:00.000Z'),
+      };
+    });
+    const values = jest.fn().mockResolvedValue(undefined);
+    const db = {
+      query: {
+        libraryItem: {
+          findFirst: jest.fn().mockResolvedValue(item),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        libraryLink: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              scopeType: 'provenance_trace',
+              scopeId: '22222222-2222-4222-8222-222222222222',
+            },
+          ]),
+        },
+        provenanceRun: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              traceId: '22222222-2222-4222-8222-222222222222',
+              status: 'completed',
+              captureMode: 'metadata',
+              eventCount: 75,
+              droppedEventCount: 0,
+              startedAt: new Date('2026-08-31T00:00:00.000Z'),
+              anchorStatus: 'not_requested',
+            },
+          ]),
+        },
+        provenanceEvent: { findMany: jest.fn().mockResolvedValue(eventRows) },
+        libraryAuditEvent: { findMany: jest.fn().mockResolvedValue([]) },
+        libraryGrant: { findMany: jest.fn().mockResolvedValue([]) },
+        libraryShareLink: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      insert: jest.fn().mockReturnValue({ values }),
+    } as any;
+    return {
+      db,
+      service: new LibraryService(db, {} as any, {} as any, {} as any),
+    };
+  }
+
+  it('returns only the newest 40 events in chronological display order', async () => {
+    const { db, service } = harness();
+
+    const record = (await service.provenance('item-1', {
+      principalId: 'user-1',
+      principalType: 'user',
+    })) as any;
+
+    expect(db.query.provenanceEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 40 }),
+    );
+    expect(record.actions).toHaveLength(40);
+    expect(record.actions[0].sequence).toBe(11);
+    expect(record.actions.at(-1).sequence).toBe(50);
+    expect(record.disclosure).toMatchObject({
+      eventsIncluded: true,
+      eventsReturned: 40,
+      eventsTruncated: true,
+    });
+  });
+
+  it('can return compact provenance without querying event rows', async () => {
+    const { db, service } = harness();
+
+    const record = (await service.provenance(
+      'item-1',
+      { principalId: 'user-1', principalType: 'user' },
+      0,
+    )) as any;
+
+    expect(db.query.provenanceEvent.findMany).not.toHaveBeenCalled();
+    expect(record.actions).toEqual([]);
+    expect(record.disclosure.eventsIncluded).toBe(false);
+  });
+});
