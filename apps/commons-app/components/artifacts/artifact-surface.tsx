@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
@@ -226,6 +227,14 @@ export function ArtifactSurface({
           </p>
         </div>
         <div className="ml-auto flex items-center gap-0.5">
+          <Link
+            href={`/studio/canvas/${encodeURIComponent(artifact.fileId)}`}
+            title="Open in Canvas"
+            className="mr-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-stone-900 px-2.5 text-[11px] font-medium text-white hover:bg-stone-800"
+          >
+            <PencilLine className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Open in Canvas</span>
+          </Link>
           <ToolbarButton
             label="View provenance"
             onClick={() => {

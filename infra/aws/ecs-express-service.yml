@@ -63,6 +63,36 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: Inject the X OAuth app credentials after both keys exist in the runtime secret.
+  GoogleMediaEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject the Gemini API key after GOOGLE_API_KEY exists in the runtime secret.
+  KlingMediaEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject Kling access and secret keys after both exist in the runtime secret.
+  BytePlusMediaEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject the BytePlus ModelArk key after BYTEPLUS_ARK_API_KEY exists in the runtime secret.
+  GoogleMediaPriceUsdJson:
+    Type: String
+    Default: "{}"
+    Description: Optional public pricing overrides keyed by Commons modelKey or Google model ID.
+  KlingMediaPriceUsdJson:
+    Type: String
+    Default: "{}"
+    Description: Optional public pricing overrides keyed by Commons modelKey or Kling model ID.
+  BytePlusMediaPriceUsdJson:
+    Type: String
+    Default: "{}"
+    Description: Optional public pricing overrides keyed by Commons modelKey or ModelArk model ID.
+  MediaReservationTtlSeconds:
+    Type: String
+    Default: "7200"
   CreditUnitsPerUsd:
     Type: String
     Default: "1000"
@@ -142,6 +172,9 @@ Conditions:
   IsSlackOAuthEnabled: !Equals [!Ref SlackOAuthEnabled, "true"]
   IsCanvaOAuthEnabled: !Equals [!Ref CanvaOAuthEnabled, "true"]
   IsXOAuthEnabled: !Equals [!Ref XOAuthEnabled, "true"]
+  IsGoogleMediaEnabled: !Equals [!Ref GoogleMediaEnabled, "true"]
+  IsKlingMediaEnabled: !Equals [!Ref KlingMediaEnabled, "true"]
+  IsBytePlusMediaEnabled: !Equals [!Ref BytePlusMediaEnabled, "true"]
   IsBraveSearch: !Equals [!Ref WebSearchProvider, brave]
   IsSearxngSearch: !Equals [!Ref WebSearchProvider, searxng]
   IsProvenanceKitEnabled: !Equals [!Ref ProvenanceKitExportEnabled, "true"]
@@ -222,6 +255,14 @@ Resources:
             Value: !Ref CreditUnitsPerUsd
           - Name: MODEL_COST_MARKUP
             Value: !Ref ModelCostMarkup
+          - Name: GOOGLE_MEDIA_PRICE_USD_JSON
+            Value: !Ref GoogleMediaPriceUsdJson
+          - Name: KLING_MEDIA_PRICE_USD_JSON
+            Value: !Ref KlingMediaPriceUsdJson
+          - Name: BYTEPLUS_MEDIA_PRICE_USD_JSON
+            Value: !Ref BytePlusMediaPriceUsdJson
+          - Name: MEDIA_RESERVATION_TTL_SECONDS
+            Value: !Ref MediaReservationTtlSeconds
           - Name: AGENT_RUN_RESERVATION_CREDITS
             Value: !Ref AgentRunReservationCredits
           - Name: AGENT_RUN_MINIMUM_CREDITS
@@ -305,6 +346,26 @@ Resources:
             ValueFrom: !Sub "${RuntimeSecretArn}:WALLET_PRIVATE_KEY::"
           - Name: OPENAI_API_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:OPENAI_API_KEY::"
+          - !If
+            - IsGoogleMediaEnabled
+            - Name: GOOGLE_API_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:GOOGLE_API_KEY::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsKlingMediaEnabled
+            - Name: KLING_ACCESS_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:KLING_ACCESS_KEY::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsKlingMediaEnabled
+            - Name: KLING_SECRET_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:KLING_SECRET_KEY::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsBytePlusMediaEnabled
+            - Name: BYTEPLUS_ARK_API_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:BYTEPLUS_ARK_API_KEY::"
+            - !Ref AWS::NoValue
           - !If
             - IsBraveSearch
             - Name: BRAVE_SEARCH_API_KEY

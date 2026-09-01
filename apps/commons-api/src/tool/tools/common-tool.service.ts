@@ -48,6 +48,7 @@ import {
   type UiPluginSurface,
 } from '~/ui-plugin';
 import { BrainService } from '~/brain';
+import { CanvasService, MediaService } from '~/media';
 
 type ToolExecutionMetadata = {
   agentId?: string;
@@ -401,6 +402,56 @@ export interface CommonTool {
       model: string;
     }[]
   >;
+
+  /**
+   * Generate or transform an image, video, speech clip, or music artifact with
+   * a model from the shared Canvas media catalog. Outputs are private Library
+   * artifacts and, when projectId is supplied, immutable Canvas revisions.
+   * Use modelKey values returned by listMediaModels; never invent model names.
+   */
+  generateMedia(props: {
+    projectId?: string;
+    modelKey: string;
+    prompt: string;
+    operation?: 'generate' | 'transform';
+    inputItemIds?: string[];
+    settings?: Record<string, unknown>;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<{
+    job: Record<string, unknown>;
+    artifact: {
+      itemId: string;
+      name: string;
+      kind: string;
+      mimeType: string;
+      url?: string;
+    };
+  }>;
+
+  /** List exact creative model keys, capabilities, settings, and credit pricing. */
+  listMediaModels(): Promise<Record<string, unknown>>;
+
+  /**
+   * Read a Canvas project's active artifact, immutable revision graph,
+   * annotations, and recent generation jobs before analysing or editing it.
+   */
+  getCanvasProject(props: {
+    projectId: string;
+    agentId: string;
+  }): Promise<Record<string, unknown>>;
+
+  /** Add a normalized spatial or temporal annotation to a Canvas revision. */
+  annotateCanvas(props: {
+    projectId: string;
+    revisionId: string;
+    kind: 'comment' | 'point' | 'region' | 'time_range' | 'transcript' | 'freehand';
+    body: string;
+    geometry?: Record<string, unknown>;
+    startMs?: number;
+    endMs?: number;
+    agentId: string;
+  }): Promise<Record<string, unknown>>;
 
   /**
    * Upload a file directly to IPFS via Pinata.
@@ -940,6 +991,8 @@ export class CommonToolService {
     private capabilityProviders: CapabilityProviderService,
     private uiPlugins: UiPluginService,
     private brains: BrainService,
+    private media: MediaService,
+    private canvas: CanvasService,
   ) {}
 
   private async capabilityOwner(agentId: string) {
@@ -1518,6 +1571,93 @@ export class CommonToolService {
       });
     }
     return results;
+  }
+
+  async listMediaModels() {
+    return this.media.catalog();
+  }
+
+  async getCanvasProject(
+    props: { projectId: string; agentId: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    return this.canvas.getProject(props.projectId, {
+      principalId: owner.principalId,
+      principalType: 'user',
+      workspaceId: owner.workspaceId,
+      actorId: agentId,
+    });
+  }
+
+  async annotateCanvas(
+    props: {
+      projectId: string;
+      revisionId: string;
+      kind: 'comment' | 'point' | 'region' | 'time_range' | 'transcript' | 'freehand';
+      body: string;
+      geometry?: Record<string, unknown>;
+      startMs?: number;
+      endMs?: number;
+      agentId: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    return this.canvas.createAnnotation(
+      props.projectId,
+      {
+        principalId: owner.principalId,
+        principalType: 'user',
+        workspaceId: owner.workspaceId,
+        actorId: agentId,
+      },
+      {
+        revisionId: props.revisionId,
+        kind: props.kind,
+        body: props.body,
+        geometry: props.geometry,
+        startMs: props.startMs,
+        endMs: props.endMs,
+      },
+    );
+  }
+
+  async generateMedia(
+    props: {
+      projectId?: string;
+      modelKey: string;
+      prompt: string;
+      operation?: 'generate' | 'transform';
+      inputItemIds?: string[];
+      settings?: Record<string, unknown>;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    return this.media.generateAndWait(
+      {
+        projectId: props.projectId,
+        modelKey: props.modelKey,
+        prompt: props.prompt,
+        operation: props.operation,
+        inputItemIds: props.inputItemIds,
+        settings: props.settings,
+        agentId,
+        sessionId: metadata?.sessionId ?? props.sessionId,
+        toolCallId: metadata?.toolCallId,
+      },
+      {
+        principalId: owner.principalId,
+        principalType: 'user',
+        workspaceId: owner.workspaceId,
+      },
+    );
   }
 
   /**

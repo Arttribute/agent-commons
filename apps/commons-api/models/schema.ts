@@ -918,6 +918,216 @@ export const libraryShareLink = pgTable(
   }),
 );
 
+/* ────────────────────────  CANVAS MEDIA STUDIO  ──────────────────────── */
+
+/**
+ * A private creative workspace. Canvas does not duplicate media bytes: every
+ * source and output remains a Library item while this table supplies project
+ * organization and an active revision pointer.
+ */
+export const canvasProject = pgTable(
+  'canvas_project',
+  {
+    projectId: uuid('project_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    ownerUserId: text('owner_user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    name: text('name').notNull(),
+    description: text('description'),
+    rootItemId: uuid('root_item_id')
+      .notNull()
+      .references(() => libraryItem.itemId, { onDelete: 'restrict' }),
+    activeItemId: uuid('active_item_id')
+      .notNull()
+      .references(() => libraryItem.itemId, { onDelete: 'restrict' }),
+    settings: jsonb('settings').$type<Record<string, unknown>>().default({}),
+    status: text('status').notNull().default('active'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    ownerUpdatedIdx: index('idx_canvas_project_owner_updated').on(
+      table.ownerUserId,
+      table.updatedAt,
+    ),
+    rootIdx: index('idx_canvas_project_root').on(
+      table.ownerUserId,
+      table.rootItemId,
+    ),
+  }),
+);
+
+/**
+ * Immutable revision graph. A revision can have many input artifacts in
+ * `inputs`, while `parentRevisionId` supplies the primary history branch.
+ */
+export const canvasRevision = pgTable(
+  'canvas_revision',
+  {
+    revisionId: uuid('revision_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => canvasProject.projectId, { onDelete: 'cascade' }),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => libraryItem.itemId, { onDelete: 'restrict' }),
+    parentRevisionId: uuid('parent_revision_id'),
+    operation: text('operation').notNull().default('import'),
+    provider: text('provider'),
+    modelId: text('model_id'),
+    promptHash: text('prompt_hash'),
+    inputs: jsonb('inputs').$type<
+      Array<{ itemId: string; role?: string; revisionId?: string }>
+    >().default([]),
+    settings: jsonb('settings').$type<Record<string, unknown>>().default({}),
+    // Soft reference because ProvenanceService persists runs asynchronously.
+    traceId: uuid('trace_id'),
+    createdByType: text('created_by_type').notNull().default('human'),
+    createdById: text('created_by_id'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    projectCreatedIdx: index('idx_canvas_revision_project_created').on(
+      table.projectId,
+      table.createdAt,
+    ),
+    projectItemUnique: uniqueIndex('uq_canvas_revision_project_item').on(
+      table.projectId,
+      table.itemId,
+    ),
+    parentFk: foreignKey({
+      columns: [table.parentRevisionId],
+      foreignColumns: [table.revisionId],
+      name: 'canvas_revision_parent_revision_fk',
+    }).onDelete('set null'),
+  }),
+);
+
+/**
+ * Resolution-independent collaboration context. Geometry uses normalized
+ * coordinates (0..1); temporal ranges use integer milliseconds.
+ */
+export const canvasAnnotation = pgTable(
+  'canvas_annotation',
+  {
+    annotationId: uuid('annotation_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => canvasProject.projectId, { onDelete: 'cascade' }),
+    revisionId: uuid('revision_id')
+      .notNull()
+      .references(() => canvasRevision.revisionId, { onDelete: 'cascade' }),
+    parentAnnotationId: uuid('parent_annotation_id'),
+    kind: text('kind').notNull(),
+    body: text('body').notNull(),
+    geometry: jsonb('geometry').$type<Record<string, unknown>>(),
+    startMs: integer('start_ms'),
+    endMs: integer('end_ms'),
+    status: text('status').notNull().default('open'),
+    authorType: text('author_type').notNull().default('human'),
+    authorId: text('author_id').notNull(),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    projectRevisionIdx: index('idx_canvas_annotation_revision').on(
+      table.projectId,
+      table.revisionId,
+      table.createdAt,
+    ),
+    parentFk: foreignKey({
+      columns: [table.parentAnnotationId],
+      foreignColumns: [table.annotationId],
+      name: 'canvas_annotation_parent_annotation_fk',
+    }).onDelete('cascade'),
+    timeRangeCheck: check(
+      'canvas_annotation_time_range_check',
+      sql`(${table.startMs} is null or ${table.startMs} >= 0) and (${table.endMs} is null or ${table.endMs} >= coalesce(${table.startMs}, 0))`,
+    ),
+  }),
+);
+
+/** Durable queue and audit envelope for user- or agent-initiated media work. */
+export const mediaGenerationJob = pgTable(
+  'media_generation_job',
+  {
+    jobId: uuid('job_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    projectId: uuid('project_id').references(() => canvasProject.projectId, {
+      onDelete: 'set null',
+    }),
+    ownerUserId: text('owner_user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    agentId: text('agent_id').references(() => agent.agentId, {
+      onDelete: 'set null',
+    }),
+    sessionId: uuid('session_id').references(() => session.sessionId, {
+      onDelete: 'set null',
+    }),
+    // Soft reference because ProvenanceService persists runs asynchronously.
+    traceId: uuid('trace_id'),
+    provider: text('provider').notNull(),
+    modelId: text('model_id').notNull(),
+    mediaKind: text('media_kind').notNull(),
+    operation: text('operation').notNull(),
+    prompt: text('prompt').notNull(),
+    inputItemIds: jsonb('input_item_ids').$type<string[]>().default([]),
+    request: jsonb('request').$type<Record<string, unknown>>().default({}),
+    status: text('status').notNull().default('queued'),
+    progress: integer('progress').notNull().default(0),
+    providerOperationId: text('provider_operation_id'),
+    outputItemId: uuid('output_item_id').references(() => libraryItem.itemId, {
+      onDelete: 'set null',
+    }),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    estimatedCostUsd: real('estimated_cost_usd'),
+    actualCostUsd: real('actual_cost_usd'),
+    billing: jsonb('billing').$type<Record<string, unknown>>().default({}),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    ownerCreatedIdx: index('idx_media_job_owner_created').on(
+      table.ownerUserId,
+      table.createdAt,
+    ),
+    projectCreatedIdx: index('idx_media_job_project_created').on(
+      table.projectId,
+      table.createdAt,
+    ),
+    queueIdx: index('idx_media_job_queue').on(
+      table.status,
+      table.createdAt,
+    ),
+  }),
+);
+
 export const libraryAuditEvent = pgTable(
   'library_audit_event',
   {

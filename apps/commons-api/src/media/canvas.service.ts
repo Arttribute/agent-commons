@@ -1,0 +1,411 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import * as schema from '#/models/schema';
+import { DatabaseService } from '~/modules/database/database.service';
+import { LibraryService } from '~/files';
+import type { LibraryPrincipal } from '~/files/library.service';
+import type { MediaPrincipal } from './media.types';
+
+type CreateAnnotationInput = {
+  revisionId: string;
+  parentAnnotationId?: string;
+  kind: 'comment' | 'point' | 'region' | 'time_range' | 'transcript' | 'freehand';
+  body: string;
+  geometry?: Record<string, unknown>;
+  startMs?: number;
+  endMs?: number;
+  metadata?: Record<string, unknown>;
+};
+
+@Injectable()
+export class CanvasService {
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly library: LibraryService,
+  ) {}
+
+  async openArtifact(artifactId: string, principal: MediaPrincipal) {
+    const libraryPrincipal = asLibraryPrincipal(principal);
+    const artifact = await this.library.get(artifactId, libraryPrincipal);
+    const existingRevision = await this.db.query.canvasRevision.findFirst({
+      where: (table) => eq(table.itemId, artifactId),
+      orderBy: (table) => desc(table.createdAt),
+    });
+    if (existingRevision) {
+      return this.getProject(existingRevision.projectId, principal);
+    }
+    const existingProject = await this.db.query.canvasProject.findFirst({
+      where: (table) =>
+        and(
+          eq(table.rootItemId, artifactId),
+          isNull(table.deletedAt),
+          sql<boolean>`lower(${table.ownerUserId}) = lower(${principal.principalId})`,
+        ),
+    });
+    if (existingProject) return this.getProject(existingProject.projectId, principal);
+
+    const [project] = await this.db
+      .insert(schema.canvasProject)
+      .values({
+        ownerUserId: principal.principalId,
+        workspaceId: principal.workspaceId ?? null,
+        name: artifact.name,
+        description: artifact.description,
+        rootItemId: artifactId,
+        activeItemId: artifactId,
+        settings: { schemaVersion: 1 },
+      })
+      .returning();
+    await Promise.all([
+      this.db.insert(schema.canvasRevision).values({
+        projectId: project.projectId,
+        itemId: artifactId,
+        operation: 'import',
+        inputs: [],
+        createdByType: principal.principalType === 'agent' ? 'agent' : 'human',
+        createdById: principal.principalId,
+      }),
+      this.db
+        .insert(schema.libraryLink)
+        .values({
+          itemId: artifactId,
+          scopeType: 'canvas_project',
+          scopeId: project.projectId,
+        })
+        .onConflictDoNothing(),
+    ]);
+    return this.getProject(project.projectId, principal);
+  }
+
+  async getProject(projectId: string, principal: MediaPrincipal) {
+    const project = await this.requireProject(projectId, principal, 'read');
+    const [revisions, annotations, jobs] = await Promise.all([
+      this.db.query.canvasRevision.findMany({
+        where: (table) => eq(table.projectId, projectId),
+        orderBy: (table) => desc(table.createdAt),
+      }),
+      this.db.query.canvasAnnotation.findMany({
+        where: (table) =>
+          and(eq(table.projectId, projectId), isNull(table.deletedAt)),
+        orderBy: (table) => asc(table.createdAt),
+      }),
+      this.db.query.mediaGenerationJob.findMany({
+        where: (table) => eq(table.projectId, projectId),
+        orderBy: (table) => desc(table.createdAt),
+        limit: 20,
+      }),
+    ]);
+    const itemIds = [...new Set(revisions.map((revision) => revision.itemId))];
+    const items = itemIds.length
+      ? await this.db.query.libraryItem.findMany({
+          where: (table) =>
+            or(...itemIds.map((itemId) => eq(table.itemId, itemId))),
+        })
+      : [];
+    const itemMap = new Map(items.map((item) => [item.itemId, item]));
+    return {
+      project,
+      revisions: revisions.map((revision) => ({
+        ...revision,
+        artifact: publicArtifact(itemMap.get(revision.itemId)),
+      })),
+      annotations,
+      jobs: jobs.map(publicJob),
+    };
+  }
+
+  async updateProject(
+    projectId: string,
+    principal: MediaPrincipal,
+    input: { name?: string; description?: string; activeRevisionId?: string; settings?: Record<string, unknown> },
+  ) {
+    const project = await this.requireProject(projectId, principal, 'edit');
+    let activeItemId = project.activeItemId;
+    if (input.activeRevisionId) {
+      const revision = await this.db.query.canvasRevision.findFirst({
+        where: (table) =>
+          and(
+            eq(table.revisionId, input.activeRevisionId!),
+            eq(table.projectId, projectId),
+          ),
+      });
+      if (!revision) throw new BadRequestException('Revision does not belong to this project.');
+      activeItemId = revision.itemId;
+    }
+    const [saved] = await this.db
+      .update(schema.canvasProject)
+      .set({
+        ...(input.name !== undefined ? { name: cleanName(input.name) } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description.trim().slice(0, 2_000) || null }
+          : {}),
+        ...(input.settings ? { settings: input.settings } : {}),
+        activeItemId,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.canvasProject.projectId, projectId))
+      .returning();
+    return saved;
+  }
+
+  async addRevision(input: {
+    projectId: string;
+    itemId: string;
+    parentItemId?: string;
+    operation: string;
+    provider?: string;
+    modelId?: string;
+    prompt?: string;
+    inputItemIds?: string[];
+    settings?: Record<string, unknown>;
+    traceId?: string;
+    createdByType: 'human' | 'agent' | 'service';
+    createdById?: string;
+  }) {
+    const parent = input.parentItemId
+      ? await this.db.query.canvasRevision.findFirst({
+          where: (table) =>
+            and(
+              eq(table.projectId, input.projectId),
+              eq(table.itemId, input.parentItemId!),
+            ),
+        })
+      : undefined;
+    const [revision] = await this.db
+      .insert(schema.canvasRevision)
+      .values({
+        projectId: input.projectId,
+        itemId: input.itemId,
+        parentRevisionId: parent?.revisionId,
+        operation: input.operation,
+        provider: input.provider,
+        modelId: input.modelId,
+        promptHash: input.prompt ? sha256(input.prompt) : undefined,
+        inputs: (input.inputItemIds ?? []).map((itemId) => ({ itemId })),
+        settings: input.settings ?? {},
+        traceId: input.traceId,
+        createdByType: input.createdByType,
+        createdById: input.createdById,
+      })
+      .onConflictDoNothing()
+      .returning();
+    await Promise.all([
+      this.db
+        .update(schema.canvasProject)
+        .set({ activeItemId: input.itemId, updatedAt: new Date() })
+        .where(eq(schema.canvasProject.projectId, input.projectId)),
+      this.db
+        .insert(schema.libraryLink)
+        .values({
+          itemId: input.itemId,
+          scopeType: 'canvas_project',
+          scopeId: input.projectId,
+        })
+        .onConflictDoNothing(),
+    ]);
+    return revision;
+  }
+
+  async createAnnotation(
+    projectId: string,
+    principal: MediaPrincipal,
+    input: CreateAnnotationInput,
+  ) {
+    await this.requireProject(projectId, principal, 'edit');
+    const revision = await this.db.query.canvasRevision.findFirst({
+      where: (table) =>
+        and(
+          eq(table.projectId, projectId),
+          eq(table.revisionId, input.revisionId),
+        ),
+    });
+    if (!revision) throw new BadRequestException('Revision does not belong to this project.');
+    const body = input.body?.trim();
+    if (!body) throw new BadRequestException('Annotation text is required.');
+    if (body.length > 8_000) throw new BadRequestException('Annotation is too long.');
+    validateAnnotation(input);
+    if (input.parentAnnotationId) {
+      const parent = await this.db.query.canvasAnnotation.findFirst({
+        where: (table) =>
+          and(
+            eq(table.projectId, projectId),
+            eq(table.annotationId, input.parentAnnotationId!),
+          ),
+      });
+      if (!parent) throw new BadRequestException('Parent annotation not found.');
+    }
+    const [annotation] = await this.db
+      .insert(schema.canvasAnnotation)
+      .values({
+        projectId,
+        revisionId: input.revisionId,
+        parentAnnotationId: input.parentAnnotationId,
+        kind: input.kind,
+        body,
+        geometry: input.geometry,
+        startMs: input.startMs,
+        endMs: input.endMs,
+        authorType:
+          principal.actorId || principal.principalType === 'agent'
+            ? 'agent'
+            : 'human',
+        authorId: principal.actorId ?? principal.principalId,
+        metadata: input.metadata ?? {},
+      })
+      .returning();
+    return annotation;
+  }
+
+  async updateAnnotation(
+    projectId: string,
+    annotationId: string,
+    principal: MediaPrincipal,
+    input: { body?: string; status?: 'open' | 'resolved'; deleted?: boolean },
+  ) {
+    await this.requireProject(projectId, principal, 'edit');
+    const annotation = await this.db.query.canvasAnnotation.findFirst({
+      where: (table) =>
+        and(
+          eq(table.projectId, projectId),
+          eq(table.annotationId, annotationId),
+          isNull(table.deletedAt),
+        ),
+    });
+    if (!annotation) throw new NotFoundException('Annotation not found.');
+    const [saved] = await this.db
+      .update(schema.canvasAnnotation)
+      .set({
+        ...(input.body !== undefined
+          ? { body: input.body.trim().slice(0, 8_000) }
+          : {}),
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.deleted ? { deletedAt: new Date() } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.canvasAnnotation.annotationId, annotationId))
+      .returning();
+    return saved;
+  }
+
+  async requireProject(
+    projectId: string,
+    principal: MediaPrincipal,
+    permission: 'read' | 'edit',
+  ) {
+    const project = await this.db.query.canvasProject.findFirst({
+      where: (table) =>
+        and(eq(table.projectId, projectId), isNull(table.deletedAt)),
+    });
+    if (!project) throw new NotFoundException('Canvas project not found.');
+    if (same(project.ownerUserId, principal.principalId)) return project;
+    if (
+      project.workspaceId &&
+      principal.workspaceId &&
+      same(project.workspaceId, principal.workspaceId)
+    ) {
+      return project;
+    }
+    const grants = await this.db.query.libraryGrant.findMany({
+      where: (table) =>
+        and(
+          eq(table.itemId, project.rootItemId),
+          or(
+            and(eq(table.subjectType, 'user'), eq(table.subjectId, principal.principalId)),
+            principal.workspaceId
+              ? and(
+                  eq(table.subjectType, 'workspace'),
+                  eq(table.subjectId, principal.workspaceId),
+                )
+              : undefined,
+          ),
+          or(isNull(table.expiresAt), sql`${table.expiresAt} > now()`),
+        ),
+    });
+    const allowed = grants.some((grant) =>
+      permission === 'read'
+        ? ['read', 'edit', 'manage'].includes(grant.permission)
+        : ['edit', 'manage'].includes(grant.permission),
+    );
+    if (!allowed) throw new ForbiddenException('You do not have access to this Canvas project.');
+    return project;
+  }
+}
+
+function validateAnnotation(input: CreateAnnotationInput) {
+  if (input.startMs !== undefined && (!Number.isInteger(input.startMs) || input.startMs < 0)) {
+    throw new BadRequestException('startMs must be a positive integer.');
+  }
+  if (
+    input.endMs !== undefined &&
+    (!Number.isInteger(input.endMs) || input.endMs < (input.startMs ?? 0))
+  ) {
+    throw new BadRequestException('endMs must be after startMs.');
+  }
+  if (input.kind === 'region' || input.kind === 'point' || input.kind === 'freehand') {
+    if (!input.geometry) throw new BadRequestException('Spatial annotations require geometry.');
+    walkNumbers(input.geometry, (value) => {
+      if (value < 0 || value > 1) {
+        throw new BadRequestException('Annotation coordinates must be normalized from 0 to 1.');
+      }
+    });
+  }
+}
+
+function walkNumbers(value: unknown, visit: (number: number) => void) {
+  if (typeof value === 'number') return visit(value);
+  if (Array.isArray(value)) return value.forEach((child) => walkNumbers(child, visit));
+  if (value && typeof value === 'object') {
+    Object.values(value as Record<string, unknown>).forEach((child) =>
+      walkNumbers(child, visit),
+    );
+  }
+}
+
+function publicArtifact(item?: typeof schema.libraryItem.$inferSelect) {
+  if (!item) return undefined;
+  return {
+    itemId: item.itemId,
+    name: item.name,
+    description: item.description,
+    kind: item.kind,
+    mimeType: item.mimeType,
+    sizeBytes: item.sizeBytes,
+    source: item.source,
+    status: item.status,
+    metadata: item.metadata,
+    createdAt: item.createdAt,
+  };
+}
+
+function publicJob(job: typeof schema.mediaGenerationJob.$inferSelect) {
+  const { prompt: _prompt, request: _request, ...safe } = job;
+  return safe;
+}
+
+function asLibraryPrincipal(principal: MediaPrincipal): LibraryPrincipal {
+  return {
+    principalId: principal.principalId,
+    principalType: principal.principalType,
+    workspaceId: principal.workspaceId,
+  };
+}
+
+function sha256(value: string) {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function cleanName(value: string) {
+  const name = value.trim().slice(0, 160);
+  if (!name) throw new BadRequestException('Project name is required.');
+  return name;
+}
+
+function same(left?: string | null, right?: string | null) {
+  return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
+}
