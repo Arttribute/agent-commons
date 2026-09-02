@@ -323,13 +323,11 @@ a[data-card="true"]:hover {
   box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.6);
 }
 
-/* The active page and the active heading share one accent, so the eye can
-   pair "where I am" in the sidebar with "where I am" in the table of
-   contents. */
+/* The active page reads exactly as it does in the commons-app sidebar: a flat
+   muted fill, no coloured rule. */
 #nd-sidebar a[data-active="true"] {
   background-color: hsl(var(--fd-accent));
   color: hsl(var(--fd-accent-foreground));
-  box-shadow: inset 2px 0 0 var(--brand-cyan);
 }
 
 #nd-toc a[data-active="true"],

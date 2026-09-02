@@ -14,16 +14,17 @@ export default function Layout({ children }: { children: ReactNode }) {
         { text: 'Status', url: 'https://api.agentcommons.io/health', external: true },
       ]}
       nav={{
+        // The same wordmark the commons-app dashboard sidebar shows when it is
+        // open, at the same height — one brand mark across both surfaces.
         title: (
-          <span className="flex items-center gap-2">
-            <Image src="/ac-icon.svg" alt="" width={22} height={22} />
-            <span className="font-space text-sm font-bold tracking-tight">
-              Agent Commons
-            </span>
-            <span className="hidden rounded-full border border-fd-border px-1.5 py-px font-space text-[10px] font-medium uppercase tracking-widest text-fd-muted-foreground sm:inline">
-              Docs
-            </span>
-          </span>
+          <Image
+            src="/logo.jpg"
+            alt="Agent Commons"
+            width={131}
+            height={60}
+            priority
+            className="h-8 w-auto rounded-md object-contain"
+          />
         ),
       }}
       sidebar={{ banner: null, footer: <SidebarFooter /> }}
