@@ -3,16 +3,15 @@ import { SidebarCollapseTrigger } from 'fumadocs-ui/layouts/docs/sidebar';
 import type { ReactNode } from 'react';
 import Image from 'next/image';
 import { source } from '@/lib/source';
+import { SidebarLinks } from '@/components/sidebar-links';
 
 export default function Layout({ children }: { children: ReactNode }) {
   return (
     <DocsLayout
       tree={source.pageTree}
-      githubUrl="https://github.com/Arttribute/agent-commons"
-      links={[
-        { text: 'Web app', url: 'https://www.agentcommons.io', external: true },
-        { text: 'Status', url: 'https://api.agentcommons.io/health', external: true },
-      ]}
+      // `links` and `githubUrl` are deliberately withheld: DocsLayout would put
+      // its own links menu beside the wordmark, and that corner is the collapse
+      // control's. SidebarLinks renders the same menu in the footer instead.
       nav={{
         // The same wordmark the commons-app dashboard sidebar shows when it is
         // open, at the same height — one brand mark across both surfaces.
@@ -31,13 +30,14 @@ export default function Layout({ children }: { children: ReactNode }) {
             </span>
           </span>
         ),
-        // Sits beside the wordmark, the way the app puts its collapse control in
-        // the sidebar header. The copy in the footer is hidden in globals.css.
+        // Sits at the far right of the header, the way the app puts its collapse
+        // control in the sidebar header. The copy Fumadocs renders in the footer
+        // is hidden in globals.css.
         children: (
           <SidebarCollapseTrigger className="docs-sidebar-toggle ms-auto -me-2 text-fd-muted-foreground max-md:hidden" />
         ),
       }}
-      sidebar={{ banner: null }}
+      sidebar={{ banner: null, footer: <SidebarLinks /> }}
     >
       {children}
     </DocsLayout>

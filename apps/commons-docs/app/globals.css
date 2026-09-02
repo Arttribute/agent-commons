@@ -288,6 +288,19 @@ body::before {
   border-radius: calc(var(--radius) - 2px);
 }
 
+/* The footer is one line: the theme toggle on the left, the links menu on the
+   right. Fumadocs stacks its own footer row and anything passed through
+   `sidebar.footer`, so lay them out side by side and let the first row take up
+   the slack. */
+#nd-sidebar div:has(> .docs-sidebar-links) {
+  flex-direction: row;
+  align-items: center;
+}
+
+#nd-sidebar div:has(> .docs-sidebar-links) > div:first-child {
+  flex: 1;
+}
+
 /* Fumadocs puts the collapse control in the sidebar footer and its expand
    counterpart at the bottom of the viewport. Both belong at the top beside the
    wordmark, as they are in commons-app. The header copy is rendered through
