@@ -288,10 +288,26 @@ body::before {
   border-radius: calc(var(--radius) - 2px);
 }
 
-/* The footer floats over a scrolling page tree, so it needs its own ground —
-   otherwise the last nav item bleeds through it. */
-#nd-sidebar > div:last-child {
-  background-color: hsl(var(--fd-background));
+/* Fumadocs puts the collapse control in the sidebar footer and its expand
+   counterpart at the bottom of the viewport. Both belong at the top beside the
+   wordmark, as they are in commons-app. The header copy is rendered through
+   `nav.children` and carries `.docs-sidebar-toggle`; hide the footer one, and
+   lift the floating expand button to the same line. */
+#nd-sidebar button[aria-label="Collapse Sidebar"]:not(.docs-sidebar-toggle) {
+  display: none;
+}
+
+#nd-docs-layout > button[aria-label="Collapse Sidebar"] {
+  top: 0.9rem;
+  bottom: auto;
+}
+
+/* Below xl the table of contents becomes a sticky bar across the top of the
+   page, so the expand button has to clear it rather than sit on top of it. */
+@media (max-width: 1279px) {
+  #nd-docs-layout > button[aria-label="Collapse Sidebar"] {
+    top: 3.4rem;
+  }
 }
 
 /* Cards on the index pages lift very slightly on hover — the same soft,
