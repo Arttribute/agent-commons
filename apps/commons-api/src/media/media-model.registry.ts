@@ -4,6 +4,8 @@ import type { MediaModelDescriptor, MediaSettingField } from './media.types';
 const GOOGLE_PRICING = 'https://ai.google.dev/gemini-api/docs/pricing';
 const KLING_PRICING = 'https://kling.ai/document-api/productBilling/billingMethod';
 const BYTEPLUS_PRICING = 'https://docs.byteplus.com/docs/ModelArk/1099320';
+const OPENAI_PRICING = 'https://developers.openai.com/api/docs/pricing';
+const OPENAI_SORA_DOCS = 'https://developers.openai.com/api/reference/typescript/resources/videos/methods/create';
 
 const options = (values: string[]) => values.map((value) => ({ label: value, value }));
 const ASPECT_RATIOS = options(['auto', '1:1', '3:2', '2:3', '4:3', '3:4', '4:5', '5:4', '16:9', '9:16', '21:9']);
@@ -27,6 +29,47 @@ const SEEDANCE_SETTINGS: MediaSettingField[] = [
 
 const fixedPrice = (unit: MediaModelDescriptor['pricing']['unit'], usd: number, note: string, sourceUrl: string, extra: Partial<MediaModelDescriptor['pricing']> = {}): MediaModelDescriptor['pricing'] => ({ unit, usd, note, sourceUrl, settlement: 'catalog', ...extra });
 const usagePrice = (unit: MediaModelDescriptor['pricing']['unit'], usd: number, note: string, sourceUrl: string, extra: Partial<MediaModelDescriptor['pricing']> = {}): MediaModelDescriptor['pricing'] => ({ unit, usd, note, sourceUrl, settlement: 'provider_usage', ...extra });
+
+const openaiModels: MediaModelDescriptor[] = [
+  {
+    modelKey: 'openai:image:gpt-image-2', provider: 'openai', modelId: 'gpt-image-2', displayName: 'GPT Image 2',
+    description: 'OpenAI’s current state-of-the-art image generation and reference-based editing model.', kind: 'image', operations: ['generate', 'transform'], inputKinds: ['image'], maxInputs: 16, tier: 'frontier', async: false,
+    settings: [
+      aspect(options(['1:1', '3:2', '2:3'])),
+      { key: 'quality', label: 'Quality', type: 'select', default: 'medium', options: options(['low', 'medium', 'high']) },
+      { key: 'background', label: 'Background', type: 'select', default: 'auto', options: options(['auto', 'opaque', 'transparent']) },
+    ],
+    pricing: usagePrice('request', 0.06, 'authorization estimate; final charge reconciles text/image input and image output tokens', OPENAI_PRICING, {
+      variants: {
+        'low:1024x1024': 0.02, 'low:1536x1024': 0.03, 'low:1024x1536': 0.03,
+        'medium:1024x1024': 0.06, 'medium:1536x1024': 0.09, 'medium:1024x1536': 0.09,
+        'high:1024x1024': 0.22, 'high:1536x1024': 0.33, 'high:1024x1536': 0.33,
+      },
+    }),
+    badges: ['OpenAI', 'current', 'edits', 'transparent PNG'],
+  },
+  {
+    modelKey: 'openai:audio:gpt-4o-mini-tts', provider: 'openai', modelId: 'gpt-4o-mini-tts', displayName: 'GPT-4o mini TTS',
+    description: 'Natural, instruction-guided text-to-speech.', kind: 'audio', operations: ['generate'], inputKinds: [], maxInputs: 0, tier: 'fast', async: false,
+    settings: [
+      { key: 'voice', label: 'Voice', type: 'select', default: 'coral', options: options(['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']) },
+      { key: 'instructions', label: 'Delivery', type: 'text', default: 'Speak clearly and naturally.' },
+      { key: 'format', label: 'Format', type: 'select', default: 'mp3', options: options(['mp3', 'wav', 'aac', 'opus']) },
+    ],
+    pricing: fixedPrice('audio_token', 0.000012, '$12 per 1M output audio tokens plus $0.60 per 1M input text tokens', OPENAI_PRICING),
+    badges: ['OpenAI', 'instruction guided'],
+  },
+  ...[
+    ['sora-2', 'Sora 2', 'Legacy video generation with synchronized audio.', 'standard', 0.1],
+    ['sora-2-pro', 'Sora 2 Pro', 'Legacy higher-fidelity video generation with synchronized audio.', 'frontier', 0.3],
+  ].map(([modelId, displayName, description, tier, usd]) => ({
+    modelKey: `openai:video:${modelId}`, provider: 'openai', modelId: String(modelId), displayName: String(displayName), description: String(description), kind: 'video' as const,
+    operations: ['generate'] as ('generate')[], inputKinds: [] as MediaModelDescriptor['inputKinds'], maxInputs: 0, tier: tier as MediaModelDescriptor['tier'], async: true,
+    settings: [aspect(options(['16:9', '9:16'])), duration([4, 8, 12], 8), resolution(['720p'], '720p')],
+    pricing: fixedPrice('second', Number(usd), 'per generated second at 720p; API retires September 24, 2026', OPENAI_SORA_DOCS),
+    badges: ['OpenAI', 'native audio', 'retires 24 Sep 2026'],
+  })),
+];
 
 const googleModels: MediaModelDescriptor[] = [
   {
@@ -128,7 +171,7 @@ const seedanceModels: MediaModelDescriptor[] = [
 }));
 
 /** A provider-neutral catalog drives Canvas, agent tools, workflows, pricing, and provenance. */
-export const MEDIA_MODEL_REGISTRY: MediaModelDescriptor[] = [...googleModels, ...klingVideoModels, ...klingImageModels, ...seedreamModels, ...seedanceModels];
+export const MEDIA_MODEL_REGISTRY: MediaModelDescriptor[] = [...openaiModels, ...googleModels, ...klingVideoModels, ...klingImageModels, ...seedreamModels, ...seedanceModels];
 
 export function getMediaModel(provider: string, selector: string, kind?: string) {
   const byKey = MEDIA_MODEL_REGISTRY.find((entry) => entry.provider === provider && entry.modelKey === selector);
@@ -160,9 +203,16 @@ export function estimateMediaCost(model: MediaModelDescriptor, prompt: string, s
   }
   if (model.pricing.unit === 'audio_token') {
     const seconds = Math.max(1, prompt.length / 15);
-    return seconds * 25 * unitPrice + (Math.ceil(prompt.length / 4) / 1_000_000);
+    const estimatedInputTokens = Math.ceil(prompt.length / 4);
+    return seconds * 25 * unitPrice + (estimatedInputTokens * 0.6) / 1_000_000;
   }
   if (model.kind === 'image') {
+    if (model.provider === 'openai') {
+      const ratio = String(settings.aspectRatio ?? '1:1');
+      const size = ratio === '3:2' ? '1536x1024' : ratio === '2:3' ? '1024x1536' : '1024x1024';
+      const quality = String(settings.quality ?? 'medium');
+      return override ?? model.pricing.variants?.[`${quality}:${size}`] ?? unitPrice;
+    }
     const size = String(settings.imageSize ?? settings.resolution ?? '1K').toLowerCase();
     if (model.modelId === 'dola-seedream-5-0-pro-260628' && size === '2k') return (override ?? model.pricing.variants?.high_pixels ?? unitPrice) + Math.max(0, inputKinds.length - 1) * 0.003;
     const multiplier = model.provider === 'google' ? size === '0.5k' ? 0.67 : size === '2k' ? 1.5 : size === '4k' ? 2.25 : 1 : 1;

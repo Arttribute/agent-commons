@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import { LibraryService } from '~/files';
@@ -22,6 +23,36 @@ type CreateAnnotationInput = {
   endMs?: number;
   metadata?: Record<string, unknown>;
 };
+
+type TimelineClip = {
+  clipId: string;
+  itemId: string;
+  name: string;
+  startMs: number;
+  sourceInMs: number;
+  sourceOutMs: number;
+  durationMs: number;
+};
+
+type CanvasTimeline = {
+  version: 1;
+  tracks: Array<{
+    trackId: string;
+    kind: 'video' | 'audio';
+    name: string;
+    clips: TimelineClip[];
+  }>;
+};
+
+type TimelineAction =
+  | {
+      action: 'add_clip';
+      itemId: string;
+      trackKind?: 'video' | 'audio';
+      durationMs?: number;
+    }
+  | { action: 'split_clip'; clipId: string; atMs: number }
+  | { action: 'delete_clip'; clipId: string };
 
 @Injectable()
 export class CanvasService {
@@ -85,7 +116,7 @@ export class CanvasService {
 
   async getProject(projectId: string, principal: MediaPrincipal) {
     const project = await this.requireProject(projectId, principal, 'read');
-    const [revisions, annotations, jobs] = await Promise.all([
+    const [revisions, annotations, jobs, links] = await Promise.all([
       this.db.query.canvasRevision.findMany({
         where: (table) => eq(table.projectId, projectId),
         orderBy: (table) => desc(table.createdAt),
@@ -100,8 +131,20 @@ export class CanvasService {
         orderBy: (table) => desc(table.createdAt),
         limit: 20,
       }),
+      this.db.query.libraryLink.findMany({
+        where: (table) =>
+          and(
+            eq(table.scopeType, 'canvas_project'),
+            eq(table.scopeId, projectId),
+          ),
+      }),
     ]);
-    const itemIds = [...new Set(revisions.map((revision) => revision.itemId))];
+    const itemIds = [
+      ...new Set([
+        ...revisions.map((revision) => revision.itemId),
+        ...links.map((link) => link.itemId),
+      ]),
+    ];
     const items = itemIds.length
       ? await this.db.query.libraryItem.findMany({
           where: (table) =>
@@ -117,7 +160,115 @@ export class CanvasService {
       })),
       annotations,
       jobs: jobs.map(publicJob),
+      assets: links
+        .map((link) => publicArtifact(itemMap.get(link.itemId)))
+        .filter(Boolean),
     };
+  }
+
+  async addAsset(
+    projectId: string,
+    principal: MediaPrincipal,
+    itemId: string,
+  ) {
+    await this.requireProject(projectId, principal, 'edit');
+    const item = await this.library.get(itemId, asLibraryPrincipal(principal));
+    await this.db
+      .insert(schema.libraryLink)
+      .values({ itemId, scopeType: 'canvas_project', scopeId: projectId })
+      .onConflictDoNothing();
+    return publicArtifact(item);
+  }
+
+  async editTimeline(
+    projectId: string,
+    principal: MediaPrincipal,
+    input: TimelineAction,
+  ) {
+    const project = await this.requireProject(projectId, principal, 'edit');
+    const timeline = normalizeTimeline(project.settings?.timeline);
+
+    if (input.action === 'add_clip') {
+      const item = await this.library.get(
+        input.itemId,
+        asLibraryPrincipal(principal),
+      );
+      const inferredKind = item.mimeType?.startsWith('audio/')
+        ? 'audio'
+        : 'video';
+      const trackKind = input.trackKind ?? inferredKind;
+      const track = timeline.tracks.find((entry) => entry.kind === trackKind)!;
+      const startMs = track.clips.reduce(
+        (end, clip) => Math.max(end, clip.startMs + clip.durationMs),
+        0,
+      );
+      const durationMs = Math.max(
+        100,
+        Math.min(86_400_000, Math.round(input.durationMs ?? 5_000)),
+      );
+      track.clips.push({
+        clipId: randomUUID(),
+        itemId: item.itemId,
+        name: item.name,
+        startMs,
+        sourceInMs: 0,
+        sourceOutMs: durationMs,
+        durationMs,
+      });
+      await this.db
+        .insert(schema.libraryLink)
+        .values({
+          itemId: item.itemId,
+          scopeType: 'canvas_project',
+          scopeId: projectId,
+        })
+        .onConflictDoNothing();
+    } else {
+      const track = timeline.tracks.find((entry) =>
+        entry.clips.some((clip) => clip.clipId === input.clipId),
+      );
+      const clipIndex = track?.clips.findIndex(
+        (clip) => clip.clipId === input.clipId,
+      );
+      if (!track || clipIndex === undefined || clipIndex < 0) {
+        throw new NotFoundException('Timeline clip not found.');
+      }
+      const clip = track.clips[clipIndex];
+      if (input.action === 'delete_clip') {
+        track.clips.splice(clipIndex, 1);
+      } else {
+        const relativeMs = Math.round(input.atMs - clip.startMs);
+        if (relativeMs < 100 || relativeMs > clip.durationMs - 100) {
+          throw new BadRequestException(
+            'Move the playhead inside the selected clip before splitting.',
+          );
+        }
+        const secondDuration = clip.durationMs - relativeMs;
+        track.clips.splice(
+          clipIndex,
+          1,
+          {
+            ...clip,
+            sourceOutMs: clip.sourceInMs + relativeMs,
+            durationMs: relativeMs,
+          },
+          {
+            ...clip,
+            clipId: randomUUID(),
+            startMs: input.atMs,
+            sourceInMs: clip.sourceInMs + relativeMs,
+            durationMs: secondDuration,
+          },
+        );
+      }
+    }
+
+    const settings = { ...(project.settings ?? {}), timeline };
+    await this.db
+      .update(schema.canvasProject)
+      .set({ settings, updatedAt: new Date() })
+      .where(eq(schema.canvasProject.projectId, projectId));
+    return timeline;
   }
 
   async updateProject(
@@ -357,6 +508,23 @@ function validateAnnotation(input: CreateAnnotationInput) {
   }
 }
 
+function normalizeTimeline(value: unknown): CanvasTimeline {
+  const input = value as Partial<CanvasTimeline> | null;
+  const tracks = Array.isArray(input?.tracks) ? input.tracks : [];
+  return {
+    version: 1,
+    tracks: (['video', 'audio'] as const).map((kind) => {
+      const existing = tracks.find((track) => track?.kind === kind);
+      return {
+        trackId: existing?.trackId || kind,
+        kind,
+        name: existing?.name || (kind === 'video' ? 'Video' : 'Audio'),
+        clips: Array.isArray(existing?.clips) ? existing.clips : [],
+      };
+    }),
+  };
+}
+
 function walkNumbers(value: unknown, visit: (number: number) => void) {
   if (typeof value === 'number') return visit(value);
   if (Array.isArray(value)) return value.forEach((child) => walkNumbers(child, visit));
@@ -367,7 +535,21 @@ function walkNumbers(value: unknown, visit: (number: number) => void) {
   }
 }
 
-function publicArtifact(item?: typeof schema.libraryItem.$inferSelect) {
+function publicArtifact(
+  item?: Pick<
+    typeof schema.libraryItem.$inferSelect,
+    | 'itemId'
+    | 'name'
+    | 'description'
+    | 'kind'
+    | 'mimeType'
+    | 'sizeBytes'
+    | 'source'
+    | 'status'
+    | 'metadata'
+    | 'createdAt'
+  >,
+) {
   if (!item) return undefined;
   return {
     itemId: item.itemId,

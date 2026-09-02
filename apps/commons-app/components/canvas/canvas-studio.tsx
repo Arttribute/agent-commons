@@ -7,6 +7,7 @@ import {
   Bot,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -28,9 +29,13 @@ import {
   Play,
   Plus,
   Scan,
+  Scissors,
+  Search,
   Settings2,
   Share2,
   Sparkles,
+  Trash2,
+  Upload,
   Video,
   WandSparkles,
   X,
@@ -55,10 +60,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { openCommonsCopilotPrompt } from "@/lib/commons-copilot-events";
 import {
   type CanvasAnnotation,
+  type CanvasArtifact,
   type CanvasAnnotationKind,
   type CanvasPreview,
   type CanvasProjectBundle,
   type CanvasRevision,
+  type CanvasTimeline,
+  type CanvasTimelineClip,
   type MediaCatalog,
   type MediaJob,
   type MediaKind,
@@ -73,6 +81,7 @@ import { cn } from "@/lib/utils";
 type RightPanel = "project" | "notes" | "history";
 type AnnotationTool = "select" | "region" | "point" | "time_range";
 type Rect = { x: number; y: number; width: number; height: number };
+type ContentBox = { left: number; top: number; width: number; height: number };
 
 const KIND_OPTIONS: Array<{
   kind: MediaKind;
@@ -100,6 +109,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
   const [settings, setSettings] = useState<Record<string, unknown>>({});
   const [references, setReferences] = useState<LibraryPickerItem[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [rightPanel, setRightPanel] = useState<RightPanel>("project");
@@ -118,7 +128,11 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [intrinsicSize, setIntrinsicSize] = useState<{ width: number; height: number } | null>(null);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const mediaRef = useRef<HTMLMediaElement | null>(null);
 
@@ -177,6 +191,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
   useEffect(() => {
     if (!bundle?.project.activeItemId) return;
     const controller = new AbortController();
+    setIntrinsicSize(null);
     setPreviewLoading(true);
     fetch(
       `/api/library/${encodeURIComponent(bundle.project.activeItemId)}/preview`,
@@ -210,7 +225,15 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
     [catalog, kind],
   );
   const model = useMemo(
-    () => models.find((entry) => entry.modelKey === modelId) ?? models[0],
+    () =>
+      models.find((entry) => entry.modelKey === modelId) ??
+      models.find(
+        (entry) =>
+          entry.available &&
+          !entry.badges?.some((badge) => badge.toLowerCase().includes("retire")),
+      ) ??
+      models.find((entry) => entry.available) ??
+      models[0],
     [modelId, models],
   );
 
@@ -317,6 +340,46 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
     [activeRevision?.revisionId, bundle?.annotations],
   );
   const annotationDraftOpen = Boolean(draftRect || draftPoint) || annotationTool === "time_range";
+  const timeline = (bundle?.project.settings?.timeline ?? null) as CanvasTimeline | null;
+  const visibleAnnotations = useMemo(
+    () =>
+      activeAnnotations.filter((annotation) => {
+        if (!temporalAnnotation(annotation)) return true;
+        return (
+          currentTimeMs >= (annotation.startMs ?? 0) &&
+          currentTimeMs <= (annotation.endMs ?? annotation.startMs ?? 0)
+        );
+      }),
+    [activeAnnotations, currentTimeMs],
+  );
+  const contentBox = useMemo<ContentBox>(() => {
+    if (!stageSize.width || !stageSize.height || !intrinsicSize) {
+      return { left: 0, top: 0, width: stageSize.width, height: stageSize.height };
+    }
+    const scale = Math.min(
+      stageSize.width / intrinsicSize.width,
+      stageSize.height / intrinsicSize.height,
+    );
+    const width = intrinsicSize.width * scale;
+    const height = intrinsicSize.height * scale;
+    return {
+      left: (stageSize.width - width) / 2,
+      top: (stageSize.height - height) / 2,
+      width,
+      height,
+    };
+  }, [intrinsicSize, stageSize]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const update = () =>
+      setStageSize({ width: stage.clientWidth, height: stage.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [bundle?.project.projectId]);
 
   async function generate() {
     if (!model || !bundle || !prompt.trim()) return;
@@ -381,6 +444,95 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
     if (response.ok) await loadProject(bundle.project.projectId);
   }
 
+  async function linkAssets(items: LibraryPickerItem[]) {
+    if (!bundle || !items.length) return;
+    setError("");
+    try {
+      await Promise.all(
+        items.map(async (item) => {
+          const response = await fetch(
+            `/api/canvas/projects/${encodeURIComponent(bundle.project.projectId)}/assets`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ itemId: item.itemId }),
+            },
+          );
+          const payload = await response.json().catch(() => null);
+          if (!response.ok) {
+            throw new Error(payload?.message || `Could not add ${item.name}`);
+          }
+        }),
+      );
+      const maximum = Math.max(
+        0,
+        (model?.maxInputs ?? 0) - (operation === "transform" ? 1 : 0),
+      );
+      setReferences((current) =>
+        [...current, ...items]
+          .filter(
+            (item, index, all) =>
+              all.findIndex((entry) => entry.itemId === item.itemId) === index,
+          )
+          .slice(0, maximum),
+      );
+      await loadProject(bundle.project.projectId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not add media");
+    }
+  }
+
+  async function uploadProjectFiles(files: FileList | null) {
+    if (!files?.length || !bundle) return;
+    setUploading(true);
+    setError("");
+    try {
+      const body = new FormData();
+      [...files].forEach((file) => body.append("files", file));
+      const response = await fetch("/api/files/upload", { method: "POST", body });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.message || payload?.error || "Upload failed");
+      }
+      const items = (Array.isArray(payload?.data) ? payload.data : [])
+        .map((item: LibraryPickerItem & { fileId?: string }) => ({
+          ...item,
+          itemId: item.itemId ?? item.fileId ?? "",
+        }))
+        .filter((item: LibraryPickerItem) => Boolean(item.itemId));
+      await linkAssets(items);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function timelineAction(
+    action:
+      | { action: "add_clip"; itemId: string; trackKind?: "video" | "audio"; durationMs?: number }
+      | { action: "split_clip"; clipId: string; atMs: number }
+      | { action: "delete_clip"; clipId: string },
+  ) {
+    if (!bundle) return;
+    const response = await fetch(
+      `/api/canvas/projects/${encodeURIComponent(bundle.project.projectId)}/timeline/actions`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(action),
+      },
+    );
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      setError(payload?.message || "Timeline edit failed");
+      return;
+    }
+    if (action.action === "delete_clip") setSelectedClipId(null);
+    await loadProject(bundle.project.projectId);
+  }
+
   function stagePoint(event: ReactPointerEvent<HTMLDivElement>) {
     const bounds = event.currentTarget.getBoundingClientRect();
     return {
@@ -435,14 +587,18 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
     let endMs: number | undefined;
     if (draftRect) {
       annotationKind = "region";
-      geometry = { ...draftRect, coordinateSpace: "rendered_viewport" };
+      geometry = { ...draftRect, coordinateSpace: "artifact_content" };
     } else if (draftPoint) {
       annotationKind = "point";
-      geometry = { ...draftPoint, coordinateSpace: "rendered_viewport" };
+      geometry = { ...draftPoint, coordinateSpace: "artifact_content" };
     } else if (annotationTool === "time_range") {
       annotationKind = "time_range";
       startMs = Math.round(currentTimeMs);
       endMs = Math.round(Math.min(durationMs || currentTimeMs + 5_000, currentTimeMs + 5_000));
+    }
+    if ((draftRect || draftPoint) && temporal) {
+      startMs = Math.round(currentTimeMs);
+      endMs = Math.round(currentTimeMs + 1000 / 30);
     }
     setAnnotationSaving(true);
     const response = await fetch(
@@ -457,7 +613,11 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
           geometry,
           startMs,
           endMs,
-          metadata: { schemaVersion: 1 },
+          metadata: {
+            schemaVersion: 1,
+            coordinateSpace: geometry ? "artifact_content" : undefined,
+            frameTimeMs: geometry && temporal ? Math.round(currentTimeMs) : undefined,
+          },
         }),
       },
     );
@@ -491,22 +651,27 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
 
   function askCopilot(annotation?: CanvasAnnotation) {
     if (!bundle || !activeRevision) return;
-    const location = annotationLocation(annotation);
+    const artifact = activeRevision.artifact;
     openCommonsCopilotPrompt({
       mode: "draft",
       intentId: `canvas-${bundle.project.projectId}-${annotation?.annotationId ?? "project"}`,
-      text: [
-        `Help me work on Canvas project “${bundle.project.name}”.`,
-        `Project ID: ${bundle.project.projectId}`,
-        `Current artifact ID: ${bundle.project.activeItemId}`,
-        `Revision ID: ${activeRevision.revisionId}`,
-        annotation ? `Annotation ID: ${annotation.annotationId}` : "",
-        annotation ? `Annotation: ${annotation.body}` : "",
-        location ? `Target: ${location}` : "",
-        "Use the Canvas media tools when I ask you to analyze, transform, annotate, or create a new revision. Ask before any irreversible or costly action.",
-      ]
-        .filter(Boolean)
-        .join("\n"),
+      text: "",
+      attachment: artifact
+        ? {
+            fileId: artifact.itemId,
+            name: artifact.name,
+            mimeType: artifact.mimeType,
+            kind: artifact.kind,
+            sizeBytes: artifact.sizeBytes,
+            previewUrl: preview?.inline?.url,
+          }
+        : undefined,
+      context: {
+        resourceType: "canvas",
+        resourceId: bundle.project.projectId,
+        annotationId: annotation?.annotationId,
+        routeName: "Canvas project",
+      },
     });
   }
 
@@ -564,19 +729,6 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
           Saved
         </span>
         <div className="ml-auto flex items-center gap-1">
-          <HeaderButton
-            label={leftOpen ? "Hide controls" : "Show controls"}
-            onClick={() => setLeftOpen((value) => !value)}
-          >
-            {leftOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
-          </HeaderButton>
-          <HeaderButton
-            label={rightOpen ? "Hide project panel" : "Show project panel"}
-            onClick={() => setRightOpen((value) => !value)}
-          >
-            {rightOpen ? <PanelRightClose /> : <PanelRightOpen />}
-          </HeaderButton>
-          <div className="mx-1 h-5 w-px bg-stone-200" />
           <Button
             type="button"
             variant="outline"
@@ -616,46 +768,32 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
       <div className="flex min-h-0 flex-1">
         {leftOpen ? (
           <aside className="flex w-[310px] shrink-0 flex-col border-r border-stone-200 bg-white">
-            <div className="border-b border-stone-200 px-4 py-3">
-              <p className="text-xs font-semibold text-stone-900">Creative tools</p>
-              <p className="mt-0.5 text-[11px] text-stone-500">
-                Generate or transform this project.
-              </p>
-            </div>
-            <div className="grid grid-cols-4 gap-1 border-b border-stone-200 p-2">
-              {KIND_OPTIONS.map((entry) => {
-                const Icon = entry.icon;
-                return (
-                  <button
-                    key={entry.kind}
-                    type="button"
-                    onClick={() => setKind(entry.kind)}
-                    className={cn(
-                      "flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-[10px] transition",
-                      kind === entry.kind
-                        ? "bg-stone-900 text-white"
-                        : "text-stone-500 hover:bg-stone-100 hover:text-stone-900",
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {entry.label}
-                  </button>
-                );
-              })}
+            <div className="flex items-start border-b border-stone-200 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-stone-900">Creative tools</p>
+                <p className="mt-0.5 text-[11px] text-stone-500">
+                  Generate or transform this project.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLeftOpen(false)}
+                className="rounded-md p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-900"
+                aria-label="Close creative tools"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <FieldLabel>Model</FieldLabel>
-              <select
-                value={model?.modelKey ?? ""}
-                onChange={(event) => setModelId(event.target.value)}
-                className="mt-1.5 h-10 w-full rounded-lg border border-stone-200 bg-white px-3 text-sm outline-none focus:border-stone-400"
-              >
-                {models.map((entry) => (
-                  <option key={entry.modelKey} value={entry.modelKey} disabled={!entry.available}>
-                    {entry.displayName}{entry.available ? "" : entry.unavailableReason === "price_not_configured" ? " · price pending" : " · needs API key"}
-                  </option>
-                ))}
-              </select>
+              <ModelSelector
+                catalog={catalog}
+                selected={model}
+                onSelect={(entry) => {
+                  setKind(entry.kind);
+                  setModelId(entry.modelKey);
+                }}
+              />
               {model ? (
                 <div className="mt-2 rounded-lg bg-stone-50 p-3">
                   <div className="flex items-center justify-between gap-2">
@@ -821,11 +959,13 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
                 <p className="mt-2 text-center text-[10px] text-amber-700">
                   {model.unavailableReason === "price_not_configured"
                     ? "This provider model needs an approved price override before billing can be enabled."
-                    : `Configure ${model.provider === "google" ? "GOOGLE_API_KEY" : model.provider === "kling" ? "KLING_ACCESS_KEY and KLING_SECRET_KEY" : "BYTEPLUS_ARK_API_KEY"} on staging to enable this model.`}
+                    : `Configure ${model.provider === "openai" ? "OPENAI_API_KEY" : model.provider === "google" ? "GOOGLE_API_KEY" : model.provider === "kling" ? "KLING_ACCESS_KEY and KLING_SECRET_KEY" : "BYTEPLUS_ARK_API_KEY"} on staging to enable this model.`}
                 </p>
               ) : null}
               <p className="mt-2 text-center text-[9px] leading-3 text-stone-400">
-                Outputs become private Library revisions with a provenance record.
+                {quote
+                  ? `Up to ${quote.estimatedCredits} credits reserved · unused credits released after settlement.`
+                  : "Outputs become private Library revisions with a provenance record."}
               </p>
             </div>
           </aside>
@@ -848,13 +988,13 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
               </CanvasTool>
             ) : null}
             <div className="mx-1 h-5 w-px bg-stone-200" />
-            <CanvasTool label="Zoom out" onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))}>
+            <CanvasTool label="Zoom out" onClick={() => setZoom((value) => Math.max(0.25, value - 0.25))}>
               <ZoomOut />
             </CanvasTool>
             <button type="button" onClick={() => setZoom(1)} className="min-w-12 rounded-md px-2 py-1 text-[10px] text-stone-500 hover:bg-stone-100">
               {Math.round(zoom * 100)}%
             </button>
-            <CanvasTool label="Zoom in" onClick={() => setZoom((value) => Math.min(2, value + 0.1))}>
+            <CanvasTool label="Zoom in" onClick={() => setZoom((value) => Math.min(4, value + 0.25))}>
               <ZoomIn />
             </CanvasTool>
           </div>
@@ -867,9 +1007,6 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
               )}
               style={{ transform: `scale(${zoom})` }}
               ref={stageRef}
-              onPointerDown={onStagePointerDown}
-              onPointerMove={onStagePointerMove}
-              onPointerUp={onStagePointerUp}
             >
               {previewLoading ? (
                 <div className="flex flex-col items-center gap-2 text-stone-400">
@@ -880,6 +1017,9 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
                 <ArtifactStage
                   preview={preview}
                   mediaRef={mediaRef}
+                  onIntrinsicSize={(width, height) =>
+                    setIntrinsicSize({ width, height })
+                  }
                   onTime={(time, duration, isPlaying) => {
                     setCurrentTimeMs(time);
                     setDurationMs(duration);
@@ -890,8 +1030,17 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
                 <span className="text-xs text-stone-400">No preview available</span>
               )}
 
-              <div className="pointer-events-none absolute inset-0">
-                {activeAnnotations.map((annotation, index) => (
+              <div
+                className={cn(
+                  "absolute",
+                  annotationTool === "select" ? "pointer-events-none" : "cursor-crosshair",
+                )}
+                style={contentBox}
+                onPointerDown={onStagePointerDown}
+                onPointerMove={onStagePointerMove}
+                onPointerUp={onStagePointerUp}
+              >
+                {visibleAnnotations.map((annotation, index) => (
                   <AnnotationOverlay key={annotation.annotationId} annotation={annotation} index={index + 1} />
                 ))}
                 {draftRect ? <DraftRect rect={draftRect} /> : null}
@@ -917,6 +1066,33 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
                 durationMs={durationMs}
                 playing={playing}
                 annotations={activeAnnotations}
+                timeline={timeline}
+                assets={bundle.assets}
+                activeItemId={bundle.project.activeItemId}
+                selectedClipId={selectedClipId}
+                onSelectClip={setSelectedClipId}
+                onAddClip={(item) =>
+                  void timelineAction({
+                    action: "add_clip",
+                    itemId: item.itemId,
+                    trackKind: item.mimeType.startsWith("audio/") ? "audio" : "video",
+                    durationMs: item.itemId === bundle.project.activeItemId ? durationMs : 5_000,
+                  })
+                }
+                onSplit={() =>
+                  selectedClipId
+                    ? void timelineAction({
+                        action: "split_clip",
+                        clipId: selectedClipId,
+                        atMs: Math.round(currentTimeMs),
+                      })
+                    : undefined
+                }
+                onDelete={() =>
+                  selectedClipId
+                    ? void timelineAction({ action: "delete_clip", clipId: selectedClipId })
+                    : undefined
+                }
                 onToggle={togglePlayback}
                 onSeek={(value) => {
                   if (mediaRef.current) mediaRef.current.currentTime = value / 1000;
@@ -960,7 +1136,14 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto">
                 {rightPanel === "project" ? (
-                  <ProjectPanel bundle={bundle} activeRevision={activeRevision} onSelect={(revision) => void activateRevision(revision)} />
+                  <ProjectPanel
+                    bundle={bundle}
+                    activeRevision={activeRevision}
+                    uploading={uploading}
+                    onSelect={(revision) => void activateRevision(revision)}
+                    onUpload={() => fileInputRef.current?.click()}
+                    onLibrary={() => setPickerOpen(true)}
+                  />
                 ) : rightPanel === "notes" ? (
                   <NotesPanel
                     annotations={activeAnnotations}
@@ -993,11 +1176,140 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
         open={pickerOpen}
         onOpenChange={setPickerOpen}
         attachedFileIds={references.map((item) => item.itemId)}
-        onAdd={(items) => {
-          const maximum = Math.max(0, (model?.maxInputs ?? 0) - (operation === "transform" ? 1 : 0));
-          setReferences((current) => [...current, ...items].slice(0, maximum));
-        }}
+        onAdd={(items) => void linkAssets(items)}
       />
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        accept="image/*,video/*,audio/*,.pdf,.txt,.md,.doc,.docx"
+        onChange={(event) => void uploadProjectFiles(event.target.files)}
+      />
+    </div>
+  );
+}
+
+export function ModelSelector({
+  catalog,
+  selected,
+  onSelect,
+}: {
+  catalog: MediaCatalog | null;
+  selected?: MediaModel;
+  onSelect: (model: MediaModel) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return catalog?.models ?? [];
+    return (catalog?.models ?? []).filter((model) =>
+      [
+        model.displayName,
+        model.modelId,
+        model.provider,
+        model.kind,
+        model.description,
+        ...(model.badges ?? []),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [catalog?.models, query]);
+  const SelectedIcon = KIND_OPTIONS.find((entry) => entry.kind === selected?.kind)?.icon ?? Sparkles;
+
+  return (
+    <div className="relative mt-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-stone-200 bg-white px-3 py-2 text-left transition hover:border-stone-300"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-600">
+          <SelectedIcon className="h-4 w-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold text-stone-800">
+            {selected?.displayName || "Choose a model"}
+          </span>
+          <span className="block truncate text-[9px] capitalize text-stone-400">
+            {selected ? `${selected.provider} · ${selected.kind} · ${selected.tier}` : "Search every media provider"}
+          </span>
+        </span>
+        <ChevronDown className={cn("h-4 w-4 text-stone-400 transition", open && "rotate-180")} />
+      </button>
+      {open ? (
+        <div className="absolute left-0 top-[calc(100%+6px)] z-50 w-[340px] overflow-hidden rounded-xl border border-stone-200 bg-white shadow-2xl">
+          <div className="border-b border-stone-100 p-2">
+            <div className="flex items-center gap-2 rounded-lg bg-stone-100 px-2.5">
+              <Search className="h-3.5 w-3.5 text-stone-400" />
+              <input
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search model, provider, or capability…"
+                className="h-9 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-stone-400"
+              />
+              <button type="button" onClick={() => setOpen(false)} aria-label="Close model selector">
+                <X className="h-3.5 w-3.5 text-stone-400" />
+              </button>
+            </div>
+          </div>
+          <div className="max-h-[360px] overflow-y-auto p-1.5">
+            {KIND_OPTIONS.map((group) => {
+              const entries = filtered.filter((model) => model.kind === group.kind);
+              if (!entries.length) return null;
+              const Icon = group.icon;
+              return (
+                <div key={group.kind} className="mb-2 last:mb-0">
+                  <div className="flex items-center gap-1.5 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-stone-400">
+                    <Icon className="h-3 w-3" /> {group.label}
+                  </div>
+                  {entries.map((entry) => (
+                    <button
+                      key={entry.modelKey}
+                      type="button"
+                      role="option"
+                      aria-selected={entry.modelKey === selected?.modelKey}
+                      onClick={() => {
+                        onSelect(entry);
+                        setOpen(false);
+                        setQuery("");
+                      }}
+                      className={cn(
+                        "flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-stone-100",
+                        entry.modelKey === selected?.modelKey && "bg-stone-100",
+                        !entry.available && "opacity-60",
+                      )}
+                    >
+                      <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", entry.available ? "bg-emerald-500" : "bg-stone-300")} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="truncate text-[11px] font-medium text-stone-800">{entry.displayName}</span>
+                          <span className="shrink-0 text-[9px] capitalize text-stone-400">{entry.provider}</span>
+                        </span>
+                        <span className="mt-0.5 block line-clamp-2 text-[9px] leading-3 text-stone-500">{entry.description}</span>
+                        {!entry.available ? (
+                          <span className="mt-1 block text-[8px] text-amber-700">
+                            {entry.unavailableReason === "price_not_configured" ? "Pricing approval required" : "Provider key required"}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+            {!filtered.length ? (
+              <p className="px-3 py-8 text-center text-xs text-stone-400">No models match “{query}”.</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1006,10 +1318,12 @@ function ArtifactStage({
   preview,
   mediaRef,
   onTime,
+  onIntrinsicSize,
 }: {
   preview: CanvasPreview;
   mediaRef: React.MutableRefObject<HTMLMediaElement | null>;
   onTime: (timeMs: number, durationMs: number, playing: boolean) => void;
+  onIntrinsicSize: (width: number, height: number) => void;
 }) {
   const source = preview.inline?.url || preview.download?.url;
   const bindMedia = {
@@ -1035,7 +1349,17 @@ function ArtifactStage({
   }
   if (preview.mimeType.startsWith("image/")) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={source} alt={preview.name} draggable={false} className="h-full w-full select-none object-contain" />;
+    return (
+      <img
+        src={source}
+        alt={preview.name}
+        draggable={false}
+        onLoad={(event) =>
+          onIntrinsicSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
+        }
+        className="h-full w-full select-none object-contain"
+      />
+    );
   }
   if (preview.mimeType.startsWith("video/")) {
     return (
@@ -1045,6 +1369,11 @@ function ArtifactStage({
         className="h-full w-full object-contain"
         controls={false}
         playsInline
+        onLoadedMetadata={(event) => {
+          const media = event.currentTarget;
+          onIntrinsicSize(media.videoWidth || 16, media.videoHeight || 9);
+          onTime(media.currentTime * 1000, (media.duration || 0) * 1000, !media.paused);
+        }}
         {...bindMedia}
       />
     );
@@ -1184,16 +1513,38 @@ function NotesPanel({
   );
 }
 
-function ProjectPanel({ bundle, activeRevision, onSelect }: { bundle: CanvasProjectBundle; activeRevision?: CanvasRevision; onSelect: (revision: CanvasRevision) => void }) {
+function ProjectPanel({
+  bundle,
+  activeRevision,
+  uploading,
+  onSelect,
+  onUpload,
+  onLibrary,
+}: {
+  bundle: CanvasProjectBundle;
+  activeRevision?: CanvasRevision;
+  uploading: boolean;
+  onSelect: (revision: CanvasRevision) => void;
+  onUpload: () => void;
+  onLibrary: () => void;
+}) {
   return (
     <div className="p-3">
       <div className="rounded-xl border border-stone-200 bg-stone-50 p-3">
         <p className="truncate text-xs font-semibold text-stone-800">{bundle.project.name}</p>
         <p className="mt-1 text-[10px] text-stone-500">{bundle.revisions.length} revision{bundle.revisions.length === 1 ? "" : "s"} · {bundle.annotations.length} note{bundle.annotations.length === 1 ? "" : "s"}</p>
       </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button type="button" onClick={onUpload} disabled={uploading} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-stone-200 text-[10px] font-medium text-stone-600 hover:bg-stone-50 disabled:opacity-50">
+          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Upload
+        </button>
+        <button type="button" onClick={onLibrary} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-stone-200 text-[10px] font-medium text-stone-600 hover:bg-stone-50">
+          <LibraryBig className="h-3.5 w-3.5" /> Library
+        </button>
+      </div>
       <div className="mt-4 flex items-center justify-between">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">Artifacts</p>
-        <button type="button" className="text-stone-400" aria-label="Add artifact"><Plus className="h-3.5 w-3.5" /></button>
+        <button type="button" onClick={onUpload} className="text-stone-400 hover:text-stone-900" aria-label="Add artifact"><Plus className="h-3.5 w-3.5" /></button>
       </div>
       <div className="mt-2 space-y-1">
         {bundle.revisions.map((revision) => (
@@ -1207,6 +1558,21 @@ function ProjectPanel({ bundle, activeRevision, onSelect }: { bundle: CanvasProj
           </button>
         ))}
       </div>
+      {bundle.assets.length > bundle.revisions.length ? (
+        <div className="mt-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-400">Project media</p>
+          <div className="mt-2 space-y-1">
+            {bundle.assets
+              .filter((asset) => !bundle.revisions.some((revision) => revision.itemId === asset.itemId))
+              .map((asset) => (
+                <div key={asset.itemId} className="flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-stone-50">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-stone-100 text-stone-500"><ArtifactKindIcon kind={asset.kind} /></span>
+                  <span className="min-w-0 flex-1 truncate text-[10px] text-stone-600">{asset.name}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1259,25 +1625,114 @@ function RevisionStrip({ revisions, activeItemId, onSelect }: { revisions: Canva
   );
 }
 
-function TemporalTimeline({ currentTimeMs, durationMs, playing, annotations, onToggle, onSeek }: { currentTimeMs: number; durationMs: number; playing: boolean; annotations: CanvasAnnotation[]; onToggle: () => void; onSeek: (value: number) => void }) {
-  const duration = Math.max(durationMs, 1);
+function TemporalTimeline({
+  currentTimeMs,
+  durationMs,
+  playing,
+  annotations,
+  timeline,
+  assets,
+  activeItemId,
+  selectedClipId,
+  onSelectClip,
+  onAddClip,
+  onSplit,
+  onDelete,
+  onToggle,
+  onSeek,
+}: {
+  currentTimeMs: number;
+  durationMs: number;
+  playing: boolean;
+  annotations: CanvasAnnotation[];
+  timeline: CanvasTimeline | null;
+  assets: CanvasArtifact[];
+  activeItemId: string;
+  selectedClipId: string | null;
+  onSelectClip: (clipId: string | null) => void;
+  onAddClip: (item: CanvasArtifact) => void;
+  onSplit: () => void;
+  onDelete: () => void;
+  onToggle: () => void;
+  onSeek: (value: number) => void;
+}) {
+  const [view, setView] = useState<"timeline" | "storyboard">("timeline");
+  const tracks = timeline?.tracks ?? [];
+  const clips = tracks.flatMap((track) => track.clips);
+  const timelineEnd = clips.reduce(
+    (end, clip) => Math.max(end, clip.startMs + clip.durationMs),
+    0,
+  );
+  const duration = Math.max(durationMs, timelineEnd, 1);
+  const currentAsset = assets.find((asset) => asset.itemId === activeItemId);
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-9 items-center gap-2 border-b border-stone-100 px-3">
         <button type="button" onClick={onToggle} className="flex h-7 w-7 items-center justify-center rounded-full bg-stone-900 text-white">{playing ? <Pause className="h-3 w-3" /> : <Play className="ml-0.5 h-3 w-3" />}</button>
         <span className="font-mono text-[10px] text-stone-600">{formatCanvasTime(currentTimeMs)} / {formatCanvasTime(durationMs)}</span>
-        <span className="ml-auto text-[9px] text-stone-400">Timeline · annotations snap to media time</span>
+        <div className="ml-2 h-5 w-px bg-stone-200" />
+        <select
+          value=""
+          onChange={(event) => {
+            const asset = assets.find((item) => item.itemId === event.target.value);
+            if (asset) onAddClip(asset);
+          }}
+          className="h-7 max-w-36 rounded-md border border-stone-200 bg-white px-2 text-[9px] text-stone-600 outline-none"
+          aria-label="Add media to timeline"
+        >
+          <option value="">+ Add media</option>
+          {assets.filter((asset) => asset.mimeType.startsWith("video/") || asset.mimeType.startsWith("audio/")).map((asset) => (
+            <option key={asset.itemId} value={asset.itemId}>{asset.name}</option>
+          ))}
+        </select>
+        {!clips.length && currentAsset ? (
+          <button type="button" onClick={() => onAddClip(currentAsset)} className="rounded-md border border-stone-200 px-2 py-1 text-[9px] text-stone-600 hover:bg-stone-50">Add current clip</button>
+        ) : null}
+        <button type="button" disabled={!selectedClipId} onClick={onSplit} className="flex h-7 items-center gap-1 rounded-md px-2 text-[9px] text-stone-500 hover:bg-stone-100 disabled:opacity-30"><Scissors className="h-3 w-3" /> Split</button>
+        <button type="button" disabled={!selectedClipId} onClick={onDelete} className="flex h-7 items-center gap-1 rounded-md px-2 text-[9px] text-rose-600 hover:bg-rose-50 disabled:opacity-30"><Trash2 className="h-3 w-3" /> Delete</button>
+        <div className="ml-auto flex rounded-md bg-stone-100 p-0.5">
+          {(["timeline", "storyboard"] as const).map((entry) => (
+            <button key={entry} type="button" onClick={() => setView(entry)} className={cn("rounded px-2 py-1 text-[8px] capitalize", view === entry ? "bg-white text-stone-700 shadow-sm" : "text-stone-400")}>{entry}</button>
+          ))}
+        </div>
       </div>
-      <div className="relative flex-1 px-4 py-3">
+      <div className="relative min-h-0 flex-1 overflow-auto px-4 py-2">
         <div className="mb-2 flex justify-between text-[8px] text-stone-400"><span>0:00</span><span>{formatCanvasTime(durationMs / 2)}</span><span>{formatCanvasTime(durationMs)}</span></div>
-        <div className="relative h-12 rounded-lg bg-stone-100">
+        {view === "storyboard" && clips.length ? (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {clips.map((clip, index) => (
+              <button key={clip.clipId} type="button" onClick={() => { onSelectClip(clip.clipId); onSeek(clip.startMs); }} className={cn("flex h-12 w-28 shrink-0 flex-col justify-center rounded-lg border px-2 text-left", selectedClipId === clip.clipId ? "border-stone-900 bg-stone-100" : "border-stone-200 bg-white")}>
+                <span className="truncate text-[9px] font-medium text-stone-700">{index + 1}. {clip.name}</span>
+                <span className="mt-1 text-[8px] text-stone-400">{formatCanvasTime(clip.durationMs)}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+        <div className="relative min-h-12 space-y-1 rounded-lg bg-stone-100 p-1">
           <div className="absolute inset-y-0 left-0 rounded-l-lg bg-stone-200" style={{ width: `${(currentTimeMs / duration) * 100}%` }} />
+          {tracks.map((track) => (
+            <div key={track.trackId} className="relative h-5">
+              {track.clips.map((clip) => (
+                <button
+                  key={clip.clipId}
+                  type="button"
+                  title={`${track.name}: ${clip.name}`}
+                  onClick={() => { onSelectClip(clip.clipId); onSeek(clip.startMs); }}
+                  className={cn("absolute inset-y-0 overflow-hidden rounded border px-1 text-left text-[8px]", track.kind === "audio" ? "border-violet-400 bg-violet-200 text-violet-900" : "border-cyan-500 bg-cyan-200 text-cyan-900", selectedClipId === clip.clipId && "ring-2 ring-stone-900 ring-offset-1")}
+                  style={{ left: `${(clip.startMs / duration) * 100}%`, width: `${Math.max(1, (clip.durationMs / duration) * 100)}%` }}
+                >
+                  <span className="block truncate">{clip.name}</span>
+                </button>
+              ))}
+            </div>
+          ))}
           {annotations.filter((annotation) => annotation.startMs !== null && annotation.startMs !== undefined).map((annotation) => (
             <span key={annotation.annotationId} title={annotation.body} className="absolute top-1 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-white bg-amber-500 shadow" style={{ left: `${((annotation.startMs ?? 0) / duration) * 100}%` }} />
           ))}
           <input type="range" min={0} max={duration} value={Math.min(currentTimeMs, duration)} onChange={(event) => onSeek(Number(event.target.value))} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label="Media timeline" />
           <span className="pointer-events-none absolute inset-y-0 w-px bg-stone-900" style={{ left: `${(currentTimeMs / duration) * 100}%` }} />
         </div>
+        )}
       </div>
     </div>
   );
@@ -1361,6 +1816,10 @@ function annotationLocation(annotation?: CanvasAnnotation) {
     return `point x ${percent(geometry.x)}, y ${percent(geometry.y)}`;
   }
   return "";
+}
+
+function temporalAnnotation(annotation: CanvasAnnotation) {
+  return annotation.startMs !== undefined && annotation.startMs !== null;
 }
 
 function percent(value: number) {

@@ -21,6 +21,7 @@ import {
 import { BytePlusMediaProvider } from './providers/byteplus-media.provider';
 import { GoogleMediaProvider } from './providers/google-media.provider';
 import { KlingMediaProvider } from './providers/kling-media.provider';
+import { OpenAIMediaProvider } from './providers/openai-media.provider';
 import type {
   CreateMediaGenerationInput,
   MediaPrincipal,
@@ -42,6 +43,7 @@ export class MediaService {
     private readonly google: GoogleMediaProvider,
     private readonly kling: KlingMediaProvider,
     private readonly byteplus: BytePlusMediaProvider,
+    private readonly openai: OpenAIMediaProvider,
   ) {}
 
   catalog() {
@@ -50,10 +52,12 @@ export class MediaService {
     );
     const klingConfigured = Boolean(process.env.KLING_ACCESS_KEY && process.env.KLING_SECRET_KEY);
     const byteplusConfigured = Boolean(process.env.BYTEPLUS_ARK_API_KEY ?? process.env.ARK_API_KEY);
+    const openaiConfigured = Boolean(process.env.OPENAI_API_KEY);
     const configured: Record<string, boolean> = {
       google: googleConfigured,
       kling: klingConfigured,
       byteplus: byteplusConfigured,
+      openai: openaiConfigured,
     };
     return {
       models: MEDIA_MODEL_REGISTRY.map((model) => ({
@@ -66,6 +70,13 @@ export class MediaService {
             : undefined,
       })),
       providers: [
+        {
+          id: 'openai',
+          displayName: 'OpenAI',
+          configured: openaiConfigured,
+          capabilities: ['image', 'video', 'audio'],
+          note: 'Sora video models retire September 24, 2026; OpenAI has no music-generation API.',
+        },
         {
           id: 'google',
           displayName: 'Google',
@@ -466,7 +477,7 @@ export class MediaService {
   }
 
   private provider(providerId: string, modelId: string): MediaProviderAdapter {
-    const providers: MediaProviderAdapter[] = [this.google, this.kling, this.byteplus];
+    const providers: MediaProviderAdapter[] = [this.openai, this.google, this.kling, this.byteplus];
     const provider = providers.find(
       (entry) => entry.id === providerId && entry.supports(modelId),
     );

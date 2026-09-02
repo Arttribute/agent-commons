@@ -2,14 +2,18 @@
 
 Canvas is Agent Commons' provider-neutral workspace for generating, analysing,
 annotating, transforming, and composing media. Its canonical route is
-`/studio/canvas/[artifactId]`; an existing Library artifact is the entry point,
-so chat artifacts, uploads, agent outputs, and future custom apps all share the
-same access and provenance boundary.
+`/studio/canvas/[artifactId]`. `/studio/canvas` is the creation entry point: a
+user can upload, select an existing private Library artifact, or generate new
+media from the same searchable model catalog. Chat artifacts, uploads, agent
+outputs, and future custom apps therefore share one access and provenance
+boundary.
 
 ## Product shell
 
-- The collapsible left panel is capability-driven: media kind, provider/model,
-  prompt, source artifacts, provider settings, quote, and generation action.
+- The collapsible left panel is capability-driven: one searchable provider and
+  model selector, prompt, source artifacts, provider settings, quote, and
+  generation action. Model modality is metadata, not a separate navigation
+  hierarchy.
 - The centre renders the active immutable artifact revision. Images support
   point/region notes; time-based media supports millisecond ranges and a
   timeline. Panels collapse for inspection-focused work.
@@ -19,6 +23,12 @@ same access and provenance boundary.
   responsive layouts and usable by agents.
 - Every generated output becomes a private Library item and a new Canvas
   revision. The original and all prior revisions remain addressable.
+- Video and audio projects keep a non-destructive timeline in project settings.
+  Clips can be added, split at the playhead, deleted, and inspected as a linear
+  timeline or storyboard without mutating their immutable Library sources.
+- Sending an annotation to Commons Copilot creates a visible attachment chip
+  and server-verified Canvas context. Internal project and annotation IDs are
+  not pasted into the user-facing prompt.
 
 ## Provider plugin contract
 
@@ -49,11 +59,17 @@ Agents use the same boundary through `listMediaModels`, `getCanvasProject`,
 are discoverable in the Tools surface and callable from workflow tool nodes as
 well as Commons Copilot.
 
-The initial catalog covers Google Gemini image/speech/music and Veo, current
-non-retiring Kling image/video families, and BytePlus ModelArk Seedream and
-Seedance families. A provider can be present but unconfigured. Models without a
-verified tariff are also present but unavailable until a positive operator
-override is supplied.
+The catalog covers OpenAI GPT Image 2 and GPT-4o mini TTS; Google Gemini
+image/speech/music and Veo; all currently integrated Kling image/video
+families; and BytePlus ModelArk Seedream and Seedance families. The legacy Sora
+2 entries are clearly time-bounded because the upstream API retires on
+September 24, 2026. OpenAI has no general music-generation API in this catalog;
+music remains provider-neutral and is currently fulfilled by Google Lyria.
+
+A provider can be present but unconfigured. Models without a verified tariff
+are also present but unavailable until a positive operator override is
+supplied. This makes catalog expansion safe: an adapter can expose capability
+metadata before it is allowed to create billable usage.
 
 ## Private input handling
 
@@ -99,11 +115,12 @@ BYTEPLUS_MEDIA_PRICE_USD_JSON='{"byteplus:video:dreamina-seedance-2-5-260628":7}
 
 Provider credentials:
 
+- OpenAI: `OPENAI_API_KEY`
 - Google: `GOOGLE_API_KEY`
 - Kling: `KLING_ACCESS_KEY`, `KLING_SECRET_KEY`
 - BytePlus ModelArk: `BYTEPLUS_ARK_API_KEY`
 
-Staging ECS injects them conditionally with `GOOGLE_MEDIA_ENABLED`,
+Staging ECS injects non-core media credentials conditionally with `GOOGLE_MEDIA_ENABLED`,
 `KLING_MEDIA_ENABLED`, and `BYTEPLUS_MEDIA_ENABLED`. A flag must stay false
 until its corresponding runtime-secret keys exist; this prevents an ECS task
 definition from referencing a missing Secrets Manager JSON member.

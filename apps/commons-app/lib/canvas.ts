@@ -162,6 +162,27 @@ export type CanvasProjectBundle = {
   revisions: CanvasRevision[];
   annotations: CanvasAnnotation[];
   jobs: MediaJob[];
+  assets: CanvasArtifact[];
+};
+
+export type CanvasTimelineClip = {
+  clipId: string;
+  itemId: string;
+  name: string;
+  startMs: number;
+  sourceInMs: number;
+  sourceOutMs: number;
+  durationMs: number;
+};
+
+export type CanvasTimeline = {
+  version: 1;
+  tracks: Array<{
+    trackId: string;
+    kind: "video" | "audio";
+    name: string;
+    clips: CanvasTimelineClip[];
+  }>;
 };
 
 export type CanvasPreview = ArtifactPreview;

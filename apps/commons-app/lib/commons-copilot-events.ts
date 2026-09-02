@@ -4,9 +4,22 @@ export const CREATE_UI_PLUGIN_INTENT_ID = "create-ui-plugin";
 
 export type CommonsCopilotPromptMode = "send" | "draft";
 
+export type CommonsCopilotAttachment = {
+  fileId: string;
+  name: string;
+  mimeType: string;
+  kind?: string;
+  sizeBytes: number;
+  textPreview?: string | null;
+  previewUrl?: string;
+};
+
 export type CommonsCopilotPromptDetail = {
   text: string;
   mode?: CommonsCopilotPromptMode;
+  attachment?: CommonsCopilotAttachment;
+  /** Opaque UI context. The API sanitizes and verifies resource identifiers. */
+  context?: Record<string, unknown>;
   /**
    * Stable identifier for a launcher action. While an intent is already open,
    * dispatching it again only focuses Copilot instead of enqueueing the same
@@ -46,12 +59,14 @@ export function takePendingCommonsCopilotPrompt() {
 export function openCommonsCopilotPrompt(detail: CommonsCopilotPromptDetail) {
   if (typeof window === "undefined") return;
   const text = detail.text.trim();
-  if (!text) return;
+  if (!text && !detail.attachment?.fileId) return;
 
   const normalizedDetail: CommonsCopilotPromptDetail = {
     text,
     mode: detail.mode === "draft" ? "draft" : "send",
     intentId: detail.intentId?.trim() || undefined,
+    attachment: detail.attachment,
+    context: detail.context,
   };
   (window as CommonsCopilotWindow).__agentCommonsPendingCopilotPrompt = {
     detail: normalizedDetail,

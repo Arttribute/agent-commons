@@ -51,6 +51,24 @@ export class CanvasController {
     return this.canvas.createAnnotation(projectId, requester(request), body);
   }
 
+  @Post('projects/:projectId/assets')
+  addAsset(
+    @Req() request: Request,
+    @Param('projectId') projectId: string,
+    @Body() body: { itemId: string },
+  ) {
+    return this.canvas.addAsset(projectId, requester(request), body.itemId);
+  }
+
+  @Post('projects/:projectId/timeline/actions')
+  editTimeline(
+    @Req() request: Request,
+    @Param('projectId') projectId: string,
+    @Body() body: Parameters<CanvasService['editTimeline']>[2],
+  ) {
+    return this.canvas.editTimeline(projectId, requester(request), body);
+  }
+
   @Patch('projects/:projectId/annotations/:annotationId')
   updateAnnotation(
     @Req() request: Request,

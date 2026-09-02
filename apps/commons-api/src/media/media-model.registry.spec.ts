@@ -35,6 +35,41 @@ describe('media model registry', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
+  it('quotes GPT Image 2 from the selected quality and aspect ratio', () => {
+    const model = getMediaModel('openai', 'openai:image:gpt-image-2');
+
+    expect(
+      estimateMediaCost(
+        model,
+        'create a product image',
+        { quality: 'high', aspectRatio: '3:2' },
+        [],
+      ),
+    ).toBe(0.33);
+    expect(model.pricing.settlement).toBe('provider_usage');
+  });
+
+  it('keeps legacy Sora models visibly time-bounded and priced per second', () => {
+    const model = getMediaModel('openai', 'openai:video:sora-2-pro');
+
+    expect(model.badges).toContain('retires 24 Sep 2026');
+    expect(
+      estimateMediaCost(model, 'create a video', { durationSeconds: 8 }, []),
+    ).toBeCloseTo(2.4);
+  });
+
+  it('includes OpenAI text and output-audio token costs in TTS quotes', () => {
+    const model = getMediaModel(
+      'openai',
+      'openai:audio:gpt-4o-mini-tts',
+    );
+    const prompt = 'A'.repeat(60);
+
+    expect(estimateMediaCost(model, prompt, {}, [])).toBeCloseTo(
+      4 * 25 * 0.000012 + (15 * 0.6) / 1_000_000,
+    );
+  });
+
   it('prices Kling video by duration, resolution, audio, and video input', () => {
     const model = getMediaModel('kling', 'kling:video:kling-v3-omni');
 

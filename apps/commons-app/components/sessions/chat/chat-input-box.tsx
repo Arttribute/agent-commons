@@ -89,6 +89,15 @@ export type ExternalComposerPrompt = {
   id: string;
   text: string;
   mode?: "send" | "draft";
+  attachment?: {
+    fileId: string;
+    name: string;
+    mimeType: string;
+    kind?: string;
+    sizeBytes: number;
+    textPreview?: string | null;
+    previewUrl?: string;
+  };
 };
 
 export default function ChatInputBox({
@@ -626,14 +635,30 @@ export default function ChatInputBox({
   const externalPromptIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (
-      !externalPrompt?.text ||
+      (!externalPrompt?.text && !externalPrompt?.attachment?.fileId) ||
       externalPromptIdRef.current === externalPrompt.id
     ) {
       return;
     }
+    if (externalPrompt.attachment) {
+      const incoming = externalPrompt.attachment;
+      setAttachments((current) =>
+        current.some((item) => item.fileId === incoming.fileId)
+          ? current
+          : [
+              ...current,
+              {
+                localId: `external:${incoming.fileId}`,
+                ...incoming,
+                status: "uploaded",
+              },
+            ],
+      );
+    }
     if (externalPrompt.mode === "draft") {
       externalPromptIdRef.current = externalPrompt.id;
       const draft = externalPrompt.text.trim();
+      if (!draft) return;
       setInputText((current) => {
         const existing = current.trimEnd();
         return existing ? `${existing}\n\n${draft}` : draft;

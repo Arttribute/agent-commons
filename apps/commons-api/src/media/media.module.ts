@@ -8,6 +8,7 @@ import { MediaService } from './media.service';
 import { GoogleMediaProvider } from './providers/google-media.provider';
 import { KlingMediaProvider } from './providers/kling-media.provider';
 import { BytePlusMediaProvider } from './providers/byteplus-media.provider';
+import { OpenAIMediaProvider } from './providers/openai-media.provider';
 
 @Module({
   imports: [FilesModule, UsageModule, ProvenanceModule],
@@ -18,6 +19,7 @@ import { BytePlusMediaProvider } from './providers/byteplus-media.provider';
     GoogleMediaProvider,
     KlingMediaProvider,
     BytePlusMediaProvider,
+    OpenAIMediaProvider,
   ],
   exports: [CanvasService, MediaService],
 })
