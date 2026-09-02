@@ -1,0 +1,151 @@
+---
+title: Cloud Computers
+description: Give an agent a persistent Linux box with a shell, a filesystem, and a browser.
+---
+
+Some work does not fit in a tool call. Installing dependencies, running a build,
+driving a real browser, keeping a checkout around between sessions — that needs
+a machine.
+
+Every agent can have exactly one **persistent computer**. Its filesystem
+survives sleep and restart; only the compute stops.
+
+## Enable one
+
+```bash
+agc computer enable --agent <agentId>
+agc computer status --agent <agentId>
+```
+
+```typescript
+await commons.agents.updateComputerConfig(agentId, { enabled: true });
+const { data: computer } = await commons.agents.getComputer(agentId);
+```
+
+## Lifecycle
+
+| State | Meaning |
+|---|---|
+| `off` | Disabled — no volume, no compute |
+| `sleeping` | Volume kept, compute stopped, nothing billed for time |
+| `starting` | Waking |
+| `running` | Ready for commands |
+
+```bash
+agc computer wake    --agent <agentId>
+agc computer sleep   --agent <agentId> --reason "batch finished"
+agc computer restart --agent <agentId>
+agc computer events  --agent <agentId> --limit 20
+```
+
+Compute bills for the time the machine is awake, so sleep it when the work is
+done. Storage persists either way.
+
+## Run commands
+
+```bash
+agc computer exec --agent <agentId> --cwd /workspace -- python analyse.py
+agc computer exec --agent <agentId> --timeout 600 -- npm run build
+```
+
+```typescript
+const { data } = await commons.agents.execComputer(agentId, {
+  command: 'python analyse.py',
+  cwd: '/workspace',
+  timeoutSeconds: 600,
+});
+```
+
+## Files
+
+```typescript
+await commons.agents.writeComputerFile(agentId, {
+  path: '/workspace/analyse.py',
+  content: 'import pandas as pd\n…',
+});
+
+const { data: file } = await commons.agents.readComputerFile(agentId, '/workspace/out.csv');
+```
+
+## Browser
+
+```typescript
+await commons.agents.openComputerBrowser(agentId, { url: 'https://example.com' });
+await commons.agents.testComputerBrowser(agentId, { url: 'http://localhost:3000' });
+```
+
+The browser reports `status`, the current `url` and `title`, the last action,
+and a screenshot — enough to check that a page rendered without shipping the
+whole DOM back.
+
+## Sizing
+
+```bash
+agc computer resize --agent <agentId> --vcpu 4 --memory 16 --storage 100
+agc computer resize --agent <agentId> --profile performance --mode elastic
+agc computer resize --agent <agentId> --gpu-type nvidia-l4 --gpu-count 1
+```
+
+| Setting | Values |
+|---|---|
+| `profile` | `starter` · `standard` · `performance` · `gpu` |
+| `mode` | `fixed` (reserved) · `elastic` (scales with load) |
+| `vcpu` · `memoryGiB` · `storageGiB` | Explicit units |
+| `gpuType` | `nvidia-t4` · `nvidia-l4` · `nvidia-a10` · `nvidia-a100` · `nvidia-h100` · `nvidia-h200` · `nvidia-b200` |
+| `gpuCount` | `0` removes the GPU |
+
+Which profiles you can reach depends on your plan — see
+[Billing](/docs/guides/billing).
+
+## Giving an agent the keys
+
+```typescript
+await commons.agents.update(agentId, {
+  commonTools: [
+    'startAgentComputer',
+    'runComputerCommand',
+    'readComputerFile',
+    'writeComputerFiles',
+    'openComputerBrowser',
+  ],
+});
+```
+
+Then hand the computer to a run:
+
+```bash
+agc chat --agent <agentId> --computer
+agc run  --agent <agentId> --computer "Clone the repo and run the test suite"
+```
+
+```typescript
+await commons.run.once({
+  agentId,
+  messages: [{ role: 'user', content: 'Clone the repo and run the test suite.' }],
+  computerRequest: { enabled: true },
+});
+```
+
+The agent wakes the machine itself if it is asleep.
+
+## Code projects
+
+Code projects are a structured way to build something on a computer and publish
+it: files in, preview URL out.
+
+```bash
+agc projects create --name "Landing page" --agent <agentId> --files files.json
+agc projects publish <projectId>
+agc projects export <projectId> --directory /workspace/site
+agc projects github <projectId> --repository my-site --public
+```
+
+Published previews are served from `/v1/previews/:slug` with no credential, in
+a sandboxed frame — convenient for review, and a reason to keep anything
+sensitive out of a preview build.
+
+## Local machine instead
+
+If the files are on your laptop rather than in the cloud, you do not need a
+computer at all — `agc chat` exposes your working directory directly. See
+[local file access](/docs/cli#local-file-access).

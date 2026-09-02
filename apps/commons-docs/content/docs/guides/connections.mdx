@@ -1,0 +1,125 @@
+---
+title: Connections
+description: Let an agent act as you in Google Workspace, GitHub, Slack, Canva, and X.
+---
+
+A connection is an OAuth grant you make once. Tokens are stored encrypted,
+refreshed on their own, and injected into a tool call at the moment it runs —
+so no credential ever reaches a prompt, a tool definition, or your code.
+
+## Providers
+
+| Key | Service | What it unlocks |
+|---|---|---|
+| `google_workspace` | Google Workspace | Gmail, Drive, Calendar, Docs, Sheets, Classroom |
+| `github` | GitHub | Repositories, issues, pull requests, code context, project exports |
+| `slack` | Slack | Channels, messages, files, team updates |
+| `canva` | Canva | Create, read, and export designs |
+| `x` | X (Twitter) | Read, search, publish, reply to, and delete posts |
+
+```bash
+agc connections providers
+```
+
+Each provider groups its scopes so you request a capability rather than
+memorising URLs — Google exposes groups like `classroom`, GitHub exposes
+`repo`, `issues`, `workflow`, `org`, `gist`, `packages`, Slack exposes
+`messages` and `files`, Canva exposes `designs` and `assets`, X exposes
+`publish`.
+
+## Connect an account
+
+<Tabs items={['CLI', 'SDK', 'Web app']}>
+  <Tab value="CLI">
+```bash
+agc connections connect google_workspace \
+  --scopes "https://www.googleapis.com/auth/gmail.send"
+```
+
+The CLI prints an authorization URL and opens it. Approve in the browser and
+the connection appears in `agc connections list`.
+  </Tab>
+  <Tab value="SDK">
+```typescript
+const flow = await commons.oauth.connect({
+  providerKey: 'google_workspace',
+  scopes: ['https://www.googleapis.com/auth/gmail.send'],
+  redirectUri: 'https://yourapp.example.com/oauth/done',
+});
+
+// send the user to flow.authorizationUrl before flow.expiresAt
+```
+  </Tab>
+  <Tab value="Web app">
+Open **Connections** and pick a provider. The consent screen lists exactly the
+scopes being requested.
+  </Tab>
+</Tabs>
+
+## Manage
+
+```bash
+agc connections list
+agc connections get <connectionId>
+agc connections test <connectionId>       # is the token still good?
+agc connections rename <connectionId> "Work Google"
+agc connections refresh <connectionId>    # force a refresh now
+agc connections revoke <connectionId>     # revoke and delete stored tokens
+```
+
+Refresh is automatic; `refresh` is for when you want to prove it works. `test`
+is the fastest way to tell a broken integration from a broken token.
+
+## Using a connection in a tool
+
+Set `authType: 'oauth2'` on a custom tool and name the provider. The platform
+finds the caller's connection and injects the token where the API expects it.
+
+```typescript
+await commons.tools.create({
+  name: 'send_gmail',
+  description: 'Send an email from the connected Google account',
+  schema: {
+    type: 'object',
+    properties: {
+      to: { type: 'string' },
+      subject: { type: 'string' },
+      body: { type: 'string' },
+    },
+    required: ['to', 'subject', 'body'],
+  },
+  apiSpec: {
+    baseUrl: 'https://gmail.googleapis.com',
+    path: '/gmail/v1/users/me/messages/send',
+    method: 'POST',
+    authType: 'oauth2',
+    oauthProviderKey: 'google_workspace',
+    oauthScopes: ['https://www.googleapis.com/auth/gmail.send'],
+    oauthTokenLocation: 'header',
+  },
+});
+```
+
+If the caller has no connection for that provider — or the connection is
+missing a required scope — the call fails with a message saying which
+connection to make, rather than a bare `401` from the upstream API.
+
+## Choosing between several accounts
+
+A connection belongs to the person who made it. When someone has more than one
+account with the same provider, the most recently connected one is used. Name
+them so the ambiguity is at least visible:
+
+```bash
+agc connections rename <connectionId> "Work Google"
+```
+
+## Security notes
+
+- Tokens are encrypted at rest and never returned by any read endpoint.
+- Request the narrowest scope group that does the job. Widening later is one
+  more consent screen; over-granting is a standing risk.
+- `revoke` deletes the stored tokens on the Commons side — also remove the app
+  in the provider's own account settings if you want the grant gone entirely.
+- Connections belong to the person who made them, not to the agent. Revoking
+  yours does not break a teammate's.

@@ -1,212 +1,237 @@
 ---
 title: Quickstart
-description: Get your first agent running in under 5 minutes.
+description: Create an agent and get a streamed answer back, in about five minutes.
 ---
 
-# Quickstart
+Every path below ends in the same place: an agent you own, a session you can
+resume, and a streamed reply. Pick the one that matches how you like to work.
 
-Pick the path that works for you.
-
-<Tabs items={['Web UI', 'REST API', 'TypeScript SDK', 'CLI']}>
-  <Tab value="Web UI">
-
-## No-code setup
-
-<Steps>
-  <Step>
-    ### Sign in
-
-    Go to [agentcommons.io](https://www.agentcommons.io) and click **Sign In**. Connect with a wallet (MetaMask, Coinbase Wallet) or email via Privy.
-  </Step>
-  <Step>
-    ### Create an agent
-
-    Click **Create Agent** in the sidebar. Fill in a name and instructions, then save.
-  </Step>
-  <Step>
-    ### Chat
-
-    Click your agent to open it. Type a message and press Enter. You'll get a streamed response.
-  </Step>
-</Steps>
-
-Your agent is live. Explore the [UI guide](/docs/ui) to learn what every screen does.
-
-  </Tab>
-  <Tab value="REST API">
-
-## REST API
-
-### Prerequisites
-
-Get an API key from **Settings → API Keys** in the web app.
-
-<Steps>
-  <Step>
-    ### Create an agent
-
-    ```bash
-    curl -X POST https://api.agentcommons.io/v1/agents \
-      -H "Content-Type: application/json" \
-      -H "x-api-key: YOUR_API_KEY" \
-      -d '{
-        "name": "My First Agent",
-        "instructions": "You are a helpful assistant.",
-        "modelProvider": "openai",
-        "modelId": "gpt-5.4-mini"
-      }'
-    ```
-
-    Response:
-
-    ```json
-    {
-      "agentId": "agent_abc123",
-      "name": "My First Agent",
-      "modelProvider": "openai"
-    }
-    ```
-  </Step>
-  <Step>
-    ### Run the agent
-
-    ```bash
-    curl -X POST https://api.agentcommons.io/v1/agents/run \
-      -H "Content-Type: application/json" \
-      -H "x-api-key: YOUR_API_KEY" \
-      -d '{
-        "agentId": "agent_abc123",
-        "messages": [{ "role": "user", "content": "Hello! What can you do?" }]
-      }'
-    ```
-
-    Response:
-
-    ```json
-    {
-      "sessionId": "session_xyz",
-      "response": "Hi! I can answer questions, help with writing, and more.",
-      "usage": { "inputTokens": 24, "outputTokens": 18 }
-    }
-    ```
-  </Step>
-</Steps>
-
-See the full [API reference](/docs/api) for all endpoints.
-
-  </Tab>
-  <Tab value="TypeScript SDK">
-
-## TypeScript SDK
-
-<Steps>
-  <Step>
-    ### Install
-
-    ```bash
-    npm install @agent-commons/sdk
-    ```
-  </Step>
-  <Step>
-    ### Set up the client
-
-    ```typescript
-    import { CommonsClient } from '@agent-commons/sdk';
-
-    const client = new CommonsClient({
-      baseUrl: 'https://api.agentcommons.io',
-      apiKey: process.env.COMMONS_API_KEY,
-    });
-    ```
-
-    Get COMMONS_API_KEY from **Settings → API Keys** in the web app.
-  </Step>
-  <Step>
-    ### Create and run an agent
-
-    ```typescript
-    // Create
-    const { data: agent } = await client.agents.create({
-      name: 'My First Agent',
-      instructions: 'You are a helpful assistant.',
-      modelProvider: 'openai',
-      modelId: 'gpt-5.4-mini',
-    });
-
-    // Run
-    const result = await client.run.once({
-      agentId: agent.agentId,
-      messages: [{ role: 'user', content: 'Hello!' }],
-    });
-
-    console.log(result.response);
-    ```
-  </Step>
-</Steps>
-
-See the full [SDK reference](/docs/sdk) for all methods and types.
-
-  </Tab>
+<Tabs items={['CLI', 'TypeScript SDK', 'REST API', 'Web app']}>
   <Tab value="CLI">
 
-## CLI
-
 <Steps>
   <Step>
-    ### Install
+    **Install**
 
     ```bash
     npm install -g @agent-commons/cli
     ```
   </Step>
   <Step>
-    ### Set up credentials
+    **Sign in**
 
     ```bash
     agc login
     ```
 
-    A three-step wizard guides you through setup:
+    `agc` starts an OAuth device flow: it prints a URL and a one-time code,
+    opens your browser, and waits for you to approve. Credentials land in
+    `~/.agc/config.json` (mode `0600`) and refresh themselves.
 
-    1. **API Endpoint** — press Enter to accept the default (https://api.agentcommons.io)
-    2. **API Key** — your browser opens automatically to [agentcommons.io/settings](https://www.agentcommons.io/settings). Generate a key and paste it back in the terminal.
-    3. **Wallet address** — paste your 0x… address.
-
-    Credentials are saved to ~/.agc/config.json.
-  </Step>
-  <Step>
-    ### Launch the interactive menu
+    For CI, skip the browser and use a project key instead:
 
     ```bash
-    agc
+    agc login --api-key csk_live_xxx
     ```
-
-    Use ↑ / ↓ to navigate, Enter to select. From here you can chat, manage agents, view sessions, run tasks, and more — no commands to memorise.
   </Step>
   <Step>
-    ### Create an agent and start chatting
+    **Create an agent**
 
     ```bash
-    agc agents create
+    agc agents create \
+      --name "Research Bot" \
+      --instructions "You research topics and answer with sources." \
+      --provider anthropic \
+      --model claude-sonnet-4-6
+    ```
+  </Step>
+  <Step>
+    **Talk to it**
+
+    ```bash
     agc chat --agent <agentId>
     ```
 
-    Type messages and press Enter. Type /quit to exit (session is preserved for resume).
+    Tokens stream as they arrive and tool calls appear inline. `agc chat` also
+    exposes your working directory to the agent as local tools, so it can read
+    and write files on your machine — add `--no-local` to turn that off, or
+    `--computer` to give it a cloud box instead.
+
+    One-shot instead of a REPL:
+
+    ```bash
+    agc run --agent <agentId> "Summarise this week's AI policy news"
+    ```
   </Step>
 </Steps>
 
-See the full [CLI reference](/docs/cli) for all commands.
+Run `agc` with no arguments for an interactive menu of everything else.
+Full command list: [CLI reference](/docs/cli).
+
+  </Tab>
+  <Tab value="TypeScript SDK">
+
+<Steps>
+  <Step>
+    **Install**
+
+    ```bash
+    npm install @agent-commons/sdk
+    ```
+  </Step>
+  <Step>
+    **Create a client**
+
+    ```typescript
+    import { CommonsClient } from '@agent-commons/sdk';
+
+    const commons = new CommonsClient({
+      apiKey: process.env.COMMONS_API_KEY, // csk_live_… project key
+    });
+    ```
+
+    `baseUrl` defaults to `https://api.agentcommons.io`. Create a key at
+    [auth.agentcommons.io/platform](https://auth.agentcommons.io/platform) or
+    with `agc keys create`.
+  </Step>
+  <Step>
+    **Create an agent**
+
+    ```typescript
+    const { data: agent } = await commons.agents.create({
+      name: 'Research Bot',
+      instructions: 'You research topics and answer with sources.',
+      modelProvider: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
+    });
+    ```
+  </Step>
+  <Step>
+    **Stream a reply**
+
+    ```typescript
+    let sessionId: string | undefined;
+
+    for await (const event of commons.agents.stream({
+      agentId: agent.agentId,
+      messages: [{ role: 'user', content: 'What is Agent Commons?' }],
+    })) {
+      if (event.type === 'token') process.stdout.write(event.content ?? '');
+      if (event.type === 'final') sessionId = event.sessionId;
+    }
+    ```
+
+    Pass that `sessionId` back on the next call to continue the conversation.
+    If you would rather wait for the whole answer, use
+    `commons.run.once({ … })`.
+  </Step>
+</Steps>
+
+Every namespace and type: [SDK reference](/docs/sdk).
+
+  </Tab>
+  <Tab value="REST API">
+
+<Steps>
+  <Step>
+    **Get a key**
+
+    Create a project API key at
+    [auth.agentcommons.io/platform](https://auth.agentcommons.io/platform).
+    Keys look like `csk_live_…` and carry explicit
+    [scopes](/docs/authentication#scopes).
+
+    ```bash
+    export COMMONS_API_KEY=csk_live_xxx
+    ```
+  </Step>
+  <Step>
+    **Create an agent**
+
+    ```bash
+    curl -X POST https://api.agentcommons.io/v1/agents \
+      -H "Authorization: Bearer $COMMONS_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "Research Bot",
+        "instructions": "You research topics and answer with sources.",
+        "modelProvider": "anthropic",
+        "modelId": "claude-sonnet-4-6"
+      }'
+    ```
+
+    ```json
+    {
+      "data": {
+        "agentId": "agent_abc123",
+        "name": "Research Bot",
+        "modelProvider": "anthropic",
+        "modelId": "claude-sonnet-4-6"
+      }
+    }
+    ```
+  </Step>
+  <Step>
+    **Run it**
+
+    ```bash
+    curl -X POST https://api.agentcommons.io/v1/agents/run \
+      -H "Authorization: Bearer $COMMONS_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "agentId": "agent_abc123",
+        "messages": [{ "role": "user", "content": "What is Agent Commons?" }]
+      }'
+    ```
+
+    Swap the path for `/v1/agents/run/stream` to get Server-Sent Events
+    instead of a single blocking response.
+  </Step>
+</Steps>
+
+Every route: [API reference](/docs/api).
+
+  </Tab>
+  <Tab value="Web app">
+
+<Steps>
+  <Step>
+    **Sign in**
+
+    Go to [agentcommons.io](https://www.agentcommons.io) and sign in with your
+    Commons account.
+  </Step>
+  <Step>
+    **Create an agent**
+
+    Open **Studio → Agents → Create**. Name and instructions are the only
+    required fields; the model defaults to a sensible standard-tier choice.
+  </Step>
+  <Step>
+    **Chat**
+
+    Click the agent to open a session. Responses stream, tool calls render
+    inline, and files you drag in are attached to the run.
+  </Step>
+  <Step>
+    **Give it more to work with**
+
+    From the agent editor you can switch on platform tools, attach skills,
+    connect a Google or GitHub account, point it at a knowledge space, and
+    turn on a heartbeat so it works while you are away.
+  </Step>
+</Steps>
+
+Screen-by-screen tour: [Web app guide](/docs/ui).
 
   </Tab>
 </Tabs>
 
----
-
-## Next steps
+## Next
 
 <Cards>
-  <Card title="Add tools" href="/docs/guides/tools-mcp" description="Give your agent web search, APIs, and more" />
-  <Card title="Stream responses" href="/docs/api#streaming" description="Get tokens as they arrive using SSE" />
-  <Card title="Build a workflow" href="/docs/guides/workflows" description="Chain multiple steps into a pipeline" />
-  <Card title="Schedule tasks" href="/docs/guides/tasks" description="Automate work on a cron schedule" />
+  <Card title="Core concepts" href="/docs/concepts" description="The dozen nouns the rest of the docs assume" />
+  <Card title="Authentication" href="/docs/authentication" description="Tokens, project keys, and scopes" />
+  <Card title="Give it tools" href="/docs/guides/tools-mcp" description="Platform tools, your APIs, and MCP servers" />
+  <Card title="Put it on a schedule" href="/docs/guides/tasks" description="Cron tasks and autonomous heartbeats" />
 </Cards>

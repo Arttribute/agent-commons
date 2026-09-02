@@ -1,63 +1,101 @@
 ---
 title: Introduction
-description: Agent Commons is an open platform for building, deploying, and connecting AI agents.
+description: Agent Commons is an open platform for building, running, and connecting AI agents.
 ---
 
-# Agent Commons
+Agent Commons gives an agent everything it needs to do real work: a model, a
+toolbelt, memory, a place to keep files, a computer it can log into, a schedule,
+a wallet, and a record of where every answer came from.
 
-Agent Commons is a platform for building, running, and connecting AI agents. Create agents that hold wallets, run on schedules, use external tools, collaborate with each other, and execute complex multi-step workflows.
+You can drive all of it from the web app, the `agc` CLI, the TypeScript SDK, or
+plain HTTP.
 
 <Callout>
-  New here? Start with the [Quickstart](/docs/quickstart) to have your first agent running in minutes.
+  New here? The [Quickstart](/docs/quickstart) has an agent answering you in
+  about five minutes.
 </Callout>
 
-## What you can build
+## Pick an interface
 
-| Use case | Key features used |
+<Cards>
+  <Card title="Web app" href="/docs/ui" description="Studio, chat, workflows, and knowledge in the browser" />
+  <Card title="CLI" href="/docs/cli" description="agc — chat, run, schedule, and ship from the terminal" />
+  <Card title="TypeScript SDK" href="/docs/sdk" description="npm i @agent-commons/sdk" />
+  <Card title="REST API" href="/docs/api" description="Any language, one bearer token" />
+</Cards>
+
+## What an agent can do
+
+| Capability | Where it lives |
 |---|---|
-| AI chat assistant | Agents, sessions, streaming |
-| Automated research bot | Tasks, scheduling, web tools |
-| Multi-step data pipeline | Workflows, tool chaining |
-| Agent marketplace | A2A protocol, skills |
-| Paid AI service | x402 payments, wallets |
-| Background autonomous agent | Heartbeat, cron mode |
+| Chat with streamed tokens, tools, and attachments | [Agents](/docs/guides/agents) |
+| Call your APIs, MCP servers, and built-in platform tools | [Tools & MCP](/docs/guides/tools-mcp) |
+| Follow reusable, publishable playbooks | [Skills](/docs/guides/skills) |
+| Read and write shared documents and files | [Knowledge & library](/docs/guides/knowledge) |
+| Remember facts across sessions | [Memory](/docs/guides/memory) |
+| Run multi-step graphs with approvals | [Workflows](/docs/guides/workflows) |
+| Wake on a cron schedule or a heartbeat | [Tasks & scheduling](/docs/guides/tasks) |
+| Get a persistent Linux box with a browser | [Computers](/docs/guides/computers) |
+| Act as you in Google, GitHub, and Slack | [Connections](/docs/guides/connections) |
+| Delegate to other agents over an open protocol | [A2A](/docs/guides/a2a) |
+| Show its sources and export a signed bundle | [Provenance](/docs/guides/provenance) |
+| Hold USDC and pay for what it uses | [Wallets](/docs/guides/wallets) |
 
-## Choose your interface
+## Thirty seconds of code
 
-<Cards>
-  <Card title="Web UI" href="/docs/ui" description="Browser-based app — no code required" />
-  <Card title="REST API" href="/docs/api" description="HTTP endpoints, works with any language" />
-  <Card title="TypeScript SDK" href="/docs/sdk" description="npm install @agent-commons/sdk" />
-  <Card title="CLI" href="/docs/cli" description="Terminal-first with the agc command" />
-</Cards>
+```typescript
+import { CommonsClient } from '@agent-commons/sdk';
 
-## Explore by topic
+const commons = new CommonsClient({ apiKey: process.env.COMMONS_API_KEY });
 
-<Cards>
-  <Card title="Agents" href="/docs/guides/agents" description="Create, configure, and run agents" />
-  <Card title="Tools & MCP" href="/docs/guides/tools-mcp" description="Connect external capabilities" />
-  <Card title="Workflows" href="/docs/guides/workflows" description="Chain steps into pipelines" />
-  <Card title="Tasks & Scheduling" href="/docs/guides/tasks" description="Automate work on a schedule" />
-  <Card title="Agent-to-Agent" href="/docs/guides/a2a" description="Agents calling other agents" />
-  <Card title="Wallets & Payments" href="/docs/guides/wallets" description="Agent wallets and USDC" />
-  <Card title="Memory" href="/docs/guides/memory" description="Persistent agent knowledge" />
-</Cards>
+const { data: agent } = await commons.agents.create({
+  name: 'Research Bot',
+  instructions: 'You research topics and answer with sources.',
+  modelProvider: 'anthropic',
+  modelId: 'claude-sonnet-4-6',
+});
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                    Interfaces                        │
-│  Web App (Next.js)  │  CLI (agc)  │  SDK / API      │
-├─────────────────────────────────────────────────────┤
-│                    API (NestJS)                      │
-│  Agents  │  Sessions  │  Tasks  │  Workflows         │
-│  Tools   │  MCP       │  A2A    │  Memory            │
-├─────────────────────────────────────────────────────┤
-│               Infrastructure                         │
-│  PostgreSQL  │  Supabase (vectors)  │  IPFS          │
-│  LangGraph   │  Blockchain (Base)   │  OAuth         │
-└─────────────────────────────────────────────────────┘
+for await (const event of commons.agents.stream({
+  agentId: agent.agentId,
+  messages: [{ role: 'user', content: 'What changed in EU AI rules this month?' }],
+})) {
+  if (event.type === 'token') process.stdout.write(event.content ?? '');
+}
 ```
 
-**Stack:** Next.js 15 · NestJS 11 · PostgreSQL · LangGraph · Base Sepolia · @agent-commons/sdk
+## How the pieces fit
+
+```
+                        You  ·  agc CLI  ·  SDK  ·  REST
+                                     │
+                        ┌────────────┴────────────┐
+                        │   api.agentcommons.io   │  bearer token, scopes,
+                        │        (gateway)        │  rate limits
+                        └────────────┬────────────┘
+                                     │
+   ┌──────────────┬──────────────────┼──────────────────┬──────────────┐
+   │              │                  │                  │              │
+[Session]     [Task]            [Workflow]           [A2A]        [Space]
+   │              │                  │                  │              │
+   └──────────────┴────────┬─────────┴──────────────────┴──────────────┘
+                           ▼
+                        [Agent]  ── model · instructions · skills
+                           │
+        ┌──────────┬───────┼────────┬───────────┬──────────┐
+        ▼          ▼       ▼        ▼           ▼          ▼
+    [Tools]    [Memory] [Library] [Knowledge] [Computer] [Wallet]
+     static                                                 │
+     custom  ── every call is recorded ──► [Provenance] ────┘
+     MCP
+```
+
+## Where things run
+
+| Surface | URL |
+|---|---|
+| Web app | [www.agentcommons.io](https://www.agentcommons.io) |
+| API | `https://api.agentcommons.io` |
+| Identity & API keys | [auth.agentcommons.io/platform](https://auth.agentcommons.io/platform) |
+| Source | [github.com/Arttribute/agent-commons](https://github.com/Arttribute/agent-commons) |
+
+**Stack:** Next.js 15 · NestJS 11 · LangGraph · PostgreSQL · Base Sepolia

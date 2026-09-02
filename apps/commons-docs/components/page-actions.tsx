@@ -1,16 +1,24 @@
 'use client';
 
 import { useState } from 'react';
-import { Copy, Check, ExternalLink } from 'lucide-react';
+import { Check, Copy, Github, SquarePen } from 'lucide-react';
 
 interface PageActionsProps {
   rawContent: string;
   githubPath: string;
 }
 
-const REPO = 'Arttribute/commons-docs';
+const REPO = 'Arttribute/agent-commons';
 const BRANCH = 'main';
+const DOCS_ROOT = 'apps/commons-docs';
 
+const ACTION =
+  'inline-flex items-center gap-1.5 rounded-md border border-fd-border bg-fd-card px-2 py-1 font-space text-[11px] font-medium text-fd-muted-foreground transition-colors hover:border-fd-foreground/20 hover:text-fd-foreground';
+
+/**
+ * Every page can be handed to a model or opened in an editor. Both are one
+ * click, and neither should draw the eye away from the first paragraph.
+ */
 export function PageActions({ rawContent, githubPath }: PageActionsProps) {
   const [copied, setCopied] = useState(false);
 
@@ -20,15 +28,13 @@ export function PageActions({ rawContent, githubPath }: PageActionsProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const vscodeUrl = `https://github.dev/${REPO}/blob/${BRANCH}/${githubPath}`;
-  const cursorUrl = `cursor://vscode.github-repositories/open?gitUrl=https://github.com/${REPO}&headSha=${BRANCH}&filePath=${githubPath}`;
+  const filePath = `${DOCS_ROOT}/${githubPath}`;
+  const sourceUrl = `https://github.com/${REPO}/blob/${BRANCH}/${filePath}`;
+  const editUrl = `https://github.dev/${REPO}/blob/${BRANCH}/${filePath}`;
 
   return (
-    <div className="flex items-center gap-1 mb-6 not-prose">
-      <button
-        onClick={handleCopy}
-        className="inline-flex items-center gap-1.5 rounded-md border border-fd-border bg-fd-secondary px-2.5 py-1 text-xs text-fd-muted-foreground hover:text-fd-foreground transition-colors"
-      >
+    <div className="not-prose mb-8 flex items-center gap-1.5">
+      <button onClick={handleCopy} className={ACTION} type="button">
         {copied ? (
           <>
             <Check className="size-3" />
@@ -37,29 +43,19 @@ export function PageActions({ rawContent, githubPath }: PageActionsProps) {
         ) : (
           <>
             <Copy className="size-3" />
-            Copy Markdown
+            Copy as Markdown
           </>
         )}
       </button>
 
-      <a
-        href={vscodeUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 rounded-md border border-fd-border bg-fd-secondary px-2.5 py-1 text-xs text-fd-muted-foreground hover:text-fd-foreground transition-colors"
-      >
-        <ExternalLink className="size-3" />
-        Open in VS Code
+      <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className={ACTION}>
+        <Github className="size-3" />
+        View source
       </a>
 
-      <a
-        href={cursorUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 rounded-md border border-fd-border bg-fd-secondary px-2.5 py-1 text-xs text-fd-muted-foreground hover:text-fd-foreground transition-colors"
-      >
-        <ExternalLink className="size-3" />
-        Open in Cursor
+      <a href={editUrl} target="_blank" rel="noopener noreferrer" className={ACTION}>
+        <SquarePen className="size-3" />
+        Edit
       </a>
     </div>
   );
