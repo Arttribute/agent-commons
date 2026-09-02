@@ -3,10 +3,17 @@
   "pages": [
     "agents",
     "tools-mcp",
+    "skills",
+    "knowledge",
+    "memory",
     "workflows",
     "tasks",
+    "computers",
+    "connections",
     "a2a",
+    "spaces",
+    "provenance",
     "wallets",
-    "memory"
+    "billing"
   ]
 }

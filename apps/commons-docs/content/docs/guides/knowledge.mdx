@@ -1,0 +1,202 @@
+---
+title: Knowledge & Library
+description: Shared documents agents read and write, and the file store behind every artifact.
+---
+
+Two stores, two jobs.
+
+- **Knowledge spaces** hold documents — a folder tree of Markdown that agents
+  search, read, and write. This is where durable, editable understanding lives.
+- **The library** holds files — uploads, generated artifacts, exports — with
+  provenance, grants, and share links.
+
+Use an agent's [knowledge base](/docs/guides/agents#knowledge-base) for a
+paragraph of standing context, a knowledge space for a handbook, and
+[memory](/docs/guides/memory) for things the agent worked out on its own.
+
+## Knowledge spaces
+
+```typescript
+const { data: space } = await commons.knowledge.createSpace({
+  name: 'Team handbook',
+  description: 'Policies, process, and product glossary',
+  allAgents: true,
+});
+```
+
+`allAgents: true` exposes the space to every agent you own; pass `agentIds`
+instead to scope it. `provider` selects the backing store when more than one
+knowledge provider is configured — `commons.knowledge.providers()` lists them.
+
+### Folders and documents
+
+```typescript
+await commons.knowledge.createFolder(space.spaceId, 'policies');
+
+await commons.knowledge.createDocument(space.spaceId, {
+  path: 'policies/expenses.md',
+  title: 'Expense policy',
+  content: '# Expense policy\n\nAnything under $200 needs no approval…',
+});
+
+const { data: docs } = await commons.knowledge.listDocuments(space.spaceId);
+```
+
+Documents are Markdown addressed by `path`, so the folder tree and the paths
+stay in sync and a document can be moved by rewriting its path.
+
+Bulk import:
+
+```typescript
+await commons.knowledge.importMarkdown(
+  space.spaceId,
+  [{ path: 'onboarding/day-one.md', title: 'Day one', content: '…' }],
+  ['onboarding'],
+);
+```
+
+### Search
+
+```typescript
+const { data } = await commons.knowledge.search({
+  query: 'what is the expense approval threshold',
+  spaceIds: [space.spaceId],
+  limit: 5,
+});
+```
+
+Search is hybrid — semantic similarity combined with the document link graph,
+so a document referenced by the ones that match ranks higher than its text
+alone would earn. `commons.knowledge.graph(spaceId)` returns that link graph.
+
+### Agent access
+
+Give an agent the knowledge tools and it can work the space itself:
+
+```typescript
+await commons.agents.update(agentId, {
+  commonTools: [
+    'listKnowledgeSpaces',
+    'searchKnowledge',
+    'readKnowledgeDocument',
+    'writeKnowledgeDocument',
+  ],
+});
+```
+
+An agent that can write knowledge will write knowledge. Grant
+`writeKnowledgeDocument` only where you want that.
+
+### Sharing
+
+```typescript
+await commons.knowledge.grant(space.spaceId, {
+  subjectType: 'user',
+  subjectId: teammateId,
+  permission: 'read',
+});
+```
+
+Revoke with `revokeGrant(spaceId, grantId)`.
+
+## Library
+
+Every file an agent reads or produces lands in the library: uploads,
+generated documents and images, code project exports.
+
+### Upload
+
+```typescript
+const { data: files } = await commons.files.upload(
+  [{ name: 'q3-report.pdf', data: blob }],
+  { agentId, sessionId, storageProvider: 's3' },
+);
+```
+
+```bash
+agc library upload q3-report.pdf notes.md --agent <agentId>
+```
+
+Attach an uploaded file to a run by ID:
+
+```typescript
+await commons.run.once({
+  agentId,
+  messages: [{ role: 'user', content: 'Summarise the attached report.' }],
+  attachments: [{ fileId: files[0].fileId }],
+});
+```
+
+### Read contents
+
+```typescript
+const { data: content } = await commons.files.content(fileId, {
+  maxChars: 20_000,
+  includeImageUrls: true,
+});
+```
+
+`offset` and `maxChars` page through large files so a long document does not
+blow the context window in one call.
+
+### Browse and organise
+
+```bash
+agc library list --query invoice --favorites --limit 20
+agc library get <itemId>
+agc library favorite <itemId>
+agc library delete <itemId>
+```
+
+```typescript
+const { data: items } = await commons.library.list({ query: 'invoice', limit: 20 });
+await commons.library.update(itemId, { name: 'Q3 invoice', isFavorite: true });
+```
+
+### Storage backend
+
+```typescript
+await commons.library.setStoragePreference('ipfs');
+```
+
+`s3` is the default. `ipfs` pins through Pinata and gives you a content
+address — worth it when the artifact needs to be independently verifiable, and
+not worth it for working files.
+
+### Sharing
+
+```typescript
+await commons.library.grant(itemId, {
+  subjectType: 'user',       // user · agent · workspace
+  subjectId: teammateId,
+  permission: 'read',        // read · edit · manage
+});
+
+const { data: link } = await commons.library.createShareLink(
+  itemId,
+  new Date(Date.now() + 7 * 864e5).toISOString(),
+);
+// anyone with link.token can GET /v1/shared/artifacts/:token
+```
+
+Share links need no credential — treat the token as the secret and revoke with
+`revokeShareLink(itemId, shareId)` when you are done.
+
+### Provenance
+
+```typescript
+const { data: origin } = await commons.library.provenance(itemId);
+```
+
+Which run produced the artifact, from which sources, using which tools. See
+[Provenance](/docs/guides/provenance).
+
+## Agent tools for files
+
+| Tool | What it does |
+|---|---|
+| `readUploadedFile` | Read a file attached to the session |
+| `searchLibraryArtifacts` | Semantic search across the library |
+| `createTextFile` · `createDocumentFile` · `createSpreadsheetFile` · `createPresentationFile` · `createPdfFile` | Produce artifacts |
+| `generateImage` | Generate images |
+| `uploadFileToIPFS` | Pin a file to IPFS |

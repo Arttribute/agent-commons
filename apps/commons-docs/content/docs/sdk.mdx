@@ -1,562 +1,457 @@
 ---
 title: TypeScript SDK
-description: Install @agent-commons/sdk and build with type-safe access to the full Agent Commons API.
+description: "@agent-commons/sdk — one typed client for the whole platform."
 ---
-
-# TypeScript SDK
-
-The `@agent-commons/sdk` package gives you typed access to the Agent Commons API from Node.js, modern browsers, and edge runtimes.
-
-## Installation
 
 ```bash
 npm install @agent-commons/sdk
 ```
 
-## Setup
+Zero runtime dependencies, ESM and CJS builds, full type declarations. Node 18+
+or any runtime with `fetch`.
+
+## The client
 
 ```typescript
 import { CommonsClient } from '@agent-commons/sdk';
 
-const client = new CommonsClient({
-  apiKey: process.env.AGENT_COMMONS_API_KEY,
+const commons = new CommonsClient({
+  apiKey: process.env.COMMONS_API_KEY,
 });
 ```
 
-| Option | Type | Required | Description |
-|---|---|---|---|
-| `baseUrl` | `string` | no | API origin. Defaults to `https://api.agentcommons.io` |
-| `apiKey` | `string` | for API calls | Project key from **Settings → Developer API keys** |
-| `initiator` | `string` | no | Optional delegated principal |
-| `identityUrl` | `string` | no | Commons Identity origin for developer-project operations |
-| `identityToken` | `string` | for `developer` | Commons Identity access token |
-| `fetch` | `typeof fetch` | no | Custom Fetch implementation |
+| Option | Default | Purpose |
+|---|---|---|
+| `apiKey` | — | Bearer credential for platform calls |
+| `baseUrl` | `https://api.agentcommons.io` | Platform origin |
+| `identityToken` | — | Commons session token, for developer-project calls |
+| `identityUrl` | `https://auth.agentcommons.io` | Identity origin |
+| `initiator` | — | Sent as `x-initiator` to act for a user |
+| `fetch` | global `fetch` | Inject your own implementation |
 
-Create a project-scoped `csk_*` key in **Agent Commons → Settings → Developer API keys**. Select only the scopes your application needs and set an expiration when practical. The plaintext key appears once, so copy it to your secret manager immediately.
+Every call resolves to `{ data }` unless noted, and throws `CommonsError` —
+carrying `status` and the parsed `body` — on a non-2xx response.
 
-Keep API keys on the server. Do not put them in browser bundles, mobile applications, or source control.
+```typescript
+import { CommonsError } from '@agent-commons/sdk';
 
----
+try {
+  await commons.agents.get('agent_missing');
+} catch (error) {
+  if (error instanceof CommonsError && error.status === 404) {
+    // …
+  }
+}
+```
+
+For a route the SDK does not yet wrap, drop to `commons.request()`:
+
+```typescript
+const result = await commons.request<{ data: unknown }>(
+  'POST',
+  '/v1/some/new/route',
+  { hello: 'world' },
+);
+```
 
 ## Agents
 
 ```typescript
-// Create
-const { data: agent } = await client.agents.create({
+const { data: agent } = await commons.agents.create({
   name: 'Research Bot',
-  instructions: 'You are a research assistant. Be concise.',
-  modelProvider: 'openai',
-  modelId: 'gpt-4o',
+  instructions: 'You research topics and answer with sources.',
+  modelProvider: 'anthropic',
+  modelId: 'claude-sonnet-4-6',
   temperature: 0.3,
 });
 
-// List
-const { data: agents } = await client.agents.list();
-const { data: mine } = await client.agents.list('0xWALLET');
-
-// Get / Update
-const { data: a } = await client.agents.get(agent.agentId);
-await client.agents.update(agent.agentId, { temperature: 0.7 });
-
-// Tools
-const { data: tools } = await client.agents.listTools(agent.agentId);
-await client.agents.addTool(agent.agentId, { toolId: 'tool_xyz' });
-await client.agents.removeTool(assignmentId); // pass assignment ID, not toolId
-
-// Knowledge base
-await client.agents.updateKnowledgebase(agent.agentId, [
-  { type: 'text', content: 'Background context...' },
-]);
-
-// Autonomy / heartbeat
-await client.agents.setAutonomy(agent.agentId, { enabled: true, intervalSec: 300 });
-await client.agents.triggerHeartbeat(agent.agentId);
-
-// TTS voices
-const { data: voices } = await client.agents.listVoices('openai');
+const { data: agents } = await commons.agents.list();
+await commons.agents.update(agent.agentId, { temperature: 0.1 });
 ```
 
----
+| Method | Purpose |
+|---|---|
+| `create` · `list` · `get` · `update` | Agent CRUD |
+| `generateImage` | Produce durable image assets without a tool-selection turn |
+| `listTools` · `addTool` · `updateTool` · `removeTool` | Manage the toolbelt |
+| `getKnowledgebase` · `updateKnowledgebase` | Always-on context |
+| `getPreferredConnections` · `addPreferredConnection` · `removePreferredConnection` | Pin peer agents this agent prefers to delegate to |
+| `getAutonomy` · `setAutonomy` · `triggerHeartbeat` · `trigger` | Heartbeat control |
+| `getRuntime` · `configureRuntime` · `deployRuntime` · `sleepRuntime` · `restartRuntime` · `manageRuntimeChannel` | Managed runtimes |
+| `listVoices` | Text-to-speech voices |
+| `createLiaison` | Spawn a liaison agent |
 
-## Running agents
+## Running
 
-### Single run
+### Blocking
 
 ```typescript
-const result = await client.run.once({
-  agentId: 'agent_abc123',
-  messages: [{ role: 'user', content: 'What is the capital of Kenya?' }],
+const result = await commons.run.once({
+  agentId,
+  messages: [{ role: 'user', content: 'Summarise this quarter.' }],
+  sessionId,
 });
-
-console.log(result.response);
-console.log(result.sessionId); // reuse to continue the conversation
 ```
 
 ### Streaming
 
+`agents.stream` is an async generator over `StreamEvent`.
+
 ```typescript
-for await (const event of client.agents.stream({
-  agentId: 'agent_abc123',
-  messages: [{ role: 'user', content: 'Write me a poem about AI.' }],
+for await (const event of commons.agents.stream({
+  agentId,
+  messages: [{ role: 'user', content: 'Research the EU AI Act.' }],
+  provenance: { mode: 'metadata' },
 })) {
-  if (event.type === 'token')     process.stdout.write(event.content ?? '');
-  if (event.type === 'toolStart') console.log(`\n[tool: ${event.toolName}]`);
-  if (event.type === 'final')     console.log('\nDone!');
+  switch (event.type) {
+    case 'token':
+      process.stdout.write(event.content ?? '');
+      break;
+    case 'toolStart':
+      console.log(`\n→ ${event.toolName}`);
+      break;
+    case 'final':
+      console.log(`\nsession ${event.sessionId}`);
+      break;
+    case 'error':
+      throw new Error(event.message);
+  }
 }
 ```
 
-**Stream event types:**
+Events carry `runId` and a monotonic `seq`. Full list:
+[stream events](/docs/api#streaming).
 
-| Type | Description |
-|---|---|
-| token | A chunk of response text |
-| toolStart | Agent is invoking a tool |
-| toolEnd | Tool returned a result |
-| agent_step | Internal agent step |
-| final | Run completed with final payload |
-| completed | Run finished successfully |
-| failed | Run failed |
-| cancelled | Run was cancelled |
-| status | Status update message |
-| error | An error occurred |
-| cli_tool_request | CLI-side tool invocation (used internally by the CLI) |
+### Caller-owned tools
 
----
+Hand the agent functions that run on *your* side — the platform emits
+`cli_tool_request` and waits for you to post the result. This is exactly how
+`agc chat` exposes your local filesystem.
+
+```typescript
+for await (const event of commons.agents.stream({
+  agentId,
+  messages,
+  cliTools: [
+    {
+      name: 'readFile',
+      description: 'Read a file from the local working directory',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' } },
+        required: ['path'],
+      },
+    },
+  ],
+})) {
+  if (event.type === 'cli_tool_request') {
+    const output = await runLocally(event.toolName!, event.args);
+    await commons.agents.submitCliToolResult(event.requestId!, output);
+  }
+}
+```
 
 ## Sessions
 
 ```typescript
-// Create
-const { data: session } = await client.sessions.create({
-  agentId: 'agent_abc123',
-  initiator: '0xUSER',
-  title: 'Research session',
-  source: 'web', // optional: 'web' | 'cli' — origin used for UI filtering
-});
-
-// List
-const { data: agentSessions } = await client.sessions.listByAgent('agent_abc123');
-const { data: userSessions } = await client.sessions.listByUser('0xUSER');
-
-// Get full session (history, tasks, spaces)
-const { data: full } = await client.sessions.getFull(session.sessionId);
+const { data: session } = await commons.sessions.create({ agentId, title: 'Q3 research' });
+const { data: full } = await commons.sessions.getFull(session.sessionId);
+await commons.sessions.rename(session.sessionId, 'Q3 research — final');
 ```
 
----
+`list` · `listByAgent` · `listByUser` · `create` · `get` · `getFull` ·
+`getChat` · `rename` · `delete`.
 
 ## Tasks
 
 ```typescript
-// Create
-const { data: task } = await client.tasks.create({
+const { data: task } = await commons.tasks.create({
+  agentId,
+  sessionId,
   title: 'Daily briefing',
-  description: 'Summarize overnight tech news.',
-  agentId: 'agent_abc123',
-  sessionId: 'session_xyz',
-  createdBy: '0xUSER',
-  createdByType: 'user',
+  description: 'Summarise overnight news.',
   executionMode: 'single',
   cronExpression: '0 8 * * 1-5',
   isRecurring: true,
+  createdBy: userId,
+  createdByType: 'user',
 });
 
-// Execute / cancel
-await client.tasks.execute(task.taskId);
-await client.tasks.cancel(task.taskId);
-
-// Stream progress
-for await (const event of client.tasks.stream(task.taskId)) {
-  console.log(event.type, event.message ?? '');
+for await (const event of commons.tasks.stream(task.taskId)) {
+  console.log(event.type, event.status);
 }
 ```
 
----
+`create` · `list` · `get` · `execute` · `cancel` · `update` · `reschedule` ·
+`delete` · `stream`.
 
 ## Workflows
 
 ```typescript
-// Create
-const workflow = await client.workflows.create({
-  name: 'Summarize and Report',
-  ownerId: '0xUSER',
-  ownerType: 'user',
+const { data: workflow } = await commons.workflows.create({
+  name: 'Summarise a URL',
   definition: {
     nodes: [
-      { id: 'input', type: 'input' },
-      { id: 'process', type: 'agent_processor', config: { agentId: 'agent_abc123' } },
-      { id: 'output', type: 'output' },
+      { id: 'in', type: 'input' },
+      { id: 'fetch', type: 'tool', toolName: 'webSearch' },
+      { id: 'write', type: 'agent_processor', agentId },
+      { id: 'out', type: 'output' },
     ],
     edges: [
-      { id: 'e1', source: 'input', target: 'process' },
-      { id: 'e2', source: 'process', target: 'output' },
+      { id: 'e1', source: 'in', target: 'fetch' },
+      { id: 'e2', source: 'fetch', target: 'write' },
+      { id: 'e3', source: 'write', target: 'out' },
     ],
   },
 });
 
-// Node types: tool | input | output | condition | transform | loop | agent_processor | human_approval
-
-// List / update / delete
-const workflows = await client.workflows.list('0xUSER', 'user');
-await client.workflows.update(workflow.workflowId, { name: 'Updated name' });
-await client.workflows.delete(workflow.workflowId);
-
-// Execute and stream
-const execution = await client.workflows.execute(workflow.workflowId, {
+const { data: execution } = await commons.workflows.execute(workflow.workflowId, {
   inputData: { url: 'https://example.com' },
 });
 
-for await (const event of client.workflows.stream(workflow.workflowId, execution.executionId)) {
-  console.log(event.type, event.payload);
+for await (const event of commons.workflows.stream(workflow.workflowId, execution.executionId)) {
+  console.log(event.type, event.stage);
 }
-
-// Manage executions
-const exec    = await client.workflows.getExecution(workflow.workflowId, execution.executionId);
-const history = await client.workflows.listExecutions(workflow.workflowId, 10);
-await client.workflows.cancelExecution(workflow.workflowId, execution.executionId);
-
-// Human approval
-await client.workflows.approveExecution(workflow.workflowId, execution.executionId, {
-  approvalToken: execution.approvalToken,
-  approvalData: { approved: true },
-});
-await client.workflows.rejectExecution(workflow.workflowId, execution.executionId, {
-  approvalToken: execution.approvalToken,
-  reason: 'Not ready',
-});
 ```
 
----
+`create` · `list` · `discoverPublic` · `get` · `update` · `delete` · `fork` ·
+`execute` · `getExecution` · `listExecutions` · `cancelExecution` ·
+`approveExecution` · `rejectExecution` · `stream` · `getWebhook` ·
+`rotateWebhookToken` · `disableWebhook` · `executeWebhook`.
+
+Built-in templates come from a separate export:
+
+```typescript
+import { listWorkflowTemplates, buildWorkflowTemplate } from '@agent-commons/sdk';
+```
 
 ## Tools
 
 ```typescript
-// List
-const { data: tools } = await client.tools.list();
-const { data: agentTools } = await client.tools.list({ agentId: 'agent_abc123' });
-const { data: statics } = await client.tools.listStatic();
-
-// Create
-const { data: tool } = await client.tools.create({
-  name: 'slack_notify',
-  displayName: 'Slack Notify',
-  description: 'Send a message to a Slack channel',
+const { data: tool } = await commons.tools.create({
+  name: 'weather_lookup',
+  description: 'Get the current weather for a city',
   schema: {
     type: 'object',
-    properties: {
-      channel: { type: 'string' },
-      message: { type: 'string' },
-    },
-    required: ['channel', 'message'],
+    properties: { city: { type: 'string' } },
+    required: ['city'],
   },
-  visibility: 'private',
-});
-
-// Store an API key for a tool
-await client.toolKeys.create({
-  toolId: tool.toolId,
-  ownerId: '0xUSER',
-  ownerType: 'user',
-  keyName: 'SLACK_TOKEN',
-  value: 'xoxb-your-slack-token',
-});
-
-// Grant permission to an agent
-await client.toolPermissions.grant({
-  toolId: tool.toolId,
-  subjectId: 'agent_abc123',
-  subjectType: 'agent',
-  permission: 'execute',
-});
-```
-
----
-
-## MCP Servers
-
-```typescript
-// List servers for an owner
-const { servers } = await client.mcp.listServers('0xUSER', 'user');
-
-// Create and connect
-const server = await client.mcp.createServer({
-  name: 'GitHub Tools',
-  connectionType: 'sse',
-  connectionConfig: { url: 'https://mcp.example.com/sse' },
-  ownerId: '0xUSER',
-  ownerType: 'user',
-});
-
-await client.mcp.connect(server.serverId);
-const { toolsDiscovered } = await client.mcp.sync(server.serverId);
-
-// Inspect
-const { tools } = await client.mcp.listTools(server.serverId);
-const { tools: allTools } = await client.mcp.listToolsByOwner('0xUSER', 'user');
-const status = await client.mcp.getServerStatus(server.serverId);
-
-// Resources and prompts
-const { resources } = await client.mcp.listResources(server.serverId);
-const resource = await client.mcp.readResource(server.serverId, 'file:///README.md');
-const { prompts } = await client.mcp.listPrompts(server.serverId);
-const rendered = await client.mcp.getPrompt(server.serverId, 'summarize', { language: 'en' });
-
-// Update / disconnect / delete
-await client.mcp.updateServer(server.serverId, { isPublic: true });
-await client.mcp.disconnect(server.serverId);
-await client.mcp.deleteServer(server.serverId);
-
-// Browse public servers
-const { servers: marketplace } = await client.mcp.getMarketplace();
-```
-
-Connection types: stdio · sse · http · streamable-http
-
----
-
-## Memory
-
-```typescript
-// Store
-const { data: mem } = await client.memory.create({
-  agentId: 'agent_abc123',
-  memoryType: 'semantic',
-  content: 'User prefers bullet-point responses.',
-  summary: 'Formatting preference',  // required
-  tags: ['preferences'],
-});
-
-// Retrieve by semantic similarity
-const { data: relevant } = await client.memory.retrieve(
-  'agent_abc123',
-  'user formatting preferences',
-  5, // limit
-);
-
-// List all
-const { data: all } = await client.memory.list('agent_abc123', { type: 'semantic' });
-
-// Update / delete
-await client.memory.update(mem.memoryId, { importanceScore: 0.9 });
-await client.memory.delete(mem.memoryId);
-```
-
-Memory types: episodic · semantic · procedural
-
----
-
-## Wallets
-
-```typescript
-// Create
-const wallet = await client.wallets.create({
-  agentId: 'agent_abc123',
-  walletType: 'eoa',
-  label: 'main',
-});
-
-// Check balance
-const balance = await client.wallets.balance(wallet.id);
-console.log('USDC:', balance.usdc);
-
-// Transfer
-await client.wallets.transfer(wallet.id, {
-  toAddress: '0xRecipientAddress',
-  amount: '1.5',
-  tokenSymbol: 'USDC',
-});
-
-// Get primary wallet
-const primary = await client.wallets.primary('agent_abc123');
-
-// x402 payment fetch
-const response = await client.wallets.x402Fetch('agent_abc123', {
-  url: 'https://paid-api.example.com/data',
-  method: 'GET',
-});
-```
-
-Wallet types: eoa · erc4337 · external
-
----
-
-## Developer projects and API keys
-
-Developer keys are managed by Commons Identity and belong to a developer project. Use an account access token to manage projects and keys:
-
-```typescript
-const identity = new CommonsClient({
-  identityToken: process.env.COMMONS_IDENTITY_TOKEN,
-});
-
-const { data: project } = await identity.developer.createProject({
-  workspaceId: 'workspace_abc123',
-  name: 'Production API',
-  environment: 'production',
-});
-
-const { data: created } = await identity.developer.createApiKey(project.id, {
-  name: 'Backend service',
-  scopes: ['agents:read', 'agents:run'],
-  expiresAt: '2027-01-01T00:00:00Z',
-});
-
-console.log(created.key); // returned only once
-
-const { data: keys } = await identity.developer.listApiKeys(project.id);
-await identity.developer.revokeApiKey(keys[0].id);
-```
-
-The older `client.apiKeys` namespace remains available for legacy `sk-ac-*` principal keys. Use `client.developer` for new integrations.
-
----
-
-## Auth
-
-```typescript
-// Resolve the principal represented by the current API key.
-const { principalId, principalType } = await client.auth.me();
-```
-
----
-
-## A2A (Agent-to-Agent)
-
-```typescript
-// Get an agent's A2A card
-const card = await client.a2a.getAgentCard('agent_abc123');
-
-// Send a task to an agent
-const task = await client.a2a.sendTask('agent_abc123', {
-  message: {
-    role: 'user',
-    parts: [{ type: 'text', text: 'Summarize this document...' }],
+  apiSpec: {
+    baseUrl: 'https://api.example.com',
+    path: '/weather',
+    method: 'GET',
+    queryParams: { q: '{{city}}' },
+    authType: 'api-key',
+    authKeyName: 'X-API-Key',
   },
 });
 
-// Stream task updates
-for await (const event of client.a2a.stream('agent_abc123', task.id)) {
-  console.log(event.type, event.content);
-}
-
-// Get status / cancel / list
-const status = await client.a2a.getTask('agent_abc123', task.id);
-await client.a2a.cancelTask('agent_abc123', task.id);
-const { tasks } = await client.a2a.listTasks('agent_abc123', 20);
+await commons.agents.addTool(agentId, { toolId: tool.toolId });
 ```
 
----
+| Namespace | Methods |
+|---|---|
+| `tools` | `list` · `get` · `create` · `update` · `delete` · `listStatic` |
+| `toolKeys` | `list` · `create` · `get` · `updateMetadata` · `updateValue` · `test` · `mapToTool` · `removeMapping` · `delete` |
+| `toolPermissions` | `grant` · `batchGrant` · `revoke` · `check` · `checkAgentAccess` · `list` · `listForTool` · `listForSubject` · `accessibleTools` · `transferOwnership` |
+
+## MCP
+
+```typescript
+const server = await commons.mcp.createServer({
+  name: 'Filesystem',
+  connectionType: 'stdio',
+  connectionConfig: {
+    command: 'npx',
+    args: ['@modelcontextprotocol/server-filesystem', '/Users/me/projects'],
+  },
+  ownerId: userId,
+  ownerType: 'user',
+});
+
+await commons.mcp.connect(server.mcpServerId);
+await commons.mcp.sync(server.mcpServerId);
+const { data: tools } = await commons.mcp.listTools(server.mcpServerId);
+```
+
+`listServers` · `createServer` · `getServer` · `updateServer` ·
+`deleteServer` · `getMarketplace` · `getServerStatus` · `connect` ·
+`disconnect` · `sync` · `listTools` · `listToolsByOwner` · `listResources` ·
+`readResource` · `listPrompts` · `getPrompt`.
 
 ## Skills
 
 ```typescript
-// List
-const { data: skills } = await client.skills.list({ isPublic: true });
-const { data: skill }  = await client.skills.get('summarize-content');
-const { data: index }  = await client.skills.getIndex();
-
-// Create
-const { data: newSkill } = await client.skills.create({
-  slug: 'my-skill',
-  name: 'My Skill',
-  description: 'Does something useful',
-  instructions: 'When asked to...',
-  tools: ['tool_abc'],
-  isPublic: false,
+const { data: skill } = await commons.skills.create({
+  slug: 'weekly-report',
+  name: 'Weekly report',
+  description: 'Produce the standard weekly status report',
+  instructions: '1. Pull last week…',
+  tools: ['webSearch', 'createDocumentFile'],
+  triggers: ['weekly report', 'status update'],
 });
 
-// Update / delete
-await client.skills.update('my-skill', { isPublic: true });
-await client.skills.delete('my-skill');
+await commons.skills.setAgentAvailability(skill.skillId, agentId, true);
 ```
 
----
+`list` · `get` · `getIndex` · `listForAgent` · `setAgentAvailability` ·
+`create` · `update` · `delete` · `import`.
 
-## Models
-
-```typescript
-const { data, grouped } = await client.models.list();
-// grouped: { openai: [...], anthropic: [...], google: [...], ... }
-```
-
----
-
-## Usage
+## Memory
 
 ```typescript
-// Agent usage with optional date range
-const { data: usage } = await client.usage.getAgentUsage('agent_abc123', {
-  from: '2025-01-01T00:00:00Z',
-  to:   '2025-01-31T23:59:59Z',
+await commons.memory.create({
+  agentId,
+  content: 'The user prefers concise bullet-point answers.',
+  memoryType: 'semantic',
 });
-console.log(usage.totalCostUsd, usage.totalTokens);
 
-// Session usage
-const { data: sessionUsage } = await client.usage.getSessionUsage('session_xyz');
+const { data: hits } = await commons.memory.retrieve(
+  agentId,
+  'formatting preferences',
+  5,
+);
 ```
 
----
+`list` · `stats` · `retrieve` · `get` · `create` · `update` · `delete` ·
+`createSharedScope` · `listSharedScopes`.
 
-## Error handling
+## Knowledge and files
 
 ```typescript
-import { CommonsClient, CommonsError } from '@agent-commons/sdk';
+const { data: space } = await commons.knowledge.createSpace({ name: 'Handbook' });
 
-try {
-  await client.run.once({ agentId: 'bad-id', messages: [...] });
-} catch (error) {
-  if (error instanceof CommonsError) {
-    console.error(`${error.status}: ${error.message}`);
-    console.error('Details:', error.data);
-  }
+await commons.knowledge.createDocument(space.spaceId, {
+  path: 'onboarding/day-one.md',
+  title: 'Day one',
+  content: '# Day one\n…',
+});
+
+const { data: results } = await commons.knowledge.search({ query: 'expense policy' });
+```
+
+```typescript
+const { data: uploaded } = await commons.files.upload(
+  [{ name: 'report.pdf', data: fileBlob }],
+  { agentId, sessionId },
+);
+
+const { data: text } = await commons.files.content(uploaded[0].fileId, { maxChars: 20_000 });
+```
+
+| Namespace | Methods |
+|---|---|
+| `knowledge` | `providers` · `listSpaces` · `createSpace` · `getSpace` · `updateSpace` · `deleteSpace` · `grant` · `revokeGrant` · `listFolders` · `createFolder` · `moveFolder` · `deleteFolder` · `listDocuments` · `getDocument` · `createDocument` · `updateDocument` · `deleteDocument` · `importMarkdown` · `graph` · `search` |
+| `files` | `upload` · `get` · `content` |
+| `library` | `list` · `get` · `download` · `preview` · `update` · `delete` · `grant` · `revokeGrant` · `createShareLink` · `revokeShareLink` · `resolveShare` · `storagePreference` · `setStoragePreference` |
+
+## Computers
+
+```typescript
+await commons.agents.wakeComputer(agentId);
+
+const { data: run } = await commons.agents.execComputer(agentId, {
+  command: 'python analyse.py',
+  cwd: '/workspace',
+  timeoutSeconds: 300,
+});
+
+await commons.agents.sleepComputer(agentId);
+```
+
+`getComputer` · `getComputerConfig` · `updateComputerConfig` ·
+`wakeComputer` · `sleepComputer` · `restartComputer` · `resizeComputer` ·
+`execComputer` · `readComputerFile` · `writeComputerFile` ·
+`openComputerBrowser` · `testComputerBrowser` · `listComputerEvents`.
+
+## Connections
+
+```typescript
+const { data: providers } = await commons.oauth.listProviders();
+
+const flow = await commons.oauth.connect({
+  providerKey: 'google',
+  scopes: ['https://www.googleapis.com/auth/gmail.send'],
+});
+// send the user to flow.authorizationUrl
+
+const { data: connections } = await commons.oauth.listConnections();
+```
+
+`listProviders` · `getProvider` · `connect` · `listConnections` ·
+`getConnection` · `updateConnection` · `refresh` · `test` · `revoke`.
+
+## A2A
+
+```typescript
+const card = await commons.a2a.getAgentCard(agentId);
+
+const task = await commons.a2a.sendTask(agentId, {
+  message: { role: 'user', parts: [{ type: 'text', text: 'Research quantum computing' }] },
+});
+
+for await (const event of commons.a2a.stream(agentId, task.id)) {
+  console.log(event.type);
 }
 ```
 
----
+`getAgentCard` · `sendTask` · `getTask` · `cancelTask` · `listTasks` · `stream`.
 
-## End-to-end example
+## Wallets
 
 ```typescript
-import { CommonsClient } from '@agent-commons/sdk';
+const { data: wallet } = await commons.wallets.primary(agentId);
+const { data: balance } = await commons.wallets.balance(wallet.walletId);
 
-const client = new CommonsClient({
-  apiKey: process.env.AGENT_COMMONS_API_KEY!,
+const paid = await commons.wallets.x402Fetch(agentId, {
+  url: 'https://paid.example.com/dataset',
+  method: 'GET',
 });
+```
 
-async function main() {
-  // 1. Create a research agent
-  const { data: agent } = await client.agents.create({
-    name: 'Daily Researcher',
-    instructions: `You are a research assistant. When given a topic:
-      1. Search the web for the latest information
-      2. Summarize in 5 clear bullet points
-      3. Include sources`,
-    modelProvider: 'anthropic',
-    modelId: 'claude-sonnet-4-6',
-    temperature: 0.2,
-  });
+`list` · `primary` · `get` · `create` · `balance` · `transfer` · `x402Fetch` ·
+`deactivate`.
 
-  // 2. Schedule it to run every morning
-  await client.tasks.create({
-    title: 'Daily AI news briefing',
-    description: 'Research the top AI developments from the past 24 hours.',
-    agentId: agent.agentId,
-    sessionId: 'session_placeholder',
-    createdBy: '0xUSER',
-    createdByType: 'user',
-    executionMode: 'single',
-    cronExpression: '0 8 * * *',
-    isRecurring: true,
-  });
+## Provenance
 
-  // 3. Run it once now to test
-  for await (const event of client.agents.stream({
-    agentId: agent.agentId,
-    messages: [{ role: 'user', content: 'Top AI news today?' }],
-  })) {
-    if (event.type === 'token') process.stdout.write(event.content ?? '');
-    if (event.type === 'final') console.log('\n✓ Done');
-  }
-}
+```typescript
+const { data: report } = await commons.provenance.session(sessionId);
+const { data: bundle } = await commons.provenance.bundle(traceId);
+```
 
-main();
+`session` · `scope` · `bundle` · `anchor`.
+
+## Accounts and observability
+
+| Namespace | Methods |
+|---|---|
+| `auth` | `me` |
+| `developer` | `scopes` · `listProjects` · `createProject` · `listApiKeys` · `createApiKey` · `revokeApiKey` |
+| `apiKeys` | `create` · `list` · `revoke` — legacy `sk-ac-` keys |
+| `usage` | `getAgentUsage` · `getSessionUsage` |
+| `logs` | `list` · `observability` |
+| `activity` | `list` |
+| `credits` | `balance` · `ledger` · `summary` · `campaigns` · `claimCampaign` · `transfers` · `gift` · `grant` · `debit` |
+| `billing` | `catalog` · `subscription` · `entitlements` · `invoices` · `paymentMethods` · `subscribe` · `topup` · `portal` |
+| `flags` | `all` · `evaluate` |
+| `models` | `list` |
+| `providers` | `list` · `configure` · `remove` |
+| `uiPlugins` | `list` · `getBySlug` · `create` · `setStatus` · `delete` |
+| `spaces` | `list` · `create` · `get` · `getFull` · `update` · `delete` · `issueRtcTicket` · `listMembers` · `addMember` · `updateMember` · `removeMember` · `listMessages` · `sendMessage` · `updateMessage` · `deleteMessage` |
+| `projects` | `list` · `create` · `get` · `writeFiles` · `publish` · `verify` · `exportToComputer` · `exportToGitHub` |
+| `goals` | `create` · `get` · `updateProgress` |
+| `audio` | `transcribe` |
+| `copilot` | `get` · `updateSettings` · `listChanges` · `acceptChange` · `rejectChange` · `revertChange` |
+| `liaisons` | `create` · `interact` |
+
+## Types
+
+Everything is exported from the package root — `Agent`, `Session`,
+`StreamEvent`, `Workflow`, `WorkflowNode`, `Task`, `Tool`, `Skill`,
+`AgentMemory`, `KnowledgeSpace`, `LibraryItem`, `AgentComputer`,
+`OAuthConnection`, `AgentWallet`, `CreditBalance`, `PlanEntitlements`,
+`AgentCard`, and the rest.
+
+```typescript
+import type { Agent, StreamEvent, WorkflowNodeType } from '@agent-commons/sdk';
 ```

@@ -2,72 +2,338 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   Agent Commons documentation theme
+
+   The palette is lifted directly from commons-app so the docs and the product
+   read as one surface: shadcn's warm "stone" neutrals rather than the cool
+   grays Fumadocs ships with. Fumadocs drives every component from `--fd-*`
+   HSL triples, so overriding those here is enough to re-skin the whole site.
+   ───────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --background: 0 0% 100%;
-  --foreground: 0 0% 3.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 0 0% 3.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 3.9%;
-  --primary: 0 0% 9%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 0 0% 96.1%;
-  --secondary-foreground: 0 0% 9%;
-  --muted: 0 0% 96.1%;
-  --muted-foreground: 0 0% 45.1%;
-  --accent: 0 0% 96.1%;
-  --accent-foreground: 0 0% 9%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 89.8%;
-  --input: 0 0% 89.8%;
-  --ring: 0 0% 3.9%;
-  --radius: 0.5rem;
+  /* Brand accents — pastel highlights shared with the app */
+  --brand-yellow: #fde68a;
+  --brand-pink: #f9a8d4;
+  --brand-mint: #86efac;
+  --brand-cyan: #67e8f9;
+  --brand-blue: #93c5fd;
+  --brand-lilac: #c4b5fd;
+
+  /* Page canvas sits between stone-50 and the white used on cards. */
+  --page: #fcfcfb;
+  --radius: 0.625rem;
+
+  --fd-background: 0 0% 100%;
+  --fd-foreground: 20 14.3% 4.1%;
+  --fd-card: 0 0% 100%;
+  --fd-card-foreground: 20 14.3% 4.1%;
+  --fd-popover: 0 0% 100%;
+  --fd-popover-foreground: 20 14.3% 4.1%;
+  --fd-primary: 24 9.8% 10%;
+  --fd-primary-foreground: 60 9.1% 97.8%;
+  --fd-secondary: 60 4.8% 95.9%;
+  --fd-secondary-foreground: 24 9.8% 10%;
+  --fd-muted: 60 4.8% 95.9%;
+  --fd-muted-foreground: 25 5.3% 44.7%;
+  --fd-accent: 60 4.8% 95.9%;
+  --fd-accent-foreground: 24 9.8% 10%;
+  --fd-border: 20 5.9% 90%;
+  --fd-ring: 20 14.3% 4.1%;
 }
 
 .dark {
-  --background: 0 0% 3.9%;
-  --foreground: 0 0% 98%;
-  --card: 0 0% 3.9%;
-  --card-foreground: 0 0% 98%;
-  --primary: 0 0% 98%;
-  --primary-foreground: 0 0% 9%;
-  --secondary: 0 0% 14.9%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 14.9%;
-  --muted-foreground: 0 0% 63.9%;
-  --accent: 0 0% 14.9%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 14.9%;
-  --input: 0 0% 14.9%;
-  --ring: 0 0% 83.1%;
+  --page: #0c0a09;
+
+  --fd-background: 20 14.3% 4.1%;
+  --fd-foreground: 60 9.1% 97.8%;
+  --fd-card: 20 14.3% 4.1%;
+  --fd-card-foreground: 60 9.1% 97.8%;
+  --fd-popover: 20 14.3% 4.1%;
+  --fd-popover-foreground: 60 9.1% 97.8%;
+  --fd-primary: 60 9.1% 97.8%;
+  --fd-primary-foreground: 24 9.8% 10%;
+  --fd-secondary: 12 6.5% 15.1%;
+  --fd-secondary-foreground: 60 9.1% 97.8%;
+  --fd-muted: 12 6.5% 15.1%;
+  --fd-muted-foreground: 24 5.4% 63.9%;
+  --fd-accent: 12 6.5% 15.1%;
+  --fd-accent-foreground: 60 9.1% 97.8%;
+  --fd-border: 12 6.5% 15.1%;
+  --fd-ring: 24 5.7% 82.9%;
 }
 
-/* Space Grotesk only for page titles (h1) */
-h1 {
-  font-family: var(--font-space-grotesk), 'Space Grotesk', sans-serif;
+/* ── Typography ──────────────────────────────────────────────────────────────
+   Space Grotesk is the brand face: headings, navigation and labels. Long-form
+   body copy stays on Geist Sans, which holds up better at paragraph length. */
+
+body {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Force dark code blocks regardless of page theme */
-pre,
-[data-rehype-pretty-code-fragment],
-code[data-theme],
-pre[data-theme] {
-  background-color: #0d1117 !important;
-  color: #e6edf3 !important;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+#nd-sidebar,
+#nd-nav,
+#nd-tocnav,
+#nd-toc,
+.fd-codeblock-tab,
+[data-radix-collection-item] {
+  font-family: var(--font-space-grotesk), var(--font-geist-sans), sans-serif;
 }
 
-pre {
+#nd-docs-layout h1,
+.prose h1 {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  font-size: 2.1rem;
+}
+
+.prose h2 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-size: 1.4rem;
+  margin-top: 3rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid hsl(var(--fd-border));
+}
+
+.prose h3 {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  font-size: 1.09rem;
+  margin-top: 2rem;
+}
+
+.prose h4 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-size: 0.97rem;
+}
+
+/* The page description under the title reads as a standfirst, not body copy. */
+#nd-page article > p:first-of-type:not(.not-prose) {
+  font-size: 1.02rem;
+}
+
+.prose p,
+.prose li {
+  line-height: 1.72;
+}
+
+/* ── Links ──────────────────────────────────────────────────────────────────
+   Underlines are drawn from the border colour and only warm up on hover, so a
+   paragraph full of references still reads as prose rather than as a list.
+   `data-card` marks Fumadocs cards and heading anchors — those carry their own
+   affordance and must not pick up a rule. */
+
+.prose a:not([data-card]) {
+  font-weight: 500;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: hsl(var(--fd-muted-foreground) / 0.35);
+  transition: text-decoration-color 120ms ease;
+}
+
+.prose a:not([data-card]):hover {
+  text-decoration-color: hsl(var(--fd-foreground) / 0.7);
+}
+
+/* ── Code ───────────────────────────────────────────────────────────────────
+   Blocks follow the reader's theme instead of forcing a dark slab onto a light
+   page. Inline code is a quiet chip so it does not out-shout the sentence. */
+
+.prose pre,
+figure.shiki {
   border-radius: var(--radius);
+  border: 1px solid hsl(var(--fd-border));
+  font-size: 0.845rem;
+  line-height: 1.65;
 }
 
-/* Inline code - dark as well */
-:not(pre) > code {
-  background-color: #0d1117 !important;
-  color: #e6edf3 !important;
-  padding: 0.15em 0.4em;
-  border-radius: 0.25rem;
-  font-size: 0.875em;
+.prose pre {
+  padding: 0.95rem 1.05rem;
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  font-variant-ligatures: none;
+}
+
+.prose :not(pre) > code {
+  background-color: hsl(var(--fd-muted));
+  border: 1px solid hsl(var(--fd-border));
+  color: hsl(var(--fd-foreground));
+  padding: 0.1em 0.36em;
+  border-radius: 0.3rem;
+  font-size: 0.855em;
+  font-weight: 500;
+}
+
+.prose :not(pre) > code::before,
+.prose :not(pre) > code::after {
+  content: none;
+}
+
+.prose a > code {
+  color: inherit;
+}
+
+/* ── Tables ────────────────────────────────────────────────────────────────
+   Endpoint and option tables carry most of the reference material, so they get
+   hairline rules, a muted header band, and horizontal scroll on narrow screens
+   rather than crushed columns. */
+
+.prose table {
+  font-size: 0.875rem;
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.prose thead {
+  background-color: hsl(var(--fd-muted));
+}
+
+.prose th {
+  font-family: var(--font-space-grotesk), sans-serif;
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: hsl(var(--fd-muted-foreground));
+  white-space: nowrap;
+}
+
+.prose th,
+.prose td {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid hsl(var(--fd-border));
+  vertical-align: top;
+}
+
+.prose td code {
+  white-space: nowrap;
+}
+
+/* ── Utilities shared with the app ─────────────────────────────────────────── */
+
+@layer utilities {
+  /* Slide-deck style highlight pill behind a word. Always dark text on a
+     pastel wash so it reads the same in both themes. */
+  .hl {
+    color: #18181b;
+    border-radius: 0.4em;
+    padding: 0.08em 0.38em;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  .hl-yellow { background-color: var(--brand-yellow); }
+  .hl-pink { background-color: var(--brand-pink); }
+  .hl-mint { background-color: var(--brand-mint); }
+  .hl-cyan { background-color: var(--brand-cyan); }
+  .hl-blue { background-color: var(--brand-blue); }
+  .hl-lilac { background-color: var(--brand-lilac); }
+
+  .brand-gradient {
+    background-image: linear-gradient(
+      100deg,
+      var(--brand-yellow),
+      var(--brand-pink),
+      var(--brand-mint),
+      var(--brand-cyan)
+    );
+  }
+}
+
+/* ── Chrome ────────────────────────────────────────────────────────────────
+   A hairline of brand gradient under the header is the only saturated colour
+   in the layout — enough to place the site, quiet enough to ignore. */
+
+body::before {
+  content: "";
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  height: 2px;
+  z-index: 50;
+  background-image: linear-gradient(
+    100deg,
+    var(--brand-yellow),
+    var(--brand-pink),
+    var(--brand-mint),
+    var(--brand-cyan)
+  );
+}
+
+/* Section headings in the sidebar read as small caps labels, not as links. */
+#nd-sidebar p[class*="text-sm"][class*="font-medium"],
+#nd-sidebar .fd-sidebar-separator {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--fd-muted-foreground));
+}
+
+#nd-sidebar a {
+  border-radius: calc(var(--radius) - 2px);
+}
+
+/* The footer floats over a scrolling page tree, so it needs its own ground —
+   otherwise the last nav item bleeds through it. */
+#nd-sidebar > div:last-child {
+  background-color: hsl(var(--fd-background));
+}
+
+/* Cards on the index pages lift very slightly on hover — the same soft,
+   warm-tinted elevation the app uses for its panels. */
+a[data-card="true"] {
+  border-color: hsl(var(--fd-border));
+  box-shadow:
+    0 2px 8px -2px rgba(28, 25, 23, 0.06),
+    0 1px 2px rgba(28, 25, 23, 0.04);
+  transition:
+    box-shadow 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+a[data-card="true"]:hover {
+  border-color: hsl(var(--fd-foreground) / 0.18);
+  box-shadow:
+    0 6px 16px -6px rgba(28, 25, 23, 0.12),
+    0 2px 4px -2px rgba(28, 25, 23, 0.06);
+  transform: translateY(-1px);
+}
+
+.dark a[data-card="true"] {
+  box-shadow: none;
+}
+
+.dark a[data-card="true"]:hover {
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.6);
+}
+
+/* The active page and the active heading share one accent, so the eye can
+   pair "where I am" in the sidebar with "where I am" in the table of
+   contents. */
+#nd-sidebar a[data-active="true"] {
+  background-color: hsl(var(--fd-accent));
+  color: hsl(var(--fd-accent-foreground));
+  box-shadow: inset 2px 0 0 var(--brand-cyan);
+}
+
+#nd-toc a[data-active="true"],
+#nd-tocnav a[data-active="true"] {
+  color: hsl(var(--fd-foreground));
+  font-weight: 500;
 }

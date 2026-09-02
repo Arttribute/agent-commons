@@ -13,6 +13,7 @@ import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import { PageActions } from '@/components/page-actions';
+import { Endpoint } from '@/components/endpoint';
 
 export default async function Page({
   params,
@@ -32,12 +33,27 @@ export default async function Page({
   );
 
   return (
-    <DocsPage toc={page.data.toc} full={page.data.full}>
+    <DocsPage
+      toc={page.data.toc}
+      full={page.data.full}
+      tableOfContent={{ style: 'clerk' }}
+    >
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
       <PageActions rawContent={rawContent} githubPath={githubPath} />
       <DocsBody>
-        <MDX components={{ ...defaultMdxComponents, Tabs, Tab, Steps, Step, Accordion, Accordions }} />
+        <MDX
+          components={{
+            ...defaultMdxComponents,
+            Tabs,
+            Tab,
+            Steps,
+            Step,
+            Accordion,
+            Accordions,
+            Endpoint,
+          }}
+        />
       </DocsBody>
     </DocsPage>
   );

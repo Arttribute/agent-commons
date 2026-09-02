@@ -1,267 +1,291 @@
 ---
 title: Building Agents
-description: Create, configure, and deploy agents — from a simple chatbot to a fully autonomous worker.
+description: Every knob on an agent — model, instructions, tools, heartbeat, and runtime.
 ---
 
-# Building Agents
+An agent is instructions plus a model plus a toolbelt. Everything else —
+memory, a wallet, a computer, connected accounts — is opt-in.
 
-Agents are defined by their instructions, model, and tools. This guide covers every configuration option.
+## Create one
 
-## Create your first agent
-
-<Tabs items={['UI', 'API', 'SDK', 'CLI']}>
-  <Tab value="UI">
-    Go to **Studio → Create Agent** and fill in the form. The only required fields are **Name** and **Instructions**.
-  </Tab>
-  <Tab value="API">
-    ```bash
-    curl -X POST https://api.agentcommons.io/v1/agents \
-      -H "x-api-key: YOUR_KEY" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "name": "Support Agent",
-        "instructions": "You are a customer support agent. Be polite and solution-focused.",
-        "modelProvider": "openai",
-        "modelId": "gpt-4o"
-      }'
-    ```
+<Tabs items={['CLI', 'SDK', 'API', 'Web app']}>
+  <Tab value="CLI">
+```bash
+agc agents create \
+  --name "Support Agent" \
+  --instructions "You are a customer support agent. Be polite and solution-focused." \
+  --provider anthropic \
+  --model claude-sonnet-4-6
+```
   </Tab>
   <Tab value="SDK">
-    ```typescript
-    const agent = await client.agents.create({
-      name: 'Support Agent',
-      instructions: 'You are a customer support agent. Be polite and solution-focused.',
-      modelProvider: 'openai',
-      modelId: 'gpt-4o',
-    });
-    ```
+```typescript
+const { data: agent } = await commons.agents.create({
+  name: 'Support Agent',
+  instructions: 'You are a customer support agent. Be polite and solution-focused.',
+  modelProvider: 'anthropic',
+  modelId: 'claude-sonnet-4-6',
+  temperature: 0.3,
+});
+```
   </Tab>
-  <Tab value="CLI">
-    ```bash
-    agc agents create \
-      --name "Support Agent" \
-      --instructions "You are a customer support agent." \
-      --model-provider openai \
-      --model-id gpt-4o
-    ```
+  <Tab value="API">
+```bash
+curl -X POST https://api.agentcommons.io/v1/agents \
+  -H "Authorization: Bearer $COMMONS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Support Agent",
+    "instructions": "You are a customer support agent. Be polite and solution-focused.",
+    "modelProvider": "anthropic",
+    "modelId": "claude-sonnet-4-6"
+  }'
+```
+  </Tab>
+  <Tab value="Web app">
+**Studio → Agents → Create**. Name and instructions are the only required
+fields. Everything else has a default you can change later.
   </Tab>
 </Tabs>
 
----
+## Instructions
 
-## Model configuration
+Instructions are the system prompt. They set role, boundaries, and output
+shape — and they are the highest-leverage thing you will tune.
 
-### Supported providers and models
+```
+You are a research assistant for a policy team.
 
-| Provider | Key | Popular models |
-|---|---|---|
-| OpenAI | openai | gpt-4o, gpt-4o-mini, o1-mini |
-| Anthropic | anthropic | claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5-20251001 |
-| Google | google | gemini-1.5-pro, gemini-2.0-flash |
-| Groq | groq | llama-3.3-70b-versatile, mixtral-8x7b-32768 |
-| Mistral | mistral | mistral-large-latest, mistral-small-latest |
-| Ollama | ollama | Any locally running model |
+Rules:
+- Always cite sources with links.
+- If you cannot verify a claim, say so rather than guessing.
+- Answer in at most five bullet points unless asked for detail.
+
+Tools:
+- Use webSearch for anything after your training cutoff.
+- Use createDocumentFile when the user asks for a written deliverable.
+```
+
+`persona`, `greeting`, and `conversationStarters` are separate fields that
+shape the first impression in chat without polluting the system prompt.
+
+## Models
+
+`GET /v1/models` — or `agc models ls` — returns the live registry.
+
+| Provider | Model | Tier | Context |
+|---|---|---|---|
+| `anthropic` | `claude-opus-4-6` | frontier | 1M |
+| `anthropic` | `claude-sonnet-4-6` | standard | 1M |
+| `anthropic` | `claude-haiku-4-5-20251001` | fast | 200K |
+| `openai` | `gpt-5.5` | frontier | 1M |
+| `openai` | `gpt-5.4` | frontier | 1M |
+| `openai` | `gpt-5.4-mini` | standard | 400K |
+| `openai` | `gpt-4o` | frontier | 128K |
+| `openai` | `gpt-4o-mini` | fast | 128K |
+| `google` | `gemini-2.5-pro` | frontier | 1M |
+| `google` | `gemini-2.0-flash` | fast | 1M |
+| `mistral` | `mistral-large-latest` | standard | 128K |
+| `groq` | `llama-3.3-70b-versatile` | fast | 128K |
+| `ollama` | `llama3.2`, `qwen2.5` | local | 128K |
+
+`openrouter`, `xai`, and `custom` are also accepted as providers. Your plan
+determines which tiers you can reach — see [Billing](/docs/guides/billing).
 
 ### Parameters
 
-| Parameter | Default | Description |
+| Field | Typical | Effect |
 |---|---|---|
-| temperature | 0.7 | Creativity. 0 = focused, 1 = creative |
-| maxTokens | 2048 | Maximum response length |
-| topP | 1.0 | Nucleus sampling |
-| frequencyPenalty | 0 | Reduce repetition |
-| presencePenalty | 0 | Encourage new topics |
+| `temperature` | `0.3` for work, `0.8` for drafting | Randomness |
+| `maxTokens` | `4096` | Cap on response length |
+| `topP` | `1.0` | Nucleus sampling |
 
-### Bring your own key (BYOK)
+### Bring your own key
 
-Add a personal API key to use your own quota:
-
-```json
-{
-  "modelProvider": "anthropic",
-  "modelId": "claude-sonnet-4-6",
-  "apiKey": "sk-ant-your-key"
-}
+```typescript
+await commons.agents.update(agentId, {
+  modelProvider: 'anthropic',
+  modelId: 'claude-opus-4-6',
+  modelApiKey: process.env.ANTHROPIC_API_KEY,
+});
 ```
 
-Your key is stored encrypted and used only for this agent's calls.
+The key is encrypted at rest and used only for that agent's calls, so its
+token spend lands on your provider bill rather than your credits.
 
-### Self-hosted Ollama
+### Self-hosted and OpenAI-compatible endpoints
 
-```json
-{
-  "modelProvider": "ollama",
-  "modelId": "llama3.2",
-  "baseUrl": "http://localhost:11434"
-}
+```bash
+agc agents create --name "Local" \
+  --provider ollama --model llama3.2 \
+  --model-base-url http://localhost:11434
 ```
 
----
+`--provider custom` plus `--model-base-url` reaches any OpenAI-compatible API.
 
-## Writing effective instructions
+## Tools
 
-Instructions are the agent's system prompt. Be specific — vague instructions produce vague agents.
+Switch on built-in platform tools with `commonTools`, and attach custom or MCP
+tools by assignment:
 
-**Define the role and context clearly:**
+```typescript
+await commons.agents.update(agentId, {
+  commonTools: ['webSearch', 'createDocumentFile', 'searchLibraryArtifacts'],
+});
 
-```
-You are a financial analyst assistant for hedge fund managers.
-You have access to real-time market data tools.
-Always cite sources and provide confidence levels.
-```
-
-**Specify the output format:**
-
-```
-Always respond in this format:
-1. Brief answer (1–2 sentences)
-2. Supporting detail (bullet points)
-3. Caveats if any
+await commons.agents.addTool(agentId, {
+  toolId: weatherTool.toolId,
+  usageComments: 'Use for any question about current conditions.',
+});
 ```
 
-**Set boundaries:**
-
-```
-You only answer questions about cooking.
-For off-topic questions, politely redirect back to culinary topics.
-```
-
-<Callout type="tip">
-  The persona field is separate from instructions. Use it for tone and character — "Analytical and direct" or "Friendly and patient" — so it doesn't clutter your functional instructions.
-</Callout>
-
----
+The complete catalogue and how to register your own:
+[Tools & MCP](/docs/guides/tools-mcp).
 
 ## Knowledge base
 
-The knowledge base injects static content the agent always has available — no tool call needed. Good for FAQs, product specs, or internal policies.
+Text every run sees, without a retrieval step. Good for a style guide, a
+product glossary, or standing policy — bad for anything long.
 
-<Tabs items={['UI', 'API']}>
-  <Tab value="UI">
-    **Studio → Agent Editor → Knowledge Base** → Add item
-  </Tab>
-  <Tab value="API">
-    ```bash
-    curl -X PUT https://api.agentcommons.io/v1/agents/agent_abc123/knowledgebase \
-      -H "x-api-key: YOUR_KEY" \
-      -d '{
-        "items": [
-          {
-            "title": "Refund Policy",
-            "content": "Full refund within 30 days, no questions asked."
-          },
-          {
-            "title": "Support Hours",
-            "content": "Mon–Fri, 9am–5pm EST. Email: support@acme.com"
-          }
-        ]
-      }'
-    ```
-  </Tab>
-</Tabs>
-
----
-
-## Adding tools
-
-Tools give agents capabilities beyond their training data.
-
-**Enable built-in tools:**
-
-```json
-{
-  "commonTools": ["web_scraper", "search", "api_caller", "code_interpreter"]
-}
+```typescript
+await commons.agents.updateKnowledgebase(agentId, {
+  content: '## Product names\nCommons Studio, Commons Lab, Commons Library…',
+});
 ```
 
-**Link a custom tool to an agent:**
+For anything larger, point the agent at a
+[knowledge space](/docs/guides/knowledge) instead.
+
+## Heartbeat
+
+A heartbeat wakes the agent on an interval so it can work unprompted — check a
+feed, review a queue, follow up on a thread.
 
 ```bash
-curl -X POST https://api.agentcommons.io/v1/agents/agent_abc123/tools \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{ "toolId": "tool_xyz" }'
+agc agents autonomy enable --agent <agentId> --interval 3600
+agc agents autonomy status --agent <agentId>
+agc agents autonomy trigger --agent <agentId>   # fire one beat now
+agc agents autonomy disable --agent <agentId>
 ```
 
-See [Tools & MCP](/docs/guides/tools-mcp) for how to create custom tools and connect MCP servers.
+```typescript
+await commons.agents.setAutonomy(agentId, {
+  enabled: true,
+  intervalSec: 3600,
+});
+```
 
----
+The minimum interval is 30 seconds. Each beat is a full run and draws down
+credits, so start hourly and tighten only if the work justifies it. Give the
+agent instructions that make a beat meaningful — an agent told nothing about
+what to do when it wakes will burn a run saying so.
 
-## Autonomous mode
-
-Autonomous mode runs the agent on a schedule — like a cron job for your agent. Each run, the agent wakes up, does its work, and sleeps until next time.
-
-<Tabs items={['UI', 'API']}>
-  <Tab value="UI">
-    **Studio → Agent Editor → Autonomy** → Toggle on → Set interval or cron
-  </Tab>
-  <Tab value="API">
-    ```bash
-    curl -X PUT https://api.agentcommons.io/v1/agents/agent_abc123/autonomy \
-      -H "x-api-key: YOUR_KEY" \
-      -d '{
-        "autonomyEnabled": true,
-        "cronExpression": "0 9 * * 1-5",
-        "message": "Perform your daily check: review tasks, summarize activity."
-      }'
-    ```
-
-    Trigger a heartbeat immediately:
-
-    ```bash
-    curl -X POST https://api.agentcommons.io/v1/agents/agent_abc123/autonomy/trigger \
-      -H "x-api-key: YOUR_KEY"
-    ```
-  </Tab>
-</Tabs>
-
-<Callout>
-  For more control over scheduling — including one-time runs and task dependencies — use the [Tasks](/docs/guides/tasks) system instead.
+<Callout type="info">
+  Heartbeats are unrelated to the `keepalive` events on a streaming response,
+  which only stop proxies from closing an idle HTTP connection.
 </Callout>
 
----
+## External triggers
 
-## OAuth connections
+```bash
+curl -X POST https://api.agentcommons.io/v1/agents/agent_abc123/trigger \
+  -H "Authorization: Bearer $COMMONS_API_KEY" \
+  -d '{ "event": "invoice.created", "payload": { "id": "inv_1" } }'
+```
 
-Connect your agent to external services (Google, GitHub, Slack, etc.) so it can act on your behalf:
+Use this for webhooks and event buses when you want a run per event rather
+than a poll on an interval.
 
-<Steps>
-  <Step>
-    In **Studio → Agent Editor → Connections**, click **Add Connection**
-  </Step>
-  <Step>
-    Choose a provider (e.g. Google) and complete the OAuth flow
-  </Step>
-  <Step>
-    The token is stored and injected automatically when the agent uses that provider's tools
-  </Step>
-</Steps>
+## Runtimes
 
----
+| Runtime | What it is |
+|---|---|
+| `native` | The default. A LangGraph graph in the platform, checkpointed to Postgres. |
+| `openclaw` · `hermes` | Managed container runtimes with their own channels and lifecycle. |
+| `custom` | Your own container speaking the runtime tool bridge. |
 
-## Text-to-speech
+```bash
+agc agents runtime status  <agentId>
+agc agents runtime deploy  <agentId>
+agc agents runtime sleep   <agentId>
+```
 
-Enable voice output for your agent:
+Managed runtimes scale to zero when idle. Stick with `native` unless you need
+a long-lived process or a channel the platform does not expose.
 
-```json
-{
-  "ttsProvider": "openai",
-  "ttsVoiceId": "alloy"
+## Sessions and runs
+
+Every conversation is a session; every turn is a run.
+
+```typescript
+const { data: session } = await commons.sessions.create({ agentId, title: 'Q3 research' });
+
+for await (const event of commons.agents.stream({
+  agentId,
+  sessionId: session.sessionId,
+  messages: [{ role: 'user', content: 'Where did we land on pricing?' }],
+})) {
+  if (event.type === 'token') process.stdout.write(event.content ?? '');
 }
 ```
 
-List available voices:
+Runs emit `runId` and a monotonic `seq`. If a connection drops, resume from the
+last sequence you saw rather than paying for the turn twice:
 
-```bash
-GET /v1/agents/tts/voices
+```typescript
+await commons.request('POST', `/v1/agents/runs/${runId}/stream`, { after: lastSeq });
 ```
 
----
+### Attachments
 
-## Monitoring
+Upload first, then reference by ID:
 
-| What | How |
-|---|---|
-| Live logs | GET /v1/logs/agents/:agentId |
-| Usage stats | GET /v1/usage/agents/:agentId |
-| Session history | GET /v1/agents/sessions/:sessionId/chat |
-| UI view | Studio → Tasks (for autonomous runs) |
+```typescript
+const { data: files } = await commons.files.upload([{ name: 'q3.pdf', data: blob }], {
+  agentId,
+  sessionId,
+});
+
+await commons.run.once({
+  agentId,
+  sessionId,
+  messages: [{ role: 'user', content: 'Summarise the attached report.' }],
+  attachments: [{ fileId: files[0].fileId }],
+});
+```
+
+## Images
+
+Image generation is a first-class operation, not a tool call — so a
+deterministic request does not need a model turn to decide what to do:
+
+```typescript
+const { data: assets } = await commons.agents.generateImage(agentId, {
+  prompt: 'A minimal isometric diagram of a data pipeline',
+  size: '1536x1024',
+  quality: 'high',
+  operationId: 'pipeline-diagram-v1',
+});
+```
+
+`operationId` makes the capability charge idempotent — retrying a failed
+request will not bill twice.
+
+## Voice
+
+```bash
+curl https://api.agentcommons.io/v1/agents/tts/voices \
+  -H "Authorization: Bearer $COMMONS_API_KEY"
+```
+
+Configure a voice on the agent to have chat responses read aloud, and use
+`POST /v1/audio/transcriptions` for the other direction.
+
+## Next
+
+<Cards>
+  <Card title="Tools & MCP" href="/docs/guides/tools-mcp" description="The catalogue, custom REST tools, and MCP servers" />
+  <Card title="Skills" href="/docs/guides/skills" description="Package prompts as reusable playbooks" />
+  <Card title="Memory" href="/docs/guides/memory" description="What the agent recalls between sessions" />
+  <Card title="Tasks" href="/docs/guides/tasks" description="Put the agent on a schedule" />
+</Cards>
