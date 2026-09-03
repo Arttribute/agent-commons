@@ -34,6 +34,7 @@ import { CapabilityProviderModule } from './provider';
 import { UiPluginModule } from './ui-plugin';
 import { ProvenanceModule } from './provenance';
 import { BrainModule } from './brain';
+import { MediaModule } from './media';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { BrainModule } from './brain';
     PinataModule,
     ProvenanceModule,
     BrainModule,
+    MediaModule,
 
     // Feature modules
     AgentModule,

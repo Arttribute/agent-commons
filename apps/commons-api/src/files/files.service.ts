@@ -246,9 +246,11 @@ export class FilesService {
     buffer: Buffer;
     fileName: string;
     mimeType: string;
-    agentId: string;
+    agentId?: string;
     sessionId?: string;
     traceId?: string;
+    ownerId?: string;
+    workspaceId?: string | null;
     metadata?: Record<string, any>;
   }) {
     return this.persistFile({
@@ -258,11 +260,53 @@ export class FilesService {
       agentId: input.agentId,
       sessionId: input.sessionId,
       traceId: input.traceId,
-      ownerId: input.agentId,
-      ownerType: 'agent',
+      ownerId: input.ownerId ?? input.agentId,
+      ownerType: input.ownerId ? 'user' : 'agent',
+      workspaceId: input.workspaceId,
       source: 'agent_generated',
       metadata: input.metadata,
     });
+  }
+
+  /**
+   * Internal media-processing access. The caller supplies the authenticated
+   * principal; this method reuses the same Library authorization path as agent
+   * reads and never returns a public URL.
+   */
+  async loadOriginalForProcessing(input: {
+    fileId: string;
+    ownerId?: string;
+    workspaceId?: string | null;
+    agentId?: string;
+    sessionId?: string;
+  }) {
+    const file = await this.getFileOrThrow(input.fileId);
+    await this.assertCanAccess(file, {
+      ownerId: input.ownerId,
+      workspaceId: input.workspaceId ?? undefined,
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+    });
+    const original = (await this.getBlobs(file.itemId)).find(
+      (blob) => blob.role === 'original',
+    );
+    if (!original) {
+      throw new NotFoundException(`The original bytes for ${file.name} are unavailable`);
+    }
+    return {
+      itemId: file.itemId,
+      name: file.name,
+      mimeType: file.mimeType,
+      kind: file.kind,
+      // The provider receives this only after the authenticated user selects
+      // the file as a generation input. It expires using the normal Library
+      // signed-URL policy and avoids embedding large private media in JSON.
+      url: await this.createSignedUrl(
+        original.storageBucket,
+        original.storagePath,
+      ),
+      buffer: await this.downloadBlobBuffer(original),
+    };
   }
 
   async createSpreadsheetFile(input: {

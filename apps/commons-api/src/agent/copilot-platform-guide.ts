@@ -2,8 +2,9 @@ export type CopilotUiContext = {
   pathname?: string;
   pageTitle?: string;
   routeName?: string;
-  resourceType?: 'agent' | 'workflow' | 'task' | 'tool' | 'skill';
+  resourceType?: 'agent' | 'workflow' | 'task' | 'tool' | 'skill' | 'canvas';
   resourceId?: string;
+  annotationId?: string;
   resource?: Record<string, unknown>;
   timeZone?: string;
   locale?: string;
@@ -114,7 +115,14 @@ export function sanitizeUiContext(value: unknown): CopilotUiContext | null {
   const input = value as Record<string, unknown>;
   const text = (key: string, max: number) =>
     typeof input[key] === 'string' ? input[key].slice(0, max) : undefined;
-  const allowedTypes = new Set(['agent', 'workflow', 'task', 'tool', 'skill']);
+  const allowedTypes = new Set([
+    'agent',
+    'workflow',
+    'task',
+    'tool',
+    'skill',
+    'canvas',
+  ]);
   const resourceType = text('resourceType', 32);
   const rawResource =
     input.resource && typeof input.resource === 'object'
@@ -151,6 +159,7 @@ export function sanitizeUiContext(value: unknown): CopilotUiContext | null {
         ? (resourceType as CopilotUiContext['resourceType'])
         : undefined,
     resourceId: text('resourceId', 160),
+    annotationId: text('annotationId', 160),
     resource,
     timeZone: text('timeZone', 100),
     locale: text('locale', 40),

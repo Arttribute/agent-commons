@@ -100,6 +100,7 @@ function FloatingCommonsCopilotInner() {
     id: string;
     text: string;
     mode?: "send" | "draft";
+    attachment?: CommonsCopilotPromptDetail["attachment"];
   } | null>(null);
   const [uiContext, setUiContext] = useState<Record<string, unknown>>({});
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
@@ -218,9 +219,12 @@ function FloatingCommonsCopilotInner() {
   useEffect(() => {
     const openWithPrompt = (detail: CommonsCopilotPromptDetail) => {
       const text = detail?.text?.trim();
-      if (!text) return;
+      if (!text && !detail?.attachment?.fileId) return;
       setOpen(true);
       setView("chat");
+      if (detail.context) {
+        setUiContext((current) => ({ ...current, ...detail.context }));
+      }
       const intentId = detail.intentId?.trim();
       const now = Date.now();
       if (
@@ -237,6 +241,7 @@ function FloatingCommonsCopilotInner() {
         id: `external:${Date.now()}`,
         text,
         mode: detail.mode === "draft" ? "draft" : "send",
+        attachment: detail.attachment,
       });
     };
     const onPrompt = (event: Event) => {

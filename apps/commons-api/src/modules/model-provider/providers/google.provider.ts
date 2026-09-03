@@ -42,7 +42,8 @@ function thinkingConfigFor(
 export function buildGoogleModel(config: ModelConfig): ChatGoogleGenerativeAI {
   const logger = new Logger('GoogleProvider');
 
-  const apiKey = config.apiKey ?? process.env.GOOGLE_API_KEY;
+  const apiKey =
+    config.apiKey ?? process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
   if (!apiKey) {
     logger.warn('No Google API key found — requests will fail');
   }

@@ -28,6 +28,7 @@ import { UsageModule } from '~/modules/usage';
 import { CapabilityProviderModule } from '~/provider';
 import { UiPluginModule } from '~/ui-plugin';
 import { BrainModule } from '~/brain';
+import { MediaModule } from '~/media';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { BrainModule } from '~/brain';
     CapabilityProviderModule,
     UiPluginModule,
     BrainModule,
+    MediaModule,
   ],
   controllers: [
     ToolController,

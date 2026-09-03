@@ -155,13 +155,26 @@ export class UsageService {
       idempotencyKey: input.idempotencyKey,
       agentId: input.agentId,
       sessionId: input.sessionId,
-      ttlSeconds: 600,
+      // Media providers commonly queue long-running video jobs. Keep the
+      // authorization alive through polling and settle it exactly once.
+      ttlSeconds: Number(process.env.MEDIA_RESERVATION_TTL_SECONDS || 7200),
       metadata: {
         capability: input.capability,
         estimatedCostUsd: input.estimatedCostUsd,
         ...input.metadata,
       },
     });
+  }
+
+  /** Public-safe quote used by creative controls before a reservation is made. */
+  quoteCapability(capability: string, estimatedCostUsd: number) {
+    return {
+      capability,
+      estimatedCostUsd: roundMoney(estimatedCostUsd),
+      estimatedCredits: this.capabilityCredits(capability, estimatedCostUsd),
+      currency: 'credits' as const,
+      pricingPolicy: 'provider_cost_plus_platform_margin' as const,
+    };
   }
 
   async settleCapability(input: {
@@ -335,4 +348,8 @@ export class UsageService {
 
     return { ...agg, events };
   }
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }

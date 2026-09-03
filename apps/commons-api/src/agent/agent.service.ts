@@ -499,6 +499,10 @@ export class AgentService implements OnModuleInit {
       - **searchLibraryArtifacts** — on-demand access to the calling user's Library. Omit query to list recent files, or search once by filename, type, or topic. Results are deliberately compact; do not probe with many generic queries. Use the returned fileId with readUploadedFile only when exact contents are needed.
       - **readUploadedFile** — read a selected library artifact in bounded chunks after permission checks.
       - **generateImage** — create an image with the stable GPT Image API. The result is stored in the owner's artifact library using their storage preference (Private S3 by default).
+      - **listMediaModels** — inspect exact creative model keys, provider availability, supported controls, and price basis before choosing a model.
+      - **getCanvasProject** — load a Canvas project's active artifact, revision history, annotations, and generation state before analysing or changing it. Read the active artifact with readUploadedFile when its actual media contents are needed.
+      - **annotateCanvas** — add precise normalized spatial notes or millisecond time-range notes that users and other agents can inspect and drag into chat.
+      - **generateMedia** — generate or transform images, video, speech, and music with a listed creative modelKey. Attach input Library item IDs for edits, and pass a Canvas project ID to create a recoverable revision with provenance. Media usage is pre-authorized in Commons credits and settled once from actual provider usage when available.
       - **uploadFileToIPFS** — explicit-only public IPFS publishing. Never call this for ordinary uploads, generated files, or library storage unless the user specifically asks for IPFS.
 
       ### Uploaded files

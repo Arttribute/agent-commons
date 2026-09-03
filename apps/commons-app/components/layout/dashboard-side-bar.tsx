@@ -43,7 +43,10 @@ export function DashboardSideBar({ username }: { username: string }) {
     return (
       /^\/studio\/(agents|tools|workflows|skills)\/(?!create(?:\/|$))[^/]+/.test(
         pathname,
-      ) || /^\/studio\/customize\/skills\/[^/]+/.test(pathname)
+      ) ||
+      /^\/studio\/customize\/skills\/[^/]+/.test(pathname) ||
+      pathname.startsWith("/studio/canvas") ||
+      pathname.startsWith("/knowledge")
     );
   }, [pathname]);
   const sidebarOpen = isOpen && !isLockedDetailRoute;

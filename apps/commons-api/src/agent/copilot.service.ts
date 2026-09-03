@@ -312,6 +312,29 @@ export class CopilotService {
         ui.resourceType,
         ui.resourceId,
       ).catch(() => null);
+      if (visibleResource && ui.resourceType === 'canvas' && ui.annotationId) {
+        const annotation = await this.db.query.canvasAnnotation.findFirst({
+          where: (table) =>
+            and(
+              eq(table.projectId, ui.resourceId!),
+              eq(table.annotationId, ui.annotationId!),
+            ),
+        });
+        if (annotation) {
+          visibleResource = {
+            ...visibleResource,
+            selectedAnnotation: {
+              annotationId: annotation.annotationId,
+              kind: annotation.kind,
+              body: annotation.body,
+              geometry: annotation.geometry,
+              startMs: annotation.startMs,
+              endMs: annotation.endMs,
+              status: annotation.status,
+            },
+          };
+        }
+      }
     }
 
     const [connections, availableSkills] = await Promise.all([
@@ -1427,6 +1450,23 @@ export class CopilotService {
       if (value) {
         const { secureKeyRef: _secureKeyRef, ...safe } = value;
         value = safe;
+      }
+    } else if (resourceType === 'canvas') {
+      value = await this.db.query.canvasProject.findFirst({
+        where: (table) =>
+          and(
+            eq(table.projectId, resourceId),
+            eq(table.ownerUserId, ownerUserId),
+          ),
+      });
+      if (value) {
+        value = {
+          projectId: value.projectId,
+          name: value.name,
+          description: value.description,
+          activeItemId: value.activeItemId,
+          studioUrl: `/studio/canvas/${encodeURIComponent(value.activeItemId)}`,
+        };
       }
     }
     if (!value) {

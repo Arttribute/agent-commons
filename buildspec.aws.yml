@@ -39,6 +39,7 @@ phases:
         src/code-project/code-project.builder.spec.ts
         src/code-project/code-project.service.spec.ts
         src/provenance/provenance.service.spec.ts
+        src/media/media-model.registry.spec.ts
         src/tool/workflow-executor.service.spec.ts
         src/tool/workflow-hitl.integration.spec.ts
       - docker build --platform linux/amd64 -f apps/commons-api/Dockerfile -t "$IMAGE_URI" .
@@ -119,6 +120,13 @@ phases:
         SlackOAuthEnabled="${SLACK_OAUTH_ENABLED:-false}"
         CanvaOAuthEnabled="${CANVA_OAUTH_ENABLED:-false}"
         XOAuthEnabled="${X_OAUTH_ENABLED:-false}"
+        GoogleMediaEnabled="${GOOGLE_MEDIA_ENABLED:-false}"
+        KlingMediaEnabled="${KLING_MEDIA_ENABLED:-false}"
+        BytePlusMediaEnabled="${BYTEPLUS_MEDIA_ENABLED:-false}"
+        GoogleMediaPriceUsdJson="${GOOGLE_MEDIA_PRICE_USD_JSON:-{}}"
+        KlingMediaPriceUsdJson="${KLING_MEDIA_PRICE_USD_JSON:-{}}"
+        BytePlusMediaPriceUsdJson="${BYTEPLUS_MEDIA_PRICE_USD_JSON:-{}}"
+        MediaReservationTtlSeconds="${MEDIA_RESERVATION_TTL_SECONDS:-7200}"
         AgentCommonsApiUrl="${AGENT_COMMONS_API_URL:-https://api.agentcommons.io}"
         AgentFilesS3Bucket="$AGENT_FILES_S3_BUCKET"
         AgentFilesS3Region="$AGENT_FILES_S3_REGION"
