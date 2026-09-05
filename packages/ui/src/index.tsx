@@ -1,19 +1,22 @@
 'use client'
 
 import { useRef, useState, type ReactNode, type PointerEvent, type ButtonHTMLAttributes } from 'react'
+import { ResizablePanel } from './workspace'
+export { ComposerSurface, ComposerTextArea, ChatComposer, CanvasToolButton, ResizablePanel, CodeFileBrowser } from './workspace'
+export type { ComposerAttachment, SourceFile } from './workspace'
 
 export function CommonsButton({ variant = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'ghost' }) {
   return <button type="button" className={`ac-button ac-button-${variant} ${className}`} {...props} />
 }
 export function CanvasShell({ toolbar, left, right, bottom, children, className = '' }: { toolbar: ReactNode; left?: ReactNode; right?: ReactNode; bottom?: ReactNode; children: ReactNode; className?: string }) {
-  return <div className={`ac-canvas ${className}`}><header className="ac-canvas-toolbar">{toolbar}</header><div className="ac-canvas-body">{left && <aside className="ac-canvas-left">{left}</aside>}<main className="ac-canvas-center">{children}{bottom && <section className="ac-canvas-bottom" aria-label="Diagnostics">{bottom}</section>}</main>{right && <aside className="ac-canvas-right">{right}</aside>}</div></div>
+  return <div className={`ac-canvas ${className}`}><header className="ac-canvas-toolbar">{toolbar}</header><div className="ac-canvas-body">{left && <ResizablePanel side="left" defaultWidth={240} label="Project panel" className="ac-canvas-left">{left}</ResizablePanel>}<main className="ac-canvas-center">{children}{bottom && <section className="ac-canvas-bottom" aria-label="Diagnostics">{bottom}</section>}</main>{right && <ResizablePanel side="right" defaultWidth={340} label="Assistant panel" className="ac-canvas-right">{right}</ResizablePanel>}</div></div>
 }
 export type CompiledPreview = { type: 'html'; html: string } | { type: 'url'; url: string } | { type: 'unavailable'; error: string }
-export function CompiledArtifactFrame({ preview, title, className = '', revision }: { preview: CompiledPreview; title: string; className?: string; revision?: string | number }) {
+export function CompiledArtifactFrame({ preview, title, className = '', revision, interactive = true }: { preview: CompiledPreview; title: string; className?: string; revision?: string | number; interactive?: boolean }) {
   const [failed, setFailed] = useState(false)
   if (preview.type === 'unavailable') return <div role="status" className="ac-preview-error">{preview.error}</div>
   if (preview.type === 'url' && !/^https?:\/\//i.test(preview.url)) return <div role="alert" className="ac-preview-error">The compiled preview URL is invalid.</div>
-  return <div className={`ac-compiled-frame ${className}`}>{failed && <div role="alert" className="ac-preview-error">Preview could not load. Rebuild this revision to try again.</div>}<iframe key={revision} title={title} src={preview.type === 'url' ? preview.url : undefined} srcDoc={preview.type === 'html' ? preview.html : undefined} sandbox="allow-scripts" referrerPolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'" onLoad={() => setFailed(false)} onError={() => setFailed(true)} /></div>
+  return <div className={`ac-compiled-frame ${className}`}>{failed && <div role="alert" className="ac-preview-error">Preview could not load. Rebuild this revision to try again.</div>}<iframe key={revision} title={title} src={preview.type === 'url' ? preview.url : undefined} srcDoc={preview.type === 'html' ? preview.html : undefined} sandbox="allow-scripts" referrerPolicy="no-referrer" allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'" style={{pointerEvents:interactive?'auto':'none'}} tabIndex={interactive?0:-1} onLoad={() => setFailed(false)} onError={() => setFailed(true)} /></div>
 }
 export type AnnotationGeometry = { x: number; y: number; width?: number; height?: number }
 export type CanvasNote = AnnotationGeometry & { id: string; body: string; status?: 'open' | 'resolved' }

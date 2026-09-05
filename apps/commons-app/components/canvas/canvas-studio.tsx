@@ -1,6 +1,6 @@
 "use client";
 
-import { CompiledArtifactFrame } from "@agent-commons/ui";
+import { CompiledArtifactFrame, CodeFileBrowser, CanvasToolButton, ResizablePanel } from "@agent-commons/ui";
 import "@agent-commons/ui/styles.css";
 import Link from "next/link";
 import {
@@ -21,6 +21,9 @@ import {
   LibraryBig,
   Loader2,
   MapPin,
+  MousePointer2,
+  Code2,
+  MonitorPlay,
   MessageSquareText,
   Music2,
   PanelLeftClose,
@@ -113,6 +116,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
+  const [stageView, setStageView] = useState<"preview" | "code">("preview");
   const [rightOpen, setRightOpen] = useState(true);
   const [rightPanel, setRightPanel] = useState<RightPanel>("project");
   const [currentJob, setCurrentJob] = useState<MediaJob | null>(null);
@@ -708,6 +712,8 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
   const displayedJob = currentJob ?? lastJob ?? bundle.jobs[0] ?? null;
   const canGenerate = Boolean(model?.available && prompt.trim() && !generating);
   const estimatedCost = quote?.estimatedCostUsd ?? (model ? estimateCost(model, settings, prompt) : 0);
+  const isCode = Boolean(preview?.interactivePreview || preview?.codeProject || preview?.kind === "code");
+  const sourceFiles = preview?.codeProject?.files ?? (preview?.content ? [{path:preview.name, content:preview.content}] : []);
   const temporal = preview?.mimeType.startsWith("video/") || preview?.mimeType.startsWith("audio/");
 
   return (
@@ -769,7 +775,8 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
 
       <div className="flex min-h-0 flex-1">
         {leftOpen ? (
-          <aside className="flex w-[310px] shrink-0 flex-col border-r border-stone-200 bg-white">
+          <ResizablePanel side="left" defaultWidth={310} label={isCode ? "Code project" : "Creative tools"} className="flex shrink-0 flex-col border-r border-stone-200 bg-white">
+            {isCode ? <div className="space-y-4 p-4"><div className="flex items-center justify-between"><h2 className="text-xs font-semibold">Code project</h2><button aria-label="Close project panel" onClick={()=>setLeftOpen(false)}><X className="h-4 w-4"/></button></div><p className="text-xs leading-5 text-stone-500">{preview?.codeProject?.name || preview?.name}</p><button className="flex w-full items-center gap-2 rounded-lg border border-stone-200 p-3 text-xs" onClick={()=>setStageView('code')}><Code2 className="h-4 w-4"/>Explore {sourceFiles.length} source files</button><p className="text-xs leading-5 text-stone-500">Use the copilot to change the code or add images, audio and other assets. Attach reference files in the conversation.</p><button className="flex w-full items-center gap-2 rounded-lg border border-stone-200 p-3 text-xs" onClick={()=>askCopilot()}><Bot className="h-4 w-4"/>Work with Commons Copilot</button></div> : <>
             <div className="flex items-start border-b border-stone-200 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold text-stone-900">Creative tools</p>
@@ -970,18 +977,20 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
                   : "Outputs become private Library revisions with a provenance record."}
               </p>
             </div>
-          </aside>
+            </>}
+          </ResizablePanel>
         ) : null}
 
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex h-11 shrink-0 items-center justify-center gap-1 border-b border-stone-200 bg-white/80 px-3 backdrop-blur">
-            <CanvasTool active={annotationTool === "select"} label="Select" onClick={() => setAnnotationTool("select")}>
+            {isCode && <div className="mr-3 flex items-center rounded-lg bg-stone-100 p-0.5">{(['preview','code'] as const).map(mode=><button key={mode} type="button" onClick={()=>setStageView(mode)} aria-pressed={stageView===mode} className={cn('flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs',stageView===mode?'bg-white text-stone-900 shadow-sm':'text-stone-500')}>{mode==='preview'?<MonitorPlay className="h-3.5 w-3.5"/>:<Code2 className="h-3.5 w-3.5"/>}{mode==='preview'?'Preview':'Code'}</button>)}</div>}
+            <CanvasTool active={annotationTool === "select"} label={isCode ? "Interact with artifact" : "Select"} onClick={() => setAnnotationTool("select")}>
+              <MousePointer2 />
+            </CanvasTool>
+            <CanvasTool active={annotationTool === "region"} label="Region annotation" onClick={() => setAnnotationTool("region")}>
               <Scan />
             </CanvasTool>
-            <CanvasTool active={annotationTool === "region"} label="Region" onClick={() => setAnnotationTool("region")}>
-              <MessageSquareText />
-            </CanvasTool>
-            <CanvasTool active={annotationTool === "point"} label="Point" onClick={() => setAnnotationTool("point")}>
+            <CanvasTool active={annotationTool === "point"} label="Point annotation" onClick={() => setAnnotationTool("point")}>
               <MapPin />
             </CanvasTool>
             {temporal ? (
@@ -1010,7 +1019,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
               style={{ transform: `scale(${zoom})` }}
               ref={stageRef}
             >
-              {previewLoading ? (
+              {isCode && stageView === "code" ? <CodeFileBrowser files={sourceFiles}/> : previewLoading ? (
                 <div className="flex flex-col items-center gap-2 text-stone-400">
                   <Loader2 className="h-5 w-5 animate-spin" />
                   <span className="text-xs">Preparing revision…</span>
@@ -1018,6 +1027,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
               ) : preview ? (
                 <ArtifactStage
                   preview={preview}
+                  interactive={annotationTool === "select"}
                   mediaRef={mediaRef}
                   onIntrinsicSize={(width, height) =>
                     setIntrinsicSize({ width, height })
@@ -1032,12 +1042,12 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
                 <span className="text-xs text-stone-400">No preview available</span>
               )}
 
-              <div
+              {stageView === "preview" && <div
                 className={cn(
-                  "absolute",
+                  "absolute z-20 touch-none",
                   annotationTool === "select" ? "pointer-events-none" : "cursor-crosshair",
                 )}
-                style={contentBox}
+                style={isCode ? {inset:0} : contentBox}
                 onPointerDown={onStagePointerDown}
                 onPointerMove={onStagePointerMove}
                 onPointerUp={onStagePointerUp}
@@ -1047,7 +1057,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
                 ))}
                 {draftRect ? <DraftRect rect={draftRect} /> : null}
                 {draftPoint ? <DraftPoint point={draftPoint} /> : null}
-              </div>
+              </div>}
             </div>
             {!leftOpen ? (
               <button type="button" onClick={() => setLeftOpen(true)} className="absolute left-3 top-3 flex h-9 w-9 items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-500 shadow-sm hover:text-stone-900" aria-label="Show creative controls">
@@ -1112,7 +1122,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
         </main>
 
         {rightOpen ? (
-          <aside className="flex w-[320px] shrink-0 border-l border-stone-200 bg-white">
+          <ResizablePanel side="right" defaultWidth={320} label="Canvas context" className="flex shrink-0 border-l border-stone-200 bg-white">
             <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-stone-200 py-2">
               <RailButton active={rightPanel === "project"} label="Project" onClick={() => setRightPanel("project")}>
                 <Layers3 />
@@ -1170,7 +1180,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
                 )}
               </div>
             </div>
-          </aside>
+          </ResizablePanel>
         ) : null}
       </div>
 
@@ -1318,11 +1328,13 @@ export function ModelSelector({
 
 function ArtifactStage({
   preview,
+  interactive = true,
   mediaRef,
   onTime,
   onIntrinsicSize,
 }: {
   preview: CanvasPreview;
+  interactive?: boolean;
   mediaRef: React.MutableRefObject<HTMLMediaElement | null>;
   onTime: (timeMs: number, durationMs: number, playing: boolean) => void;
   onIntrinsicSize: (width: number, height: number) => void;
@@ -1350,6 +1362,7 @@ function ArtifactStage({
     return <CompiledArtifactFrame
       preview={preview.interactivePreview}
       title={preview.name}
+      interactive={interactive}
       revision={`${preview.itemId}:${preview.updatedAt}`}
     />;
   }
@@ -1761,7 +1774,7 @@ function HeaderButton({ label, children, onClick, disabled }: { label: string; c
 }
 
 function CanvasTool({ active, label, children, onClick }: { active?: boolean; label: string; children: React.ReactNode; onClick: () => void }) {
-  return <button type="button" title={label} aria-label={label} onClick={onClick} className={cn("flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10px] font-medium transition [&_svg]:h-3.5 [&_svg]:w-3.5", active ? "bg-stone-900 text-white" : "text-stone-500 hover:bg-stone-100 hover:text-stone-900")}><span>{children}</span><span className="hidden xl:inline">{label}</span></button>;
+  return <CanvasToolButton active={active} label={label} onClick={onClick}>{children}</CanvasToolButton>;
 }
 
 function RailButton({ active, label, badge, children, onClick }: { active?: boolean; label: string; badge?: number; children: React.ReactNode; onClick: () => void }) {
