@@ -2,6 +2,7 @@ import { createPreset } from 'fumadocs-ui/tailwind-plugin';
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
+  darkMode: ['class'],
   content: [
     './node_modules/fumadocs-ui/dist/**/*.js',
     './app/**/*.{ts,tsx}',
@@ -13,31 +14,28 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        mono: ['var(--font-space-grotesk)', 'Space Grotesk', 'sans-serif'],
-        sans: ['Geist', 'Arial', 'Helvetica', 'sans-serif'],
+        // Space Grotesk is the brand face shared with commons-app; Geist Sans
+        // carries long-form prose and Geist Mono every code surface.
+        space: ['var(--font-space-grotesk)', 'Helvetica', 'Arial', 'sans-serif'],
+        sans: ['var(--font-geist-sans)', 'Arial', 'Helvetica', 'sans-serif'],
+        mono: ['var(--font-geist-mono)', 'ui-monospace', 'monospace'],
       },
       colors: {
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
-        primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+        page: 'var(--page)',
+        brand: {
+          yellow: 'var(--brand-yellow)',
+          pink: 'var(--brand-pink)',
+          mint: 'var(--brand-mint)',
+          cyan: 'var(--brand-cyan)',
+          blue: 'var(--brand-blue)',
+          lilac: 'var(--brand-lilac)',
         },
-        secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
-        },
-        muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
-        },
-        accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
-        },
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
+      },
+      boxShadow: {
+        // Same soft, warm-tinted elevation scale as the app.
+        card: '0 2px 8px -2px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.04)',
+        floating:
+          '0 8px 24px -8px rgba(28, 25, 23, 0.12), 0 2px 6px -2px rgba(28, 25, 23, 0.05)',
       },
       borderRadius: {
         lg: 'var(--radius)',

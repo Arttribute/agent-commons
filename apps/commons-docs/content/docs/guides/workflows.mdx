@@ -1,277 +1,176 @@
 ---
 title: Workflows
-description: Build multi-step pipelines by chaining tool calls, AI processors, and data transformations.
+description: Chain tools, models, and approvals into a graph with defined inputs and outputs.
 ---
 
-# Workflows
-
-Workflows let you define a sequence of steps — scrape a page, summarize it, post the result somewhere — as a repeatable, executable pipeline.
-
-## When to use a workflow
-
-| Situation | Use |
-|---|---|
-| Open-ended conversation | Agent session |
-| Single automated task | Task (single mode) |
-| Multi-step pipeline with defined I/O | **Workflow** |
-| Scheduled automation | Task with cron + workflow |
-
----
-
-## Anatomy of a workflow
-
-A workflow has:
-
-- **Nodes** — individual steps
-- **Edges** — connections defining order and data flow
-- **Input schema** — what data it needs to start
-- **Output schema** — what it produces when done
-
-Data flows between nodes via output references — e.g. nodeId.output. Workflow inputs are accessed via inputs.fieldName.
-
----
+A workflow is a graph of steps with data flowing along the edges. Use one when
+you already know the procedure — an agent session is for when you do not.
 
 ## Node types
 
-### tool — call a tool
+| Type | Does | Key config |
+|---|---|---|
+| `input` | Emits the run's `inputData` | — |
+| `output` | Marks the final result | — |
+| `tool` | Invokes a registered tool | `toolId` or `toolName` |
+| `agent_processor` | Runs an LLM step | `agentId`, prompt in `config` |
+| `transform` | Reshapes fields without a model | `config.mapping` |
+| `condition` | Routes on an expression | `config.expression` |
+| `loop` | Iterates | `config.iterations` or `config.itemsPath` |
+| `workflow` | Invokes another workflow | `workflowId` |
+| `human_approval` | Pauses for a person | Approval prompt in `config` |
 
-```json
-{
-  "id": "scrape",
-  "type": "tool",
-  "toolName": "web_scraper",
-  "parameters": { "url": "{{inputs.url}}" }
-}
-```
+A `condition` node emits `{ result: boolean }`; edges leaving it use
+`sourceHandle: 'true'` or `'false'`.
 
-### agent_processor — AI-powered step
-
-```json
-{
-  "id": "summarize",
-  "type": "agent_processor",
-  "prompt": "Summarize in 3 bullet points:\n{{scrape.output}}"
-}
-```
-
-### data_transformer — reshape data
-
-```json
-{
-  "id": "extract",
-  "type": "data_transformer",
-  "mapping": {
-    "title": "{{scrape.output.title}}",
-    "url": "{{inputs.url}}"
-  }
-}
-```
-
-### conditional — branch on a value
-
-```json
-{
-  "id": "check",
-  "type": "conditional",
-  "condition": "{{scrape.output.length}} > 1000"
-}
-```
-
----
-
-## Create a workflow
-
-### Example: Scrape and summarize
-
-```bash
-curl -X POST https://api.agentcommons.io/v1/workflows \
-  -H "x-api-key: YOUR_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Scrape and Summarize",
-    "definition": {
-      "nodes": [
-        {
-          "id": "scrape",
-          "type": "tool",
-          "toolName": "web_scraper",
-          "parameters": { "url": "{{inputs.url}}" }
-        },
-        {
-          "id": "summarize",
-          "type": "agent_processor",
-          "prompt": "Summarize in 3 bullets:\n{{scrape.output}}"
-        }
-      ],
-      "edges": [{ "from": "scrape", "to": "summarize" }]
-    },
-    "inputSchema": { "url": { "type": "string" } }
-  }'
-```
-
-### Example: Research, write, and post (3 steps)
-
-```json
-{
-  "name": "Research and Write",
-  "definition": {
-    "nodes": [
-      {
-        "id": "search",
-        "type": "tool",
-        "toolName": "search",
-        "parameters": { "query": "{{inputs.topic}} latest 2026" }
-      },
-      {
-        "id": "scrape",
-        "type": "tool",
-        "toolName": "web_scraper",
-        "parameters": { "url": "{{search.output.firstResult.url}}" }
-      },
-      {
-        "id": "write",
-        "type": "agent_processor",
-        "prompt": "Write a 500-word article about {{inputs.topic}} based on:\n{{scrape.output}}"
-      }
-    ],
-    "edges": [
-      { "from": "search", "to": "scrape" },
-      { "from": "scrape", "to": "write" }
-    ]
-  },
-  "inputSchema": { "topic": { "type": "string" } }
-}
-```
-
----
-
-## Execute a workflow
-
-```bash
-curl -X POST https://api.agentcommons.io/v1/workflows/workflow_abc123/execute \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{ "inputs": { "url": "https://techcrunch.com/latest" } }'
-```
-
-Response:
-
-```json
-{ "executionId": "exec_xyz", "status": "running" }
-```
-
----
-
-## Stream execution progress
-
-```bash
-curl https://api.agentcommons.io/v1/workflows/exec_xyz/stream \
-  -H "x-api-key: YOUR_KEY"
-```
-
-SSE events arrive as each node runs:
-
-```
-data: {"nodeId":"scrape","status":"running"}
-data: {"nodeId":"scrape","status":"completed","output":"...","duration":1240}
-data: {"nodeId":"summarize","status":"running"}
-data: {"nodeId":"summarize","status":"completed","output":"• Point 1\n...","duration":2100}
-data: {"executionId":"exec_xyz","status":"completed","totalDuration":3340}
-```
-
----
-
-## View execution history
-
-```bash
-GET /v1/workflows/workflow_abc123/executions
-```
-
-Each record shows status, timing, and the output of every node.
-
----
-
-## SDK example
+## Build one
 
 ```typescript
-// Create
-const workflow = await client.workflows.create({
-  name: 'Summarize URL',
+const { data: workflow } = await commons.workflows.create({
+  name: 'Summarise a page',
+  description: 'Fetch a URL, summarise it, and return the summary',
   definition: {
     nodes: [
-      { id: 'scrape', type: 'tool', toolName: 'web_scraper', parameters: { url: '{{inputs.url}}' } },
-      { id: 'summarize', type: 'agent_processor', prompt: 'Summarize: {{scrape.output}}' },
+      { id: 'in',      type: 'input' },
+      { id: 'fetch',   type: 'tool', toolName: 'webSearch' },
+      { id: 'check',   type: 'condition', config: { expression: 'results.length > 0' } },
+      { id: 'summary', type: 'agent_processor', agentId },
+      { id: 'out',     type: 'output' },
     ],
-    edges: [{ from: 'scrape', to: 'summarize' }],
+    edges: [
+      { id: 'e1', source: 'in',    target: 'fetch' },
+      { id: 'e2', source: 'fetch', target: 'check' },
+      { id: 'e3', source: 'check', target: 'summary', sourceHandle: 'true' },
+      { id: 'e4', source: 'check', target: 'out',     sourceHandle: 'false' },
+      { id: 'e5', source: 'summary', target: 'out' },
+    ],
+    outputMapping: { summary: 'summary.output' },
   },
-  inputSchema: { url: { type: 'string' } },
+});
+```
+
+Or in the browser: **Studio → Workflows → Create** opens a canvas where you drag
+nodes, connect handles, and run from the editor with results streaming onto the
+graph.
+
+## Run one
+
+<Tabs items={['SDK', 'CLI', 'API']}>
+  <Tab value="SDK">
+```typescript
+const execution = await commons.workflows.execute(workflow.workflowId, {
+  inputData: { url: 'https://example.com' },
+  agentId,
 });
 
-// Execute and stream
-const { executionId } = await client.workflows.execute(workflow.workflowId, {
-  inputs: { url: 'https://example.com' },
-});
-
-for await (const event of client.workflows.stream(executionId)) {
-  if (event.nodeId) console.log(`[${event.nodeId}] ${event.status}`);
-  if (event.output) console.log(event.output);
+for await (const event of commons.workflows.stream(workflow.workflowId, execution.executionId)) {
+  console.log(event.type, event.stage, event.status);
 }
 ```
+  </Tab>
+  <Tab value="CLI">
+```bash
+agc workflow run <workflowId> --input '{"url":"https://example.com"}' --watch
+agc workflow executions <workflowId> --limit 10
+```
+  </Tab>
+  <Tab value="API">
+```bash
+curl -X POST https://api.agentcommons.io/v1/workflows/<workflowId>/execute \
+  -H "Authorization: Bearer $COMMONS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "inputData": { "url": "https://example.com" } }'
+```
+  </Tab>
+</Tabs>
 
----
+## Human approval
 
-## Visual editor
-
-In the web app, go to **Studio → Workflows → Create → Open Editor**:
-
-<Steps>
-  <Step>Add nodes from the sidebar or click the + button on the canvas</Step>
-  <Step>Click each node to set its type, tool name, and parameters</Step>
-  <Step>Connect nodes by dragging from one output handle to another node's input</Step>
-  <Step>Define inputs in the Inputs panel</Step>
-  <Step>Click **Run** to test directly from the editor</Step>
-</Steps>
-
----
-
-## Publish and fork
-
-Make a workflow public for others to find and reuse:
+A `human_approval` node pauses the execution and waits. The run resumes when
+someone approves or rejects it:
 
 ```bash
-curl -X PUT https://api.agentcommons.io/v1/workflows/workflow_abc123 \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{ "isPublic": true, "category": "research" }'
+agc workflow approve <workflowId> <executionId> <token>
+agc workflow reject  <workflowId> <executionId> <token> --reason "Wrong source"
 ```
 
-Browse public workflows:
+```typescript
+await commons.workflows.approveExecution(workflowId, executionId, {
+  approvalToken: token,
+  approvalData: { reviewedBy: userId },
+});
+```
+
+The token comes from the paused execution. Approvals are recorded in
+[provenance](/docs/guides/provenance): who approved, what they were shown, and
+what they chose.
+
+## Webhooks
+
+Trigger a workflow from anything that can make an HTTP request — no bearer
+token needed, the token in the path is the credential.
 
 ```bash
-GET /v1/workflows/public
-GET /v1/workflows/public?category=research
+agc workflow get <workflowId>              # shows the webhook, if one exists
 ```
 
-Fork one to your account:
+```typescript
+const hook = await commons.workflows.rotateWebhookToken(workflowId);
+// POST to hook.webhookUrl to trigger a run
+await commons.workflows.disableWebhook(workflowId);
+```
+
+Rotate the token if it leaks; disable the webhook when the integration retires.
+
+## Templates
 
 ```bash
-POST /v1/workflows/workflow_abc123/fork
+agc workflow templates list
+agc workflow templates create <templateName> --agent <agentId> --run
 ```
 
----
+Templates create the workflow *and* register the API tools it needs, so a
+template run works out of the box. `--prefix` keeps generated names stable
+across repeated runs; `--reviewer-agent` supplies the second agent for
+multi-agent templates.
 
-## Schedule a workflow
+```typescript
+import { listWorkflowTemplates, buildWorkflowTemplate } from '@agent-commons/sdk';
+```
 
-Run a workflow automatically on a cron schedule by combining it with a task:
+## Sharing and forking
+
+```typescript
+await commons.workflows.update(workflowId, { isPublic: true });
+const { data: publicOnes } = await commons.workflows.discoverPublic();
+const mine = await commons.workflows.fork(someonesWorkflowId, {
+  newOwnerId: userId,
+  newOwnerType: 'user',
+});
+```
+
+A fork is a copy you own — edit it freely without affecting the original.
+
+## Running a workflow from an agent
+
+Give the agent the `runWorkflow` tool and it can call a workflow as one step of
+a larger job:
+
+```typescript
+await commons.agents.update(agentId, {
+  commonTools: ['runWorkflow', 'processWithinWorkflow'],
+});
+```
+
+## Debugging
 
 ```bash
-curl -X POST https://api.agentcommons.io/v1/tasks \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "title": "Daily news pipeline",
-    "agentId": "agent_abc123",
-    "executionMode": "workflow",
-    "workflowId": "workflow_abc123",
-    "workflowInputs": { "url": "https://news.ycombinator.com" },
-    "cronExpression": "0 7 * * *",
-    "isRecurring": true
-  }'
+agc workflow executions <workflowId> --limit 5
 ```
+
+Stream an execution and watch `stage` and `status` per node — a workflow that
+"does nothing" is usually a `condition` routing down the branch you did not
+expect, or an edge whose `sourceHandle` was never set.
+
+`POST /v1/workflows/:id/executions/:executionId/cancel` stops a run that is
+looping or stuck.

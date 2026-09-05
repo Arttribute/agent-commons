@@ -1,0 +1,12 @@
+{
+  "name": "@agent-commons/ui",
+  "version": "0.1.0",
+  "description": "Shared Commons canvas, compiled preview and annotation primitives",
+  "license": "MIT",
+  "type": "module",
+  "exports": { ".": "./src/index.tsx", "./styles.css": "./src/styles.css" },
+  "files": ["src", "README.md"],
+  "peerDependencies": { "react": ">=18", "react-dom": ">=18" },
+  "scripts": { "build": "node -e \"console.log('Source package: compiled by consuming Next.js applications')\"" },
+  "publishConfig": { "access": "public" }
+}

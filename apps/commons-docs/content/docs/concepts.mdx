@@ -1,142 +1,152 @@
 ---
 title: Core Concepts
-description: Understand the key building blocks of Agent Commons before you start building.
+description: The nouns the rest of the documentation assumes you know.
 ---
 
-# Core Concepts
-
-Agent Commons is built around a small set of composable primitives. Understanding these makes everything else click.
+Agent Commons is a small set of primitives that compose. Learn these once and
+the API, SDK, CLI, and web app all read the same way.
 
 ## Agent
 
-An **Agent** is the core unit. It's an AI persona with a specific role, instructions, and set of tools. Agents can chat with users, run autonomously on a schedule, call external tools, communicate with other agents, and hold a crypto wallet.
+An **agent** is the unit that does work. It owns instructions, a model, a
+toolbelt, and — optionally — memory, a wallet, a computer, and connected
+accounts.
 
-Each agent has:
-- **Instructions** — the system prompt defining personality and behavior
-- **Model config** — which LLM to use (provider, model ID, temperature, etc.)
-- **Tools** — external capabilities it can invoke
-- **Wallet** — optional on-chain wallet for payments
-
----
+| Property | What it sets |
+|---|---|
+| `instructions` | The system prompt: role, rules, tone |
+| `modelProvider` / `modelId` | Which LLM answers, from the [model registry](/docs/guides/agents#models) |
+| `modelApiKey` | Bring your own provider key; stored encrypted |
+| `commonTools` | Which built-in platform tools are switched on |
+| `runtimeType` | `native` (the default LangGraph runtime) or a managed runtime |
+| `autonomyEnabled` | Whether the agent wakes itself on a heartbeat |
 
 ## Session
 
-A **Session** is a conversation thread between a user and an agent. It stores the full message history, model configuration, and usage metrics. Sessions are persistent — you can resume them by passing the same sessionId.
+A **session** is one conversation thread. It holds the message history, the
+model config used, attachments, and token accounting. Sessions are durable —
+pass the same `sessionId` on the next run to continue where you left off. One
+agent has many sessions.
 
-One agent can have many sessions.
+## Run
 
----
+A **run** is a single turn inside a session. Runs emit a stream of events
+(`token`, `toolStart`, `toolEnd`, `agent_step`, `final`, …). Each run carries a
+`runId` and every event a monotonic `seq`, so a dropped connection can resume
+from the last sequence number instead of starting over.
 
 ## Task
 
-A **Task** is a discrete, trackable unit of work assigned to an agent. Unlike a session (open-ended chat), a task has:
-
-- A clear goal
-- A status lifecycle: pending → running → completed / failed / cancelled
-- Optional scheduling (run once at a time, or on a recurring cron)
-- Optional dependencies (wait for other tasks first)
-- Stored results when done
-
-Tasks are the right tool for automation and background work.
-
----
+A **task** is a tracked unit of work rather than a conversation. It has a
+status lifecycle (`pending → running → completed | failed | cancelled`),
+optional dependencies on other tasks, and optional scheduling — run once at a
+timestamp, or repeatedly on a cron expression in a named timezone.
 
 ## Workflow
 
-A **Workflow** is a directed acyclic graph (DAG) of steps. Each **node** is a step — invoke a tool, transform data, or run an AI processor. **Edges** define execution order and data flow.
+A **workflow** is a directed graph of steps with typed data flowing along the
+edges. Nodes:
 
-Use workflows when you have a multi-step process with defined inputs and outputs between steps.
+| Node | What it does |
+|---|---|
+| `input` | Emits the workflow's input data |
+| `output` | Marks the final result |
+| `tool` | Invokes a registered tool |
+| `agent_processor` | Runs an LLM step through a configured agent |
+| `transform` | Reshapes fields — no model, no tool call |
+| `condition` | Evaluates an expression and routes the true or false branch |
+| `loop` | Iterates a fixed count or over an array |
+| `workflow` | Invokes another saved workflow |
+| `human_approval` | Pauses until a person approves or rejects |
 
-Node types:
-- `input` — passes the workflow's input data downstream
-- `output` — marks the final output of the workflow
-- `tool` — invokes a registered tool with specific parameters
-- `agent_processor` — runs an LLM inference step via a configured agent
-- `transform` — maps or reshapes fields between steps (no tool call)
-- `condition` — evaluates an expression and routes to a true or false branch
-- `loop` — iterates a fixed number of times or over an array
-- `human_approval` — pauses execution until a human approves or rejects
-
----
+Use a session when the shape of the work is open-ended, and a workflow when
+you already know the steps.
 
 ## Tool
 
-A **Tool** is a capability an agent can invoke. There are four kinds:
+A **tool** is a capability the agent can call.
 
-| Type | Description |
+| Kind | Where it comes from |
 |---|---|
-| **Static tools** | Built-in to every agent (web scraper, API caller, code interpreter, search) |
-| **Dynamic tools** | Custom REST API integrations you create |
-| **MCP tools** | Tools discovered from any MCP server you connect |
-| **Space tools** | Tools scoped to a collaborative space |
+| **Platform tools** | Built into the API — web search, file creation, images, spaces, computers, knowledge |
+| **Custom tools** | REST endpoints you register with a JSON schema |
+| **MCP tools** | Discovered from any [Model Context Protocol](https://modelcontextprotocol.io) server you connect |
+| **CLI tools** | Functions the *caller* executes — how `agc chat` gives an agent your local filesystem |
 
----
-
-## MCP Server
-
-**MCP (Model Context Protocol)** is an open standard for connecting agents to external tool servers. Connect a server by URL or stdio command — Agent Commons discovers and syncs its tools automatically.
-
----
-
-## Agent-to-Agent (A2A)
-
-**A2A** lets agents call other agents as if they were tools. Each agent publishes an **Agent Card** describing what it can do. Other agents discover this card and send tasks via JSON-RPC 2.0.
-
----
-
-## Wallet
-
-Each agent can have an on-chain wallet (EOA on Base Sepolia). Wallets can hold USDC, make x402 micropayments to access paid services, and receive payments.
-
----
-
-## Memory
-
-**Memory** gives agents a persistent knowledge store across sessions. Memory types:
-- **Semantic** — facts and knowledge ("user prefers bullet points")
-- **Episodic** — records of past events
-- **Procedural** — how to do things
-
-Memory entries are embedded and retrieved via semantic search.
-
----
-
-## Space
-
-A **Space** is a real-time collaborative environment using WebRTC. Multiple users and agents can be in the same space, sharing tools and live presence.
-
----
+Credentials live separately in **tool keys**, encrypted at rest and injected at
+call time. Access is governed by **tool permissions**.
 
 ## Skill
 
-A **Skill** is a published, reusable capability definition. Skills can be discovered and used by other agents via A2A.
+A **skill** is a reusable playbook: instructions plus the tools they need,
+under a slug. Attach one to an agent, or publish it so anyone can install it.
+Skills keep prompts out of your application code.
 
----
+## Knowledge space and library
 
-## OAuth Connection
+A **knowledge space** is a folder tree of documents agents read and write, with
+per-space grants and semantic search. The **library** is the file store —
+uploads, generated artifacts, and their provenance — with S3 or IPFS backing,
+share links, and grants.
 
-**OAuth Connections** let agents act on behalf of users in external services (Google, GitHub, Slack, etc.). Authorize once — the token is injected automatically when a tool needs it.
+## Memory
 
----
+**Memory** is what an agent recalls across sessions: `semantic` facts,
+`episodic` events, and `procedural` how-tos. Entries are embedded and retrieved
+by similarity. Shared scopes let a group of agents draw on one attributed pool.
 
-## How it all connects
+## Computer
+
+A **computer** is a persistent cloud Linux box belonging to an agent — a shell,
+a filesystem that survives sleep, and a browser it can drive. It wakes on
+demand, sleeps when idle, and bills for the time it is awake.
+
+## Connection
+
+A **connection** is an OAuth grant that lets an agent act as you in an external
+service (Google Workspace, GitHub, Slack, X). Authorize once; tokens are stored
+encrypted, refreshed automatically, and injected when a tool needs them.
+
+## Space
+
+A **space** is a real-time room where people and agents share presence, chat,
+live audio over WebRTC, and screen capture. Agents in a space can speak, watch
+streams, and take turns.
+
+## A2A
+
+**Agent-to-Agent** is the open protocol for delegation. An agent publishes an
+Agent Card at a well-known URL; other agents discover it and send JSON-RPC 2.0
+tasks. Your agents can be clients, servers, or both.
+
+## Wallet
+
+An agent can hold an **EOA wallet** on Base Sepolia with USDC. That lets it
+settle x402 (`402 Payment Required`) challenges for paid APIs and receive
+payment for its own work.
+
+## Provenance
+
+Every run leaves a **provenance** trail: which sources, tools, workflows,
+agents, and library items produced the answer. Capture is metadata-only by
+default, exportable as a portable EAA bundle, and optionally anchored on-chain.
+
+## Credits and billing
+
+Model tokens, compute time, and metered capabilities draw down **credits**.
+A plan sets your monthly allowance and entitlements; top-ups add one-off packs.
+
+## How it composes
 
 ```
-User
-  │
-  ▼
-[Session] ──── messages ────► [Agent]
-                                  │
-                      ┌───────────┼───────────┐
-                      ▼           ▼           ▼
-                   [Tools]    [Memory]    [A2A calls]
-                      │
-              ┌───────┼───────┐
-              ▼       ▼       ▼
-          [Static]  [MCP]  [Custom]
+[Session] ──┐
+[Task]    ──┼──► [Agent] ──► model
+[Workflow]──┤        │
+[A2A]     ──┘        ├──► [Tools] ──► platform · custom · MCP · CLI
+                     ├──► [Memory]         └── [Tool keys] · [Connections]
+                     ├──► [Knowledge] · [Library]
+                     ├──► [Computer]
+                     └──► [Wallet]
 
-
-[Task] ──── schedule ────► [Agent] ──► [Workflow]
-                                           │
-                                   [Node]→[Node]→[Node]
+  every step of the above ──► [Provenance] ──► [Credits]
 ```

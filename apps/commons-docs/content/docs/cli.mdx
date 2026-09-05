@@ -1,431 +1,367 @@
 ---
-title: CLI Reference
-description: Terminal-first access to Agent Commons with the agc command.
+title: CLI
+description: agc — the Agent Commons command line. Chat, run, schedule, and ship from the terminal.
 ---
-
-# CLI Reference
-
-The `agc` command-line tool gives you full access to Agent Commons from your terminal, with secure browser sign-in, an interactive menu, streaming chat, and scriptable output.
-
-## Installation
 
 ```bash
 npm install -g @agent-commons/cli
 ```
 
----
+Run `agc` with no arguments for an interactive menu, or use the commands
+below directly. Every list command accepts `--json` for scripting.
 
-## Interactive menu
-
-Running `agc` with no arguments opens the interactive menu:
-
-```bash
-agc
-```
-
-Use **↑ / ↓** to navigate and **Enter** to select. The menu covers chat, runs, sessions, agents, tasks, workflows, files, code projects, developer API keys, MCP, skills, wallets, usage, logs, and configuration.
-
-If you have not signed in, the menu starts the sign-in flow.
-
----
-
-## Authentication
-
-### Sign in with your Commons account
+## Signing in
 
 ```bash
-agc login
+agc login          # OAuth device flow — prints a code, opens your browser
+agc whoami         # who am I, and can I reach the API?
+agc logout         # clear stored credentials
 ```
 
-The CLI creates a short-lived device authorization request, opens Agent Commons in your browser, and waits for you to approve it. Your terminal never asks for your password.
+| Option | Purpose |
+|---|---|
+| `--api-key <key>` | Use a project key instead of the browser flow — for CI |
+| `--no-browser` | Print the URL rather than opening it |
+| `--api-url <url>` | Point at another Agent Commons deployment |
+| `--identity-url <url>` | Point at another Commons Identity deployment |
+| `--initiator <id>` | Delegated principal, for keys that permit it |
 
-If you are working on a remote host, print the approval URL instead:
+Credentials go to `~/.agc/config.json` with mode `0600`. Access tokens refresh
+automatically before each command.
+
+### Configuration
 
 ```bash
-agc login --no-browser
+agc config get
+agc config set defaultAgentId agent_abc123
 ```
 
-The CLI stores its account session in `~/.agc/config.json` with file mode `0600`. It refreshes short-lived API access tokens when needed.
+Settable keys: `apiUrl`, `identityUrl`, `apiKey`, `initiator`,
+`defaultAgentId`. Environment variables win over the file — `AGC_API_URL`,
+`AGC_API_KEY`, `AGC_INITIATOR`, `AGC_AGENT_ID`, `COMMONS_ACCESS_TOKEN`,
+`COMMONS_IDENTITY_URL`.
 
-### Use a project API key
+Set `defaultAgentId` once and every `--agent` flag below becomes optional.
 
-For CI and other non-interactive environments, pass a project-scoped `csk_*` key:
+## Chatting
 
 ```bash
-agc login --api-key "$AGC_API_KEY"
+agc chat --agent agent_abc123
+agc chat --resume session_xyz
+agc chat --computer          # give the agent its cloud computer too
+agc chat --no-local          # keep the agent out of your filesystem
 ```
 
-Create and scope project keys in **Agent Commons → Settings → Developer API keys** or with the `agc keys` commands after account sign-in. Treat keys as server-side secrets.
+An interactive REPL. Tokens stream, tool calls render inline, and the session
+is written to `~/.agc/sessions/<sessionId>.jsonl`.
 
-### Other auth commands
+| In-chat command | Effect |
+|---|---|
+| `/help` | List commands |
+| `/tools` | Show the tools available in this session |
+| `/session` | Print the current session ID |
+| `/clear` | Clear the screen |
+| `/quit`, `/exit`, `/q` | Leave — the session stays resumable |
+
+### Local file access
+
+`agc chat` exposes your working directory to the agent by default. The agent
+gets a live directory snapshot plus a set of `cli_*` tools that execute on your
+machine, not on the server:
+
+| Tool | What it does |
+|---|---|
+| `cli_list_directory` | List files and folders |
+| `cli_read_file` | Read a file — PDFs and Word documents are extracted to text |
+| `cli_write_file` | Write a file — asks you first |
+| `cli_search_files` | Find files matching a pattern |
+| `cli_run_command` | Run a short command — asks you first |
+| `cli_start_process` | Start a long-running command in the background |
+| `cli_wait_for_process` · `cli_process_status` · `cli_kill_process` · `cli_list_processes` | Manage background processes |
+
+Writes and commands require your confirmation. Sensitive paths — `.ssh`,
+`.gnupg`, `.aws`, `.env`, anything credential-shaped — are blocked outright.
+Git commits made through the agent carry a `Co-Authored-By` trailer naming the
+agent. Pass `--no-local` to switch all of this off.
+
+## One-shot runs
 
 ```bash
-agc logout       # clear locally stored credentials
-agc whoami       # show the active account or API-key principal
-agc config get   # show configuration with secrets masked
+agc run --agent agent_abc123 "Summarise this week's AI policy news"
+agc run --local -y "Refactor src/utils.ts and run the tests"
+agc run --json "…" | jq -r 'select(.type=="token") | .content'
 ```
 
-### Environment variables
-
-You can set credentials via env vars instead of running agc login:
-
-```bash
-export AGC_API_KEY=csk_your_project_key
-export AGC_API_URL=https://api.agentcommons.io   # optional — this is the default
-export AGC_AGENT_ID=agent_abc123                 # optional default agent
-```
-
-Env vars take precedence over the config file.
-
-## Provenance reports
-
-Runs capture privacy-preserving provenance metadata by default. You can choose the policy per invocation and inspect a report without reading raw trace JSON:
-
-```bash
-agc run --agent <agentId> --provenance metadata "Research this topic"
-agc provenance session <sessionId>
-agc provenance workflow <executionId>
-agc provenance bundle <traceId> > provenance.json
-```
-
-`--provenance full` explicitly enables bounded prompt/output capture; credentials and private reasoning remain excluded. `--onchain-provenance` requests an optional anchor when enabled by the environment.
-
----
-
-## Developer projects and API keys
-
-Developer API keys belong to a project, include explicit scopes, and can have an expiration date. The plaintext key is returned only when you create it.
-
-```bash
-agc keys projects list
-agc keys projects create --name "Local development" --environment development
-agc keys scopes
-
-agc keys create \
-  --name "CI deploy" \
-  --project <projectId> \
-  --scopes agents:read,agents:run \
-  --expires 2027-01-01T00:00:00Z
-
-agc keys list --project <projectId>
-agc keys revoke <keyId>
-```
-
-Use `agc api-keys` as an alias for `agc keys`.
-
----
+| Option | Purpose |
+|---|---|
+| `--agent <agentId>` | Which agent |
+| `--session <sessionId>` | Continue an existing session |
+| `--new-session` | Start fresh and print the new session ID |
+| `--local` | Enable local file access, with a prompt per write |
+| `-y, --yes` | Enable local file access and auto-approve everything |
+| `--computer` | Attach the agent's persistent cloud computer |
+| `--no-stream` | Wait for the complete answer |
+| `--json` | Emit the raw event stream as JSON lines |
+| `--provenance <mode>` | `off`, `metadata` (default), or `full` |
+| `--onchain-provenance` | Request an on-chain anchor for this run |
 
 ## Agents
 
 ```bash
-agc agents list                          # list your agents
-agc agents get <agentId>                 # get agent details
-agc agents create                        # interactive create
-agc agents create \
-  --name "My Bot" \
-  --instructions "You are helpful." \
-  --model-provider openai \
-  --model-id gpt-4o
-agc agents update <agentId> --temperature 0.5
-agc agents delete <agentId>
+agc agents list
+agc agents get <agentId>
+agc agents create --name "Research Bot" \
+  --instructions "You research topics and answer with sources." \
+  --provider anthropic --model claude-sonnet-4-6
 ```
 
----
+| `agents create` option | Default |
+|---|---|
+| `--name <name>` | required |
+| `--instructions <text>` | — |
+| `--provider <provider>` | `openai` — `openai`, `anthropic`, `google`, `groq`, `openrouter`, `xai`, `ollama`, `custom` |
+| `--model <id>` | `gpt-5.4-mini` |
+| `--model-api-key <key>` | Bring your own provider key |
+| `--model-base-url <url>` | For custom or local OpenAI-compatible endpoints |
+| `--runtime <runtime>` | `native` — or `openclaw`, `hermes`, `custom` |
 
-## Chat
-
-`agc chat` opens an interactive streaming REPL. Each conversation is tied to a session so history is preserved.
+### Heartbeat
 
 ```bash
-agc chat --agent <agentId>                       # start a new session
-agc chat --agent <agentId> --resume <sessionId>  # resume an existing session
-agc chat --agent <agentId> --no-local            # disable local file system access
-agc chat --agent <agentId> --no-stream           # wait for full response before printing
+agc agents autonomy status  --agent <agentId>
+agc agents autonomy enable  --agent <agentId> --interval 3600
+agc agents autonomy disable --agent <agentId>
+agc agents autonomy trigger --agent <agentId>
 ```
 
-In-session slash commands:
-
-| Command  | Description                                     |
-| -------- | ----------------------------------------------- |
-| /help    | Show available slash commands                   |
-| /session | Print the current session ID (for later resume) |
-| /tools   | Show local tools status and cached permissions  |
-| /clear   | Clear the terminal screen                       |
-| /quit    | Exit — session is preserved for future resume   |
-
-File context: prefix any path with `@` to inject its contents into your message:
-
-```
-you › review @src/index.ts and suggest improvements
-```
-
-Set a default agent so you can skip `--agent` every time:
+### Managed runtimes
 
 ```bash
-agc config set defaultAgentId agent_abc123
-agc chat   # uses defaultAgentId automatically
+agc agents runtime status  <agentId>
+agc agents runtime deploy  <agentId>
+agc agents runtime sleep   <agentId>
+agc agents runtime restart <agentId>
 ```
-
----
-
-## Run (one-shot)
-
-`agc run` sends a single prompt and exits. Useful for scripting, piping output, or quick one-off queries.
-
-```bash
-agc run --agent <agentId> "Hello"                 # stream response to stdout
-agc run --agent <agentId> "Hello" --no-stream     # wait for full response
-agc run --agent <agentId> "Hello" --json          # raw JSON event stream
-```
-
-### Session flags
-
-By default `agc run` is stateless — each call starts fresh. Use session flags when you need the agent to remember context across calls:
-
-```bash
-# Create a new session and print its ID
-agc run --agent <agentId> "Summarise this repo" --new-session
-# Session: ses_abc123 (new)
-# ... response ...
-# Session: ses_abc123  (resume with: agc run --session ses_abc123 "<prompt>")
-
-# Resume that session in the next call
-agc run --agent <agentId> "Now refactor main.ts" --session ses_abc123
-# Session: ses_abc123 (resumed)
-# ... response with full prior context ...
-```
-
-| Flag             | Description                                                  |
-| ---------------- | ------------------------------------------------------------ |
-| `--session <id>` | Resume an existing session. Validates the ID before running. |
-| `--new-session`  | Create a new session, print its ID, use it for this run.     |
-
-The session ID is printed at the end of every run that uses one, so you can copy it straight from the terminal.
-
-### Local file system flags
-
-Give the agent direct access to files on your machine:
-
-```bash
-agc run --agent <agentId> "List all TypeScript files and summarise each" --local
-# → prompts you before each write or shell command
-
-agc run --agent <agentId> "Fix the lint errors in src/" --yes
-# → auto-approves all operations — no prompts
-```
-
-| Flag           | Description                                                             |
-| -------------- | ----------------------------------------------------------------------- |
-| `--local`      | Enable local file system access with per-operation confirmation prompts |
-| `--yes` / `-y` | Enable local file system access and auto-approve all operations         |
-
-All file operations are sandboxed to the current working directory. Sensitive paths (`.ssh`, `.aws`, `.env`, credentials) are always blocked regardless of flags.
-
-When `--local` or `--yes` is active, the agent gains access to these tools:
-
-| Tool                   | Description                                         |
-| ---------------------- | --------------------------------------------------- |
-| `cli_read_file`        | Read a file (plain text, PDF, or Word doc)          |
-| `cli_write_file`       | Write or overwrite a file                           |
-| `cli_list_directory`   | List directory contents                             |
-| `cli_search_files`     | Find files by name pattern                          |
-| `cli_run_command`      | Run a shell command and capture output              |
-| `cli_start_process`    | Start a long-running background command             |
-| `cli_wait_for_process` | Wait for a background process and stream its output |
-| `cli_process_status`   | Check status of a background process                |
-| `cli_kill_process`     | Kill a background process                           |
-| `cli_list_processes`   | List all background processes this session          |
-
-### Combining flags
-
-```bash
-# Research + remember context + work with files
-agc run --agent <agentId> "Read package.json and list all dependencies" \
-  --new-session --yes
-
-# Resume with more work in the same session
-agc run --agent <agentId> "Now check each dependency for known issues" \
-  --session ses_abc123 --yes
-```
-
----
 
 ## Sessions
 
 ```bash
-agc sessions list
 agc sessions list --agent <agentId>
 agc sessions get <sessionId>
+agc sessions create --agent <agentId> --title "Research" --model claude-sonnet-4-6
 agc sessions rename <sessionId> "New title"
 agc sessions delete <sessionId>
 ```
 
-Session logs from `agc chat` and `agc run --local` are written to `~/.agc/sessions/<sessionId>.jsonl`. Each line is a JSON record of the message or tool call.
-
----
-
 ## Tasks
 
 ```bash
-agc task list
 agc task list --agent <agentId>
-agc task list --status running
-
-agc task create \
-  --title "Daily briefing" \
-  --agent <agentId> \
-  --input '{"topic":"overnight news"}'
-
+agc task create --agent <agentId> --title "Daily briefing" --execute --watch
 agc task execute <taskId> --watch
 agc task cancel <taskId>
 ```
 
----
+| `task create` option | Purpose |
+|---|---|
+| `--agent` · `--session` | Ownership and thread |
+| `--workflow <workflowId>` | Attach a workflow instead of a single run |
+| `--input <json>` | Input data — defaults to `{}` |
+| `--timeout <ms>` | Execution timeout |
+| `--execute` | Run immediately after creating |
+| `--watch` | Stream progress over SSE — implies `--execute` |
+
+`agc t` is an alias for `agc task`.
 
 ## Workflows
 
 ```bash
 agc workflow list
-agc workflow get <workflowId>
-agc workflow create --file workflow.json
+agc workflow create --file workflow.json --name "Summarise a URL"
 agc workflow run <workflowId> --input '{"url":"https://example.com"}' --watch
+agc workflow executions <workflowId> --limit 10
+agc workflow approve <workflowId> <executionId> <token>
+agc workflow reject  <workflowId> <executionId> <token> --reason "Wrong source"
 ```
 
----
-
-## Library and code projects
+### Templates
 
 ```bash
-agc library list
-agc library upload ./report.pdf ./notes.md
-agc library favorite <itemId>
-agc library delete <itemId>
-
-agc projects list --agent <agentId>
-agc projects create --agent <agentId> --name "Dashboard"
-agc projects write <projectId> files.json --agent <agentId>
-agc projects publish <projectId> --agent <agentId>
-agc projects export <projectId> --agent <agentId>
+agc workflow templates list
+agc workflow templates create <templateName> --agent <agentId> --run
 ```
 
-Set a default agent with `agc config set defaultAgentId <agentId>` to omit repeated `--agent` flags.
-
----
+Templates create the workflow *and* the API tools it needs. `--prefix` keeps
+generated names stable across re-runs. `agc wf` is an alias for
+`agc workflow`.
 
 ## Tools
 
 ```bash
 agc tools list
-agc tools list --type mcp
-agc tools list --type custom
-agc tools create --file tool.json
 agc tools get <toolId>
-agc tools exec weather --agent <agentId> --args '{"city":"Nairobi"}'
+agc tools create --file tool.json
+agc tools exec <toolName> --args '{"city":"Nairobi"}' --agent <agentId>
 ```
 
----
-
-## MCP Servers
+## MCP servers
 
 ```bash
-agc mcp list
-agc mcp add --name "GitHub Tools" --type sse --url https://mcp.example.com/sse
 agc mcp add --name "Filesystem" --type stdio \
-  --command "npx -y @modelcontextprotocol/server-filesystem /data"
+  --command "npx @modelcontextprotocol/server-filesystem ~/projects"
+agc mcp add --name "Docs" --type sse --url https://mcp.example.com/sse
+agc mcp list
 agc mcp connect <serverId>
 agc mcp sync <serverId>
 agc mcp tools <serverId>
-agc mcp disconnect <serverId>
+agc mcp resources <serverId>
+agc mcp read <serverId> <uri>
+agc mcp prompts <serverId>
+agc mcp prompt <serverId> <promptName> --args '{"topic":"pricing"}'
+agc mcp remove <serverId>
 ```
-
----
-
-## Wallets
-
-```bash
-agc wallet list --agent <agentId>
-agc wallet create --agent <agentId> --label main
-agc wallet balance --agent <agentId>
-agc wallet send --agent <agentId> --to 0xADDRESS --amount 5.0 --token USDC
-```
-
----
-
-## Memory
-
-```bash
-agc memory list --agent <agentId>
-agc memory create --agent <agentId> --type semantic --content "User prefers short answers"
-agc memory search --agent <agentId> "user preferences"
-agc memory delete <memoryId>
-```
-
----
-
-## Models
-
-```bash
-agc models ls                   # all supported models
-agc models ls --provider openai
-```
-
----
 
 ## Skills
 
 ```bash
-agc skills list                   # all available skills
+agc skills list
+agc skills index                 # compact, progressive-disclosure view
 agc skills get <skillId>
-agc skills create \
-  --slug concise-review \
-  --name "Concise review" \
-  --instructions "Review changes and report actionable findings."
+agc skills create --slug weekly-report --name "Weekly report" \
+  --description "Produce the standard weekly status report" \
+  --tools webSearch,createDocumentFile
+agc skills install <slug>        # print the skill as SKILL.md
+agc skills publish <slug>
+agc skills unpublish <slug>
+agc skills update <slug> --description "…"
+agc skills delete <slug> --yes
 ```
 
----
-
-## Usage and logs
+## Connections
 
 ```bash
-agc usage agents
+agc connections providers
+agc connections connect google --scopes "https://www.googleapis.com/auth/gmail.send"
+agc connections list
+agc connections test <connectionId>
+agc connections rename <connectionId> "Work Google"
+agc connections refresh <connectionId>
+agc connections revoke <connectionId>
+```
+
+## Cloud computers
+
+Each agent has exactly one persistent computer.
+
+```bash
+agc computer status  --agent <agentId>
+agc computer enable  --agent <agentId>
+agc computer wake    --agent <agentId>
+agc computer exec    --agent <agentId> --cwd /workspace -- python analyse.py
+agc computer sleep   --agent <agentId> --reason "done for now"
+agc computer resize  --agent <agentId> --vcpu 4 --memory 16 --storage 100
+agc computer events  --agent <agentId> --limit 20
+agc computer disable --agent <agentId>
+```
+
+`resize` also accepts `--profile`, `--mode`, `--gpu-type`, and `--gpu-count`.
+
+## Library and files
+
+```bash
+agc library upload report.pdf notes.md --agent <agentId>
+agc library list --query invoice --favorites
+agc library get <itemId>
+agc library favorite <itemId>
+agc library delete <itemId>
+```
+
+`--storage s3|ipfs` picks the backend for an upload. `agc files` is an alias.
+
+## Code projects
+
+```bash
+agc projects create --name "Landing page" --agent <agentId> --files files.json
+agc projects list --agent <agentId>
+agc projects write <projectId> files.json --replace
+agc projects publish <projectId>
+agc projects export <projectId> --directory /workspace/site
+agc projects github <projectId> --repository my-site --public
+```
+
+## Memory
+
+```bash
+agc memory list --agent <agentId> --type semantic
+agc memory search "formatting preferences" --agent <agentId>
+agc memory create --agent <agentId> --content "Prefers bullet points" --type semantic
+agc memory stats --agent <agentId>
+agc memory delete <memoryId>
+```
+
+## Wallets
+
+```bash
+agc wallet show    --agent <agentId>
+agc wallet balance --agent <agentId>
+agc wallet create  --agent <agentId> --label Primary
+agc wallet send    --agent <agentId> --to 0x… --amount 5 --token USDC
+agc wallet x402-fetch --agent <agentId> --url https://paid.example.com/data
+```
+
+## Provenance
+
+```bash
+agc provenance session <sessionId>
+agc provenance workflow <executionId>
+agc provenance bundle <traceId> > provenance.json
+```
+
+Add `--json` to the first two for the complete machine-readable trajectory.
+
+## API keys
+
+```bash
+agc keys projects list
+agc keys projects create --name "Production"
+agc keys list
+agc keys create --name "CI" --scopes agents:read,agents:run
+agc keys scopes
+agc keys revoke <keyId>
+```
+
+`agc api-keys` is an alias.
+
+## Usage, logs, and billing
+
+```bash
+agc usage agents --from 2026-01-01
 agc usage agent <agentId>
-
-agc logs list --agent <agentId>
-agc logs list --agent <agentId> --session <sessionId>
+agc logs list --agent <agentId> --status error
 agc logs errors --agent <agentId>
+agc credits balance
+agc credits ledger --limit 50
+agc billing status
+agc billing upgrade pro
+agc billing topup medium
+agc models ls --provider anthropic
 ```
-
----
-
-## Output formats
-
-All commands default to human-readable output. Add --json for machine-readable JSON:
-
-```bash
-agc agents list --json
-agc run --agent <agentId> "Hello" --json
-```
-
----
 
 ## Scripting
 
+`--json` on any list or get command prints machine-readable output.
+
 ```bash
-#!/bin/bash
-# Run an agent and capture the result
-RESULT=$(agc run --agent agent_abc123 "Summarize: $(cat input.txt)" --json)
-echo $RESULT | jq '.response' > summary.txt
+agc agents list --json | jq -r '.[] | "\(.agentId)\t\(.name)"'
 
-# Multi-turn scripted conversation using sessions
-SESSION=$(agc run --agent agent_abc123 "Analyse this codebase" --new-session --yes 2>&1 \
-  | grep "^Session:" | awk '{print $2}')
+agc run --agent "$AGENT" --json "Draft the release notes" \
+  | jq -r 'select(.type == "token") | .content' \
+  | tr -d '\n'
+```
 
-agc run --agent agent_abc123 "Now write a test for every exported function" \
-  --session "$SESSION" --yes
+For CI, authenticate with a project key and skip the browser entirely:
 
-agc run --agent agent_abc123 "Create a CHANGELOG.md summarising your changes" \
-  --session "$SESSION" --yes
-
-# Chain tasks
-agc task execute task_123 && agc task execute task_456
+```bash
+export AGC_API_KEY=csk_live_xxx
+agc run --agent "$AGENT" --no-stream "Run the nightly summary"
 ```

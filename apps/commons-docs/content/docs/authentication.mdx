@@ -1,0 +1,158 @@
+---
+title: Authentication
+description: Credentials, scopes, and rate limits for the Agent Commons API.
+---
+
+Every request to `https://api.agentcommons.io` carries a bearer token. The
+gateway resolves it to a principal — a user, an agent, or a service — checks the
+scope the route requires, applies rate limits, and forwards a signed principal
+envelope to the platform. Your public credential never reaches an internal
+service.
+
+```http
+Authorization: Bearer csk_live_xxx
+Content-Type: application/json
+```
+
+## Credential types
+
+| Type | Looks like | Use it for |
+|---|---|---|
+| **Project API key** | `csk_live_…` / `csk_test_…` | Servers, CI, scripts. Scoped, revocable, tied to a workspace project. |
+| **Identity access token** | JWT | Interactive apps and the CLI, via OAuth. Short-lived, refreshed automatically. |
+| **Legacy principal key** | `sk-ac-…` | Existing automation. Still accepted; prefer project keys for anything new. |
+
+### Project API keys
+
+Create one at
+[auth.agentcommons.io/platform](https://auth.agentcommons.io/platform), in the
+web app under **Settings → API keys**, or from the terminal:
+
+```bash
+agc keys projects create --name "Production"
+agc keys create --name "CI" --scopes agents:read,agents:run
+agc keys list
+agc keys revoke <keyId>
+```
+
+The full key is shown exactly once. Only its prefix and a hash are stored, so a
+lost key must be revoked and replaced. A key defaults to every scope its
+project holds — narrow it with `--scopes`. A project is either a `live` or a
+`test` environment, and its keys are prefixed to match.
+
+### OAuth for people
+
+`agc login` runs the OAuth **device flow**: it requests a code, prints a URL
+plus a one-time code, and polls until you approve in the browser. The resulting
+session token is exchanged for short-lived access tokens and refreshed on
+demand. Nothing but the token file at `~/.agc/config.json` (mode `0600`) is
+stored locally.
+
+Web applications use the standard authorization-code flow against
+`https://auth.agentcommons.io`. The SDK accepts the result as `identityToken`,
+which it uses for the developer-project endpoints:
+
+```typescript
+const commons = new CommonsClient({
+  apiKey: accessToken,      // platform calls
+  identityToken: sessionToken, // projects and project keys
+});
+```
+
+## Scopes
+
+The gateway maps method and path to a required scope. A credential missing it
+gets `403` with `permission_error`.
+
+| Scope | Grants |
+|---|---|
+| `agents:create` | `POST /v1/agents` |
+| `agents:read` | Any `GET` under `/v1/agents` |
+| `agents:write` | Any other write under `/v1/agents` |
+| `agents:run` | `POST /v1/agents/run`, `/run/stream`, and `/v1/agents/:id/trigger` |
+| `compute:read` | Reads under `/v1/compute` |
+| `compute:write` | Writes under `/v1/compute` |
+| `activity:read` | Activity event queries |
+| `usage:read` | `/v1/usage` |
+
+Routes outside those prefixes are authorized by ownership rather than scope: the
+platform checks that the principal owns the agent, tool, workflow, or space
+being touched.
+
+## Acting on behalf of a user
+
+Service integrations that manage resources for many users send the owner in a
+header alongside their own credential:
+
+```http
+Authorization: Bearer csk_live_xxx
+x-initiator: 0xabc…
+```
+
+The SDK sets it for you from the `initiator` option:
+
+```typescript
+const commons = new CommonsClient({
+  apiKey: process.env.COMMONS_API_KEY,
+  initiator: userAddress,
+});
+```
+
+## Checking who you are
+
+```bash
+agc whoami
+```
+
+```bash
+curl https://api.agentcommons.io/v1/auth/me \
+  -H "Authorization: Bearer $COMMONS_API_KEY"
+```
+
+```json
+{ "principalId": "0xabc…", "principalType": "user" }
+```
+
+## Rate limits
+
+| Layer | Default | Keyed on |
+|---|---|---|
+| Gateway | 600 requests/minute | Project, or actor when there is no project |
+| Platform routes | 120 requests/minute | Agent |
+| Sensitive routes | Lower per-route limits | User |
+
+Exceeding a limit returns `429` with a `Retry-After` value in the message.
+Limiter state is shared across instances, so scaling horizontally does not
+multiply your allowance.
+
+## Errors
+
+The gateway returns a typed envelope:
+
+```json
+{
+  "error": {
+    "type": "authentication_error",
+    "message": "Missing or invalid Commons credential",
+    "requestId": "req_9f2c…"
+  }
+}
+```
+
+| Status | `type` | Usual cause |
+|---|---|---|
+| 400 | — | Malformed body or parameters |
+| 401 | `authentication_error` | Missing, expired, or revoked credential |
+| 403 | `permission_error` | Valid credential, missing scope or not the owner |
+| 404 | `not_found` | Unknown route or resource |
+| 429 | `rate_limit_error` | Over the limit — back off and retry |
+| 5xx | — | Server error; `requestId` identifies the request in logs |
+
+Quote `requestId` when reporting a problem — it is echoed on every response as
+the `x-request-id` header.
+
+## Local development
+
+Running the API yourself? Set `API_AUTH_REQUIRED=false` in
+`apps/commons-api/.env` to skip enforcement entirely. Never set it anywhere a
+real credential could reach.

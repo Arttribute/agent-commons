@@ -7,8 +7,10 @@ export const { docs, meta } = defineDocs({
 export default defineConfig({
   mdxOptions: {
     rehypeCodeOptions: {
+      // Both themes are emitted; Fumadocs swaps them with --shiki-light /
+      // --shiki-dark so code follows the reader's theme.
       themes: {
-        light: 'github-dark',
+        light: 'github-light',
         dark: 'github-dark',
       },
     },

@@ -1,0 +1,155 @@
+---
+title: Credits & Billing
+description: How plans, credits, and metered usage work.
+---
+
+Everything an agent consumes — model tokens, compute time, metered
+capabilities like image generation — draws down **credits**. A plan grants a
+monthly allowance and sets what you can reach; top-up packs add one-off
+credits that do not expire with the month.
+
+<Callout type="info">
+  Prices and allowances below come from the live catalogue. Confirm the current
+  numbers with `GET /v1/billing/catalog`, which needs no credential.
+</Callout>
+
+## Plans
+
+| Plan | Price | Monthly credits | Model tiers | Computers | Concurrent runs |
+|---|---|---|---|---|---|
+| **Free** | $0 | — | fast, standard, local | — | 2 |
+| **Builder** (`plus`) | $20 | 5,000 | + frontier | 1 agent, 1 running · starter, standard | 4 |
+| **Pro** (`pro`) | $50 | 15,000 | + frontier | 3 agents, 2 running · + performance | 8 |
+| **Scale** (`max`) | $150 | 50,000 | + frontier | 10 agents, 5 running · + GPU | 16 |
+
+```bash
+agc billing status
+agc billing upgrade pro
+```
+
+```typescript
+const { data: catalog } = await commons.billing.catalog();
+const { data: entitlements } = await commons.billing.entitlements();
+const { data: subscription } = await commons.billing.subscription();
+```
+
+`entitlements` is the one to check in code — it resolves your plan into the
+concrete limits the platform enforces:
+
+```typescript
+{
+  computerUse: true,
+  allowedProfiles: ['starter', 'standard', 'performance'],
+  maxComputerAgents: 3,
+  maxConcurrentComputers: 2,
+  modelTiers: ['fast', 'standard', 'local', 'frontier'],
+  maxConcurrentRuns: 8,
+}
+```
+
+## Top-ups
+
+One-time packs, with a volume bonus on the larger ones.
+
+| Pack | Price | Credits |
+|---|---|---|
+| `small` | $10 | 4,000 |
+| `medium` | $50 | 22,000 |
+| `large` | $100 | 48,000 |
+
+```bash
+agc billing topup medium
+```
+
+```typescript
+const { data: checkout } = await commons.billing.topup('medium');
+// send the user to checkout.url
+```
+
+## Credits
+
+```bash
+agc credits balance
+agc credits ledger --limit 50
+```
+
+```typescript
+const { data: balance } = await commons.credits.balance();
+const { data: ledger } = await commons.credits.ledger({ limit: 50 });
+const { data: summary } = await commons.credits.summary();
+```
+
+The ledger is append-only: every debit names what consumed the credits, so a
+surprising bill is traceable to a run.
+
+### Gifting and campaigns
+
+```typescript
+await commons.credits.gift({
+  recipientPrincipalId: teammateId,
+  amount: 500,
+  message: 'Welcome',
+  idempotencyKey: crypto.randomUUID(),
+});
+
+const { data: campaigns } = await commons.credits.campaigns();
+await commons.credits.claimCampaign({ campaignKey: campaigns[0].key });
+```
+
+## What costs credits
+
+| Consumption | Notes |
+|---|---|
+| Model tokens | Priced per provider and model tier |
+| Compute time | Billed while a cloud computer is awake — sleeping storage is not |
+| Metered capabilities | Image generation, transcription, and similar |
+| Heartbeat runs | Each beat is a full run |
+
+Bringing your own provider key moves token spend onto your provider bill
+instead of your credits — see
+[bring your own key](/docs/guides/agents#bring-your-own-key).
+
+### Keeping spend down
+
+- Match the model tier to the job. A `fast` model answers routine turns fine.
+- Sleep computers when the work finishes: `agc computer sleep --agent <id>`.
+- Widen heartbeat intervals. Hourly is usually plenty; every minute is 60× the
+  cost for the same day.
+- Pass `operationId` on metered calls so a retry does not bill twice.
+- Watch `agc usage agents` before, not after, the invoice.
+
+## Usage reporting
+
+```bash
+agc usage agents --from 2026-01-01 --to 2026-02-01
+agc usage agent <agentId>
+```
+
+```typescript
+const { data } = await commons.usage.getAgentUsage(agentId, {
+  from: '2026-01-01',
+  to: '2026-02-01',
+});
+
+const { data: perSession } = await commons.usage.getSessionUsage(sessionId);
+```
+
+Per-session usage is the fastest way to find the conversation that ate the
+month.
+
+## Invoices and payment methods
+
+```typescript
+const { data: invoices } = await commons.billing.invoices();
+const { data: methods } = await commons.billing.paymentMethods();
+const { data: portal } = await commons.billing.portal();
+// send the user to portal.url to manage cards and subscriptions
+```
+
+Payments run through Stripe. Agent Commons stores no card details.
+
+<Callout type="warn">
+  Credits are the platform's own accounting unit. They are unrelated to the
+  USDC an agent holds in its [wallet](/docs/guides/wallets), which is real
+  on-chain money the agent spends on external paid services.
+</Callout>

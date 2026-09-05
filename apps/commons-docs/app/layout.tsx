@@ -13,16 +13,18 @@ export const metadata: Metadata = {
     default: 'Agent Commons Docs',
   },
   description:
-    'Documentation for Agent Commons — the open platform for building, deploying, and connecting AI agents.',
+    'Documentation for Agent Commons — the open platform for building, running, and connecting AI agents.',
   openGraph: {
     siteName: 'Agent Commons Docs',
     url: 'https://docs.agentcommons.io',
+    type: 'website',
   },
+  twitter: { card: 'summary_large_image' },
 };
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
-  weight: ['400', '700'],
+  weight: ['400', '500', '600', '700'],
   variable: '--font-space-grotesk',
   display: 'swap',
 });
@@ -37,8 +39,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         <link rel="icon" href="/favicon.ico" />
       </head>
-      <body style={{ fontFamily: 'var(--font-geist-sans), Arial, Helvetica, sans-serif' }}>
-        <RootProvider theme={{ defaultTheme: 'light', enableSystem: false }}>
+      <body>
+        <RootProvider theme={{ defaultTheme: 'light', enableSystem: true }}>
           {children}
         </RootProvider>
       </body>

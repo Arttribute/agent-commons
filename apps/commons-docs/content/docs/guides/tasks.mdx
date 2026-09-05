@@ -1,289 +1,182 @@
 ---
 title: Tasks & Scheduling
-description: Assign discrete, trackable work to agents — run now, schedule for later, or set up recurring jobs.
+description: Tracked units of work — run once, run on a cron, or run when something else finishes.
 ---
 
-# Tasks & Scheduling
-
-Tasks are the automation primitive. Use them to run agents on a schedule, chain multi-step jobs, and track results.
-
-## Task vs session
-
-| | Session | Task |
-|---|---|---|
-| Initiated by | User sending a message | Code, scheduler, or trigger |
-| Duration | Open-ended | Defined goal with completion |
-| Tracking | Message history | Status, progress, stored results |
-| Scheduling | Manual | Cron, one-time, dependency-based |
-
----
+A task is work with a status, not a conversation. It has a lifecycle you can
+query, an owner, optional dependencies, and — when you want it — a schedule.
 
 ## Create a task
 
-<Tabs items={['API', 'SDK', 'CLI']}>
-  <Tab value="API">
-    ```bash
-    curl -X POST https://api.agentcommons.io/v1/tasks \
-      -H "x-api-key: YOUR_KEY" \
-      -d '{
-        "title": "Summarize today'\''s news",
-        "description": "Get the top 5 tech stories from HackerNews and write a one-line summary of each.",
-        "agentId": "agent_abc123",
-        "executionMode": "single"
-      }'
-    ```
-  </Tab>
+<Tabs items={['SDK', 'CLI', 'API']}>
   <Tab value="SDK">
-    ```typescript
-    const { data: task } = await client.tasks.create({
-      title: "Summarize today's news",
-      description: 'Get the top 5 tech stories from HackerNews and summarize each.',
-      agentId: 'agent_abc123',
-      sessionId: 'session_xyz',
-      createdBy: '0xUSER',
-      createdByType: 'user',
-      executionMode: 'single',
-    });
-    ```
+```typescript
+const { data: task } = await commons.tasks.create({
+  agentId,
+  sessionId,
+  title: 'Daily briefing',
+  description: 'Summarise overnight news in our sectors and email the team.',
+  executionMode: 'single',
+  cronExpression: '0 8 * * 1-5',
+  isRecurring: true,
+  createdBy: userId,
+  createdByType: 'user',
+});
+```
   </Tab>
   <Tab value="CLI">
-    ```bash
-    agc task create \
-      --title "Summarize today's news" \
-      --description "Get top 5 HN stories and summarize each" \
-      --agent agent_abc123
-    ```
+```bash
+agc task create --agent <agentId> \
+  --title "Daily briefing" \
+  --execute --watch
+```
   </Tab>
-</Tabs>
-
-Then execute it:
-
-<Tabs items={['API', 'SDK', 'CLI']}>
   <Tab value="API">
-    ```bash
-    curl -X POST https://api.agentcommons.io/v1/tasks/task_abc123/execute \
-      -H "x-api-key: YOUR_KEY"
-    ```
-  </Tab>
-  <Tab value="SDK">
-    ```typescript
-    await client.tasks.execute(task.taskId);
-    ```
-  </Tab>
-  <Tab value="CLI">
-    ```bash
-    agc task execute task_abc123
-    ```
+```bash
+curl -X POST https://api.agentcommons.io/v1/tasks \
+  -H "Authorization: Bearer $COMMONS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agentId": "agent_abc123",
+    "sessionId": "session_xyz",
+    "title": "Daily briefing",
+    "description": "Summarise overnight news.",
+    "executionMode": "single",
+    "cronExpression": "0 8 * * 1-5",
+    "isRecurring": true,
+    "createdBy": "0xabc…",
+    "createdByType": "user"
+  }'
+```
   </Tab>
 </Tabs>
-
----
 
 ## Execution modes
 
-### single — agent runs the description as a prompt
+| Mode | Behaviour |
+|---|---|
+| `single` | One agent run against the description |
+| `workflow` | Runs the workflow named by `workflowId`, with `workflowInputs` |
+| `sequential` | Runs its dependencies in order, then itself |
 
-The description becomes the user message. The agent uses its tools and model to complete it.
+## Lifecycle
 
-```json
-{
-  "executionMode": "single",
-  "description": "Write a Python function that parses a CSV file and returns a list of dicts."
-}
+```
+pending → started → running → completed
+                          ↘ failed
+                          ↘ cancelled
 ```
 
-### workflow — execute a defined workflow
-
-```json
-{
-  "executionMode": "workflow",
-  "workflowId": "workflow_abc123",
-  "workflowInputs": { "url": "https://example.com" }
-}
+```typescript
+const { data: task } = await commons.tasks.get(taskId);
+// task.status, task.progress, task.resultContent, task.summary, task.errorMessage
 ```
-
-### sequential — run sub-tasks in order
-
-Each sub-task receives the previous one's output as context.
-
-```json
-{
-  "executionMode": "sequential",
-  "subtasks": [
-    { "description": "Research the topic" },
-    { "description": "Write a draft based on the research" },
-    { "description": "Review and polish the draft" }
-  ]
-}
-```
-
----
 
 ## Scheduling
 
-### One-time: run at a specific time
+`cronExpression` uses standard five-field cron and is **evaluated in UTC**.
+Convert local times yourself — an 8 a.m. Nairobi briefing is `0 5 * * 1-5`.
 
-```bash
-curl -X POST https://api.agentcommons.io/v1/tasks \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "title": "Send weekly report",
-    "description": "Compile this week'\''s metrics and write a summary.",
-    "agentId": "agent_abc123",
-    "executionMode": "single",
-    "scheduledFor": "2026-04-14T09:00:00Z"
-  }'
-```
-
-### Recurring: cron expression
-
-```bash
-curl -X POST https://api.agentcommons.io/v1/tasks \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "title": "Daily briefing",
-    "description": "Summarize overnight news.",
-    "agentId": "agent_abc123",
-    "executionMode": "single",
-    "cronExpression": "0 8 * * 1-5",
-    "isRecurring": true
-  }'
-```
-
-Common cron patterns:
-
-| Pattern | Meaning |
+| Expression | Fires |
 |---|---|
-| 0 8 * * * | Every day at 8am |
-| 0 8 * * 1-5 | Weekdays at 8am |
-| */30 * * * * | Every 30 minutes |
-| 0 9 * * 1 | Every Monday at 9am |
-| 0 0 1 * * | First of every month at midnight |
+| `0 8 * * 1-5` | 08:00 UTC, weekdays |
+| `*/15 * * * *` | Every 15 minutes |
+| `0 0 1 * *` | Midnight UTC on the 1st |
+| `0 */6 * * *` | Every six hours |
 
----
+Set `scheduledFor` to an ISO timestamp instead of a cron expression for a
+one-off future run. `nextRunAt` and `lastRunAt` on the task tell you where the
+schedule stands.
+
+`reschedule` moves a one-off run; change a recurring schedule with `update`:
+
+```typescript
+await commons.tasks.reschedule(taskId, { scheduledFor: new Date('2026-09-10T06:00:00Z') });
+await commons.tasks.update(taskId, { cronExpression: '0 6 * * 1-5' });
+```
+
+## Run, watch, cancel
+
+```bash
+agc task execute <taskId> --watch
+agc task cancel <taskId>
+agc task list --agent <agentId>
+```
+
+```typescript
+await commons.tasks.execute(taskId);
+
+for await (const event of commons.tasks.stream(taskId)) {
+  if (event.type === 'status') console.log(event.status);
+  if (event.type === 'completed') console.log(event.output);
+}
+```
 
 ## Dependencies
 
-A task can wait for other tasks to complete before it starts:
+```typescript
+const { data: gather } = await commons.tasks.create({ /* … */ title: 'Gather data' });
 
-```bash
-# 1. Create the first task
-curl -X POST https://api.agentcommons.io/v1/tasks \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{ "title": "Research topic", "agentId": "agent_researcher", "executionMode": "single" }'
-# → task_research123
-
-# 2. Create a dependent task
-curl -X POST https://api.agentcommons.io/v1/tasks \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "title": "Write article",
-    "agentId": "agent_writer",
-    "executionMode": "single",
-    "dependsOn": ["task_research123"]
-  }'
+await commons.tasks.create({
+  agentId,
+  sessionId,
+  title: 'Write the report',
+  executionMode: 'sequential',
+  dependsOn: [gather.taskId],
+  createdBy: userId,
+  createdByType: 'user',
+});
 ```
 
-The writing task won't start until the research task completes. Its output is passed as context automatically.
+A task with unmet dependencies waits rather than failing.
 
----
+## Constraining tools
 
-## Monitor progress
+Point a task at exactly the tools it should use:
 
-### Poll for status
-
-```bash
-curl https://api.agentcommons.io/v1/tasks/task_abc123 \
-  -H "x-api-key: YOUR_KEY"
+```typescript
+await commons.tasks.create({
+  // …
+  tools: ['webSearch', 'createDocumentFile'],
+  toolConstraintType: 'hard',   // hard · soft · none
+  toolInstructions: 'Search first, then write the document. Do not email anyone.',
+});
 ```
 
-```json
-{
-  "taskId": "task_abc123",
-  "status": "completed",
-  "resultContent": "1. OpenAI releases...\n2. ...",
-  "completedAt": "2026-04-10T08:00:15Z"
-}
+`hard` refuses anything outside the list; `soft` treats it as a preference.
+
+## Timeouts and priority
+
+```typescript
+await commons.tasks.create({
+  // …
+  timeoutMs: 300_000,
+  priority: 8,
+});
 ```
 
-Task lifecycle: pending → running → completed / failed / cancelled
+Give long workflow tasks a `timeoutMs` — an unbounded task that hangs keeps
+consuming credits until something stops it.
 
-### Stream live updates
+## Tasks vs heartbeats
 
-<Tabs items={['API', 'SDK', 'CLI']}>
-  <Tab value="API">
-    ```bash
-    curl https://api.agentcommons.io/v1/tasks/task_abc123/stream \
-      -H "x-api-key: YOUR_KEY"
-    ```
+| | Task | [Heartbeat](/docs/guides/agents#heartbeat) |
+|---|---|---|
+| Scope | One defined job | Whatever the agent decides |
+| Schedule | Cron or timestamp | Fixed interval |
+| Result | Stored on the task | A run in a session |
+| Good for | "Send the Monday report" | "Keep an eye on the queue" |
 
-    SSE events:
-    ```
-    data: {"status":"running","message":"Fetching HackerNews..."}
-    data: {"status":"running","message":"Generating summaries..."}
-    data: {"status":"completed","result":"1. OpenAI releases..."}
-    ```
-  </Tab>
-  <Tab value="SDK">
-    ```typescript
-    for await (const event of client.tasks.stream(task.taskId)) {
-      console.log(event.type, event.message ?? '');
-      if (event.type === 'completed') {
-        console.log('Result:', event.result);
-        break;
-      }
-    }
-    ```
-  </Tab>
-  <Tab value="CLI">
-    ```bash
-    agc task stream task_abc123
-    ```
-  </Tab>
-</Tabs>
+Reach for a task first. A heartbeat is the right tool only when the work is
+genuinely open-ended.
 
----
+## Agents creating tasks
 
-## Tool constraints
+Give an agent `createTask` and `updateTaskProgress` and it can queue its own
+follow-up work:
 
-Control exactly which tools a task can use:
-
-```json
-{
-  "toolConstraintType": "hard",
-  "taskTools": ["web_scraper", "search"],
-  "toolInstructions": "Only search for sources. Do not call external APIs."
-}
-```
-
-| Constraint | Behavior |
-|---|---|
-| none | Use all agent tools (default) |
-| soft | Prefer listed tools, others allowed |
-| hard | Only listed tools, no others |
-
----
-
-## Priority
-
-```json
-{ "priority": "high" }
-```
-
-Values: low · medium (default) · high · critical
-
-Higher priority tasks are picked up first when multiple tasks queue for the same agent.
-
----
-
-## Cancel and retry
-
-```bash
-# Cancel a running task
-curl -X POST https://api.agentcommons.io/v1/tasks/task_abc123/cancel \
-  -H "x-api-key: YOUR_KEY"
-
-# Re-run a failed or completed task
-curl -X POST https://api.agentcommons.io/v1/tasks/task_abc123/execute \
-  -H "x-api-key: YOUR_KEY"
+```typescript
+await commons.agents.update(agentId, {
+  commonTools: ['createTask', 'updateTaskProgress'],
+});
 ```
