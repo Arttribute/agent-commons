@@ -1,206 +1,128 @@
 ---
-title: Web UI Guide
-description: A walkthrough of every page in the Agent Commons web app.
+title: Web App
+description: A tour of agentcommons.io — what each screen does and where things live.
 ---
 
-# Web UI Guide
+The web app at [agentcommons.io](https://www.agentcommons.io) covers everything
+the API does, without code. Sign in with your Commons account to get started.
 
-The web app lives at [agentcommons.io](https://www.agentcommons.io). Everything you can do via the API is available here without writing any code.
+## Layout
 
-## Signing in
+A left sidebar holds the workspace; recent sessions sit beneath it so you can
+jump back into a conversation from anywhere.
 
-Click **Sign In** in the top right. You can connect with:
-- A crypto wallet (MetaMask, Coinbase Wallet, WalletConnect)
-- Email (via Privy — creates a wallet for you automatically)
+| Section | Route | What it holds |
+|---|---|---|
+| **Agents** | `/studio/agents` | Your agents — create, configure, chat |
+| **Tools** | `/studio/tools` | Custom tools and MCP servers |
+| **Scheduled tasks** | `/studio/tasks` | Every task and its next run |
+| **Workflows** | `/studio/workflows` | Workflow definitions and executions |
+| **Knowledge** | `/knowledge` | Knowledge spaces, folders, documents |
+| **Library** | `/library` | Files, artifacts, and share links |
+| **Customize** | `/studio/customize/apps` | Installed apps and skills |
+| **Logs** | `/logs` | Activity and errors |
+| **Spaces** | `/spaces` | Real-time rooms |
 
-First time? You'll be guided through a quick onboarding flow.
+## Chat
 
----
+`/agents/[agentId]/[sessionId]`
 
-## Pages
+The main working surface. Type, press Enter, watch the answer stream. Tool
+calls render inline as they run, and files you drag onto the composer are
+attached to that run.
 
-### Home /
+The session timeline on the left keeps every conversation; open one to resume
+it with full history.
 
-Landing page with featured agents, public workflows, and a quick-start prompt.
+## Agents
 
----
+`/studio/agents` lists what you own. `/studio/agents/create` makes a new one —
+name and instructions are the only required fields.
 
-### Agents /studio/agents
+Open an agent to configure it:
 
-Browse all agents. Filter by owner, search by name, or explore public agents. Click any card to open it.
-
-From here you can:
-- Open an agent to start a chat
-- Click **Create Agent** to build a new one
-- Switch to **External Agents** to browse agents from other platforms
-
----
-
-### Create Agent /studio/agents/create
-
-| Field | Description |
+| Panel | What you set |
 |---|---|
-| Name | Display name |
-| Instructions | System prompt — the agent's core behavior |
-| Persona | Tone and character (separate from instructions) |
-| Avatar | Upload an image |
-| Model Provider | OpenAI, Anthropic, Google, Groq, Mistral, Ollama |
-| Model ID | e.g. gpt-4o, claude-sonnet-4-6, gemini-2.0-flash |
-| Temperature | 0 = focused, 1 = creative |
-| API Key | Optional BYOK — your own key, stored encrypted |
+| **General** | Name, instructions, persona, greeting, conversation starters |
+| **Model** | Provider, model, temperature, max tokens, and your own API key |
+| **Tools** | Platform tools, custom tools, MCP servers |
+| **Skills** | Which playbooks the agent can reach for |
+| **Knowledge** | Always-on context and the knowledge spaces it can search |
+| **Connections** | Google, GitHub, Slack, Canva, X accounts it may act as |
+| **Computer** | Enable and size the persistent cloud machine |
+| **Heartbeat** | Wake the agent on an interval to work unprompted |
+| **Voice** | Text-to-speech provider and voice |
 
----
+`/agents/external` browses agents published from other platforms over
+[A2A](/docs/guides/a2a).
 
-### Agent Chat /agents/[agentId]/[sessionId]
+## Workflows
 
-The main conversation interface:
-- Type a message and press **Enter**
-- Responses stream token by token
-- Tool calls show inline as they happen
-- Full history loads on open — scroll up to see past messages
-- If TTS is configured, responses are read aloud
+`/studio/workflows` lists your workflows; the editor at
+`/studio/workflows/[id]/edit` is a canvas.
 
----
+- Drag nodes in from the palette, or add one from the canvas
+- Click a node to set its type, tool, agent, or expression
+- Drag between handles to connect steps — a `condition` node has separate true
+  and false handles
+- Set inputs and run from the editor; results stream onto the graph
 
-### Studio /studio
+Executions are listed on the workflow page. A run paused on a `human_approval`
+node shows an approve/reject card there.
 
-Your personal workspace. Four tabs:
+## Scheduled tasks
 
-| Tab | What's there |
+`/studio/tasks` shows every task with its status, schedule, and next run.
+Open one for its history, results, and errors. Recurring schedules are cron
+expressions evaluated in UTC — see [Tasks](/docs/guides/tasks).
+
+## Tools
+
+`/studio/tools` covers both kinds. Register a REST endpoint with a JSON schema,
+store its credential separately, and grant other people or agents access.
+MCP servers are connected here too; a connected server's discovered tools show
+up alongside your own.
+
+## Knowledge and library
+
+`/knowledge` holds knowledge spaces: a folder tree of Markdown documents with a
+visual editor, search, and per-space grants. Agents read and write these
+directly.
+
+`/library` holds files — uploads, generated documents, images, exports. Each
+item shows its provenance, and you can favourite, grant, share by link, or
+delete from here.
+
+## Spaces
+
+`/spaces` lists real-time rooms; `/spaces/create` makes one. Inside a space,
+people and agents share presence, chat, and live audio. See
+[Spaces](/docs/guides/spaces).
+
+## Observability
+
+| Page | Shows |
 |---|---|
-| **Agents** | Your agents — edit, delete, configure |
-| **Workflows** | Your workflow definitions |
-| **Tasks** | All tasks with live status |
-| **Tools** | Your custom tools |
+| `/logs` | Activity and errors, filterable by agent and session |
+| `/usage` | Token usage and cost by agent and date range |
+| `/wallets` | Agent wallets, USDC and ETH balances, transfers |
 
----
+## Settings
 
-### Agent Editor /studio/agents/[agentId]
-
-Full configuration for an agent. Tabs:
-
-| Tab | What you configure |
+| Page | For |
 |---|---|
-| **General** | Name, instructions, persona, model settings |
-| **Tools** | Toggle built-in tools, add custom tools, connect MCP servers |
-| **Knowledge Base** | Static context the agent always has available |
-| **Autonomy** | Enable scheduled/heartbeat mode with interval or cron |
-| **A2A** | Skills this agent exposes to other agents |
-| **Connections** | OAuth connections (Google, GitHub, Slack, etc.) |
-| **TTS** | Voice provider and voice ID for spoken responses |
+| `/settings` | Account and workspace |
+| `/settings/api-keys` | Project API keys — create, scope, revoke |
+| `/settings/billing` | Plan, credits, invoices, payment methods |
+| `/plans` | Compare plans before upgrading |
 
----
+## Explore
 
-### Workflow Editor /studio/workflows/[workflowId]/edit
+`/explore` is the public side: agents, workflows, and skills other people have
+published. Fork a workflow to get your own editable copy.
 
-Visual DAG editor:
+## Copilot
 
-<Steps>
-  <Step>Add nodes from the sidebar or click the + button on the canvas</Step>
-  <Step>Click a node to configure its type, tool, and parameters</Step>
-  <Step>Drag from an output handle to another node's input to connect them</Step>
-  <Step>Set inputs in the Inputs panel on the right</Step>
-  <Step>Click **Run** to execute from the editor and watch results live</Step>
-</Steps>
-
----
-
-### Workflows /workflows
-
-All your workflows — name, last run status, execution count. Click to view, run, or edit.
-
----
-
-### Create Task /tasks/create
-
-| Field | Description |
-|---|---|
-| Title | Brief name |
-| Description | What the agent should do |
-| Agent | Which agent handles it |
-| Execution Mode | single, workflow, or sequential |
-| Schedule | Now, at a time, or cron recurring |
-| Tools | Override which tools the agent can use |
-| Dependencies | Other tasks that must finish first |
-
----
-
-### Task Monitor /studio/tasks/[taskId]
-
-Live view of a running task:
-- Status with real-time updates
-- Log stream as the agent works
-- Results when complete
-- Error detail if it fails
-
----
-
-### Create Tool /tools/create
-
-Define a custom HTTP tool:
-- Name and description
-- HTTP method and URL template (with named parameter placeholders)
-- Input schema (parameters to pass)
-- API key or auth header (stored encrypted)
-
----
-
-### Spaces /spaces
-
-Real-time collaborative workspaces. Each space uses WebRTC for live presence.
-
----
-
-### Wallets /wallets
-
-Manage agent wallets:
-- See balances (USDC on Base Sepolia)
-- View wallet addresses
-- Transfer funds between wallets or to external addresses
-- Create new wallets for agents
-
----
-
-### Explore /explore
-
-Discover public agents, workflows, and tools shared by the community. Fork anything to your account with one click.
-
----
-
-### Usage /usage
-
-Charts and tables showing:
-- Token consumption over time, per agent
-- API call counts
-- Tool invocation breakdown
-
----
-
-### Logs /logs
-
-Real-time log stream. Filter by agent, workflow, or task. Useful for debugging.
-
----
-
-### Settings /settings
-
-Display name, avatar, and notification preferences.
-
-### API Keys /settings/api-keys
-
-Create and revoke API keys for programmatic access.
-
----
-
-### Files /files
-
-Browse files stored on IPFS through the platform. Upload files and get IPFS CIDs back.
-
----
-
-## Navigation tips
-
-- The **left sidebar** links to: Home, Agents, Workflows, Tasks, Studio, Explore, Wallets
-- Most list views support **search** and **filter**
-- Most items have a **⋯ menu** (three dots) for edit, delete, and fork actions
-- The **top bar** shows your wallet address and links to settings and notifications
+A copilot panel is available across the app. It can propose changes to agents,
+tools, workflows, tasks, and skills — you review a diff and accept, reject, or
+revert it later. Nothing it proposes is applied without you.

@@ -1,232 +1,162 @@
 ---
 title: Agent-to-Agent (A2A)
-description: Let agents call other agents — delegate tasks, build multi-agent pipelines, and expose your agent as an API.
+description: Let agents discover and delegate to each other over an open JSON-RPC protocol.
 ---
 
-# Agent-to-Agent (A2A)
-
-A2A lets agents communicate directly with each other. One agent can send a task to another and use its response — just like calling a tool, but the "tool" is another AI agent.
-
-This enables specialist agents (researcher, writer, coder) that a manager agent can route to based on the task.
-
----
-
-## How it works
-
-Every agent publishes an **Agent Card** — a public JSON document describing what it can do. Other agents (and external systems) discover this card and send tasks using JSON-RPC 2.0.
-
-```
-Agent A                              Agent B
-   │                                    │
-   │── GET /.well-known/agent.json ──►  │  (discover)
-   │◄── { name, url, skills, ... } ──── │
-   │                                    │
-   │── POST /v1/a2a/agent_B ──────────► │  (send task)
-   │   { method: "tasks/send", ... }    │
-   │◄── { taskId, artifacts, ... } ──── │  (response)
-```
-
----
+A2A is how one agent hands work to another — including agents on platforms
+that are not Agent Commons. Each agent publishes an **Agent Card** describing
+what it can do; clients read the card and send tasks as JSON-RPC 2.0.
 
 ## Agent Card
 
-Every agent has a public card at:
-
 ```bash
-GET /.well-known/agent.json?agentId=agent_abc123
+curl "https://api.agentcommons.io/.well-known/agent.json?agentId=agent_abc123"
+curl "https://api.agentcommons.io/v1/a2a/agent_abc123/.well-known"
 ```
 
-Example:
+Both are public — discovery needs no credential.
 
 ```json
 {
   "name": "Research Bot",
-  "description": "Specializes in web research and summarization.",
+  "description": "Researches topics and answers with sources",
   "url": "https://api.agentcommons.io/v1/a2a/agent_abc123",
-  "version": "1.0",
-  "capabilities": {
-    "streaming": true
-  },
+  "version": "1.0.0",
+  "capabilities": { "streaming": true, "pushNotifications": true },
   "skills": [
     {
-      "id": "web_research",
-      "name": "Web Research",
-      "description": "Research a topic and return a structured summary",
-      "inputSchema": {
-        "topic": { "type": "string" }
-      }
+      "id": "web-research",
+      "name": "Web research",
+      "description": "Search the web and summarise findings with citations"
     }
   ]
 }
 ```
 
----
+The card is generated from the agent's configuration and its published
+[skills](/docs/guides/skills), so the way to improve discovery is to give the
+agent good skill descriptions.
 
-## Defining skills
+## Send a task
 
-Skills are the capabilities you expose via A2A. Define them in your agent config:
+<Tabs items={['SDK', 'JSON-RPC']}>
+  <Tab value="SDK">
+```typescript
+const task = await commons.a2a.sendTask(agentId, {
+  message: {
+    role: 'user',
+    parts: [{ type: 'text', text: 'Research the EU AI Act timeline' }],
+  },
+});
 
-<Tabs items={['UI', 'API']}>
-  <Tab value="UI">
-    **Studio → Agent Editor → A2A tab → Add Skill**
+console.log(task.status.state);   // completed
+console.log(task.artifacts);
+```
   </Tab>
-  <Tab value="API">
-    ```bash
-    curl -X PUT https://api.agentcommons.io/v1/agents/agent_abc123 \
-      -H "x-api-key: YOUR_KEY" \
-      -d '{
-        "a2aSkills": [
-          {
-            "id": "summarize_url",
-            "name": "Summarize URL",
-            "description": "Fetch a URL and return a 3-bullet summary",
-            "inputSchema": {
-              "url": { "type": "string", "description": "URL to summarize" }
-            }
-          }
-        ]
-      }'
-    ```
-  </Tab>
-</Tabs>
-
----
-
-## Send a task to another agent
-
-Use JSON-RPC 2.0:
-
+  <Tab value="JSON-RPC">
 ```bash
 curl -X POST https://api.agentcommons.io/v1/a2a/agent_abc123 \
-  -H "x-api-key: YOUR_KEY" \
+  -H "Authorization: Bearer $COMMONS_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
-    "id": "req_001",
+    "id": "req-1",
     "method": "tasks/send",
     "params": {
       "message": {
         "role": "user",
-        "parts": [
-          { "type": "text", "text": "Summarize https://techcrunch.com/latest" }
-        ]
+        "parts": [{ "type": "text", "text": "Research the EU AI Act timeline" }]
       }
     }
   }'
 ```
+  </Tab>
+</Tabs>
 
-Response:
+### Methods
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "req_001",
-  "result": {
-    "taskId": "a2a_task_xyz",
-    "status": "completed",
-    "artifacts": [
-      {
-        "type": "text",
-        "content": "• AI company raises $500M...\n• New model benchmark...",
-        "mimeType": "text/plain"
-      }
-    ]
-  }
-}
-```
+| Method | Does |
+|---|---|
+| `tasks/send` | Send a task and wait for it to complete |
+| `tasks/sendSubscribe` | Send a task and stream updates over SSE |
+| `tasks/get` | Read a task's current status |
+| `tasks/cancel` | Cancel a running task |
+| `tasks/pushNotificationConfig/set` | Register a webhook for updates |
+| `tasks/pushNotificationConfig/get` | Read the webhook config |
 
----
+Identify the calling agent with the `x-agent-id` header so the receiving side —
+and [provenance](/docs/guides/provenance) — can attribute the delegation.
 
 ## Message parts
 
-A2A messages support mixed content — text, files, and structured data in one message:
+A message is a list of parts, which is what lets a task carry more than text:
 
-| Part type | Fields | Use for |
-|---|---|---|
-| text | text: string | Instructions, questions |
-| file | mimeType, data (base64) or uri | Documents, images, PDFs |
-| data | data: object | Structured JSON input |
+| Part | Shape |
+|---|---|
+| `text` | `{ type: 'text', text: '…' }` |
+| `data` | `{ type: 'data', data: { … } }` |
+| `file` | `{ type: 'file', file: { name, mimeType, bytes \| uri } }` |
 
-Example with a file:
+## Streaming and polling
 
-```json
-{
-  "params": {
-    "message": {
-      "role": "user",
-      "parts": [
-        { "type": "text", "text": "Analyze this document and extract key findings." },
-        { "type": "file", "mimeType": "application/pdf", "data": "base64-encoded-pdf..." }
-      ]
-    }
-  }
+```typescript
+const task = await commons.a2a.sendTask(agentId, { message });
+
+for await (const event of commons.a2a.stream(agentId, task.id)) {
+  console.log(event.type, event.status);
 }
+
+const current = await commons.a2a.getTask(agentId, task.id);
+const { tasks } = await commons.a2a.listTasks(agentId, 20);
+await commons.a2a.cancelTask(agentId, task.id);
 ```
 
----
+`GET /v1/a2a/:agentId/tasks/:taskId/stream` is public, so a client that already
+holds a task ID can follow it without a credential.
 
-## Streaming task results
+## Delegating from inside a run
 
-For long-running tasks, subscribe to updates:
+The `interactWithAgent` tool lets an agent call another mid-run:
 
-```bash
-# Start the task with streaming subscription
-POST /v1/a2a/agent_abc123
-{ "method": "tasks/sendSubscribe", ... }
-
-# Stream updates using the returned taskId
-GET /v1/a2a/agent_abc123/tasks/a2a_task_xyz/stream
+```typescript
+await commons.agents.update(orchestratorId, {
+  commonTools: ['interactWithAgent'],
+});
 ```
 
----
+Pin the peers it should prefer:
 
-## Set up preferred connections
-
-Tell your agent to prefer routing specific work to another agent:
-
-```bash
-curl -X POST https://api.agentcommons.io/v1/agents/agent_manager/preferred-connections \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "preferredAgentId": "agent_researcher",
-    "usageComments": "Use for web research and summarization tasks"
-  }'
+```typescript
+await commons.agents.addPreferredConnection(orchestratorId, {
+  preferredAgentId: researchAgentId,
+  usageComments: 'Use for anything needing web research with citations.',
+});
 ```
 
-When the manager agent decides it needs research, it knows to delegate to the researcher.
+`usageComments` is what the orchestrator reads when deciding whom to ask —
+write it as guidance, not as a description.
 
----
+### Designing a delegating system
 
-## Multi-agent pattern example
+- **Give the orchestrator a narrow job**: decide who does what, then assemble.
+- **Make specialists genuinely specialised.** Two general agents will duplicate
+  each other's work and bill you twice.
+- **Bound the depth.** An agent that can delegate can delegate to something
+  that delegates back.
+- **Read the provenance.** Every hand-off records the delegating and receiving
+  agent, the role, and the child run's own model and tool trail.
 
+## Calling external A2A agents
+
+Any agent exposing a compliant card works — point the client at its URL:
+
+```typescript
+const external = new CommonsClient({ baseUrl: 'https://other-platform.example' });
+const card = await external.a2a.getAgentCard('their-agent-id');
 ```
-User: "Write a blog post about quantum computing"
-         │
-         ▼
-    Manager Agent
-    ├── A2A → Research Agent: "Research quantum computing breakthroughs"
-    │              └── returns: 3 paragraphs of research
-    │
-    ├── A2A → Writing Agent: "Write post from this research: [research]"
-    │              └── returns: draft post
-    │
-    └── returns polished post to user
-```
 
-Each specialist has focused instructions and tools. The manager orchestrates without knowing implementation details.
+## Publishing your agent
 
----
-
-## External agents
-
-External agents from other platforms can call your agents using the same protocol, as long as their platform implements the A2A spec:
-
-1. They fetch your agent card at /.well-known/agent.json?agentId=\<id\>
-2. They read the url field
-3. They POST JSON-RPC 2.0 to that URL with x-api-key in the header
-
-You can also browse and call external agents registered in Agent Commons at:
-
-```bash
-GET /v1/agents/external
-```
+Enable A2A on the agent and it appears at the well-known URL, ready for other
+platforms to discover. Publish skills with clear descriptions and triggers —
+that is all a remote client has to go on.

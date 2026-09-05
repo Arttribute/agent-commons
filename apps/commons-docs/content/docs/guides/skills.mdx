@@ -1,0 +1,117 @@
+---
+title: Skills
+description: Package instructions and the tools they need into a reusable, publishable playbook.
+---
+
+A skill is a named playbook: instructions, the tools those instructions
+assume, and phrases that should bring it to mind. Attach one to an agent and
+the behaviour travels with the skill instead of being copy-pasted into a system
+prompt.
+
+Use a skill when the same procedure shows up across agents, when a procedure is
+too long to sit in `instructions` all the time, or when you want to publish
+something other people can install.
+
+## Anatomy
+
+| Field | Purpose |
+|---|---|
+| `slug` | Stable identifier — how it is installed and referenced |
+| `name` · `description` | What a human sees when browsing |
+| `instructions` | The playbook itself, in Markdown |
+| `tools` | Tool names the instructions rely on |
+| `triggers` | Phrases that should surface the skill |
+| `tags` · `icon` | Discovery and display |
+| `isPublic` | Whether it appears in the public index |
+
+## Create one
+
+<Tabs items={['CLI', 'SDK']}>
+  <Tab value="CLI">
+```bash
+agc skills create \
+  --slug weekly-report \
+  --name "Weekly report" \
+  --description "Produce the standard weekly status report" \
+  --instructions "$(cat weekly-report.md)" \
+  --tools webSearch,createDocumentFile \
+  --triggers "weekly report,status update" \
+  --icon 📊
+```
+  </Tab>
+  <Tab value="SDK">
+```typescript
+const { data: skill } = await commons.skills.create({
+  slug: 'weekly-report',
+  name: 'Weekly report',
+  description: 'Produce the standard weekly status report',
+  instructions: `
+1. Pull the last seven days of activity.
+2. Group by workstream.
+3. For each: what shipped, what slipped, what is blocked.
+4. Write it up with createDocumentFile and link the document.
+`,
+  tools: ['webSearch', 'createDocumentFile'],
+  triggers: ['weekly report', 'status update'],
+  icon: '📊',
+});
+```
+  </Tab>
+</Tabs>
+
+## Attach to an agent
+
+```typescript
+await commons.skills.setAgentAvailability(skill.skillId, agentId, true);
+const { data: attached } = await commons.skills.listForAgent(agentId);
+```
+
+Attached skills appear in the agent's index. When one matches, the agent calls
+`invoke_skill` to load the full instructions — so a dozen skills cost a few
+lines of context each until one is actually needed.
+
+## Progressive disclosure
+
+```bash
+agc skills index
+```
+
+The index is name, description, and triggers only. It is what the model sees by
+default; the body arrives on demand. That is what keeps a large skill library
+cheap.
+
+Write triggers the way a user would phrase the request, not the way you would
+name the feature.
+
+## Publish and install
+
+```bash
+agc skills publish weekly-report
+agc skills install weekly-report > SKILL.md
+agc skills unpublish weekly-report
+```
+
+`install` prints the full skill as Markdown, which makes a published skill
+portable to any agent framework that reads a `SKILL.md`.
+
+## Writing skills that work
+
+- **One job per skill.** "Weekly report" beats "reporting".
+- **Number the steps.** Ordered instructions are followed more reliably.
+- **Name the tools inline.** "Write it up with `createDocumentFile`" beats
+  hoping the model picks the right one.
+- **Say what done looks like.** A skill that ends with a check gets checked.
+- **Version through the slug** — `invoice-review-v2` — so agents on the old one
+  keep working.
+
+## Manage
+
+```bash
+agc skills list --owner <id>
+agc skills get <skillId>
+agc skills update weekly-report --description "…" --tools webSearch,createPdfFile
+agc skills delete weekly-report --yes
+```
+
+`update` replaces list fields wholesale — pass the complete `--tools`,
+`--triggers`, or `--tags` you want, not just additions.

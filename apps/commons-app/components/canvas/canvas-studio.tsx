@@ -1,5 +1,7 @@
 "use client";
 
+import { CompiledArtifactFrame } from "@agent-commons/ui";
+import "@agent-commons/ui/styles.css";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -1344,6 +1346,13 @@ function ArtifactStage({
       onTime(media.currentTime * 1000, (media.duration || 0) * 1000, false);
     },
   };
+  if (preview.interactivePreview) {
+    return <CompiledArtifactFrame
+      preview={preview.interactivePreview}
+      title={preview.name}
+      revision={`${preview.itemId}:${preview.updatedAt}`}
+    />;
+  }
   if (!source) {
     return <div className="max-w-lg whitespace-pre-wrap p-8 text-sm text-stone-200">{preview.content || preview.textPreview || "No inline preview is available."}</div>;
   }

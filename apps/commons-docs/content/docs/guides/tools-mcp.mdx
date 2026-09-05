@@ -1,256 +1,282 @@
 ---
 title: Tools & MCP
-description: Give your agents real-world capabilities — built-in tools, custom API integrations, and MCP servers.
+description: The built-in catalogue, registering your own REST APIs, and connecting MCP servers.
 ---
 
-# Tools & MCP
+A tool is anything an agent can call. Four kinds, one interface.
 
-Tools are how agents interact with the world beyond their training data. Agent Commons has four kinds of tools, all available through a single unified interface.
+| Kind | Runs on | Registered by |
+|---|---|---|
+| **Platform** | Agent Commons | Built in — switch on per agent |
+| **Custom** | Your API | You, with a JSON schema and an API spec |
+| **MCP** | An MCP server | Discovered on connect |
+| **Caller** | The client that started the run | Passed in `cliTools` per run |
 
-## Tool types
+## Platform tools
 
-| Type | Description |
-|---|---|
-| **Static / built-in** | Available to every agent automatically |
-| **Dynamic / custom** | REST API integrations you create |
-| **MCP** | Tools from any connected MCP server |
-| **Space** | Tools scoped to a collaborative space |
+Enable them per agent with `commonTools`:
 
----
+```typescript
+await commons.agents.update(agentId, {
+  commonTools: ['webSearch', 'deepSearch', 'createDocumentFile', 'generateImage'],
+});
+```
 
-## Built-in tools
+```bash
+agc tools list                # everything available to you
+curl -H "Authorization: Bearer $KEY" https://api.agentcommons.io/v1/tools/static
+```
 
-Every agent has access to these out of the box:
+### Research
 
 | Tool | What it does |
 |---|---|
-| web_scraper | Fetch and parse web pages |
-| api_caller | Make HTTP requests to any URL |
-| code_interpreter | Run Python or JavaScript |
-| search | Web search |
-| file_reader | Read uploaded files |
+| `webSearch` | Search the web and return ranked, cited results |
+| `deepSearch` | Multi-hop research across several queries |
+| `listCommonsResources` | Browse resources on the platform |
 
-Enable them in your agent config:
+### Documents and files
 
-```json
-{
-  "commonTools": ["web_scraper", "search", "api_caller"]
-}
-```
+| Tool | What it does |
+|---|---|
+| `createTextFile` · `createDocumentFile` | Plain text and Word-style documents |
+| `createSpreadsheetFile` · `createPresentationFile` | Spreadsheets and decks |
+| `createPdfFile` | PDFs |
+| `readUploadedFile` | Read a file attached to the session |
+| `searchLibraryArtifacts` | Semantic search across the library |
+| `uploadFileToIPFS` | Pin a file to IPFS |
+| `generateImage` | Generate durable image assets |
 
----
+### Knowledge
+
+| Tool | What it does |
+|---|---|
+| `listKnowledgeSpaces` | List spaces the agent can reach |
+| `searchKnowledge` | Search across knowledge documents |
+| `readKnowledgeDocument` · `writeKnowledgeDocument` | Read and write documents |
+
+### Work management
+
+| Tool | What it does |
+|---|---|
+| `createTask` · `updateTaskProgress` | Create and update tasks |
+| `createGoal` · `updateGoalProgress` · `recomputeGoalProgress` | Track goals |
+| `runWorkflow` · `processWithinWorkflow` | Run workflows and workflow steps |
+| `invoke_skill` | Load a skill's instructions mid-run |
+| `interactWithAgent` | Delegate to another agent |
+
+### Computers and code
+
+| Tool | What it does |
+|---|---|
+| `startAgentComputer` · `listAgentComputers` | Wake and inspect the cloud computer |
+| `runComputerCommand` | Run a shell command |
+| `readComputerFile` · `writeComputerFiles` | Read and write on the computer |
+| `openComputerBrowser` · `testComputerBrowser` | Drive and check the browser |
+| `createCodeProject` · `readCodeProject` · `writeCodeProjectFiles` | Manage a code project |
+| `publishCodeProject` · `testCodeProject` | Build, verify, publish a preview |
+| `exportCodeProjectToComputer` | Export a project onto the computer |
+| `registerUiPlugin` | Register a sandboxed UI plugin |
+
+### Spaces
+
+`createSpace` · `joinSpace` · `getMySpaces` · `getSpaceMembers` ·
+`addAgentToSpace` · `addHumanToSpace` · `removeAgentFromSpace` ·
+`removeHumanFromSpace` · `sendMessageToSpace` · `getSpaceMessages` ·
+`getBusMessages` · `speakInSpace` · `subscribeToSpace` ·
+`unsubscribeFromSpace` · `startCall` · `joinCall` · `leaveCall` ·
+`advanceTurn` · `getCallState` · `startStreamMonitoring` ·
+`stopStreamMonitoring` · `getActiveStreams`.
+
+### Copilot proposals
+
+`proposeAgentChange` · `proposeToolChange` · `proposeWorkflowChange` ·
+`proposeTaskChange` · `proposeSkillChange` let an agent propose a platform
+change for a human to accept or reject rather than applying it directly.
 
 ## Custom tools
 
-Wrap any HTTP API as a tool your agent can call.
+Register any HTTP endpoint. The `schema` is what the model sees; `apiSpec` is
+how the platform calls it.
 
-### Create a simple GET tool
-
-```bash
-curl -X POST https://api.agentcommons.io/v1/tools \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "name": "IP Lookup",
-    "description": "Get geolocation info for an IP address",
-    "method": "GET",
-    "endpoint": "https://ipapi.co/{{ip}}/json/",
-    "schema": {
-      "input": {
-        "ip": { "type": "string", "description": "IP address to look up" }
-      },
-      "output": {
-        "city": { "type": "string" },
-        "country": { "type": "string" }
-      }
-    }
-  }'
-```
-
-### Create a POST tool with API key auth
-
-```bash
-curl -X POST https://api.agentcommons.io/v1/tools \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "name": "Send Email",
-    "description": "Send an email via SendGrid",
-    "method": "POST",
-    "endpoint": "https://api.sendgrid.com/v3/mail/send",
-    "headers": {
-      "Authorization": "Bearer {{SENDGRID_KEY}}"
+```typescript
+const { data: tool } = await commons.tools.create({
+  name: 'weather_lookup',
+  displayName: 'Weather lookup',
+  description: 'Get the current weather for a city',
+  schema: {
+    type: 'object',
+    properties: {
+      city: { type: 'string', description: 'City name, e.g. "Nairobi"' },
     },
-    "schema": {
-      "input": {
-        "to": { "type": "string" },
-        "subject": { "type": "string" },
-        "body": { "type": "string" }
-      }
-    }
-  }'
+    required: ['city'],
+  },
+  apiSpec: {
+    baseUrl: 'https://api.weatherapi.com/v1',
+    path: '/current.json',
+    method: 'GET',
+    queryParams: { q: '{{city}}' },
+    authType: 'api-key',
+    authKeyName: 'key',
+  },
+});
+
+await commons.agents.addTool(agentId, { toolId: tool.toolId });
 ```
 
-Then store the API key securely:
+Or from a file:
 
 ```bash
-curl -X POST https://api.agentcommons.io/v1/tools/tool_abc123/keys \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{ "value": "SG.your-key", "label": "production" }'
+agc tools create --file weather.json
+agc tools exec weather_lookup --args '{"city":"Nairobi"}' --agent <agentId>
 ```
 
-The SENDGRID_KEY placeholder is replaced automatically when the agent calls the tool.
+### Writing a schema the model will use well
 
-<Callout type="tip">
-  API keys are stored encrypted. The agent never sees the raw key — it's injected at invocation time.
-</Callout>
+- Describe *when* to call the tool, not just what it does.
+- Name parameters the way a person would say them.
+- Mark everything the endpoint truly needs as `required`.
+- Keep the response small — a model reads every byte you return.
 
-### Test a tool directly
+### Credentials
+
+Secrets never live in the tool definition. Store them once and map them:
+
+```typescript
+const { data: key } = await commons.toolKeys.create({
+  keyName: 'weatherapi_key',
+  displayName: 'WeatherAPI production',
+  value: process.env.WEATHER_API_KEY!,
+  keyType: 'api-key',
+});
+
+await commons.toolKeys.mapToTool({
+  keyId: key.keyId,
+  toolId: tool.toolId,
+  contextId: userId,
+  contextType: 'user',
+});
+```
+
+Values are encrypted at rest and never returned by any read endpoint. Rotate
+with `updateValue`, verify with `test`.
+
+`authType` accepts `none`, `bearer`, `api-key`, `basic`, and `oauth2`. Choose
+`oauth2` with an `oauthProviderKey` to have a user's
+[connection](/docs/guides/connections) injected instead of a static secret.
+
+### Sharing
+
+```typescript
+await commons.toolPermissions.grant({
+  toolId: tool.toolId,
+  subjectId: teammateId,
+  subjectType: 'user',
+  permission: 'execute',   // read · execute · admin
+  grantedBy: userId,
+});
+```
+
+`accessibleTools` resolves what a subject can actually reach;
+`transferOwnership` hands a tool over for good.
+
+## MCP servers
+
+[Model Context Protocol](https://modelcontextprotocol.io) servers expose
+tools, resources, and prompts. Connect one and Agent Commons discovers all
+three.
+
+<Tabs items={['CLI', 'SDK']}>
+  <Tab value="CLI">
+```bash
+agc mcp add --name "Filesystem" --type stdio \
+  --command "npx @modelcontextprotocol/server-filesystem ~/projects"
+
+agc mcp add --name "Docs" --type sse --url https://mcp.example.com/sse
+
+agc mcp connect <serverId>
+agc mcp sync <serverId>
+agc mcp tools <serverId>
+```
+  </Tab>
+  <Tab value="SDK">
+```typescript
+const server = await commons.mcp.createServer({
+  name: 'Filesystem',
+  connectionType: 'stdio',
+  connectionConfig: {
+    command: 'npx',
+    args: ['@modelcontextprotocol/server-filesystem', '/Users/me/projects'],
+  },
+  ownerId: userId,
+  ownerType: 'user',
+});
+
+await commons.mcp.connect(server.mcpServerId);
+await commons.mcp.sync(server.mcpServerId);
+```
+  </Tab>
+</Tabs>
+
+Connection types: `stdio`, `sse`, `http`, `streamable-http`.
+
+### Resources and prompts
 
 ```bash
-curl -X POST https://api.agentcommons.io/v1/tools/tool_abc123/invoke \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{ "input": { "to": "user@example.com", "subject": "Hello", "body": "Test" } }'
+agc mcp resources <serverId>
+agc mcp read <serverId> "file:///project/README.md"
+agc mcp prompts <serverId>
+agc mcp prompt <serverId> summarise --args '{"topic":"pricing"}'
 ```
 
-### Control who can use your tool
+### Marketplace
 
 ```bash
-curl -X POST https://api.agentcommons.io/v1/tools/tool_abc123/permissions \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "principalType": "agent",
-    "principalId": "agent_def456",
-    "permission": "invoke"
-  }'
+curl -H "Authorization: Bearer $KEY" \
+  https://api.agentcommons.io/v1/mcp/servers/marketplace
 ```
 
----
+Re-run `sync` after the upstream server changes — discovery is a snapshot, not
+a subscription.
 
-## MCP (Model Context Protocol)
+## Caller-owned tools
 
-MCP is an open standard for connecting agents to external tool servers. Connect a server once — all its tools, resources, and prompts become available to your agents.
+Sometimes the tool has to run where the *caller* is: on a laptop, inside your
+backend, behind your VPN. Pass a catalogue in `cliTools` and the run pauses on
+a `cli_tool_request` event until you post the result back.
 
-### Transport types
-
-| Type | When to use |
-|---|---|
-| sse | Remote server over HTTP — most common |
-| http | Stateless HTTP, each call is independent |
-| stdio | Local process (CLI tools, local scripts) |
-
-### Connect a remote MCP server
-
-```bash
-curl -X POST https://api.agentcommons.io/v1/mcp/servers \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "name": "Exa Search",
-    "transportType": "sse",
-    "url": "https://mcp.exa.ai/sse"
-  }'
-```
-
-### Connect a local stdio server
-
-```bash
-curl -X POST https://api.agentcommons.io/v1/mcp/servers \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "name": "Filesystem",
-    "transportType": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/docs"]
-  }'
-```
-
-### Pass credentials via environment variables
-
-```bash
-curl -X POST https://api.agentcommons.io/v1/mcp/servers \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{
-    "name": "GitHub",
-    "transportType": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-github"],
-    "env": {
-      "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_your_token"
-    }
-  }'
-```
-
-### Sync tools from a server
-
-After connecting, sync to discover all tools:
-
-```bash
-curl -X POST https://api.agentcommons.io/v1/mcp/servers/server_abc123/sync \
-  -H "x-api-key: YOUR_KEY"
-```
-
-Check the result:
-
-```bash
-curl https://api.agentcommons.io/v1/mcp/servers/server_abc123/status \
-  -H "x-api-key: YOUR_KEY"
-```
-
-```json
-{
-  "status": "connected",
-  "toolsCount": 12,
-  "lastConnectedAt": "2026-04-10T08:00:00Z"
+```typescript
+for await (const event of commons.agents.stream({
+  agentId,
+  messages,
+  cliTools: [
+    {
+      name: 'queryWarehouse',
+      description: 'Run a read-only SQL query against the internal warehouse',
+      parameters: {
+        type: 'object',
+        properties: { sql: { type: 'string' } },
+        required: ['sql'],
+      },
+    },
+  ],
+})) {
+  if (event.type === 'cli_tool_request') {
+    const rows = await warehouse.query(event.args.sql);
+    await commons.agents.submitCliToolResult(event.requestId!, JSON.stringify(rows));
+  }
 }
 ```
 
-### Popular MCP servers
+This is exactly how `agc chat` gives an agent your filesystem — see
+[local file access](/docs/cli#local-file-access).
 
-| Server | Capabilities |
-|---|---|
-| @modelcontextprotocol/server-filesystem | Read/write local files |
-| @modelcontextprotocol/server-github | Repos, issues, PRs |
-| @modelcontextprotocol/server-postgres | Query a PostgreSQL database |
-| @modelcontextprotocol/server-brave-search | Brave web search |
-| @modelcontextprotocol/server-slack | Send messages, read channels |
-| @modelcontextprotocol/server-google-maps | Maps, geocoding, place search |
-
-Browse more at:
+## Debugging
 
 ```bash
-GET /v1/mcp/servers/marketplace
+agc logs list --agent <agentId> --status error
+agc logs errors --agent <agentId>
 ```
 
-### Reading MCP resources
-
-MCP servers can expose readable data beyond tools:
-
-```bash
-# List available resources
-GET /v1/mcp/servers/server_abc123/resources
-
-# Read a resource by URI
-GET /v1/mcp/servers/server_abc123/resources/read?uri=file:///docs/readme.md
-```
-
-### Using MCP prompts
-
-```bash
-# List available prompts
-GET /v1/mcp/servers/server_abc123/prompts
-
-# Render a prompt with arguments
-POST /v1/mcp/servers/server_abc123/prompts/summarize
-{ "arguments": { "url": "https://example.com" } }
-```
-
----
-
-## How tools are resolved
-
-When an agent decides to call a tool, the platform resolves it in this order:
-
-1. Space tools (scoped to the current collaborative space)
-2. Agent-specific tools (linked directly to the agent)
-3. MCP tools (from connected MCP servers)
-4. Static / built-in tools
-
-If two tools share the same name, the higher-priority one wins.
+`toolStart` / `toolEnd` events carry the arguments and the raw output, so
+streaming a run is usually the fastest way to see what the model actually sent.
