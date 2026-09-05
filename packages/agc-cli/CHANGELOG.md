@@ -1,5 +1,13 @@
 # @agent-commons/cli
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies [bec3bf6]
+- Updated dependencies [01a4cf3]
+  - @agent-commons/sdk@0.7.0
+
 ## 0.5.0
 
 ### Minor Changes

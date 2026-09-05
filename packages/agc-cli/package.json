@@ -1,6 +1,6 @@
 {
   "name": "@agent-commons/cli",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Official Agent Commons CLI for building, running, and managing AI agents from the terminal",
   "license": "MIT",
   "keywords": [

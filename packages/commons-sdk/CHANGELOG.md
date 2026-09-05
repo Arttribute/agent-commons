@@ -1,5 +1,14 @@
 # @agent-commons/sdk
 
+## 0.7.0
+
+### Minor Changes
+
+- bec3bf6: Add per-agent skill assignments, agent-scoped library items, configurable capability providers, portable skill imports, and sandboxed UI plugin management.
+- 01a4cf3: Add typed `/v1/knowledge` APIs for portable Markdown, durable folder management,
+  OKF v0.2 analysis, graph retrieval, provider connectors, revisions, and subject
+  grants.
+
 ## 0.6.0
 
 ### Minor Changes
