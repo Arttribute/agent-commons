@@ -12,7 +12,7 @@ async function main() {
     redirectUris: [`${origin}/api/auth/callback`, 'https://common-arcade.vercel.app/api/auth/callback', 'http://localhost:3000/api/auth/callback'],
     postLogoutRedirectUris: [origin], grantTypes: ['authorization_code', 'refresh_token'],
     requirePkce: true, skipConsent: false,
-    scopes: ['openid', 'profile', 'email', 'offline_access', 'agents:read', 'agents:write', 'agents:run'],
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'agents:create', 'agents:read', 'agents:write', 'agents:run'],
     metadata: { application: 'common_arcade' },
   });
   await writeFile(outputPath, JSON.stringify({ web }), { mode: 0o600 });
