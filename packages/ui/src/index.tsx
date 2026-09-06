@@ -21,6 +21,7 @@ export {
   CanvasToolButton,
   ResizablePanel,
   CodeFileBrowser,
+  CommonsWindow,
 } from "./workspace";
 export type { ComposerAttachment, SourceFile } from "./workspace";
 
