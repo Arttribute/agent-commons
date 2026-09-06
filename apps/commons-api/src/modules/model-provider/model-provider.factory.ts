@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { MODEL_REGISTRY } from './model-registry';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ModelConfig, ModelProviderName } from './model-provider.interface';
 import { buildOpenAIModel } from './providers/openai.provider';
@@ -99,6 +100,24 @@ export class ModelProviderFactory {
         sessionModel.reasoningEffort ?? agentConfig?.reasoningEffort,
       verbosity: sessionModel.verbosity ?? agentConfig?.verbosity,
     };
+  }
+
+  /** A per-turn platform model must never inherit a different provider's BYOK credentials. */
+  resolveRunModel(selection: unknown): ModelConfig {
+    if (!selection || typeof selection !== 'object')
+      throw new BadRequestException('Invalid model selection');
+    const { provider, modelId } = selection as Record<string, unknown>;
+    const model = MODEL_REGISTRY.find(
+      (entry) =>
+        entry.provider === provider &&
+        entry.modelId === modelId &&
+        entry.tier !== 'local',
+    );
+    if (!model)
+      throw new BadRequestException(
+        'Choose a model from the Commons model catalog',
+      );
+    return { provider: model.provider, modelId: model.modelId };
   }
 
   /** Infer provider from a legacy model name string */

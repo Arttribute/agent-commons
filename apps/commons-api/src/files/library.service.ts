@@ -512,14 +512,7 @@ export class LibraryService {
             warnings: unknown[];
           }
         | { type: 'unavailable'; error: string };
-      if (deployment?.publicUrl) {
-        interactivePreview = {
-          type: 'url',
-          url: deployment.publicUrl,
-          compiled: true,
-          warnings: deployment.buildErrors ?? [],
-        };
-      } else {
+      {
         try {
           const version = `${project.updatedAt.toISOString()}:${files
             .map((file) => `${file.path}:${file.version}`)

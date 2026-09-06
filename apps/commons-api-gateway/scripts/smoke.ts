@@ -88,6 +88,7 @@ for (const [path, init] of publicRoutes) {
 
 /** Routes that carry user data and must stay behind the credential check. */
 const protectedRoutes = [
+  "/v1/identity",
   "/v1/agents",
   "/v1/flags",
   "/v1/billing/subscription",
@@ -97,6 +98,18 @@ const protectedRoutes = [
 for (const path of protectedRoutes) {
   await expectStatus(`protected GET ${path}`, app.request(path), 401);
 }
+
+await expectStatus("identity rejects unverified legacy credentials", app.request("/v1/identity", {headers:{authorization:"Bearer sk-ac-not-a-real-key"}}),401);
+const nativeFetch = globalThis.fetch;
+process.env.COMMONS_IDENTITY_PLATFORM_URL="https://identity.invalid";
+process.env.COMMONS_GATEWAY_INTERNAL_SECRET="smoke-test-only";
+globalThis.fetch=(async()=>Response.json({active:true,actorId:"usr_verified",actorType:"user",scopes:["agents:read"],credentialType:"oauth"})) as typeof fetch;
+const identityResponse=await app.request("/v1/identity",{headers:{authorization:"Bearer opaque-smoke-token"}});
+const identity=await identityResponse.json();
+if(identityResponse.status!==200 || identity.actorId!=="usr_verified" || identity.scopes[0]!=="agents:read" || "legacyToken" in identity) failures.push("identity must return only the authenticated principal and grants");
+globalThis.fetch=nativeFetch;
+delete process.env.COMMONS_IDENTITY_PLATFORM_URL;
+delete process.env.COMMONS_GATEWAY_INTERNAL_SECRET;
 
 const previewResponse = await app.request("/v1/previews/example-project/");
 if (previewResponse.headers.has("x-frame-options")) {

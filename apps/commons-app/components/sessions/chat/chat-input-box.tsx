@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ComposerSurface, ComposerTextArea } from "@agent-commons/ui";
+import "@agent-commons/ui/styles.css";
 import type { StreamEvent } from "@agent-commons/sdk";
 import Link from "next/link";
 import {
@@ -811,7 +813,7 @@ export default function ChatInputBox({
   }, []);
 
   return (
-    <div
+    <ComposerSurface
       ref={containerRef}
       className={cn(
         "relative rounded-2xl bg-white border border-stone-300 shadow-composer transition-colors",
@@ -925,7 +927,7 @@ export default function ChatInputBox({
         />
       ) : (
         <>
-          <textarea
+          <ComposerTextArea
             placeholder={placeholder}
             className="text-sm w-full h-16 p-3 rounded-2xl resize-none focus:outline-none bg-transparent placeholder:text-muted-foreground/60"
             value={inputText}
@@ -1239,7 +1241,7 @@ export default function ChatInputBox({
           </div>
         </>
       )}
-    </div>
+    </ComposerSurface>
   );
 }
 
