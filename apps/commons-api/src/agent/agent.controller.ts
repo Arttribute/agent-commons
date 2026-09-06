@@ -43,6 +43,7 @@ import { CommonToolService } from '~/tool/tools/common-tool.service';
 import type { ProvenanceRunOptions } from '~/provenance';
 
 interface RunBody {
+  model?: { provider: string; modelId: string };
   agentId: string;
   messages: any[];
   sessionId?: string;
