@@ -328,6 +328,7 @@ export class CopilotService {
               kind: annotation.kind,
               body: annotation.body,
               geometry: annotation.geometry,
+              metadata: annotation.metadata,
               startMs: annotation.startMs,
               endMs: annotation.endMs,
               status: annotation.status,
