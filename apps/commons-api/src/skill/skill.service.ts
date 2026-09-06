@@ -839,6 +839,21 @@ const BUNDLED_SKILL_CONFIG: Record<
     icon: 'panels-top-left',
     version: '1.0.0',
   },
+  'build-common-arcade-games': {
+    name: 'Build Common Arcade Games',
+    tools: [
+      'startAgentComputer',
+      'runComputerCommand',
+      'readComputerFile',
+      'writeComputerFiles',
+      'openComputerBrowser',
+      'testComputerBrowser',
+    ],
+    triggers: ['game', 'arcade', 'simulation', 'playable', 'gameplay'],
+    tags: ['games', 'web', 'code', 'testing'],
+    icon: 'gamepad-2',
+    version: '1.0.0',
+  },
 };
 
 async function findBundledSkillDirectory() {
