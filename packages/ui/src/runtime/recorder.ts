@@ -7,6 +7,52 @@ let bytes = 0;
 let sequence = 0;
 const send = (type: string, payload: unknown) =>
   parent.postMessage({ channel, type, payload }, "*");
+// Freeze the rendered game while the user draws, so a moving target cannot
+// change underneath a point/region selection. Host recording timers stay native.
+const nativeFrame = window.requestAnimationFrame.bind(window);
+const nativeCancelFrame = window.cancelAnimationFrame.bind(window);
+const nativeTimeout = window.setTimeout.bind(window);
+const nativeInterval = window.setInterval.bind(window);
+let editing = false;
+const pausedFrames = new Map<number, FrameRequestCallback>();
+let pausedAnimations: Animation[] = [];
+window.requestAnimationFrame = (callback) => {
+  let id = 0;
+  id = nativeFrame((time) => {
+    if (editing) pausedFrames.set(id, callback);
+    else callback(time);
+  });
+  return id;
+};
+window.cancelAnimationFrame = (id) => {
+  pausedFrames.delete(id);
+  nativeCancelFrame(id);
+};
+window.setInterval = ((
+  handler: TimerHandler,
+  timeout?: number,
+  ...args: any[]
+) =>
+  typeof handler === "function"
+    ? nativeInterval(() => {
+        if (!editing) handler(...args);
+      }, timeout)
+    : nativeInterval(handler, timeout, ...args)) as typeof setInterval;
+function setEditing(next: boolean) {
+  if (next === editing) return;
+  editing = next;
+  if (editing) {
+    pausedAnimations = document
+      .getAnimations()
+      .filter((a) => a.playState === "running");
+    pausedAnimations.forEach((a) => a.pause());
+  } else {
+    pausedAnimations.forEach((a) => a.play());
+    pausedAnimations = [];
+    for (const callback of pausedFrames.values()) nativeFrame(callback);
+    pausedFrames.clear();
+  }
+}
 function observe() {
   const bridge = (window as any).arcade;
   const elements = Array.from(
@@ -43,7 +89,28 @@ window.addEventListener("message", async (event) => {
   const { requestId, command, payload } = event.data;
   try {
     let result: unknown;
-    if (command === "observe") result = observe();
+    if (command === "mode") {
+      setEditing(payload?.editing === true);
+      result = { editing };
+    } else if (command === "snapshot") {
+      if (stop) throw Error("An interaction recording is already active.");
+      const events: unknown[] = [];
+      let size = 0;
+      const stopSnapshot = record({
+        recordCanvas: true,
+        inlineImages: true,
+        maskAllInputs: true,
+        emit(event) {
+          size += JSON.stringify(event).length;
+          if (size <= 8 * 1024 * 1024) events.push(event);
+        },
+      });
+      await new Promise((resolve) => nativeTimeout(resolve, 80));
+      stopSnapshot?.();
+      if (size > 8 * 1024 * 1024)
+        throw Error("This snapshot exceeds the 8 MB context limit.");
+      result = { events, durationMs: 80 };
+    } else if (command === "observe") result = observe();
     else if (command === "act") {
       const observation = observe();
       if (!observation.actions.some((a: any) => a.id === payload?.id))
@@ -56,9 +123,7 @@ window.addEventListener("message", async (event) => {
             `[data-commons-action="${payload.id.slice(6)}"]`,
           )
           ?.click();
-      await new Promise((resolve) =>
-        requestAnimationFrame(() => resolve(null)),
-      );
+      await new Promise((resolve) => nativeFrame(() => resolve(null)));
       result = observe();
     } else if (command === "record-start") {
       stop?.();

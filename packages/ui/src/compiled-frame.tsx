@@ -42,6 +42,7 @@ export type CanvasMoment = {
 export type CompiledFrameHandle = {
   observe: () => Promise<CanvasObservation>;
   act: (id: string) => Promise<CanvasObservation>;
+  snapshot: () => Promise<CanvasRecording>;
   moment: () => CanvasMoment;
   recording: () => CanvasRecording | undefined;
 };
@@ -164,8 +165,18 @@ export const CompiledArtifactFrame = forwardRef<
       )
         return;
       const { type, payload } = event.data;
-      if (type === "ready") ready.current = true;
-      else if (type === "response") {
+      if (type === "ready") {
+        ready.current = true;
+        frame.current?.contentWindow?.postMessage(
+          {
+            channel,
+            command: "mode",
+            payload: { editing: !interactive },
+            requestId: "mode-initial",
+          },
+          "*",
+        );
+      } else if (type === "response") {
         const request = pending.current.get(payload?.requestId);
         if (request) {
           clearTimeout(request.timer);
@@ -197,7 +208,30 @@ export const CompiledArtifactFrame = forwardRef<
       if (active.current) finish();
     };
   }, [channel, html, revision, replay]);
+  useEffect(() => {
+    if (ready.current)
+      void command("mode", { editing: !interactive }).catch(() => undefined);
+  }, [interactive]);
   useImperativeHandle(ref, () => ({
+    snapshot: async () => {
+      if (active.current)
+        return {
+          ...active.current,
+          events: [...active.current.events],
+          durationMs: Date.now() - started.current,
+        };
+      const snapshot = await command<{ events: unknown[]; durationMs: number }>(
+        "snapshot",
+      );
+      return {
+        format: "commons.recording.v1",
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        title,
+        ...snapshot,
+        interactions: [],
+      };
+    },
     observe: () => command("observe"),
     act: (id) => command("act", { id }),
     moment: () => ({
@@ -335,7 +369,7 @@ export function RecordingPlayer({ recording }: { recording: CanvasRecording }) {
     [error, setError] = useState("");
   const html = useMemo(
     () =>
-      `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob: https:; media-src data: blob: https:; connect-src 'none'; worker-src blob:"><style>body{margin:0;overflow:auto}.replayer-wrapper{position:relative}.replayer-mouse{display:none}iframe{border:0;max-width:100%}</style></head><body>${runtimeScript(replayerBundle, channel)}</body></html>`,
+      `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob: https:; media-src data: blob: https:; connect-src 'none'; worker-src blob:"><style>body{margin:0;overflow:auto}.replayer-wrapper{position:relative}.replayer-mouse{display:none}iframe{border:0;max-width:none}</style></head><body>${runtimeScript(replayerBundle, channel)}</body></html>`,
     [channel],
   );
   function send(command: string, extra: Record<string, unknown> = {}) {

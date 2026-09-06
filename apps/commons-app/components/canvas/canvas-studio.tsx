@@ -140,6 +140,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
             "Recording upload failed. Download remains available.",
         );
       recordingFiles.current[recording.id] = result.data[0].fileId;
+      return result.data[0].fileId as string;
     } catch (error) {
       setError(
         error instanceof Error ? error.message : "Could not save recording.",
@@ -627,11 +628,14 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
     if (isCode && compiledRef.current) {
       const frame = compiledRef.current,
         moment = frame.moment();
-      annotationContext.current = frame
-        .observe()
-        .then((observation) => ({
+      annotationContext.current = Promise.all([
+        frame.observe(),
+        frame.snapshot().then(saveRecording),
+      ])
+        .then(([observation, snapshotFileId]) => ({
           moment,
           observation,
+          snapshotFileId,
           viewport: { width: 1280, height: 720 },
         }))
         .catch(() => ({ moment, viewport: { width: 1280, height: 720 } }));
@@ -1340,7 +1344,11 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
                       ? "pointer-events-none"
                       : "cursor-crosshair",
                   )}
-                  style={isCode ? fitContentBox(stageSize,{width:1280,height:720}) : contentBox}
+                  style={
+                    isCode
+                      ? fitContentBox(stageSize, { width: 1280, height: 720 })
+                      : contentBox
+                  }
                   onPointerDown={onStagePointerDown}
                   onPointerMove={onStagePointerMove}
                   onPointerUp={onStagePointerUp}
