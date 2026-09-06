@@ -770,6 +770,8 @@ export class AgentService implements OnModuleInit {
       description: string;
       parameters: Record<string, unknown>;
     }>;
+    /** Optional platform model for this turn, without mutating the agent. */
+    model?: { provider: string; modelId: string };
     /** Uploaded chat file references. Raw bytes are never passed into LangGraph state. */
     attachments?: Array<{ fileId: string }>;
     /** User selected computer usage for this chat turn. */
@@ -987,7 +989,7 @@ export class AgentService implements OnModuleInit {
             sessionRecord?.model as any,
             this.encryption,
           );
-          const effectiveModel = this.modelProviderFactory.resolveSessionModel(
+          const effectiveModel = props.model ? this.modelProviderFactory.resolveRunModel(props.model) : this.modelProviderFactory.resolveSessionModel(
             sessionModel,
             {
               provider: (agent.modelProvider as any) ?? 'openai',
