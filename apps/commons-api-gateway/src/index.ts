@@ -250,6 +250,17 @@ export function createGatewayApp() {
     await next();
   });
 
+  // Platform clients can resolve either an opaque OAuth token or a signed JWT
+  // without receiving the internal gateway secret or decoding unverified data.
+  app.get("/v1/identity", (c) => {
+    const principal = c.get("principal");
+    if (!principal || principal.credentialType === "legacy")
+      return c.json({ error: "A verified Commons identity credential is required" }, 401);
+    c.header("Cache-Control", "no-store");
+    return c.json({ actorId: principal.actorId, actorType: principal.actorType,
+      scopes: principal.scopes, credentialType: principal.credentialType });
+  });
+
   async function proxy(
     c: any,
     service: "agent-commons" | "common-os",
