@@ -20,6 +20,20 @@ jobs:
     name: Build and Test
     runs-on: ubuntu-latest
 
+    services:
+      payment-postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: local-payment-test
+          POSTGRES_DB: arcade_payments
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,7 +60,7 @@ jobs:
           restore-keys: pnpm-store-${{ runner.os }}-
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build packages
         run: pnpm --filter './packages/*' run build
@@ -60,3 +74,8 @@ jobs:
       # this either: it has no gateway in front of it.
       - name: Test API gateway
         run: pnpm --filter commons-api-gateway run test
+
+      - name: Test payment authorization and concurrent budgets
+        env:
+          PAYMENT_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
+        run: pnpm --filter commons-api exec jest --runInBand 'wallet/payments|modules/x402/x402.guard.spec.ts'

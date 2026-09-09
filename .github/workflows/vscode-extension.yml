@@ -43,6 +43,11 @@ jobs:
         shell: bash
         run: |
           npm install --prefix "$RUNNER_TEMP/commons-browser" playwright@1.63.0 --no-audit --no-fund
+          # Playwright downloads its own Chromium. The runner's unrelated Chrome
+          # apt feed can have inconsistent package hashes and block OS dependencies.
+          for source in /etc/apt/sources.list.d/google-chrome*; do
+            if [ -f "$source" ]; then sudo rm "$source"; fi
+          done
           "$RUNNER_TEMP/commons-browser/node_modules/.bin/playwright" install --with-deps chromium
           COMMONS_PLAYWRIGHT_PATH="$RUNNER_TEMP/commons-browser/node_modules/playwright" pnpm --filter agent-commons exec node test/browser-smoke.cjs
       - if: runner.os != 'Windows'
