@@ -1,3 +1,7 @@
+import { payArcadeDeposit } from './payments/arcade-payments';
+import { walletChain } from './payments/chains';
+import { PaymentSessionService } from './payments/payment-session.service';
+import { payX402Challenge } from './payments/x402-client';
 import {
   Injectable,
   BadRequestException,
@@ -59,6 +63,7 @@ export class WalletService {
     private db: DatabaseService,
     private encryption: EncryptionService,
     private capabilityProviders: CapabilityProviderService,
+    private paymentSessions: PaymentSessionService,
   ) {}
 
   /**
@@ -177,6 +182,15 @@ export class WalletService {
   /**
    * List all wallets for an agent.
    */
+  async runtimeSessions(agentId: string) {
+    return this.db.query.session.findMany({
+      where: (s) => eq(s.agentId, agentId),
+      columns: { sessionId: true, title: true, createdAt: true },
+      limit: 50,
+      orderBy: (s, { desc }) => [desc(s.createdAt)],
+    });
+  }
+
   async listWallets(agentId: string): Promise<WalletResponseDto[]> {
     const wallets = await this.db.query.agentWallet.findMany({
       where: (w) => eq(w.agentId, agentId),
@@ -208,13 +222,20 @@ export class WalletService {
   /**
    * Get USDC and native token balance for a wallet address on Base Sepolia.
    */
-  async getBalance(walletId: string): Promise<WalletBalanceDto> {
+  async getBalance(
+    walletId: string,
+    chainId?: string,
+  ): Promise<WalletBalanceDto> {
     const wallet = await this.db.query.agentWallet.findFirst({
       where: (w) => eq(w.id, walletId),
     });
     if (!wallet) throw new NotFoundException(`Wallet ${walletId} not found`);
 
     if (wallet.provider === 'custom') {
+      if (chainId && chainId !== wallet.chainId)
+        throw new BadRequestException(
+          'Custom provider network switching requires its own adapter',
+        );
       const configured = await this.customProviderForWallet(wallet);
       return this.customWalletRequest<WalletBalanceDto>(
         configured,
@@ -226,11 +247,16 @@ export class WalletService {
     }
 
     const address = wallet.address as `0x${string}`;
+    const network = walletChain(chainId ?? wallet.chainId);
+    const publicClient = createPublicClient({
+      chain: network.chain,
+      transport: http(),
+    });
 
     const [nativeBalance, usdcBalance] = await Promise.all([
-      this.publicClient.getBalance({ address }),
-      this.publicClient.readContract({
-        address: USDC_ADDRESS_BASE_SEPOLIA,
+      publicClient.getBalance({ address }),
+      publicClient.readContract({
+        address: network.token,
         abi: ERC20_BALANCE_ABI,
         functionName: 'balanceOf',
         args: [address],
@@ -239,7 +265,7 @@ export class WalletService {
 
     return {
       address: wallet.address,
-      chainId: wallet.chainId,
+      chainId: String(network.chain.id),
       native: formatUnits(nativeBalance, 18),
       usdc: formatUnits(usdcBalance as bigint, 6),
     };
@@ -257,6 +283,7 @@ export class WalletService {
       where: (w) => eq(w.id, walletId),
     });
     if (!wallet) throw new NotFoundException(`Wallet ${walletId} not found`);
+    if (!wallet.isActive) throw new BadRequestException('Wallet is inactive');
     if (wallet.provider === 'custom') {
       const configured = await this.customProviderForWallet(wallet);
       return this.customWalletRequest<{ txHash: string }>(
@@ -280,10 +307,22 @@ export class WalletService {
     const account = privateKeyToAccount(privateKey);
     const to = dto.toAddress as `0x${string}`;
     const tokenSymbol = dto.tokenSymbol ?? 'USDC';
+    const network = walletChain(wallet.chainId);
+    if (
+      !/^0x[0-9a-fA-F]{40}$/.test(dto.toAddress) ||
+      !/^(0|[1-9]\d*)(\.\d{1,6})?$/.test(dto.amount) ||
+      parseUnits(dto.amount, 6) <= 0n
+    )
+      throw new BadRequestException('Invalid address or positive amount');
+    if (
+      !['ETH', 'USDC'].includes(tokenSymbol) ||
+      (tokenSymbol === 'ETH' && network.chain.nativeCurrency.symbol !== 'ETH')
+    )
+      throw new BadRequestException('Token does not match network');
 
     const walletClient = createWalletClient({
       account,
-      chain: baseSepolia,
+      chain: network.chain,
       transport: http(),
     });
 
@@ -311,11 +350,17 @@ export class WalletService {
         args: [to, amountUnits],
       });
       txHash = await walletClient.sendTransaction({
-        to: USDC_ADDRESS_BASE_SEPOLIA,
+        to: network.token,
         data,
       });
     }
 
+    const receipt = await createPublicClient({
+      chain: network.chain,
+      transport: http(),
+    }).waitForTransactionReceipt({ hash: txHash, confirmations: 2 });
+    if (receipt.status !== 'success')
+      throw new BadRequestException(`Transfer reverted: ${txHash}`);
     return { txHash };
   }
 
@@ -342,82 +387,242 @@ export class WalletService {
    * @param init     - Standard fetch init (method, headers, body…)
    * @returns The final Response (after payment if required)
    */
+  async arcadeDeposit(
+    agentId: string,
+    input: {
+      paymentSessionId: string;
+      runtimeSessionId: string;
+      idempotencyKey: string;
+      operation: 'stake' | 'bounty' | 'bet';
+      amountUnits?: string;
+    },
+  ) {
+    const session = await this.paymentSessions.load(
+      agentId,
+      input.paymentSessionId,
+      input.runtimeSessionId,
+    );
+    const wallet = await this.db.query.agentWallet.findFirst({
+      where: (w) =>
+        and(
+          eq(w.id, session.wallet_id),
+          eq(w.agentId, agentId),
+          eq(w.isActive, true),
+        ),
+    });
+    if (
+      !wallet?.encryptedPrivateKey ||
+      wallet.walletType !== 'eoa' ||
+      wallet.provider === 'custom'
+    )
+      throw new BadRequestException('Supported active EOA required');
+    return payArcadeDeposit(
+      session,
+      this.paymentSessions,
+      this.decryptKey(wallet.encryptedPrivateKey) as `0x${string}`,
+      input,
+    );
+  }
+
+  async arcadeAction(
+    agentId: string,
+    input: {
+      paymentSessionId: string;
+      runtimeSessionId: string;
+      actionId: string;
+      sequence: number;
+      type?: 'hit' | 'stand';
+      payload?: unknown;
+    },
+  ) {
+    const session = await this.paymentSessions.load(
+      agentId,
+      input.paymentSessionId,
+      input.runtimeSessionId,
+    );
+    const grant = session.policy.arcade;
+    if (
+      !grant ||
+      (input.payload === undefined &&
+        !['hit', 'stand'].includes(input.type ?? '')) ||
+      (input.payload !== undefined && input.type !== undefined) ||
+      JSON.stringify(input.payload ?? {}).length > 16384 ||
+      !Number.isSafeInteger(input.sequence) ||
+      input.sequence < 0 ||
+      !/^[0-9a-f-]{36}$/i.test(input.actionId)
+    )
+      throw new BadRequestException('Invalid Arcade action');
+    const wallet = await this.db.query.agentWallet.findFirst({
+      where: (w) =>
+        and(
+          eq(w.id, session.wallet_id),
+          eq(w.agentId, agentId),
+          eq(w.isActive, true),
+        ),
+    });
+    if (
+      !wallet?.encryptedPrivateKey ||
+      wallet.walletType !== 'eoa' ||
+      wallet.provider === 'custom'
+    )
+      throw new BadRequestException('Supported active EOA required');
+    const account = privateKeyToAccount(
+      this.decryptKey(wallet.encryptedPrivateKey) as `0x${string}`,
+    );
+    const body = {
+        actionId: input.actionId,
+        sequence: input.sequence,
+        ...(input.payload !== undefined
+          ? { payload: input.payload }
+          : { type: input.type }),
+      },
+      expiresAt = Date.now() + 60000;
+    const signature = await account.signMessage({
+      message: JSON.stringify({
+        domain: session.policy.origin,
+        matchId: grant.matchId,
+        operation: 'action',
+        body,
+        expiresAt,
+      }),
+    });
+    const response = await safeFetch(
+      `${session.policy.origin}/v1/economy/matches/${grant.matchId}/actions`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          body,
+          auth: { address: account.address, expiresAt, signature },
+        }),
+        redirect: 'error',
+        signal: AbortSignal.timeout(60000),
+      },
+    );
+    return { status: response.status, body: await response.json() };
+  }
+
+  async arcadeObservation(
+    agentId: string,
+    input: { paymentSessionId: string; runtimeSessionId: string },
+  ) {
+    const session = await this.paymentSessions.load(
+      agentId,
+      input.paymentSessionId,
+      input.runtimeSessionId,
+    );
+    const grant = session.policy.arcade;
+    if (!grant) throw new BadRequestException('Match grant required');
+    const wallet = await this.db.query.agentWallet.findFirst({
+      where: (w) =>
+        and(
+          eq(w.id, session.wallet_id),
+          eq(w.agentId, agentId),
+          eq(w.isActive, true),
+        ),
+    });
+    if (
+      !wallet?.encryptedPrivateKey ||
+      wallet.walletType !== 'eoa' ||
+      wallet.provider === 'custom'
+    )
+      throw new BadRequestException('Supported active EOA required');
+    const account = privateKeyToAccount(
+        this.decryptKey(wallet.encryptedPrivateKey) as `0x${string}`,
+      ),
+      expiresAt = Date.now() + 60000;
+    const signature = await account.signMessage({
+      message: JSON.stringify({
+        domain: session.policy.origin,
+        matchId: grant.matchId,
+        operation: 'observation',
+        body: {},
+        expiresAt,
+      }),
+    });
+    const response = await safeFetch(
+      `${session.policy.origin}/v1/economy/matches/${grant.matchId}/observation`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: account.address,
+          expiresAt,
+          signature,
+        }),
+        redirect: 'error',
+        signal: AbortSignal.timeout(60000),
+      },
+    );
+    return { status: response.status, body: await response.json() };
+  }
+
   async x402Fetch(
     agentId: string,
     url: string,
     init: RequestInit = {},
+    grant?: {
+      paymentSessionId: string;
+      runtimeSessionId: string;
+      idempotencyKey: string;
+    },
   ): Promise<Response> {
-    // First attempt — no payment header. SSRF-guarded: url is agent-supplied.
-    const firstRes = await safeFetch(url, init);
-
-    if (firstRes.status !== 402) return firstRes;
-
-    // Parse payment requirements from 402 body
-    let body: any;
-    try {
-      body = await firstRes.json();
-    } catch {
-      throw new Error('x402: server returned 402 but body is not JSON');
-    }
-
-    const accepts: any[] = body?.accepts;
-    if (!accepts?.length) {
-      throw new Error('x402: 402 response has no `accepts` field');
-    }
-
-    // Load the agent's primary EOA wallet (raw DB row to access encrypted key)
-    const wallet = await this.db.query.agentWallet.findFirst({
-      where: (w) => and(eq(w.agentId, agentId), eq(w.isActive, true)),
-    });
-    if (!wallet?.encryptedPrivateKey) {
-      throw new BadRequestException(
-        `Agent ${agentId} has no EOA wallet to pay x402 requests`,
-      );
-    }
-
-    const privateKey = this.decryptKey(
-      wallet.encryptedPrivateKey,
-    ) as `0x${string}`;
-    const account = privateKeyToAccount(privateKey);
-
-    // Build a viem wallet client for x402 signing
-    const viemWalletClient = createWalletClient({
-      account,
-      chain: baseSepolia,
-      transport: http(),
-    });
-
-    // Select the first matching payment requirement (prefer exact/base-sepolia)
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const {
-      createPaymentHeader,
-      selectPaymentRequirements,
-    } = require('x402/client');
-    const requirements = selectPaymentRequirements(accepts);
-    if (!requirements) {
-      throw new Error('x402: no supported payment requirement in 402 response');
-    }
-
-    this.logger.log(
-      `x402: paying ${requirements.maxAmountRequired} ${requirements.asset} on ${requirements.network} for ${agentId}`,
-    );
-
-    const paymentHeader = await createPaymentHeader(
-      viemWalletClient,
-      1,
-      requirements,
-    );
-
-    // Retry with payment header
-    const retryRes = await safeFetch(url, {
+    const headers = new Headers(init.headers);
+    headers.delete('PAYMENT-SIGNATURE');
+    headers.delete('X-PAYMENT');
+    const request = {
       ...init,
-      headers: {
-        ...((init.headers as Record<string, string>) ?? {}),
-        'X-PAYMENT': paymentHeader,
-      },
+      headers,
+      redirect: 'error' as const,
+      signal: AbortSignal.timeout(60000),
+    };
+    const firstRes = await safeFetch(url, request);
+    if (firstRes.status !== 402) return firstRes;
+    if (!grant)
+      throw new BadRequestException(
+        'An explicit owner-approved payment session is required before spending',
+      );
+    const session = await this.paymentSessions.load(
+      agentId,
+      grant.paymentSessionId,
+      grant.runtimeSessionId,
+    );
+    if (session.policy.arcade)
+      throw new BadRequestException(
+        'An Arcade deposit grant cannot pay x402 service fees',
+      );
+    if (new URL(url).origin !== session.policy.origin)
+      throw new ForbiddenException('URL outside payment session');
+    const wallet = await this.db.query.agentWallet.findFirst({
+      where: (w) =>
+        and(
+          eq(w.id, session.wallet_id),
+          eq(w.agentId, agentId),
+          eq(w.isActive, true),
+        ),
     });
-
-    return retryRes;
+    if (
+      !wallet?.encryptedPrivateKey ||
+      wallet.walletType !== 'eoa' ||
+      wallet.provider === 'custom'
+    )
+      throw new BadRequestException(
+        'Payment session requires a supported active EOA signer',
+      );
+    return payX402Challenge(url, request, firstRes, {
+      policy: session.policy,
+      privateKey: this.decryptKey(wallet.encryptedPrivateKey) as `0x${string}`,
+      address: wallet.address,
+      reserve: (amount) =>
+        this.paymentSessions.reserve(
+          session,
+          grant.idempotencyKey,
+          amount,
+          url,
+        ),
+      finish: (id, state, receipt) =>
+        this.paymentSessions.finish(id, state, receipt),
+    });
   }
 
   /* ─────────────────────────  PRIVATE HELPERS  ───────────────────────── */

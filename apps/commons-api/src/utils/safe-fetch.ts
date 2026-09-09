@@ -132,6 +132,11 @@ export async function safeFetch(
 
     // 3xx with a Location header → validate and follow manually.
     if (res.status >= 300 && res.status < 400 && res.headers.has('location')) {
+      if (init.redirect === 'error')
+        throw new BadRequestException(
+          'Redirects are not allowed for this request',
+        );
+      if (init.redirect === 'manual') return res;
       if (redirects >= MAX_REDIRECTS) {
         throw new BadRequestException('Too many redirects');
       }
