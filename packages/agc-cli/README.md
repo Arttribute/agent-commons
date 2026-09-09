@@ -72,6 +72,22 @@ agc
 It guides first-time sign-in, lets you select an agent, and provides shortcuts
 to the main platform areas.
 
+## Coding workspace
+
+Run `agc code "your task"` inside a project for a local coding session. The
+`agc chat` command remains available. Use `--read-only` to deny local edits and
+commands, or `--no-local` to disable local tools. A root `AGENTS.md` is included
+as project instructions. Resume with `agc code --resume SESSION_ID`.
+
+The [VS Code extension](../commons-vscode/README.md) bundles this runtime and adds
+a sidebar, agent/session pickers, and editor context actions. Install its public
+VSIX from the repository releases.
+
+Local file tools reject paths outside the project, including symlink escapes.
+Approved commands run with your OS permissions; they are not sandboxed. Blank
+approval answers deny the operation. `y` / `n` apply once; `A` / `N` cache that
+operation type's permission for the session.
+
 ## Everyday commands
 
 ```bash

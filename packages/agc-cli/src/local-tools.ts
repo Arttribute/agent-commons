@@ -28,10 +28,13 @@ import {
   mkdirSync,
   readdirSync,
   statSync,
+  realpathSync,
+  lstatSync,
 } from 'fs';
-import { join, resolve, relative, extname, dirname } from 'path';
+import { join, resolve, relative, extname, dirname, isAbsolute, sep } from 'path';
 import { execFile, spawn } from 'child_process';
 import * as readline from 'readline';
+import { editPreview } from './edit-preview.js';
 // pdf-parse: pure-JS PDF text extractor, no system dependencies required.
 // Import from lib/pdf-parse.js to skip the test-file side-effect in the main entry.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -110,12 +113,8 @@ export function buildDirSnapshot(dir: string, maxDepth = 2): string {
  */
 export function readFileForContext(rootDir: string, filePath: string): string {
   try {
-    const abs = resolve(rootDir, filePath);
-    const rel = relative(rootDir, abs);
-    if (rel.startsWith('..') || rel.startsWith('/')) return `[error: path escapes session root]`;
-    for (const pat of [/\/\.ssh\//, /\/\.aws\//, /\/\.env$/, /\/\.env\./, /id_rsa/, /id_ed25519/]) {
-      if (pat.test(abs)) return `[error: sensitive path blocked]`;
-    }
+    const abs = safePath(rootDir, filePath);
+    assertNotSensitive(abs);
     if (!existsSync(abs)) return `[error: file not found: ${filePath}]`;
     const stat = statSync(abs);
     if (stat.isDirectory()) return `[error: "${filePath}" is a directory — use list_directory]`;
@@ -352,32 +351,35 @@ export function removeGitHook(rootDir: string): void {
 
 // ── Security helpers ──────────────────────────────────────────────────────────
 
-function safePath(root: string, userPath: string): string {
-  const abs = resolve(root, userPath);
-  const rel = relative(root, abs);
-  if (rel.startsWith('..') || rel.startsWith('/')) {
-    throw new Error(`Path "${userPath}" escapes the session root. Access denied.`);
+export function safePath(root: string, userPath: string): string {
+  const canonicalRoot = realpathSync(root);
+  const abs = resolve(canonicalRoot, userPath);
+  const inside = (path: string) => {
+    const rel = relative(canonicalRoot, path);
+    return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+  };
+  if (!inside(abs)) throw new Error(`Path "${userPath}" escapes the session root. Access denied.`);
+  // Check the existing ancestor too: a new file can escape through a symlinked directory.
+  let ancestor = abs;
+  while (!existsSync(ancestor)) {
+    // Dangling links must not become write destinations.
+    try { if (lstatSync(ancestor).isSymbolicLink()) throw new Error('Dangling symlink is not allowed.'); }
+    catch (error: any) { if (error.code !== 'ENOENT') throw error; }
+    const parent = dirname(ancestor);
+    if (parent === ancestor) throw new Error('Cannot resolve path.');
+    ancestor = parent;
   }
-  return abs;
+  const canonicalAncestor = realpathSync(ancestor);
+  if (!inside(canonicalAncestor)) throw new Error(`Path "${userPath}" resolves outside the session root. Access denied.`);
+  assertNotSensitive(abs);
+  assertNotSensitive(canonicalAncestor);
+  return resolve(canonicalAncestor, relative(ancestor, abs));
 }
 
-// Directories that are always blocked even if they happen to be under rootDir
-const BLOCKED_PATTERNS = [
-  /\/\.ssh\//,
-  /\/\.gnupg\//,
-  /\/\.agc\//,
-  /\/\.aws\//,
-  /\/\.env$/,
-  /\/\.env\./,
-  /id_rsa/,
-  /id_ed25519/,
-];
-
 function assertNotSensitive(abs: string): void {
-  for (const pat of BLOCKED_PATTERNS) {
-    if (pat.test(abs)) {
-      throw new Error(`Access to "${abs}" is blocked for security reasons.`);
-    }
+  const segments = abs.split(/[\\/]/);
+  if (segments.some(part => /^(?:\.ssh|\.gnupg|\.agc|\.aws|\.env(?:\..*)?|id_rsa|id_ed25519)$/i.test(part))) {
+    throw new Error(`Access to "${abs}" is blocked for security reasons.`);
   }
 }
 
@@ -388,10 +390,10 @@ async function confirm(
   config: LocalToolsConfig,
   permissionKey: string,
 ): Promise<boolean> {
-  if (config.autoApprove) return true;
   const cached = config.permissions.get(permissionKey);
   if (cached === 'allow') return true;
   if (cached === 'deny') return false;
+  if (config.autoApprove) return true;
 
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -400,18 +402,19 @@ async function confirm(
       `  \x1b[2m[y] Yes  [n] No  [A] Always allow this type  [N] Never allow this type\x1b[0m\n` +
       `  \x1b[36m?\x1b[0m  `,
     );
+    rl.once('close', () => resolve(false));
     rl.once('line', (answer) => {
-      rl.close();
-      const a = answer.trim().toLowerCase();
-      if (a === 'a') {
+      const a = answer.trim();
+      if (a === 'A') {
         config.permissions.set(permissionKey, 'allow');
         resolve(true);
-      } else if (a === 'n' || a === 'nn') {
+      } else if (a === 'N') {
         config.permissions.set(permissionKey, 'deny');
         resolve(false);
       } else {
-        resolve(a === 'y' || a === 'yes' || a === '');
+        resolve(a.toLowerCase() === 'y' || a.toLowerCase() === 'yes');
       }
+      rl.close();
     });
   });
 }
@@ -506,17 +509,23 @@ async function toolReadFile(args: Record<string, any>, cfg: LocalToolsConfig): P
 async function toolWriteFile(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
   const { path: userPath, content } = args;
   if (!userPath) throw new Error('write_file requires a "path" argument');
-  if (content === undefined) throw new Error('write_file requires a "content" argument');
+  if (typeof content !== 'string') throw new Error('write_file requires a string "content" argument');
   const abs = safePath(cfg.rootDir, userPath);
   assertNotSensitive(abs);
+  const before = existsSync(abs) ? readFileSync(abs, 'utf8') : '';
+  const preview = editPreview(before, content);
   const ok = await confirm(
-    `Agent wants to write file: \x1b[1m${abs}\x1b[0m (${String(content).length} chars)`,
+    `Agent wants to write file: \x1b[1m${abs}\x1b[0m (${String(content).length} chars)\n${preview}`,
     cfg,
     'write_file',
   );
   if (!ok) return 'User denied write operation.';
-  mkdirSync(dirname(abs), { recursive: true });
-  writeFileSync(abs, content, 'utf8');
+  const checked = safePath(cfg.rootDir, userPath);
+  if ((existsSync(checked) ? readFileSync(checked, 'utf8') : '') !== before) {
+    return 'Error: file changed during approval. Read it again before retrying.';
+  }
+  mkdirSync(dirname(checked), { recursive: true });
+  writeFileSync(checked, content, 'utf8');
   return `Written ${String(content).length} bytes to ${userPath}`;
 }
 
@@ -602,7 +611,7 @@ async function toolRunCommand(args: Record<string, any>, cfg: LocalToolsConfig):
   return new Promise((resolve) => {
     execFile(command, injectedArgs.map(String), { cwd: workDir, timeout: timeoutMs, maxBuffer: 1_024 * 1_024 }, (err, stdout, stderr) => {
       const out = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n');
-      if (err && !out) return resolve(`Error: ${err.message}`);
+      if (err) return resolve(`Error: command failed (${err.code ?? 'unknown'}): ${err.message}\n${out}`);
       resolve(out || '(no output)');
     });
   });
@@ -625,7 +634,7 @@ async function toolStartProcess(args: Record<string, any>, cfg: LocalToolsConfig
   );
   if (!ok) return JSON.stringify({ error: 'User denied process start.' });
 
-  const id = `proc_${Date.now().toString(36)}`;
+  const id = `proc_${Date.now().toString(36)}_${managedProcesses.size}`;
   const child = spawn(command, cmdArgs.map(String), {
     cwd: workDir,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -740,6 +749,15 @@ async function toolListProcesses(_args: Record<string, any>, _cfg: LocalToolsCon
     elapsedSec: Math.round((Date.now() - p.startedAt.getTime()) / 1_000),
   }));
   return JSON.stringify(list);
+}
+
+export function stopLocalProcesses(): void {
+  for (const proc of managedProcesses.values()) {
+    if (proc.status === 'running') {
+      proc.child.kill('SIGTERM');
+      proc.status = 'killed';
+    }
+  }
 }
 
 // ── Dispatcher ────────────────────────────────────────────────────────────────

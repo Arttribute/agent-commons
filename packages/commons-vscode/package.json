@@ -1,0 +1,193 @@
+{
+  "name": "agent-commons",
+  "displayName": "Agent Commons",
+  "description": "Your Agent Commons coding workspace: terminal agents, editor context, local tools, and resumable sessions.",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "agent-commons",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Arttribute/agent-commons.git",
+    "directory": "packages/commons-vscode"
+  },
+  "homepage": "https://github.com/Arttribute/agent-commons/tree/main/packages/commons-vscode",
+  "bugs": {
+    "url": "https://github.com/Arttribute/agent-commons/issues"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "agent",
+    "commons",
+    "coding",
+    "terminal",
+    "ai"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Agent Commons runs local file and terminal tools. Trust this workspace to start a session."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "A filesystem and Node.js runtime are required. Remote SSH, WSL, and containers are supported."
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentCommons.open",
+        "title": "Open Coding Workspace",
+        "category": "Agent Commons",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "agentCommons.start",
+        "title": "New Coding Session",
+        "category": "Agent Commons",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agentCommons.resume",
+        "title": "Resume Session",
+        "category": "Agent Commons",
+        "icon": "$(history)"
+      },
+      {
+        "command": "agentCommons.selectAgent",
+        "title": "Select Agent",
+        "category": "Agent Commons",
+        "icon": "$(hubot)"
+      },
+      {
+        "command": "agentCommons.login",
+        "title": "Sign In",
+        "category": "Agent Commons"
+      },
+      {
+        "command": "agentCommons.logout",
+        "title": "Sign Out",
+        "category": "Agent Commons"
+      },
+      {
+        "command": "agentCommons.explain",
+        "title": "Explain Selection or File",
+        "category": "Agent Commons"
+      },
+      {
+        "command": "agentCommons.review",
+        "title": "Review Selection or File",
+        "category": "Agent Commons"
+      },
+      {
+        "command": "agentCommons.refresh",
+        "title": "Refresh",
+        "category": "Agent Commons",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentCommons.settings",
+        "title": "Open Settings",
+        "category": "Agent Commons"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "agentCommons.open",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentCommons",
+          "title": "Agent Commons",
+          "icon": "media/commons.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentCommons": [
+        {
+          "type": "webview",
+          "id": "agentCommons.workspace",
+          "name": "Coding Workspace"
+        }
+      ]
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "agentCommons.explain",
+          "group": "agentCommons@1",
+          "when": "isWorkspaceTrusted && resourceScheme == file"
+        },
+        {
+          "command": "agentCommons.review",
+          "group": "agentCommons@2",
+          "when": "isWorkspaceTrusted && resourceScheme == file"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "agentCommons.refresh",
+          "when": "view == agentCommons.workspace",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Agent Commons",
+      "properties": {
+        "agentCommons.nodePath": {
+          "type": "string",
+          "default": "node",
+          "scope": "machine",
+          "description": "Node.js 22+ executable on the extension host. Use an absolute path if Node is not on PATH."
+        },
+        "agentCommons.localTools": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "read-only",
+            "off"
+          ],
+          "default": "ask",
+          "scope": "window",
+          "description": "Ask before local edits and commands, permit only local reads, or disable local tools. Approved commands have your operating-system permissions."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "package": "vsce package --no-dependencies --out agent-commons.vsix",
+    "vscode:prepublish": "pnpm build"
+  },
+  "devDependencies": {
+    "@agent-commons/cli": "workspace:*",
+    "@types/node": "^22.10.2",
+    "@types/vscode": "1.95.0",
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.7.2"
+  }
+}

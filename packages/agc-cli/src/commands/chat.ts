@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import * as readline from 'readline';
-import { existsSync, mkdirSync, appendFileSync } from 'fs';
+import { existsSync, mkdirSync, appendFileSync, readFileSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { loadConfig, makeClient } from '../config.js';
@@ -11,8 +11,7 @@ import {
   readFileForContext,
   extractToolCall,
   runLocalTool,
-  installGitHook,
-  removeGitHook,
+  stopLocalProcesses,
   type LocalToolsConfig,
 } from '../local-tools.js';
 
@@ -26,6 +25,7 @@ function ensureSessionsDir(): void {
 
 function appendSessionLog(sessionId: string, record: Record<string, unknown>): void {
   try {
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(sessionId)) return;
     ensureSessionsDir();
     const file = join(SESSIONS_DIR, `${sessionId}.jsonl`);
     appendFileSync(file, JSON.stringify(record) + '\n', { mode: 0o600 });
@@ -54,23 +54,35 @@ const LOCAL_TOOLS_DISCLAIMER = `
   ${c.dim('and execute shell commands on your machine.')}
 
   ${c.dim('Rules:')}
-  ${sym.bullet} ${c.dim('All paths are restricted to:')} ${c.primary(process.cwd())}
+  ${sym.bullet} ${c.dim('File tools are restricted to:')} ${c.primary(process.cwd())}
   ${sym.bullet} ${c.dim('Sensitive paths (.ssh, .env, .aws, credentials) are always blocked')}
   ${sym.bullet} ${c.dim('Write and run_command operations require your confirmation')}
-  ${sym.bullet} ${c.dim('You can deny any individual request')}
+  ${sym.bullet} ${c.dim('Approved commands run with your operating-system permissions; they are not sandboxed')}
 
   ${c.dim('Session activity is logged to')} ${c.primary('~/.agc/sessions/')}\n`;
 
 export function chatCommand(): Command {
   return new Command('chat')
-    .description('Start an interactive chat REPL with an agent')
+    .alias('code')
+    .description('Start an interactive coding session with an agent')
+    .argument('[prompt]', 'Initial task to send when the session opens')
+    .option('--prompt-file <path>', 'Read the initial task from a UTF-8 file (maximum 100 KB)')
+    .option('--read-only', 'Allow local reads but deny local edits and commands')
     .option('--agent <agentId>', 'Agent ID (or set defaultAgentId in config)')
     .option('--resume <sessionId>', 'Resume an existing session by ID')
     .option('--computer', 'Give the agent access to its persistent cloud computer')
     .option('--no-stream', 'Disable token streaming (wait for full response)')
     .option('--no-local', 'Disable local file system access for the agent')
-    .action(async (opts) => {
+    .action(async (prompt: string | undefined, opts) => {
+      let initialPrompt = prompt;
+      if (opts.promptFile) {
+        if (prompt) throw new Error('Use either a prompt argument or --prompt-file, not both.');
+        if (statSync(opts.promptFile).size > 100_000) throw new Error('Prompt file exceeds 100 KB.');
+        initialPrompt = readFileSync(opts.promptFile, 'utf8').trim();
+      }
+      if (!process.stdin.isTTY) throw new Error('Interactive coding requires a terminal. Use `agc run` for scripts.');
       const localEnabled = opts.local !== false;
+      if (localEnabled && opts.stream === false) throw new Error('Local tools require streaming. Use --no-local with --no-stream.');
       const cfg = loadConfig();
       let agentId = opts.agent ?? cfg.defaultAgentId;
       if (!agentId && cfg.initiator) {
@@ -130,13 +142,9 @@ export function chatCommand(): Command {
         try {
           const res = await client.sessions.get(sessionId);
           const session = (res as any)?.data ?? res;
-          // If the session belongs to a different agent, warn but continue
-          if (session.agentId && session.agentId !== agentId) {
-            spinner.stop();
-            console.log(c.warn(`  Note: session ${sessionId} was created with agent ${session.agentId}, not ${agentId}`));
-          } else {
-            spinner.stop();
-          }
+          // A resumed session must continue with its original agent.
+          if (session.agentId) agentId = session.agentId;
+          spinner.stop();
         } catch {
           spinner.stop();
           console.error(c.error(`Session "${sessionId}" not found.`));
@@ -164,7 +172,7 @@ export function chatCommand(): Command {
       ]);
 
       // ── Header ──────────────────────────────────────────────────────────────
-      console.log(`\n${c.bold('Agent Commons Chat')}`);
+      console.log(`\n${c.bold('Agent Commons · Code')}`);
       const headerRows: [string, string][] = [
         ['Agent', agentName ? `${agentName}  ${c.dim(agentId)}` : agentId],
         ['Session', c.id(sessionId) + (isResume ? c.dim(' (resumed)') : c.dim(' (new)'))],
@@ -177,7 +185,7 @@ export function chatCommand(): Command {
       // ── Local tools setup ────────────────────────────────────────────────────
       let localToolsCfg: LocalToolsConfig | null = null;
       if (localEnabled) {
-        console.log(LOCAL_TOOLS_DISCLAIMER);
+        console.log(opts.readOnly ? c.dim('  Local read-only mode: edits and commands are denied.\n') : LOCAL_TOOLS_DISCLAIMER);
         const rootDir = process.cwd();
         localToolsCfg = {
           rootDir,
@@ -185,9 +193,8 @@ export function chatCommand(): Command {
           agentId,
           agentName,
           appendLog: (record) => appendSessionLog(sessionId, record),
-          permissions: new Map(),
+          permissions: new Map(opts.readOnly ? ['write_file', 'run_command', 'start_process'].map(key => [key, 'deny' as const]) : []),
         };
-        installGitHook(rootDir, sessionId, agentId, agentName);
         appendSessionLog(sessionId, {
           type: 'local_tools_enabled',
           rootDir,
@@ -205,9 +212,11 @@ export function chatCommand(): Command {
         prompt: c.primary('you') + c.dim(' › '),
       });
 
-      rl.prompt();
+      let busy = false;
+      if (!initialPrompt) rl.prompt();
 
       rl.on('line', async (line: string) => {
+        if (busy) return;
         const input = line.trim();
 
         if (!input) {
@@ -268,6 +277,7 @@ export function chatCommand(): Command {
         }
 
         // ── Send message ─────────────────────────────────────────────────────
+        busy = true;
         rl.pause();
 
         // Log user message to local session file
@@ -289,6 +299,10 @@ export function chatCommand(): Command {
           // e.g. "review @src/index.ts" → reads file and injects its content.
           const atRefs = [...input.matchAll(/@([\S]+)/g)].map((m) => m[1]);
           const fileContextBlocks: string[] = [];
+          if (existsSync(join(rootDir, 'AGENTS.md'))) {
+            fileContextBlocks.push(`Project instructions (AGENTS.md):\n${readFileForContext(rootDir, 'AGENTS.md')}`);
+          }
+          if (opts.readOnly) fileContextBlocks.push('Local read-only mode: do not write files or execute commands. Local reads are available.');
           for (const ref of atRefs) {
             const content = readFileForContext(rootDir, ref);
             fileContextBlocks.push(`**${ref}**\n\`\`\`\n${content}\n\`\`\``);
@@ -307,7 +321,7 @@ export function chatCommand(): Command {
           ...(cliContext && { cliContext }),
         };
 
-        if (opts.noStream) {
+        if (opts.stream === false) {
           process.stdout.write(c.primary('agent') + c.dim(' › '));
           const spinner = spin('thinking…');
           try {
@@ -327,13 +341,13 @@ export function chatCommand(): Command {
             console.error(`\n${sym.fail} ${c.error((err as Error).message ?? String(err))}`);
           }
         } else {
+          const thinkingSpinner = spin('thinking…');
           try {
             let hasOutput = false;
             let agentContent = '';
             let toolStartMs = 0;
             let lastToolName = '';
             // Show thinking spinner until first token arrives
-            const thinkingSpinner = spin('thinking…');
             for await (const event of client.agents.stream(params)) {
               if (event.type === 'token') {
                 if (thinkingSpinner.isSpinning) {
@@ -480,6 +494,8 @@ export function chatCommand(): Command {
           } catch (err) {
             process.stdout.write('\n');
             console.error(`${sym.fail} ${c.error((err as Error).message ?? String(err))}`);
+          } finally {
+            thinkingSpinner.stop();
           }
         }
 
@@ -488,12 +504,13 @@ export function chatCommand(): Command {
         // (terminal echoes them while readline is paused, causing double display)
         readline.cursorTo(process.stdout, 0);
         readline.clearLine(process.stdout, 0);
+        busy = false;
         rl.resume();
         rl.prompt();
       });
 
       const cleanup = () => {
-        if (localToolsCfg) removeGitHook(localToolsCfg.rootDir);
+        stopLocalProcesses();
       };
 
       rl.on('close', () => {
@@ -501,11 +518,22 @@ export function chatCommand(): Command {
         process.exit(0);
       });
 
+      rl.on('SIGINT', () => {
+        cleanup();
+        console.log(c.dim(`\nSession preserved. Resume with: agc code --resume ${sessionId}`));
+        process.exit(130);
+      });
+
       process.on('SIGINT', () => {
         cleanup();
         console.log(c.dim(`\nSession preserved. Resume with: agc chat --resume ${sessionId}`));
         process.exit(130);
       });
+      process.on('SIGTERM', () => { cleanup(); process.exit(143); });
+      if (initialPrompt) {
+        console.log(c.primary('you') + c.dim(' › ') + initialPrompt);
+        rl.emit('line', initialPrompt);
+      }
     });
 }
 
