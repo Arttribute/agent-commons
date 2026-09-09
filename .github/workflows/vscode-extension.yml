@@ -1,0 +1,102 @@
+name: VS Code Extension
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['packages/commons-vscode/**', 'packages/agc-cli/**', 'packages/commons-sdk/**', 'pnpm-lock.yaml', '.github/workflows/vscode-extension.yml']
+  push:
+    branches: [main]
+    tags: ['vscode-v*']
+    paths: ['packages/commons-vscode/**', 'packages/agc-cli/**', 'packages/commons-sdk/**', 'pnpm-lock.yaml', '.github/workflows/vscode-extension.yml']
+  workflow_dispatch:
+    inputs:
+      publish_marketplace:
+        description: 'Publish the tested VSIX using the configured publisher and VSCE_PAT'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --filter agent-commons... --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter @agent-commons/sdk build
+      - run: pnpm --filter @agent-commons/cli typecheck
+      - run: pnpm --filter agent-commons typecheck
+      - run: pnpm --filter agent-commons test
+      - run: pnpm --filter agent-commons build
+      - if: runner.os != 'Windows'
+        run: python3 packages/commons-vscode/test/terminal-smoke.py
+      - name: Test in a real VS Code extension host
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 https://update.code.visualstudio.com/1.95.3/linux-x64/stable --output /tmp/vscode.tar.gz
+          mkdir -p /tmp/commons-vscode-host
+          tar -xzf /tmp/vscode.tar.gz -C /tmp/commons-vscode-host --strip-components=1
+          xvfb-run -a /tmp/commons-vscode-host/code --no-sandbox --disable-gpu --disable-extensions --disable-workspace-trust --skip-welcome --skip-release-notes --user-data-dir=/tmp/commons-vscode-user --extensions-dir=/tmp/commons-vscode-extensions --extensionDevelopmentPath="$PWD/packages/commons-vscode" --extensionTestsPath="$PWD/packages/commons-vscode/test/extension-host.cjs" "$PWD/packages/commons-vscode"
+      - if: runner.os == 'Linux'
+        run: pnpm --filter agent-commons package
+      - if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-commons-vsix
+          path: packages/commons-vscode/agent-commons.vsix
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/vscode-v')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches extension version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./packages/commons-vscode/package.json').version")
+          test "$GITHUB_REF_NAME" = "vscode-v$VERSION"
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-commons-vsix
+      - name: Publish installable VSIX
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" agent-commons.vsix --title "Agent Commons for VS Code $GITHUB_REF_NAME" --notes-file packages/commons-vscode/CHANGELOG.md --verify-tag
+
+  marketplace:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_marketplace && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --filter agent-commons... --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-commons-vsix
+      - name: Publish to Visual Studio Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          test -n "$VSCE_PAT" || { echo 'Configure VSCE_PAT for the publisher in package.json before publishing.'; exit 1; }
+          pnpm --filter agent-commons exec vsce publish --packagePath ../../agent-commons.vsix
