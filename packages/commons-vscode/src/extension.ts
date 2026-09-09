@@ -30,7 +30,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let attachments: Attachment[] = [],
     approval: any,
     activeReply: Message | undefined;
-  let agent = context.workspaceState.get<Agent>('agent');
+  let agent: Agent | undefined;
   let sessionMode: ToolMode | undefined;
   let lastEditor = vscode.window.activeTextEditor;
   const snapshots = new Map<string, string>();
@@ -145,6 +145,7 @@ export function activate(context: vscode.ExtensionContext): void {
       current = undefined;
       attachments = [];
       sessions = [];
+      agent = context.workspaceState.get<Agent>(`agent:${nextAccount.userId}`);
     }
     account = nextAccount;
     if (account?.authenticated) {
@@ -199,6 +200,8 @@ export function activate(context: vscode.ExtensionContext): void {
     error = '';
     state();
     try {
+      if (!account) account = await runtime.request('account');
+      if (!account?.authenticated) throw new Error('Sign in to start chatting.');
       const root = await folder();
       if (!current)
         current = {
@@ -349,6 +352,7 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   async function selectAgent() {
     idle();
+    if (!account) await refresh();
     if (current) throw new Error('Start a new chat to choose another agent.');
     const agents: Agent[] = await runtime.request('agents');
     const picked = await vscode.window.showQuickPick(
@@ -357,7 +361,7 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     if (picked) {
       agent = picked.agent;
-      await context.workspaceState.update('agent', agent);
+      await context.workspaceState.update(`agent:${account?.userId}`, agent);
       state();
     }
   }

@@ -14,7 +14,11 @@ async function fixture(t, options = {}) {
     JSON.stringify(
       options.signedOut
         ? {}
-        : { apiKey: 'fixture-key', initiator: 'fixture-user', defaultAgentId: 'agent-1' }
+        : {
+            apiKey: 'fixture-key',
+            initiator: 'fixture-user',
+            defaultAgentId: options.staleDefault ? 'old-account-agent' : 'agent-1',
+          }
     )
   );
   await fs.writeFile(path.join(root, 'AGENTS.md'), 'Verify all edits.');
@@ -95,6 +99,8 @@ async function fixture(t, options = {}) {
       upload = raw.includes('picture.png');
       return json({ data: [{ fileId: 'file-1' }] });
     }
+    if (req.url.startsWith('/v1/agents?'))
+      return json({ data: [{ agentId: 'agent-1', name: 'My agent', isDefault: true }] });
     if (req.url.endsWith('/chat'))
       return json({
         data: {
@@ -243,5 +249,16 @@ test(
       f.rpc('send', { prompt: 'test', root: f.root, mode: 'off' }),
       /connection ended/
     );
+  }
+);
+
+test(
+  'a stale CLI default cannot select a previous account agent',
+  { timeout: 15000 },
+  async (t) => {
+    const f = await fixture(t, { staleDefault: true, approve: false });
+    await f.rpc('send', { prompt: 'test', root: f.root, mode: 'off' });
+    assert.equal(f.calls[0].agentId, 'agent-1');
+    assert.equal(f.calls[0].initiatorId, 'fixture-user');
   }
 );

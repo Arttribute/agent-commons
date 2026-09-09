@@ -107,9 +107,18 @@ async function send(input: any) {
     let agentId = input.agentId ?? cfg.defaultAgentId;
     let session = input.sessionId ? unwrap(await client.sessions.get(input.sessionId)) : undefined;
     if (session) agentId = session.agentId;
-    if (!agentId) {
+    if (!session) {
       const agents = unwrap(await client.agents.list(initiator));
-      agentId = agents.find((a: any) => a.isDefault)?.agentId ?? agents[0]?.agentId;
+      if (input.agentId && !agents.some((a: any) => a.agentId === input.agentId)) {
+        throw new Error(
+          'This agent is not available in your account. Start a new chat and choose another agent.'
+        );
+      }
+      agentId =
+        input.agentId ??
+        agents.find((a: any) => a.agentId === cfg.defaultAgentId)?.agentId ??
+        agents.find((a: any) => a.isDefault)?.agentId ??
+        agents[0]?.agentId;
     }
     if (!agentId) throw new Error('Create an agent in Commons, then select it here.');
     if (!session)
@@ -304,6 +313,7 @@ async function send(input: any) {
         sawFinal = false;
       for await (const event of client.agents.stream({
         agentId,
+        initiatorId: initiator,
         sessionId: session.sessionId,
         messages: [{ role: 'user', content: prompt }],
         cliContext,
