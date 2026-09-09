@@ -149,6 +149,10 @@ export interface LocalToolsConfig {
   agentName?: string;
   /** When true, all confirmation prompts are automatically approved. */
   autoApprove?: boolean;
+  /** Optional UI approval handler for embedded clients. */
+  confirm?: (message: string, permissionKey: string) => Promise<boolean>;
+  /** Abort foreground commands when an embedded session is stopped. */
+  signal?: AbortSignal;
 }
 
 // ── Tool manifest injected as a system message at session start ───────────────
@@ -394,6 +398,7 @@ async function confirm(
   if (cached === 'allow') return true;
   if (cached === 'deny') return false;
   if (config.autoApprove) return true;
+  if (config.confirm) return config.confirm(message, permissionKey);
 
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -609,7 +614,7 @@ async function toolRunCommand(args: Record<string, any>, cfg: LocalToolsConfig):
   }
 
   return new Promise((resolve) => {
-    execFile(command, injectedArgs.map(String), { cwd: workDir, timeout: timeoutMs, maxBuffer: 1_024 * 1_024 }, (err, stdout, stderr) => {
+    execFile(command, injectedArgs.map(String), { cwd: workDir, timeout: timeoutMs, maxBuffer: 1_024 * 1_024, signal: cfg.signal }, (err, stdout, stderr) => {
       const out = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n');
       if (err) return resolve(`Error: command failed (${err.code ?? 'unknown'}): ${err.message}\n${out}`);
       resolve(out || '(no output)');

@@ -38,6 +38,13 @@ jobs:
       - run: pnpm --filter agent-commons typecheck
       - run: pnpm --filter agent-commons test
       - run: pnpm --filter agent-commons build
+      - name: Test chat UI in Chromium
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/commons-browser" playwright@1.63.0 --no-audit --no-fund
+          "$RUNNER_TEMP/commons-browser/node_modules/.bin/playwright" install --with-deps chromium
+          COMMONS_PLAYWRIGHT_PATH="$RUNNER_TEMP/commons-browser/node_modules/playwright" pnpm --filter agent-commons exec node test/browser-smoke.cjs
       - if: runner.os != 'Windows'
         run: python3 packages/commons-vscode/test/terminal-smoke.py
       - name: Test in a real VS Code extension host

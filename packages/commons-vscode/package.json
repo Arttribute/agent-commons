@@ -1,8 +1,8 @@
 {
   "name": "agent-commons",
   "displayName": "Agent Commons",
-  "description": "Your Agent Commons coding workspace: terminal agents, editor context, local tools, and resumable sessions.",
-  "version": "0.1.0",
+  "description": "Your Agent Commons coding companion: streaming chat, file attachments, local edits, and resumable conversations.",
+  "version": "0.2.0",
   "private": true,
   "publisher": "AgentCommons",
   "license": "MIT",
@@ -28,7 +28,7 @@
     "agent",
     "commons",
     "coding",
-    "terminal",
+    "chat",
     "ai"
   ],
   "extensionKind": [
@@ -52,9 +52,9 @@
     "commands": [
       {
         "command": "agentCommons.open",
-        "title": "Open Coding Workspace",
+        "title": "Open Chat",
         "category": "Agent Commons",
-        "icon": "$(terminal)"
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "agentCommons.start",
@@ -127,7 +127,7 @@
         {
           "type": "webview",
           "id": "agentCommons.workspace",
-          "name": "Coding Workspace"
+          "name": "Chat"
         }
       ]
     },
@@ -144,13 +144,7 @@
           "when": "isWorkspaceTrusted && resourceScheme == file"
         }
       ],
-      "view/title": [
-        {
-          "command": "agentCommons.refresh",
-          "when": "view == agentCommons.workspace",
-          "group": "navigation"
-        }
-      ]
+      "view/title": []
     },
     "configuration": {
       "title": "Agent Commons",
