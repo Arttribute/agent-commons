@@ -180,6 +180,7 @@ export function activate(context: vscode.ExtensionContext): void {
   async function newChat() {
     idle();
     await persist();
+    runtime.dispose();
     current = undefined;
     attachments = [];
     sessionMode = undefined;
@@ -314,6 +315,7 @@ export function activate(context: vscode.ExtensionContext): void {
     state();
     try {
       await persist();
+      runtime.dispose();
       let saved: ChatSession | undefined;
       const path = storagePath(id);
       if (path) {
@@ -380,6 +382,7 @@ export function activate(context: vscode.ExtensionContext): void {
     idle();
     await persist();
     await runtime.request('logout');
+    runtime.dispose();
     account = { authenticated: false };
     sessions = [];
     current = undefined;

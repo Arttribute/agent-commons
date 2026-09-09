@@ -169,6 +169,38 @@ const path = require('node:path');
       true
     );
   }
+  await page.locator('#home').click();
+  for (const width of [280, 390, 700]) {
+    await page.setViewportSize({ width, height: 820 });
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true
+    );
+  }
+  await page.setViewportSize({ width: 390, height: 820 });
+  await page.evaluate(() => {
+    const theme = {
+      '--vscode-sideBar-background': '#fafafa',
+      '--vscode-editor-background': '#ffffff',
+      '--vscode-foreground': '#262626',
+      '--vscode-descriptionForeground': '#757575',
+      '--vscode-widget-border': '#dedede',
+      '--vscode-list-hoverBackground': '#f0f0f0',
+      '--vscode-button-background': '#333333',
+      '--vscode-button-foreground': '#ffffff',
+    };
+    for (const [key, value] of Object.entries(theme))
+      document.documentElement.style.setProperty(key, value);
+  });
+  state.current.messages[1].content =
+    'Review [search.tsx](src/search.tsx:12) for the updated behavior.';
+  await update();
+  await page.locator('.file-link').click();
+  assert.deepEqual(await page.evaluate(() => window.sent.at(-1)), {
+    type: 'openFile',
+    path: 'src/search.tsx:12',
+  });
+  await page.screenshot({ path: '/tmp/commons-chat-light.png' });
   assert.deepEqual(errors, []);
   await browser.close();
   server.close();

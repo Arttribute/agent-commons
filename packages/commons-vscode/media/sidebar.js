@@ -252,6 +252,7 @@
       $('approval-title').textContent =
         state.approval.tool === 'write_file' ? 'Allow this file edit?' : 'Allow this command?';
       $('approval-detail').textContent = state.approval.message;
+      $('approval-summary').textContent = state.approval.message.split('\n')[0];
     }
     $('account-name').textContent = state.account?.name || 'Commons account';
     $('account-email').textContent = state.account?.email || state.account?.userId || '';

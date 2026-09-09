@@ -764,3 +764,10 @@ body.vscode-high-contrast-light button {
   text-decoration: underline;
   background: transparent;
 }
+
+#approval-summary {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  margin: 6px 0;
+  color: var(--muted);
+}
