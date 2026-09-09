@@ -1,106 +1,101 @@
 # Agent Commons for VS Code
 
-A focused coding workspace for your Agent Commons agents. Start a task in the
-sidebar, work in a native terminal, and keep your editor close to the conversation.
+Your agents, right beside your code. Chat with Agent Commons, attach files, review
+local edits, and return to earlier conversations without opening a terminal.
 
-## Install
+![Agent Commons chat with expandable file changes](media/chat-preview.png)
 
-Download `agent-commons.vsix` from the
-[latest VS Code release](https://github.com/Arttribute/agent-commons/releases?q=vscode-v&expanded=true).
-In VS Code, run **Extensions: Install from VSIX…**, select the download, and reload
-if prompted. You can also install from the command line:
+## Get started
 
-```sh
-code --install-extension agent-commons.vsix
-```
+1. Install [Agent Commons from the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=AgentCommons.agent-commons).
+2. Open a project folder and click **Agent Commons** in the Activity Bar
+   (`Cmd+Alt+A` / `Ctrl+Alt+A`).
+3. Select **Continue with Commons** and approve sign-in in your browser.
+4. Choose an agent in the composer and describe what you want to build.
 
-Requires VS Code 1.95 or newer and **Node.js 22 or newer** on the machine running
-the extension. For SSH, WSL, and Dev Containers, install Node on the remote host.
-A Commons account and an agent are required; model usage follows your Commons
-account's billing. The extension itself is free and MIT licensed.
+Requires VS Code 1.95+ and Node.js 22+ on the extension host. For Remote SSH, WSL,
+and Dev Containers, install Node on the remote host. A Commons account and agent
+are required; usage follows your account's billing. The extension is free.
 
-The extension bundles its CLI runtime. A global npm installation is not required.
-Marketplace publication is a separate release step; do not assume a Marketplace
-listing exists until it is linked in a release announcement.
+The Node runtime is bundled. You do not need to install the CLI separately.
+For an offline extension installation, download `agent-commons.vsix` from the
+[GitHub releases](https://github.com/Arttribute/agent-commons/releases) and run
+**Extensions: Install from VSIX…**.
 
-## Start building
+## Chat and context
 
-1. Open a project folder and trust the workspace.
-2. Click **Agent Commons** in the Activity Bar (`Cmd+Alt+A` / `Ctrl+Alt+A`).
-3. Choose **Sign in**. Complete the browser device-code flow in the account terminal.
-4. Choose **Change** to select your agent, or use the account's default agent.
-5. Describe your task and select **Start session**. Continue in the Commons terminal.
+- Stream responses directly in the sidebar. **Enter** sends; **Shift+Enter** adds a line.
+- Use **+** to attach files or the current editor file/selection, including unsaved text.
+- Drop files onto the composer or paste images. Remove attachment chips before sending.
+- Attach up to 10 files, each up to 10 MB. Small text files are included as context;
+  images, documents, and larger files use Commons file uploads.
+- Use `@src/file.ts` to reference a project file when local tools are enabled.
+- Right-click code to **Explain Selection or File** or **Review Selection or File**.
+  These actions start a fresh read-only conversation.
+- Your agent controls model selection. Choose another agent in a new chat to change it.
+- The stop button ends local processing and disconnects the stream. Remote tools
+  already in progress may finish on the server.
 
-The terminal streams the response, shows local tool activity, asks before edits
-and command execution, and displays token/cost information when the API supplies it.
-A root `AGENTS.md` is included as project instructions on each local-tools turn.
-Use `@src/file.ts` references to attach additional files.
+## History and changes
 
-## Editor and session workflow
+The history button opens searchable conversations across your agents. Filter to
+**This project** for chats previously opened in this project, rename a chat from
+its row menu, or select one to continue with its original agent. The new-chat
+button starts a separate conversation. Each chat keeps its own composer draft.
+Only one response runs at a time in a VS Code window.
 
-- Right-click code and choose **Agent Commons: Explain Selection or File** or
-  **Review Selection or File**. These start a session with local read-only permissions.
-- Selected text is included directly; with no selection, the current file is included.
-  Unsaved editor content is supported. The maximum initial task size is 100 KB.
-- **Resume a session** lists your account's sessions and continues with the original
-  agent in your selected project. Verify the project matches the session's work.
-- Multiple project folders are supported. Editor actions use the file's project;
-  new sessions use the active file's project or ask you to choose a folder.
-- Use `/help`, `/tools`, `/session`, `/clear`, and `/quit` in the terminal.
-  `Ctrl+C` exits the CLI; resume the preserved session later. Closing a terminal
-  ends its local process; it does not delete the remote conversation.
+Tool activity starts collapsed. Expand it to inspect commands, arguments, and
+results. File-change cards show replacement-hunk line counts and expandable
+previews. **Review in editor** opens saved before/after snapshots in the native
+VS Code diff editor. File references in responses open inside your project.
 
-## Permissions and data
+Direct file-tool writes are captured as they happen. In Git projects, completed
+turns also compare text files before and after commands (up to 500 KB per file and
+10 MB per snapshot). Binary files and files beyond these bounds are not included.
+Changes made concurrently by another editor or process can appear in this comparison.
+Use Source Control for a complete repository diff. An unsaved editor buffer blocks
+agent writes to that file until you save it.
 
-| Setting | Local behavior |
+## Account and permissions
+
+The account button shows your identity, a link to Commons account settings, agent
+selection, extension settings, and sign-out. Browser sign-in uses a one-time code;
+no password or API key is entered into the webview. Signing out also signs the
+shared CLI out on this machine.
+
+| Mode | Local behavior |
 | --- | --- |
-| `ask` (default) | Read project files; ask before edits, commands, and background processes |
-| `read-only` | Read project files; deny local edits and commands |
-| `off` | Disable local file and command tools |
+| Ask before edits | Read project files; ask in chat before each edit or command |
+| Read only | Read project files; deny edits and command execution |
+| Tools off | Disable local tools; explicitly attached context is still sent |
 
-Use **Agent Commons: Open Settings** to configure `agentCommons.localTools` and
-`agentCommons.nodePath`. The Node executable setting is machine-scoped. Read-only
-applies to local tools; an agent's remote platform tools follow its Commons permissions.
+Approved commands run with your operating-system permissions. They are not sandboxed.
+Local file tools reject project escapes, symlink escapes, and common credential
+locations such as `.env`, `.ssh`, `.aws`, and `.agc`. Explicit file-picker attachments
+may be outside the project. The filter is not a comprehensive secret scanner.
+Local permissions do not change the agent's remote platform permissions.
 
-File tools reject paths outside the project, including symlink escapes, and block
-common credential locations such as `.env`, `.ssh`, `.aws`, and `.agc`.
-**Approved commands run with your OS account's permissions and are not sandboxed.**
-Review the command and working directory before approving. A blank answer denies
-an operation; `y` approves once, `n` denies once, `A` allows that operation type for
-the session, and `N` denies that type for the session.
+Prompts, attached files, project instructions (`AGENTS.md`), and tool results are
+processed by Agent Commons and the agent's model provider. The extension adds no
+analytics. Credentials remain in the CLI's protected `~/.agc/config.json`; they
+never enter webview state or process arguments. Conversation and diff snapshots
+are stored in VS Code workspace storage, separated by account. Drafts use webview
+state. Sign-out hides history but does not delete local snapshots or remote chats.
 
-Prompts, attached editor content, project instructions, directory listings, and
-requested tool results are sent to Agent Commons and the selected model provider.
-Sensitive-path filtering is a guardrail, not a comprehensive secret scanner.
-Review selected content before submitting it. The extension adds no analytics.
+## Settings and troubleshooting
 
-Sign-in uses the CLI's protected `~/.agc/config.json`; credentials are never stored
-in workspace settings or sent to the sidebar. The sidebar persists an unfinished
-draft in VS Code webview state. Initial prompts are passed using user-only temporary
-files, removed when their terminal closes or the extension deactivates. Session
-logs (which can contain code and tool output) live in `~/.agc/sessions/`.
-Use **Agent Commons: Sign Out** to clear the shared CLI login. This does not delete
-remote sessions or local logs.
+Use **Agent Commons: Open Settings** to configure:
 
-## Use the terminal outside VS Code
+- `agentCommons.nodePath`: Node.js 22+ executable, machine-scoped. Set an absolute
+  path if Node is not on PATH, then reload the window.
+- `agentCommons.localTools`: default permission mode for new chats.
 
-Once the corresponding CLI version is released to npm:
+If sign-in expires, retry for a fresh code. If agents or history fail to load, check
+your network and sign in again. Create your first agent at
+[Agent Commons](https://www.agentcommons.io) if your account has none.
+Browser-only VS Code and untrusted workspaces are unsupported.
 
-```sh
-npm install --global @agent-commons/cli
-agc login
-agc code "Investigate the failing tests and propose a fix"
-agc code --read-only "Explain this repository"
-agc code --resume SESSION_ID
-```
-
-`agc chat` remains supported. `agc run` is the noninteractive command for scripts.
-For development before npm release, run `node packages/agc-cli/dist/bin.js code`
-from the monorepo after building the CLI.
-
-## Development and verification
-
-From the monorepo root:
+## Development
 
 ```sh
 pnpm install --frozen-lockfile
@@ -113,36 +108,14 @@ python3 packages/commons-vscode/test/terminal-smoke.py
 pnpm --filter agent-commons package
 ```
 
-The Python PTY test requires macOS/Linux and exercises streaming, local-tool
-approval/denial, read-only mode, initial prompts, instructions, and resume against
-a local API fixture without using a real account. Unit tests run on all platforms.
-Open `packages/commons-vscode` in VS Code and press **F5** to launch the extension
-host. `test/extension-host.cjs` also runs with VS Code's `--extensionTestsPath` flag.
-A live account/model smoke test is still recommended before announcing a release.
+`test/extension-host.cjs` runs with VS Code's `--extensionTestsPath` flag.
+`test/browser-smoke.cjs` exercises the webview in Playwright; install Playwright or
+set `COMMONS_PLAYWRIGHT_PATH` to its module. Optionally set
+`COMMONS_BROWSER_EXECUTABLE` to a Chromium executable.
+Tests use isolated accounts and API fixtures, including browser authorization,
+streaming, attachment upload, edit approval/denial, history, and stream failures.
 
-## Publishing
-
-The `VS Code Extension` GitHub workflow builds and tests pull requests and main.
-A `vscode-vX.Y.Z` tag matching this package's version creates a public GitHub release
-with an installable VSIX. The release does not need Marketplace credentials.
-
-For Marketplace publication, create/verify a publisher account, set `publisher` in
-`package.json` to its exact ID, and configure the repository secret **VSCE_PAT** with
-permission to publish for that account. Run the workflow manually from main with
-`publish_marketplace` enabled. The workflow packages and tests before publishing.
-See Microsoft's [publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension).
-Do not commit publishing credentials. Version this private workspace package manually;
-it is distributed through VSIX/Marketplace, while the public CLI uses Changesets/npm.
-
-## Troubleshooting
-
-- **Node not found:** install Node 22+ on the extension host, reload VS Code, or set
-  an absolute **Agent Commons: Node Path** in your user settings.
-- **Cannot load agents/sessions:** sign in again and check account/network access.
-- **Restricted Mode:** trust a project you own before starting local tools.
-- **No agents:** create an agent at [Agent Commons](https://www.agentcommons.io), then select it.
-- **Web editor:** browser-only VS Code is unsupported; use desktop or a remote workspace host.
-
-[Report an issue](https://github.com/Arttribute/agent-commons/issues) with your OS,
-VS Code version, Node version, and reproduction steps. Remove credentials and
-private source code from logs before sharing them.
+The `VS Code Extension` workflow tests Linux, Windows, and macOS. A `vscode-vX.Y.Z`
+tag matching the package version publishes a GitHub release and VSIX. A manual
+workflow run on main with `publish_marketplace` enabled publishes that tested
+artifact using the `VSCE_PAT` repository secret. Never commit publishing credentials.

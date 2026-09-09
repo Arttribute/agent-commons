@@ -69,3 +69,23 @@ test('edit preview shows changed lines, omits distant context, and strips escape
   assert.equal(editPreview('same', 'same'), '(no content change)');
   assert.match(editPreview('', 'a'.repeat(100), 20), /truncated/);
 });
+test('embedded approval handler cannot bypass denied permissions and detects concurrent edits', async t => {
+  const { root, cfg } = fixture(t);
+  writeFileSync(join(root, 'file'), 'original');
+  let approvals = 0;
+  cfg.confirm = async () => { approvals++; writeFileSync(join(root, 'file'), 'user edit'); return true; };
+  const call = { tool: 'write_file', args: { path: 'file', content: 'agent edit' } };
+  assert.match(await runLocalTool(call, cfg), /file changed during approval/);
+  assert.equal(readFileSync(join(root, 'file'), 'utf8'), 'user edit');
+  cfg.permissions.set('write_file', 'deny');
+  assert.match(await runLocalTool(call, cfg), /denied/);
+  assert.equal(approvals, 1);
+});
+test('stopping an embedded session aborts its foreground command', async t => {
+  const { cfg } = fixture(t);
+  cfg.permissions.set('run_command', 'allow');
+  const controller = new AbortController(); cfg.signal = controller.signal;
+  const running = runLocalTool({ tool: 'run_command', args: { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'] } }, cfg);
+  setTimeout(() => controller.abort(), 50);
+  assert.match(await running, /Error:.*abort/i);
+});
