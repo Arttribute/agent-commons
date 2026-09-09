@@ -137,7 +137,7 @@ export function activate(context: vscode.ExtensionContext): void {
     start: () => start(), resume, selectAgent,
     login: () => openTerminal(['login']), logout: () => openTerminal(['logout']),
     explain: () => editorTask('explain'), review: () => editorTask('review'), refresh,
-    settings: () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:agent-commons.agent-commons'),
+    settings: () => vscode.commands.executeCommand('workbench.action.openSettings', `@ext:${context.extension.id}`),
   };
   async function run(action: () => unknown): Promise<void> {
     try { await action(); } catch (error) {

@@ -4,7 +4,7 @@
   "description": "Your Agent Commons coding workspace: terminal agents, editor context, local tools, and resumable sessions.",
   "version": "0.1.0",
   "private": true,
-  "publisher": "agent-commons",
+  "publisher": "AgentCommons",
   "license": "MIT",
   "icon": "media/icon.png",
   "repository": {

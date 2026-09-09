@@ -4,7 +4,8 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 exports.run = async function () {
-  const extension = vscode.extensions.getExtension('agent-commons.agent-commons');
+  const manifest = require('../package.json');
+  const extension = vscode.extensions.getExtension(`${manifest.publisher}.${manifest.name}`);
   assert.ok(extension, 'Extension is discoverable');
   await extension.activate();
   assert.equal(extension.isActive, true);
