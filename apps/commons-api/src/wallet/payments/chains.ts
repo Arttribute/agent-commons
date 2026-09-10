@@ -1,6 +1,18 @@
 import { defineChain, type Address } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 export const WALLET_CHAINS = {
+  '11142220': {
+    chain: defineChain({
+      id: 11142220,
+      name: 'Celo Sepolia',
+      nativeCurrency: { name: 'CELO', symbol: 'CELO', decimals: 18 },
+      rpcUrls: {
+        default: { http: ['https://forno.celo-sepolia.celo-testnet.org'] },
+      },
+      testnet: true,
+    }),
+    token: '0x01C5C0122039549AD1493B8220cABEdD739BC44E' as Address,
+  },
   '84532': {
     chain: baseSepolia,
     token: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as Address,

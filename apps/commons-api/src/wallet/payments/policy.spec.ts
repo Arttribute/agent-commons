@@ -20,6 +20,28 @@ const requirement = {
   maxTimeoutSeconds: 60,
 };
 describe('owner spending policy', () => {
+  it('accepts canonical Celo Sepolia USDC while rejecting legacy and mainnet Celo grants', () => {
+    const celo: SpendingPolicy = {
+      ...policy,
+      network: 'eip155:11142220',
+      asset: '0x01C5C0122039549AD1493B8220cABEdD739BC44E',
+    };
+    expect(validateSpendingPolicy(celo)).toEqual(celo);
+    expect(() =>
+      assertRequirement(
+        celo,
+        { ...requirement, network: celo.network, asset: celo.asset },
+        celo.origin,
+      ),
+    ).not.toThrow();
+    for (const network of ['eip155:44787', 'eip155:42220'])
+      expect(() =>
+        validateSpendingPolicy({ ...celo, network } as SpendingPolicy),
+      ).toThrow();
+    expect(() =>
+      validateSpendingPolicy({ ...celo, asset: policy.asset }),
+    ).toThrow();
+  });
   it('accepts only exact approved testnet USDC requirements', () =>
     expect(() =>
       assertRequirement(policy, requirement, policy.origin + '/v1/analysis'),
