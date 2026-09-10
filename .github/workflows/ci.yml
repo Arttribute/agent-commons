@@ -79,3 +79,6 @@ jobs:
         env:
           PAYMENT_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
         run: pnpm --filter commons-api exec jest --runInBand 'wallet/payments|modules/x402/x402.guard.spec.ts'
+
+      - name: Test shared agent checkpoint pool
+        run: pnpm --filter commons-api exec jest --runInBand agent/checkpoint-store.spec.ts

@@ -16,6 +16,10 @@ export const DatabaseServiceProvider: FactoryProvider<
     const isLambda = Boolean(process.env.LAMBDA_TASK_ROOT);
 
     const queryClient = postgres({
+      // Leave capacity for the checkpoint pool and rolling task replacement.
+      max: 4,
+      idle_timeout: 30,
+      connect_timeout: 10,
       host: process.env.POSTGRES_HOST || '',
       port: isLambda
         ? 6543
