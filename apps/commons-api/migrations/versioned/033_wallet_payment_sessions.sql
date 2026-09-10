@@ -1,7 +1,7 @@
 -- Explicit, owner-created spending grants. Reserved amounts are retained after ambiguous
 -- network failures: a lost response cannot prove an authorization was not settled.
 CREATE TABLE IF NOT EXISTS wallet_payment_session (
- id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
  agent_id text NOT NULL REFERENCES agent(agent_id) ON DELETE CASCADE,
  wallet_id uuid NOT NULL REFERENCES agent_wallet(id) ON DELETE CASCADE,
  runtime_session_id text NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS wallet_payment_session (
  created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS wallet_payment_attempt (
- id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
  payment_session_id uuid NOT NULL REFERENCES wallet_payment_session(id) ON DELETE CASCADE,
  idempotency_key text NOT NULL,
  amount_units numeric(78,0) NOT NULL CHECK(amount_units > 0),
