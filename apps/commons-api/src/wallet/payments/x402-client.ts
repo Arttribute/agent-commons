@@ -3,6 +3,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex } from 'viem';
 import { safeFetch } from '~/utils/safe-fetch';
 import { assertRequirement, type SpendingPolicy } from './policy';
+import { readSettlement } from './x402-settlement';
 export interface PaymentExecution {
   policy: SpendingPolicy;
   privateKey: Hex;
@@ -127,8 +128,10 @@ export async function payX402Challenge(
       redirect: 'error',
       signal: AbortSignal.timeout(60000),
     });
-    const settlement = httpClient.getPaymentSettleResponse((name) =>
-      response.headers.get(name),
+    // A rejected payment (for example an unfunded wallet) has no settlement
+    // header. Preserve that 402 response instead of throwing an unrelated 500.
+    const settlement = readSettlement(response, (getHeader) =>
+      httpClient.getPaymentSettleResponse(getHeader),
     );
     if (attemptId)
       await execution.finish(
