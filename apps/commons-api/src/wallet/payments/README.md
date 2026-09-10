@@ -10,6 +10,7 @@ Routes below are relative to the existing authenticated `/wallets` controller:
 
 - `GET agent/:agentId/runtime-sessions`: owner-visible recent session summaries.
 - `GET :walletId/balance?chainId=84532`: canonical USDC and native gas balances on Base Sepolia, Base, Arc testnet or Hedera testnet.
+- Celo Sepolia uses `chainId=11142220` and `network=eip155:11142220`, with canonical USDC `0x01C5C0122039549AD1493B8220cABEdD739BC44E`. It supports the same bounded grants, x402 authorizations and Arcade deposits. Celo mainnet and obsolete Alfajores grants remain disabled.
 - `POST agent/:agentId/payment-sessions`: the user owner creates a grant with `walletId`, `runtimeSessionId`, `policy`, `budgetUnits`, and `expiresAt` (at most 24 hours).
 - `GET agent/:agentId/payment-sessions`: inspect grants, including revocations and expiry.
 - `GET agent/:agentId/payment-sessions/:id/attempts`: inspect reserved payments and settlement evidence.

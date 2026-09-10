@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 export interface SpendingPolicy {
-  network: 'eip155:84532' | 'eip155:5042002' | 'hedera:testnet';
+  network:
+    'eip155:84532' | 'eip155:5042002' | 'eip155:11142220' | 'hedera:testnet';
   arcade?: {
     poolId: string;
     seatId: string;
@@ -15,6 +16,7 @@ export interface SpendingPolicy {
 const ASSETS: Record<string, string> = {
   'eip155:84532': '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
   'eip155:5042002': '0x3600000000000000000000000000000000000000',
+  'eip155:11142220': '0x01C5C0122039549AD1493B8220cABEdD739BC44E',
   'hedera:testnet': '0.0.429274',
 };
 export function positiveUnits(value: unknown): bigint {
