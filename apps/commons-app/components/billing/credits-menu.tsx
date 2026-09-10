@@ -51,7 +51,11 @@ export function CreditsMenu() {
   useEffect(() => {
     void load();
     window.addEventListener("focus", load);
-    return () => window.removeEventListener("focus", load);
+    window.addEventListener("credits-updated", load);
+    return () => {
+      window.removeEventListener("focus", load);
+      window.removeEventListener("credits-updated", load);
+    };
   }, [load]);
 
   useEffect(() => {

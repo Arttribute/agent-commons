@@ -93,6 +93,39 @@ describe('CreditService', () => {
     expect(db._insertReturning).not.toHaveBeenCalled();
   });
 
+  it('replays a gift without another transfer and rejects reused keys with different details', async () => {
+    const gift = {
+      senderPrincipalId: 'usr_sender',
+      recipientPrincipalId: 'usr_recipient',
+      amount: 50,
+      idempotencyKey: 'gift-retry',
+      message: 'Enjoy',
+    };
+    const existing = { ...gift, transferId: 'transfer-1' };
+    const tx = {
+      execute: jest.fn().mockResolvedValue([]),
+      query: {
+        creditTransfer: { findFirst: jest.fn().mockResolvedValue(existing) },
+      },
+      insert: jest.fn(),
+    };
+    const service = new CreditService({
+      transaction: (callback: any) => callback(tx),
+    } as any);
+    await expect(service.gift(gift)).resolves.toEqual(existing);
+    for (const change of [
+      { senderPrincipalId: 'usr_other' },
+      { recipientPrincipalId: 'usr_other' },
+      { amount: 100 },
+      { message: 'Different gift' },
+    ]) {
+      await expect(service.gift({ ...gift, ...change })).rejects.toMatchObject({
+        status: 400,
+      });
+    }
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
+
   it('rejects debits that would overdraw the balance', async () => {
     const db = makeDb(undefined, 10);
     const service = await makeService(db);

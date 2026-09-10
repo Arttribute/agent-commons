@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { ArrowUpRight, Gift, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -69,7 +76,12 @@ export function BillingPanel() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [recipientEmail, setRecipientEmail] = useState("");
+  const [recipientType, setRecipientType] = useState<"email" | "userId">(
+    "email",
+  );
+  const [recipient, setRecipient] = useState("");
+  const pendingGift = useRef<{ fingerprint: string; key: string } | null>(null);
+  const giftInFlight = useRef(false);
   const [giftAmount, setGiftAmount] = useState("50");
   const [giftMessage, setGiftMessage] = useState("");
 
@@ -97,11 +109,14 @@ export function BillingPanel() {
   const renewal = useMemo(
     () =>
       subscription?.currentPeriodEnd
-        ? new Date(subscription.currentPeriodEnd).toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })
+        ? new Date(subscription.currentPeriodEnd).toLocaleDateString(
+            undefined,
+            {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            },
+          )
         : null,
     [subscription?.currentPeriodEnd],
   );
@@ -136,22 +151,62 @@ export function BillingPanel() {
 
   async function sendGift(event: FormEvent) {
     event.preventDefault();
-    try {
-      await post(
-        "/api/credits/gifts",
-        {
-          recipientEmail: recipientEmail.trim(),
-          amount: Number(giftAmount),
-          message: giftMessage.trim() || undefined,
-          idempotencyKey: `web-gift:${crypto.randomUUID()}`,
-        },
-        "gift",
+    if (giftInFlight.current) return;
+    const amount = Number(giftAmount);
+    if (!Number.isSafeInteger(amount) || amount < 10 || amount > balance) {
+      setNotice(
+        "Enter a whole amount of at least 10 credits within your available balance.",
       );
-      setRecipientEmail("");
+      return;
+    }
+    const details = {
+      ...(recipientType === "email"
+        ? { recipientEmail: recipient.trim().toLowerCase() }
+        : { recipientPrincipalId: recipient.trim() }),
+      amount,
+      message: giftMessage.trim() || undefined,
+    };
+    const fingerprint = JSON.stringify(details);
+    if (pendingGift.current?.fingerprint !== fingerprint) {
+      pendingGift.current = {
+        fingerprint,
+        key: `web-gift:${crypto.randomUUID()}`,
+      };
+    }
+    giftInFlight.current = true;
+    setBusy("gift");
+    setNotice(null);
+    try {
+      const response = await fetch("/api/credits/gifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...details,
+          idempotencyKey: pendingGift.current.key,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok)
+        throw new Error(messageFrom(payload, "Gift could not be completed."));
+      // The transfer succeeded. A later balance refresh must not turn it into
+      // a failed gift or invite the user to send it again.
+      pendingGift.current = null;
+      setRecipient("");
       setGiftMessage("");
-      setNotice("Gift sent. 🎁");
-    } catch {
-      // The shared notice already contains the actionable API error.
+      setNotice(
+        `${amount.toLocaleString()} credits sent to ${recipient.trim()}.`,
+      );
+      window.dispatchEvent(new Event("credits-updated"));
+      void load().catch(() => undefined);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "We couldn't confirm the gift. Retry with the same details.",
+      );
+    } finally {
+      giftInFlight.current = false;
+      setBusy(null);
     }
   }
 
@@ -163,8 +218,8 @@ export function BillingPanel() {
             Credits &amp; billing
           </h1>
           <p className="mt-1.5 max-w-xl text-sm leading-6 text-muted-foreground">
-            Credits pay for the work your agents do. Your plan controls how
-            many can keep a persistent computer.
+            Credits pay for the work your agents do. Your plan controls how many
+            can keep a persistent computer.
           </p>
         </div>
         <Button variant="outline" onClick={() => router.push("/plans")}>
@@ -173,7 +228,10 @@ export function BillingPanel() {
       </header>
 
       {notice ? (
-        <div className="rounded-xl border bg-white px-4 py-3 text-sm shadow-card">
+        <div
+          role="status"
+          className="rounded-xl border bg-white px-4 py-3 text-sm shadow-card"
+        >
           {notice}
         </div>
       ) : null}
@@ -203,7 +261,9 @@ export function BillingPanel() {
           <div>
             <div className="flex items-center gap-2 font-medium">
               {subscription?.planName ?? "Free"}
-              <Badge variant="secondary">{subscription?.status ?? "free"}</Badge>
+              <Badge variant="secondary">
+                {subscription?.status ?? "free"}
+              </Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
               {subscription?.monthlyCredits
@@ -300,11 +360,35 @@ export function BillingPanel() {
           className="mt-5 grid gap-3 sm:grid-cols-[1fr_120px_auto]"
           onSubmit={sendGift}
         >
+          <label className="flex items-center gap-3 text-sm sm:col-span-3">
+            Send to
+            <select
+              aria-label="Recipient type"
+              value={recipientType}
+              disabled={busy === "gift"}
+              onChange={(event) => {
+                setRecipientType(event.target.value as "email" | "userId");
+                setRecipient("");
+              }}
+              className="rounded-md border bg-background px-3 py-2"
+            >
+              <option value="email">Email address</option>
+              <option value="userId">User ID</option>
+            </select>
+          </label>
           <Input
-            value={recipientEmail}
-            onChange={(event) => setRecipientEmail(event.target.value)}
-            type="email"
-            placeholder="friend@example.com"
+            value={recipient}
+            onChange={(event) => setRecipient(event.target.value)}
+            type={recipientType === "email" ? "email" : "text"}
+            aria-label={
+              recipientType === "email"
+                ? "Recipient email"
+                : "Recipient user ID"
+            }
+            placeholder={
+              recipientType === "email" ? "friend@example.com" : "usr_…"
+            }
+            disabled={busy === "gift"}
             required
           />
           <Input
@@ -312,10 +396,18 @@ export function BillingPanel() {
             onChange={(event) => setGiftAmount(event.target.value)}
             type="number"
             min={10}
+            max={balance}
+            aria-label="Credits to gift"
+            disabled={busy === "gift"}
             step={1}
             required
           />
-          <Button disabled={busy !== null || !recipientEmail.trim()}>
+          <Button
+            type="submit"
+            disabled={
+              busy !== null || !recipient.trim() || !summary || balance < 10
+            }
+          >
             {busy === "gift" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -326,6 +418,8 @@ export function BillingPanel() {
             className="sm:col-span-3"
             value={giftMessage}
             onChange={(event) => setGiftMessage(event.target.value)}
+            aria-label="Gift note (optional)"
+            disabled={busy === "gift"}
             maxLength={240}
             placeholder="Add a note (optional)"
           />

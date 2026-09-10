@@ -77,43 +77,58 @@ const authorize = await app.request(
   { redirect: "manual" },
 );
 assert(
-  authorize.status === 302 && authorize.headers.get("location")?.includes("/sign-in"),
+  authorize.status === 302 &&
+    authorize.headers.get("location")?.includes("/sign-in"),
   `authorization did not redirect to sign-in: ${authorize.status}`,
 );
 
-const signup = await app.request("http://identity.test/api/auth/sign-up/email", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    name: "Identity Test",
-    email: "identity-test@example.com",
-    password: "correct-horse-battery-staple",
-  }),
-});
-assert(signup.ok, `email signup failed: ${signup.status} ${await signup.text()}`);
+const signup = await app.request(
+  "http://identity.test/api/auth/sign-up/email",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "Identity Test",
+      email: "identity-test@example.com",
+      password: "correct-horse-battery-staple",
+    }),
+  },
+);
+assert(
+  signup.ok,
+  `email signup failed: ${signup.status} ${await signup.text()}`,
+);
 
 const user = await database.query(
-  `select id, "defaultWorkspaceId" from "user" where email = $1`,
+  `select id, email, "defaultWorkspaceId" from "user" where email = $1`,
   ["identity-test@example.com"],
 );
-assert(user.rows[0]?.id?.startsWith("usr_"), "canonical user ID was not created");
+assert(
+  user.rows[0]?.id?.startsWith("usr_"),
+  "canonical user ID was not created",
+);
 assert(
   user.rows[0]?.defaultWorkspaceId?.startsWith("wsp_"),
   "personal workspace was not created",
 );
-await database.query(
-  `update "user" set "emailVerified" = true where id = $1`,
-  [user.rows[0].id],
+await database.query(`update "user" set "emailVerified" = true where id = $1`, [
+  user.rows[0].id,
+]);
+const signin = await app.request(
+  "http://identity.test/api/auth/sign-in/email",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: "identity-test@example.com",
+      password: "correct-horse-battery-staple",
+    }),
+  },
 );
-const signin = await app.request("http://identity.test/api/auth/sign-in/email", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    email: "identity-test@example.com",
-    password: "correct-horse-battery-staple",
-  }),
-});
-assert(signin.ok, `email sign-in failed: ${signin.status} ${await signin.text()}`);
+assert(
+  signin.ok,
+  `email sign-in failed: ${signin.status} ${await signin.text()}`,
+);
 const signinCookie = signin.headers.get("set-cookie")?.split(";")[0];
 assert(signinCookie, "email sign-in did not create a browser session");
 
@@ -225,7 +240,10 @@ assert(
 const deviceToken = (await deviceTokenResponse.json()) as {
   access_token?: string;
 };
-assert(deviceToken.access_token, "device token response did not include a token");
+assert(
+  deviceToken.access_token,
+  "device token response did not include a token",
+);
 const platformTokenResponse = await app.request(
   "http://identity.test/api/auth/token",
   { headers: { Authorization: `Bearer ${deviceToken.access_token}` } },
@@ -287,13 +305,70 @@ const serviceToken = (await serviceTokenResponse.json()) as {
   access_token?: string;
 };
 const serviceClaims = JSON.parse(
-  Buffer.from(serviceToken.access_token!.split(".")[1]!, "base64url").toString("utf8"),
+  Buffer.from(serviceToken.access_token!.split(".")[1]!, "base64url").toString(
+    "utf8",
+  ),
 ) as Record<string, unknown>;
 assert(
   serviceClaims.azp === serviceClient.client_id,
   `service token subject is incorrect: ${JSON.stringify(serviceClaims)}`,
 );
 assert(serviceClaims.actor_type === "service", "service actor type is missing");
+
+const lookup = (query: string, token = serviceToken.access_token!) =>
+  app.request(`http://identity.test/api/identity/users/resolve?${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+const byEmail = await lookup(`email=${encodeURIComponent(user.rows[0].email)}`);
+assert(
+  byEmail.ok,
+  `JWT email lookup failed: ${byEmail.status} ${await byEmail.clone().text()}`,
+);
+assert(
+  (await byEmail.json()).data.userId === user.rows[0].id,
+  "Email lookup returned wrong user",
+);
+const byId = await lookup(`userId=${user.rows[0].id}`);
+assert(byId.ok, `User ID lookup failed: ${byId.status}`);
+assert(
+  (await byId.json()).data.userId === user.rows[0].id,
+  "ID lookup returned wrong user",
+);
+assert(
+  (await lookup("userId=usr_missing")).status === 404,
+  "Missing recipient must return 404",
+);
+assert(
+  (await lookup(`userId=${user.rows[0].id}&email=someone@example.com`))
+    .status === 400,
+  "Ambiguous lookup must be rejected",
+);
+assert(
+  (await lookup(`userId=${user.rows[0].id}`, platformToken.token)).status ===
+    401,
+  "User JWT must not access directory",
+);
+assert(
+  (await lookup(`userId=${user.rows[0].id}`, platformAccessToken)).status ===
+    401,
+  "User opaque token must not access directory",
+);
+const parts = serviceToken.access_token!.split(".");
+parts[1] = Buffer.from(
+  JSON.stringify({ ...serviceClaims, actor_type: "service", azp: "forged" }),
+).toString("base64url");
+assert(
+  (await lookup(`userId=${user.rows[0].id}`, parts.join("."))).status === 401,
+  "Tampered JWT must be rejected",
+);
+await database.query(
+  `update "oauthClient" set disabled = true where "clientId" = $1`,
+  [serviceClient.client_id],
+);
+assert(
+  (await lookup(`userId=${user.rows[0].id}`)).status === 401,
+  "Disabled service must be rejected",
+);
 
 console.log(
   JSON.stringify(

@@ -101,26 +101,25 @@ export function invalidateBackendServiceAuthCache() {
   serviceTokenCache.clear();
 }
 
-/**
- * Resolve an Agent Commons account id from an email via the identity service.
- * Returns null when identity is unreachable, unconfigured, or has no match.
- */
-export async function resolvePrincipalByEmail(
-  email: string,
+/** Resolve a gift recipient without treating identity outages as missing users. */
+export async function resolveGiftRecipient(
+  recipient: { email: string } | { userId: string },
 ): Promise<string | null> {
   const issuer = envValue("COMMONS_IDENTITY_ISSUER");
   const token = await commonsIdentityServiceToken();
-  if (!issuer || !token) return null;
+  if (!issuer || !token) throw new Error("Recipient lookup unavailable");
   const base = issuer.replace(/\/api\/auth\/?$/, "");
   const response = await fetch(
-    `${base}/api/identity/users/resolve?email=${encodeURIComponent(email)}`,
+    `${base}/api/identity/users/resolve?${new URLSearchParams(recipient)}`,
     { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" },
-  ).catch(() => null);
-  if (!response?.ok) return null;
-  const payload = (await response.json().catch(() => null)) as {
-    data?: { userId?: string };
-  } | null;
-  return payload?.data?.userId ?? null;
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error("Recipient lookup unavailable");
+  const payload = await response.json();
+  if (typeof payload?.data?.userId !== "string" || !payload.data.userId) {
+    throw new Error("Invalid recipient lookup response");
+  }
+  return payload.data.userId;
 }
 
 async function commonsIdentityServiceToken() {
