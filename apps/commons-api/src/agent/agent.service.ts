@@ -8,7 +8,7 @@ import {
   START,
   StateGraph,
 } from '@langchain/langgraph';
-import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
+import { AgentCheckpointStore } from './checkpoint-store';
 import { ToolNode } from '@langchain/langgraph/prebuilt';
 import {
   BadRequestException,
@@ -16,6 +16,7 @@ import {
   Injectable,
   Logger,
   OnModuleInit,
+  OnModuleDestroy,
   forwardRef,
   Inject,
 } from '@nestjs/common';
@@ -177,7 +178,7 @@ function normalizeReasoningEffortInput(
 }
 
 @Injectable()
-export class AgentService implements OnModuleInit {
+export class AgentService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AgentService.name);
 
   /**
@@ -225,14 +226,25 @@ export class AgentService implements OnModuleInit {
   ) {}
 
   /* ─────────────────────────  INIT  ───────────────────────── */
+  private checkpointStore?: AgentCheckpointStore;
+
+  private getCheckpointer() {
+    this.checkpointStore ??= new AgentCheckpointStore((message) =>
+      this.logger.error(message),
+    );
+    return this.checkpointStore.saver;
+  }
+
   async onModuleInit() {
     try {
-      await PostgresSaver.fromConnString(
-        `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}?options=-c%20search_path%3Dpublic`,
-      ).setup();
+      await this.getCheckpointer().setup();
     } catch (err: any) {
       this.logger.error(`LangGraph checkpoint setup failed: ${err.message}`);
     }
+  }
+
+  async onModuleDestroy() {
+    await this.checkpointStore?.close();
   }
 
   /* ─────────────────────────  CREATE & GET AGENT  ───────────────────────── */
@@ -2052,9 +2064,7 @@ export class AgentService implements OnModuleInit {
             .addConditionalEdges('model', shouldCont, ['tools', END])
             .addEdge('tools', 'model')
             .compile({
-              checkpointer: PostgresSaver.fromConnString(
-                `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}?options=-c%20search_path%3Dpublic`,
-              ),
+              checkpointer: this.getCheckpointer(),
             });
 
           let messages: Messages = [];
