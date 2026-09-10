@@ -1010,6 +1010,9 @@ importers:
       hono:
         specifier: ^4.12.14
         version: 4.12.27
+      jose:
+        specifier: 6.2.2
+        version: 6.2.2
       mongodb:
         specifier: ^6.15.0
         version: 6.20.0(socks@2.8.7)

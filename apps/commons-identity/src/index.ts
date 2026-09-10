@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
+import { createLocalJWKSet, jwtVerify } from "jose";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
@@ -530,25 +531,69 @@ app.get("/api/identity/me", async (c) => {
  * browsers cannot probe the directory.
  */
 app.get("/api/identity/users/resolve", async (c) => {
-  const bearerToken = (c.req.header("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  const bearerToken = (c.req.header("authorization") ?? "").replace(
+    /^Bearer\s+/i,
+    "",
+  );
   if (!bearerToken) return c.json({ error: "Unauthorized" }, 401);
-  const tokenRow = await database.query(
-    `select t."clientId", t."userId"
+  // Client-credentials tokens with a resource audience are signed JWTs and
+  // are not stored in oauthAccessToken. Verify them against our signing keys.
+  let clientId: string | undefined;
+  if (bearerToken.split(".").length === 3) {
+    try {
+      const { payload } = await jwtVerify(
+        bearerToken,
+        createLocalJWKSet(await authService.api.getJwks()),
+        {
+          issuer:
+            process.env.COMMONS_IDENTITY_ISSUER ?? `${baseUrl}/api/auth`,
+          audience: "commons-platform",
+          requiredClaims: ["exp", "iat", "azp"],
+        },
+      );
+      if (
+        payload.actor_type === "service" &&
+        typeof payload.azp === "string"
+      ) {
+        clientId = payload.azp;
+      }
+    } catch {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+  } else {
+    const tokenRow = await database.query(
+      `select t."clientId", t."userId"
        from "oauthAccessToken" t
       where t.token = $1 and t."expiresAt" > now()
       limit 1`,
-    [createHash("sha256").update(bearerToken).digest("base64url")],
-  );
-  const token = tokenRow.rows[0];
-  if (!token || token.userId) return c.json({ error: "Unauthorized" }, 401);
-  const email = (c.req.query("email") ?? "").trim().toLowerCase();
-  if (!email || !email.includes("@")) {
-    return c.json({ error: "A valid email query parameter is required" }, 400);
+      [createHash("sha256").update(bearerToken).digest("base64url")],
+    );
+    if (tokenRow.rows[0] && !tokenRow.rows[0].userId) {
+      clientId = tokenRow.rows[0].clientId;
+    }
   }
-  const user = await database.query(
-    `select id, email from "user" where lower(email) = $1 limit 1`,
-    [email],
+  if (!clientId) return c.json({ error: "Unauthorized" }, 401);
+  const client = await database.query(
+    `select "clientId" from "oauthClient"
+    where "clientId" = $1 and (disabled is null or disabled = false)
+    limit 1`,
+    [clientId],
   );
+  if (!client.rows.length) return c.json({ error: "Unauthorized" }, 401);
+
+  const email = (c.req.query("email") ?? "").trim().toLowerCase();
+  const userId = (c.req.query("userId") ?? "").trim();
+  if (Boolean(email) === Boolean(userId) || (email && !email.includes("@"))) {
+    return c.json({ error: "Provide either a valid email or userId" }, 400);
+  }
+  const user = email
+    ? await database.query(
+        `select id from "user" where lower(email) = $1 limit 1`,
+        [email],
+      )
+    : await database.query(`select id from "user" where id = $1 limit 1`, [
+        userId,
+      ]);
   if (!user.rows.length) return c.json({ error: "User not found" }, 404);
   return c.json({ data: { userId: user.rows[0].id } });
 });

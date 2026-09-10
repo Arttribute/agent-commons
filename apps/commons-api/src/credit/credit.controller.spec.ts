@@ -3,6 +3,7 @@ import { CreditController } from './credit.controller';
 describe('CreditController delegated self-service', () => {
   const credits = {
     getSummary: jest.fn().mockResolvedValue({}),
+    gift: jest.fn().mockResolvedValue({}),
     claimCampaign: jest.fn().mockResolvedValue({}),
   };
   const controller = new CreditController(credits as any);
@@ -40,6 +41,31 @@ describe('CreditController delegated self-service', () => {
         principalId: 'user-1',
         sourcePlatform: 'agent_commons',
         selfService: true,
+      }),
+    );
+  });
+
+  it('debits the signed-in user for a service-proxied gift', async () => {
+    await controller.gift(
+      {
+        principal: {
+          principalId: 'commons-app-service',
+          principalType: 'service',
+          scopes: ['legacy:delegate'],
+        },
+        headers: { 'x-initiator': 'usr_sender' },
+      },
+      {
+        recipientPrincipalId: 'usr_recipient',
+        amount: 50,
+        idempotencyKey: 'gift-1',
+      },
+    );
+    expect(credits.gift).toHaveBeenCalledWith(
+      expect.objectContaining({
+        senderPrincipalId: 'usr_sender',
+        recipientPrincipalId: 'usr_recipient',
+        amount: 50,
       }),
     );
   });

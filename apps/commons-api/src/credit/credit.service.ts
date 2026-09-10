@@ -434,7 +434,19 @@ export class CreditService {
       const existing = await tx.query.creditTransfer.findFirst({
         where: eq(schema.creditTransfer.idempotencyKey, input.idempotencyKey),
       });
-      if (existing) return existing;
+      if (existing) {
+        if (
+          existing.senderPrincipalId !== sender ||
+          existing.recipientPrincipalId !== recipient ||
+          existing.amount !== input.amount ||
+          existing.message !== (input.message?.trim().slice(0, 240) || null)
+        ) {
+          throw new BadRequestException(
+            'This gift request ID was already used for different details.',
+          );
+        }
+        return existing;
+      }
       let senderAccount = await this.ensureAccount(tx, sender);
       await this.ensureAccount(tx, recipient);
       senderAccount = await this.expireReservations(tx, senderAccount);
