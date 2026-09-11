@@ -82,3 +82,6 @@ jobs:
 
       - name: Test shared agent checkpoint pool
         run: pnpm --filter commons-api exec jest --runInBand agent/checkpoint-store.spec.ts
+
+      - name: Test Arcade skill assignment contract
+        run: pnpm --filter commons-api exec jest --runInBand skill/skill.controller.spec.ts skill/skill.service.spec.ts
