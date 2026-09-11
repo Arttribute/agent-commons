@@ -1391,7 +1391,7 @@ function LearnerActivity({
 }
 
 const structuredResponseWorkspaceClass =
-  "flex h-[calc(100dvh-8rem)] min-h-72 max-h-[820px] flex-col";
+  "flex max-h-[calc(100dvh-8rem)] min-h-0 flex-col";
 const structuredResponseScrollClass =
   "min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]";
 
@@ -2034,16 +2034,13 @@ function WorksheetResponsePanel({
               <h2 className="text-sm font-bold uppercase tracking-[0.14em] opacity-55">
                 {section.title}
               </h2>
-              <div className="mt-5 grid gap-5 md:grid-cols-2">
+              <div className="mt-5 space-y-5">
                 {section.fields.map((field) => {
                   const fieldValue = current.values[field.id];
                   return (
                     <label
                       key={field.id}
-                      className={cn(
-                        "block",
-                        field.type === "long_text" && "md:col-span-2",
-                      )}
+                      className="block"
                     >
                       <span className="text-sm font-bold leading-6">
                         {field.label}
