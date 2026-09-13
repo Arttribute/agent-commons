@@ -11,7 +11,7 @@ import {
 export function NetworkBalances({
   wallet,
 }: {
-  wallet: { id: string; address: string; chainId: string; provider?: string };
+  wallet: { id: string; address: string; chainId: string; provider?: string | null };
 }) {
   const [balances, setBalances] = useState<
     Record<string, NetworkBalance | null>
@@ -62,7 +62,7 @@ export function NetworkBalances({
     <section className="mt-3 space-y-3" aria-label="Network balances">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs text-muted-foreground">
-          Balances by network · test funds
+          Balances by network{networks.every((n) => n.testnet) ? " · test funds" : ""}
         </span>
         <Button
           variant="ghost"

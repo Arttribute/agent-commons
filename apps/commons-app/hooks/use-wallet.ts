@@ -39,6 +39,9 @@ export function useAgentWallet(agentId: string | undefined) {
     const current = ++generation.current;
     setWallet(null);
     setBalance(null);
+    setBalanceError(null);
+    setBalanceLoading(false);
+    setLoading(false);
     if (!agentId) return;
     setLoading(true);
     setError(null);
@@ -67,7 +70,7 @@ export function useAgentWallet(agentId: string | undefined) {
   }, [agentId]);
 
   const fetchBalance = useCallback(async () => {
-    if (!wallet?.id) return;
+    if (!wallet?.id || wallet.agentId !== agentId) return;
     const current = generation.current;
     setBalance(null);
     setBalanceError(null);
@@ -80,6 +83,8 @@ export function useAgentWallet(agentId: string | undefined) {
         response,
       );
       const parsed = parseWalletBalance(data, wallet.chainId);
+      if (parsed.address.toLowerCase() !== wallet.address.toLowerCase())
+        throw new Error("Wallet mismatch");
       if (generation.current === current) setBalance(parsed);
     } catch {
       if (generation.current === current) {
@@ -89,7 +94,7 @@ export function useAgentWallet(agentId: string | undefined) {
     } finally {
       if (generation.current === current) setBalanceLoading(false);
     }
-  }, [wallet?.id, wallet?.chainId]);
+  }, [agentId, wallet?.id, wallet?.agentId, wallet?.address, wallet?.chainId]);
 
   useEffect(() => {
     fetchWallet();
@@ -100,6 +105,7 @@ export function useAgentWallet(agentId: string | undefined) {
 
   const createWallet = useCallback(async () => {
     if (!agentId) return;
+    const current = generation.current;
     setLoading(true);
     try {
       const response = await fetch(
@@ -113,11 +119,13 @@ export function useAgentWallet(agentId: string | undefined) {
       const data = await readApiJson<AgentWallet | { data?: AgentWallet }>(
         response,
       );
-      setWallet(unwrapData<AgentWallet>(data));
+      if (generation.current === current)
+        setWallet(unwrapData<AgentWallet>(data));
     } catch (e: any) {
-      setError(e.message ?? "Failed to create wallet");
+      if (generation.current === current)
+        setError(e.message ?? "Failed to create wallet");
     } finally {
-      setLoading(false);
+      if (generation.current === current) setLoading(false);
     }
   }, [agentId]);
 
