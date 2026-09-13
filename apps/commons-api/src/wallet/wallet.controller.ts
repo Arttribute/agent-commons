@@ -209,6 +209,12 @@ export class WalletController {
     return this.walletService.runtimeSessions(agentId);
   }
 
+  @Get('agent/:agentId/payment-capabilities')
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
+  paymentCapabilities() {
+    return { openSeatDeposits: true, sponsoredSeatDeposits: true };
+  }
+
   @Get('agent/:agentId/payment-sessions')
   @OwnerOnly({ table: 'agent', idParam: 'agentId' })
   listPaymentSessions(@Param('agentId') agentId: string) {
