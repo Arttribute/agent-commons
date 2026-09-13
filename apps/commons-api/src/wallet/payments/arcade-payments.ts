@@ -5,6 +5,7 @@ import {
   http,
   erc20Abi,
   encodeFunctionData,
+  zeroAddress,
   type Hex,
   type Address,
 } from 'viem';
@@ -62,8 +63,9 @@ export async function payArcadeDeposit(
     input.operation === 'stake'
       ? pool.terms.stake
       : positiveUnits(input.amountUnits);
-  if (amount <= 0n || amount > positiveUnits(session.policy.maxPaymentUnits))
+  if (amount > positiveUnits(session.policy.maxPaymentUnits))
     throw new ForbiddenException('Deposit exceeds per-payment limit');
+  let openSeat = false;
   if (input.operation === 'stake') {
     const recipient = await reader.readContract({
       address: contract,
@@ -71,28 +73,65 @@ export async function payArcadeDeposit(
       functionName: 'recipient',
       args: [id, seat],
     });
-    if (recipient.toLowerCase() !== account.address.toLowerCase())
+    if (recipient === zeroAddress) {
+      // Unknown/legacy contracts fail closed: empty recipient alone never authorizes a payment.
+      const [open, registered, alreadySeated] = await Promise.all([
+        reader.readContract({
+          address: contract,
+          abi: arcadeAbi,
+          functionName: 'openSeats',
+          args: [id],
+        }),
+        reader.readContract({
+          address: contract,
+          abi: arcadeAbi,
+          functionName: 'registeredSeat',
+          args: [id, seat],
+        }),
+        reader.readContract({
+          address: contract,
+          abi: arcadeAbi,
+          functionName: 'seated',
+          args: [id, account.address],
+        }),
+      ]);
+      if (!open || !registered || alreadySeated)
+        throw new ForbiddenException(
+          'This seat is not available to this agent',
+        );
+      openSeat = true;
+    } else if (recipient.toLowerCase() !== account.address.toLowerCase())
       throw new ForbiddenException('This wallet does not own the granted seat');
   }
-  const attempt = await sessions.reserve(
-    session,
-    input.idempotencyKey,
-    amount.toString(),
-    `${session.policy.origin}/${grant.matchId}/${input.operation}`,
-  );
+  if (amount === 0n && !openSeat)
+    throw new ForbiddenException(
+      'Only an open sponsored seat may have zero entry cost',
+    );
+  const attempt =
+    amount === 0n
+      ? await sessions.reserveSeatJoin(session, input.idempotencyKey)
+      : await sessions.reserve(
+          session,
+          input.idempotencyKey,
+          amount.toString(),
+          `${session.policy.origin}/${grant.matchId}/${input.operation}`,
+        );
   try {
-    const approval = await wallet.writeContract({
-      address: network.token,
-      abi: erc20Abi,
-      functionName: 'approve',
-      args: [contract, amount],
-    });
-    const approved = await reader.waitForTransactionReceipt({
-      hash: approval,
-      confirmations: 2,
-    });
-    if (approved.status !== 'success')
-      throw new Error('USDC approval reverted');
+    let approval: Hex | undefined;
+    if (amount > 0n) {
+      approval = await wallet.writeContract({
+        address: network.token,
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [contract, amount],
+      });
+      const approved = await reader.waitForTransactionReceipt({
+        hash: approval,
+        confirmations: 2,
+      });
+      if (approved.status !== 'success')
+        throw new Error('USDC approval reverted');
+    }
     const data =
       input.operation === 'stake'
         ? encodeFunctionData({
