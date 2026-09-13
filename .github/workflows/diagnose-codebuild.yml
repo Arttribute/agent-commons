@@ -117,46 +117,33 @@ jobs:
               commands:
                 - |
                   set -euo pipefail
-                  stack_json=$(aws cloudformation describe-stacks \
-                    --stack-name "$STACK_NAME" \
-                    --query 'Stacks[0].{status:StackStatus,statusReason:StackStatusReason,lastUpdated:LastUpdatedTime,outputs:Outputs}' \
-                    --output json)
-                  service_arn=$(jq -r '.outputs[] | select(.OutputKey == "ServiceArn") | .OutputValue' <<<"$stack_json")
-                  service_json=$(aws ecs describe-express-gateway-service \
-                    --service-arn "$service_arn" \
-                    --query 'service.{serviceArn:serviceArn,serviceName:serviceName,status:status,currentDeployment:currentDeployment,updatedAt:updatedAt}' \
-                    --output json)
-                  deployment_list=$(aws ecs list-service-deployments \
-                    --service "$service_arn" \
-                    --max-results 20 \
-                    --query '{serviceDeployments:serviceDeployments[*].{arn:serviceDeploymentArn,status:status,statusReason:statusReason,createdAt:createdAt,startedAt:startedAt,finishedAt:finishedAt,targetRevision:targetServiceRevisionArn}}' \
-                    --output json)
-                  stack_events=$(aws cloudformation describe-stack-events \
-                    --stack-name "$STACK_NAME" \
-                    --query 'StackEvents[0:60].{resource:LogicalResourceId,status:ResourceStatus,reason:ResourceStatusReason,time:Timestamp}' \
-                    --output json)
-                  services='[]'
-                  while IFS= read -r inspected_arn; do
-                    detail=$(aws ecs describe-services --cluster default --services "$inspected_arn" \
-                      --query 'services[0].{name:serviceName,status:status,taskDefinition:taskDefinition,running:runningCount,pending:pendingCount,desired:desiredCount,events:events[0:12],deployments:deployments[*].{status:status,rolloutState:rolloutState,reason:rolloutStateReason}}' \
-                      --output json)
-                    stopped=$(aws ecs list-tasks --cluster default --service-name "${inspected_arn##*/}" --desired-status STOPPED --max-results 5 --query taskArns --output json)
-                    tasks='[]'
-                    if [ "$(jq length <<<"$stopped")" -gt 0 ]; then
-                      mapfile -t task_arns < <(jq -r '.[]' <<<"$stopped")
-                      tasks=$(aws ecs describe-tasks --cluster default --tasks "${task_arns[@]}" \
-                        --query 'tasks[*].{task:taskArn,reason:stoppedReason,stopCode:stopCode,containers:containers[*].{name:name,image:image,exitCode:exitCode,reason:reason}}' --output json)
-                    fi
-                    services=$(jq -nc --argjson existing "$services" --argjson detail "$detail" --argjson tasks "$tasks" '$existing + [{service:$detail, stoppedTasks:$tasks}]')
-                  done < <(jq -r '.outputs[] | select(.OutputKey | endswith("ServiceArn")) | .OutputValue' <<<"$stack_json")
-                  jq -n \
-                    --argjson stack "$stack_json" \
-                    --argjson service "$service_json" \
-                    --argjson deploymentList "$deployment_list" \
-                    --argjson stackEvents "$stack_events" \
-                    --argjson services "$services" \
-                    '{stack:$stack, service:$service, deploymentList:$deploymentList, stackEvents:$stackEvents, services:$services}' \
-                    > /tmp/service-deployment.json
+                  python3 - <<'PYDIAG'
+                  import json, os, subprocess
+                  from pathlib import Path
+
+                  def read(*args):
+                      result = subprocess.run(['aws', *args, '--output', 'json'], capture_output=True, text=True)
+                      if result.returncode:
+                          return {'error': result.stderr.strip()}
+                      return json.loads(result.stdout)
+
+                  stack = read('cloudformation', 'describe-stacks', '--stack-name', os.environ['STACK_NAME'], '--query', 'Stacks[0].{status:StackStatus,statusReason:StackStatusReason,outputs:Outputs}')
+                  report = {'stack': stack, 'stackEvents': read('cloudformation', 'describe-stack-events', '--stack-name', os.environ['STACK_NAME'], '--query', 'StackEvents[0:60].{resource:LogicalResourceId,status:ResourceStatus,reason:ResourceStatusReason,time:Timestamp}'), 'services': []}
+                  for output in stack.get('outputs', []):
+                      if not output['OutputKey'].endswith('ServiceArn'):
+                          continue
+                      arn = output['OutputValue']
+                      service = {'arn': arn}
+                      service['express'] = read('ecs', 'describe-express-gateway-service', '--service-arn', arn, '--query', 'service.{status:status,currentDeployment:currentDeployment,activeConfigurations:activeConfigurations[*].{status:status}}')
+                      service['deployments'] = read('ecs', 'list-service-deployments', '--service', arn, '--max-results', '5', '--query', 'serviceDeployments[*].{status:status,statusReason:statusReason,createdAt:createdAt,targetRevision:targetServiceRevisionArn}')
+                      service['details'] = read('ecs', 'describe-services', '--cluster', 'default', '--services', arn, '--query', 'services[0].{name:serviceName,taskDefinition:taskDefinition,running:runningCount,pending:pendingCount,desired:desiredCount,events:events[0:12]}')
+                      tasks = read('ecs', 'list-tasks', '--cluster', 'default', '--service-name', arn.rsplit('/', 1)[-1], '--desired-status', 'STOPPED', '--max-results', '5', '--query', 'taskArns')
+                      service['stoppedTasks'] = tasks
+                      if isinstance(tasks, list) and tasks:
+                          service['stoppedTasks'] = read('ecs', 'describe-tasks', '--cluster', 'default', '--tasks', *tasks, '--query', 'tasks[*].{reason:stoppedReason,stopCode:stopCode,containers:containers[*].{name:name,image:image,exitCode:exitCode,reason:reason}}')
+                      report['services'].append(service)
+                  Path('/tmp/service-deployment.json').write_text(json.dumps(report, indent=2))
+                  PYDIAG
                   curl --fail-with-body --silent --show-error -X PUT -H 'Content-Type:' --data-binary @/tmp/service-deployment.json "$DIAGNOSTIC_PUT_URL"
           YAML
           )
