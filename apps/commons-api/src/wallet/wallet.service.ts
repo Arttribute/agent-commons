@@ -562,6 +562,94 @@ export class WalletService {
     return { status: response.status, body: await response.json() };
   }
 
+  async arcadeAutoplay(
+    agentId: string,
+    input: {
+      paymentSessionId: string;
+      runtimeSessionId: string;
+      enabled: boolean;
+    },
+  ) {
+    const session = await this.paymentSessions.load(
+      agentId,
+      input.paymentSessionId,
+      input.runtimeSessionId,
+    );
+    const grant = session.policy.arcade;
+    if (
+      !grant?.allowedOperations.includes('stake') ||
+      typeof input.enabled !== 'boolean'
+    )
+      throw new BadRequestException('A player budget is required');
+    const wallet = await this.db.query.agentWallet.findFirst({
+      where: (w) =>
+        and(
+          eq(w.id, session.wallet_id),
+          eq(w.agentId, agentId),
+          eq(w.isActive, true),
+        ),
+    });
+    if (
+      !wallet?.encryptedPrivateKey ||
+      wallet.walletType !== 'eoa' ||
+      wallet.provider === 'custom'
+    )
+      throw new BadRequestException('Supported active EOA required');
+    const account = privateKeyToAccount(
+      this.decryptKey(wallet.encryptedPrivateKey) as `0x${string}`,
+    );
+    const url = `${session.policy.origin}/v1/economy/matches/${grant.matchId}`;
+    const tableResponse = await safeFetch(url, {
+      redirect: 'error',
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!tableResponse.ok) throw new BadRequestException('Game is unavailable');
+    const table = (await tableResponse.json()) as {
+      pool?: string;
+      deployment?: { contract?: string };
+      settlementDeadline?: number;
+    };
+    if (
+      table.pool?.toLowerCase() !== grant.poolId.toLowerCase() ||
+      table.deployment?.contract?.toLowerCase() !==
+        session.policy.payTo.toLowerCase()
+    )
+      throw new ForbiddenException('Game does not match the approved budget');
+    const deadline = Number(table.settlementDeadline) * 1000;
+    const expiresAt = Date.now() + 60000;
+    const body = {
+      enabled: input.enabled,
+      expiresAt: Math.min(new Date(session.expires_at).getTime(), deadline),
+    };
+    if (!Number.isSafeInteger(body.expiresAt) || body.expiresAt <= Date.now())
+      throw new BadRequestException('Game budget has expired');
+    const signature = await account.signMessage({
+      message: JSON.stringify({
+        domain: session.policy.origin,
+        matchId: grant.matchId,
+        operation: 'autoplay',
+        body,
+        expiresAt,
+      }),
+    });
+    const response = await safeFetch(`${url}/autoplay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        body,
+        auth: { address: account.address, expiresAt, signature },
+      }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(60000),
+    });
+    const result = (await response.json()) as { error?: string };
+    if (!response.ok)
+      throw new BadRequestException(
+        result.error ?? 'Could not start agent play',
+      );
+    return result;
+  }
+
   async x402Fetch(
     agentId: string,
     url: string,
