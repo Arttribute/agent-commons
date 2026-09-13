@@ -220,7 +220,7 @@ export class WalletService {
   }
 
   /**
-   * Get USDC and native token balance for a wallet address on Base Sepolia.
+   * Get USDC and native token balance on the explicitly selected supported network.
    */
   async getBalance(
     walletId: string,
@@ -247,10 +247,15 @@ export class WalletService {
     }
 
     const address = wallet.address as `0x${string}`;
-    const network = walletChain(chainId ?? wallet.chainId);
+    let network: ReturnType<typeof walletChain>;
+    try {
+      network = walletChain(chainId ?? wallet.chainId);
+    } catch {
+      throw new BadRequestException('Unsupported wallet network');
+    }
     const publicClient = createPublicClient({
       chain: network.chain,
-      transport: http(),
+      transport: http(undefined, { timeout: 10000, retryCount: 1 }),
     });
 
     const [nativeBalance, usdcBalance] = await Promise.all([

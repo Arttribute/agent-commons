@@ -2,14 +2,16 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Card, CardHeader, CardDescription, CardTitle } from "@/components/ui/card";
+  Card,
+  CardHeader,
+  CardDescription,
+  CardTitle,
+} from "@/components/ui/card";
 import { AddToAgentBalance } from "@/components/finances/add-to-agent-balance";
 import { Wallet, RefreshCw } from "lucide-react";
+import { NetworkBalances } from "@/components/wallets/network-balances";
 import { useAgentWallet } from "@/hooks/use-wallet";
 
 interface AgentFinancesProps {
@@ -17,7 +19,8 @@ interface AgentFinancesProps {
 }
 
 export default function AgentFinances({ agentId }: AgentFinancesProps) {
-  const { wallet, balance, loading, balanceLoading, refetchBalance } = useAgentWallet(agentId);
+  const { wallet, balance, loading, balanceLoading, refetchBalance } =
+    useAgentWallet(agentId);
 
   return (
     <Dialog>
@@ -30,13 +33,17 @@ export default function AgentFinances({ agentId }: AgentFinancesProps) {
           <div className="grid grid-cols-2 gap-1 mt-1">
             <div className="col-span-1 border border-border py-1 px-2 rounded-lg">
               <p className="text-xl font-semibold">
-                {balanceLoading || loading ? "…" : (balance?.usdc ?? "0")}
+                {balanceLoading || loading
+                  ? "…"
+                  : (balance?.usdc ?? "Unavailable")}
               </p>
               <p className="text-xs">USDC</p>
             </div>
             <div className="col-span-1 border border-border py-1 px-2 rounded-lg">
               <p className="text-xl font-semibold">
-                {balanceLoading || loading ? "…" : (balance?.native ?? "0").slice(0, 6)}
+                {balanceLoading || loading
+                  ? "…"
+                  : (balance?.native ?? "0").slice(0, 6)}
               </p>
               <p className="text-xs">ETH</p>
             </div>
@@ -55,29 +62,13 @@ export default function AgentFinances({ agentId }: AgentFinancesProps) {
               onClick={refetchBalance}
               disabled={balanceLoading}
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${balanceLoading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${balanceLoading ? "animate-spin" : ""}`}
+              />
             </Button>
           </div>
 
-          {/* Balance Cards */}
-          <div className="grid grid-cols-2 gap-3">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>USDC Balance</CardDescription>
-                <CardTitle className="text-3xl">
-                  {balanceLoading ? "…" : (balance?.usdc ?? "0")}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>ETH Balance</CardDescription>
-                <CardTitle className="text-3xl">
-                  {balanceLoading ? "…" : (balance?.native ?? "0").slice(0, 8)}
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          </div>
+          {wallet && <NetworkBalances wallet={wallet} />}
 
           {/* Fund section */}
           <div className="border rounded-lg p-3">
