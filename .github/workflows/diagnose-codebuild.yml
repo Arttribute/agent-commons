@@ -131,46 +131,31 @@ jobs:
                     --max-results 20 \
                     --query '{serviceDeployments:serviceDeployments[*].{arn:serviceDeploymentArn,status:status,statusReason:statusReason,createdAt:createdAt,startedAt:startedAt,finishedAt:finishedAt,targetRevision:targetServiceRevisionArn}}' \
                     --output json)
-                  available_secret_json=$(aws secretsmanager get-secret-value \
-                    --secret-id "$RUNTIME_SECRET_ARN" \
-                    --query SecretString \
-                    --output text)
-                  available_secret_keys=$(jq -c 'keys | sort' <<<"$available_secret_json")
-                  required_secret_keys=$(sed \
-                    -e '/^[[:space:]]*#/d' \
-                    -e '/^[[:space:]]*$/d' \
-                    infra/aws/runtime-secret-keys.txt | jq -Rsc 'split("\n") | map(select(length > 0)) | sort')
-                  missing_secret_keys=$(jq -nc \
-                    --argjson required "$required_secret_keys" \
-                    --argjson available "$available_secret_keys" \
-                    '$required - $available')
-
-                  # Re-run the pending migrations from the uploaded source and
-                  # capture the real error through the diagnostic
-                  # S3 channel. The GitHub deploy role intentionally cannot read
-                  # CodeBuild's CloudWatch stream.
-                  corepack enable pnpm
-                  corepack prepare pnpm@9.15.3 --activate
-                  pnpm install --frozen-lockfile --filter commons-api...
-                  set +e
-                  POSTGRES_HOST="$(jq -r .POSTGRES_HOST <<<"$available_secret_json")" \
-                  POSTGRES_PORT="$(jq -r .POSTGRES_PORT <<<"$available_secret_json")" \
-                  POSTGRES_DATABASE="$(jq -r .POSTGRES_DATABASE <<<"$available_secret_json")" \
-                  POSTGRES_USER="$(jq -r .POSTGRES_USER <<<"$available_secret_json")" \
-                  POSTGRES_PASSWORD="$(jq -r .POSTGRES_PASSWORD <<<"$available_secret_json")" \
-                  POSTGRES_SSL="$(jq -r '.POSTGRES_SSL // "disable"' <<<"$available_secret_json")" \
-                    pnpm --filter commons-api migrate > /tmp/migration-probe.log 2>&1
-                  migration_exit=$?
-                  set -e
+                  stack_events=$(aws cloudformation describe-stack-events \
+                    --stack-name "$STACK_NAME" \
+                    --query 'StackEvents[0:60].{resource:LogicalResourceId,status:ResourceStatus,reason:ResourceStatusReason,time:Timestamp}' \
+                    --output json)
+                  services='[]'
+                  while IFS= read -r inspected_arn; do
+                    detail=$(aws ecs describe-services --cluster default --services "$inspected_arn" \
+                      --query 'services[0].{name:serviceName,status:status,taskDefinition:taskDefinition,running:runningCount,pending:pendingCount,desired:desiredCount,events:events[0:12],deployments:deployments[*].{status:status,rolloutState:rolloutState,reason:rolloutStateReason}}' \
+                      --output json)
+                    stopped=$(aws ecs list-tasks --cluster default --service-name "${inspected_arn##*/}" --desired-status STOPPED --max-results 5 --query taskArns --output json)
+                    tasks='[]'
+                    if [ "$(jq length <<<"$stopped")" -gt 0 ]; then
+                      mapfile -t task_arns < <(jq -r '.[]' <<<"$stopped")
+                      tasks=$(aws ecs describe-tasks --cluster default --tasks "${task_arns[@]}" \
+                        --query 'tasks[*].{task:taskArn,reason:stoppedReason,stopCode:stopCode,containers:containers[*].{name:name,image:image,exitCode:exitCode,reason:reason}}' --output json)
+                    fi
+                    services=$(jq -nc --argjson existing "$services" --argjson detail "$detail" --argjson tasks "$tasks" '$existing + [{service:$detail, stoppedTasks:$tasks}]')
+                  done < <(jq -r '.outputs[] | select(.OutputKey | endswith("ServiceArn")) | .OutputValue' <<<"$stack_json")
                   jq -n \
                     --argjson stack "$stack_json" \
                     --argjson service "$service_json" \
                     --argjson deploymentList "$deployment_list" \
-                    --argjson availableSecretKeys "$available_secret_keys" \
-                    --argjson missingSecretKeys "$missing_secret_keys" \
-                    --argjson migrationExit "$migration_exit" \
-                    --rawfile migrationLog /tmp/migration-probe.log \
-                    '{stack: $stack, service: $service, deploymentList: $deploymentList, runtimeSecret: {availableKeys: $availableSecretKeys, missingKeys: $missingSecretKeys}, migrationProbe: {exitCode: $migrationExit, log: $migrationLog}}' \
+                    --argjson stackEvents "$stack_events" \
+                    --argjson services "$services" \
+                    '{stack:$stack, service:$service, deploymentList:$deploymentList, stackEvents:$stackEvents, services:$services}' \
                     > /tmp/service-deployment.json
                   curl --fail-with-body --silent --show-error -X PUT -H 'Content-Type:' --data-binary @/tmp/service-deployment.json "$DIAGNOSTIC_PUT_URL"
           YAML
