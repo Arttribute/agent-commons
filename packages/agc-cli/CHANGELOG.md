@@ -1,5 +1,17 @@
 # @agent-commons/cli
 
+## 0.6.0
+
+### Minor Changes
+
+- a4d7d05: Add `agc code`, initial task and prompt-file support, project instructions, and local read-only mode for the VS Code coding workspace. Harden local path boundaries and approval defaults, preserve the original agent when resuming, and stop changing Git hooks at chat startup.
+
+### Patch Changes
+
+- Updated dependencies [bec3bf6]
+- Updated dependencies [01a4cf3]
+  - @agent-commons/sdk@0.7.0
+
 ## 0.5.0
 
 ### Minor Changes
