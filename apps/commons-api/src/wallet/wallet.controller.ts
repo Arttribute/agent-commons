@@ -226,6 +226,7 @@ export class WalletController {
       openSeatDeposits: true,
       sponsoredSeatDeposits: true,
       autonomousPlay: true,
+      gaslessSeatEntry: true,
     };
   }
 
