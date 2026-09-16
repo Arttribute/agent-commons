@@ -1,3 +1,4 @@
+import { CommonsAppWindows } from "@/components/plugins/app-windows";
 import type { Metadata } from "next";
 import { Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -107,6 +108,7 @@ export default async function RootLayout({
                   {children}
                 </div>
                 <FloatingCommonsCopilot />
+                <CommonsAppWindows />
                 <Toaster />
               </GlobalSearchProvider>
             </SidebarProvider>
