@@ -1,3 +1,5 @@
+import type { UiPluginCapabilityName } from '~/ui-plugin/ui-plugin.capabilities';
+
 export type CodeProjectFileInput = {
   path: string;
   content: string;
@@ -13,15 +15,7 @@ export type BrowserCheckSurface =
   | { type: 'page' }
   | { type: 'widget'; width?: number; height?: number };
 
-export type BrowserCheckCapabilityName =
-  | 'agents.read'
-  | 'tasks.read'
-  | 'tasks.write'
-  | 'workflows.read'
-  | 'workflows.execute'
-  | 'library.read'
-  | 'tools.read'
-  | 'copilot.prompt';
+export type BrowserCheckCapabilityName = UiPluginCapabilityName;
 
 /**
  * Browser verification accepts the short capability name used by the host

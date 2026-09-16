@@ -1,6 +1,11 @@
 "use client";
 
 import { useRef, useEffect, useState, useMemo, useCallback } from "react";
+import { CommonsAppsBar } from "@/components/plugins/apps-bar";
+import {
+  appResponseMessage,
+  type AppChatResponse,
+} from "@/components/plugins/app-chat-card";
 import { ChevronDown, Loader2, Monitor } from "lucide-react";
 import ExecutionWidget from "@/components/sessions/chat/execution-widget";
 import ChatInputBox, {
@@ -419,6 +424,21 @@ export default function SessionInterfaceImproved({
       </Button>
     ) : null;
 
+  // Composer prompts come from the page (externalPrompt) and from Commons
+  // apps an agent showed in this chat. The most recent one wins.
+  const [composerPrompt, setComposerPrompt] =
+    useState<ExternalComposerPrompt | null>(externalPrompt ?? null);
+  useEffect(() => {
+    if (externalPrompt) setComposerPrompt(externalPrompt);
+  }, [externalPrompt]);
+  const sendAppResponse = useCallback((response: AppChatResponse) => {
+    setComposerPrompt({
+      id: `app-response:${response.widgetId}`,
+      text: appResponseMessage(response),
+      mode: "send",
+    });
+  }, []);
+
   const composer = (
     <ChatInputBox
       agentId={agentId}
@@ -430,7 +450,7 @@ export default function SessionInterfaceImproved({
       onInitialPromptSent={onInitialPromptSent}
       allowComputer={allowComputer}
       uiContext={uiContext}
-      externalPrompt={externalPrompt}
+      externalPrompt={composerPrompt}
     />
   );
 
@@ -456,6 +476,7 @@ export default function SessionInterfaceImproved({
         {header ? (
           <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
             <div className="min-w-0 flex-1">{header}</div>
+            <CommonsAppsBar />
             {computerButton}
           </div>
         ) : (
@@ -600,6 +621,8 @@ export default function SessionInterfaceImproved({
                                 setOpenProjectId(null);
                                 setOpenArtifact(artifact);
                               }}
+                              sessionId={sessionId}
+                              onAppRespond={sendAppResponse}
                             />
                           );
                         }

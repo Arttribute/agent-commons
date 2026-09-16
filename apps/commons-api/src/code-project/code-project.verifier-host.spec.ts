@@ -46,7 +46,7 @@ describe('CodeProject verifier Commons host', () => {
     expect(html).toContain('"width":380');
     expect(html).toContain('"height":480');
     expect(html).toContain('"capabilities":["tasks.read","workflows.read"]');
-    expect(html).toContain("'tasks.list': 'tasks.read'");
+    expect(html).toContain('"tasks.list":"tasks.read"');
     expect(html).toContain('This app was not granted the');
     expect(html).toContain("method === 'navigation.open'");
     expect(html).toContain("method === 'ui.resize'");

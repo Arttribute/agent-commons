@@ -1,4 +1,4 @@
-import { UiPluginService } from './ui-plugin.service';
+import { svgDataUrl, UiPluginService } from './ui-plugin.service';
 
 const PAGE_MANIFEST = {
   schemaVersion: '2' as const,
@@ -414,3 +414,151 @@ function pluginFixture() {
     updatedAt: new Date('2026-08-23T00:00:00.000Z'),
   } as any;
 }
+
+describe('UiPluginService app platform manifest', () => {
+  let service: UiPluginService;
+  let values: jest.Mock;
+
+  beforeEach(() => {
+    service = new UiPluginService({} as any);
+    jest.spyOn(service as any, 'assertPublishedProject').mockResolvedValue({
+      projectId: 'project-1',
+      workspaceId: null,
+      deploymentId: 'deployment-pinned',
+      publicUrl:
+        'https://previews.example.com/app/deployments/deployment-pinned/',
+    });
+    const returning = jest
+      .fn()
+      .mockResolvedValue([
+        { pluginId: 'plugin-1', manifest: {}, status: 'draft' },
+      ]);
+    values = jest.fn().mockReturnValue({
+      onConflictDoUpdate: jest.fn().mockReturnValue({ returning }),
+    });
+    (service as any).db = { insert: jest.fn().mockReturnValue({ values }) };
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  const base = {
+    name: 'Trips',
+    codeProjectId: 'project-1',
+  };
+
+  it('stores connections, collections and chat guidance', async () => {
+    await service.create('user-1', null, {
+      ...base,
+      manifest: {
+        surfaces: [{ type: 'widget' }],
+        capabilities: [{ name: 'network.request' }, { name: 'data.write' }],
+        connections: [
+          {
+            key: 'flights',
+            name: 'Flights',
+            baseUrl: 'https://api.flights.example/v2/',
+            auth: { type: 'header', name: 'X-API-Key' },
+          },
+        ],
+        data: {
+          collections: [
+            {
+              name: 'trips',
+              fields: { city: { type: 'string', required: true } },
+            },
+          ],
+        },
+        chat: { when: 'The user picks a trip' },
+      },
+    });
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        manifest: expect.objectContaining({
+          connections: [
+            expect.objectContaining({
+              baseUrl: 'https://api.flights.example/v2',
+              methods: ['GET'],
+              pathPrefixes: ['/'],
+            }),
+          ],
+          data: { collections: [expect.objectContaining({ name: 'trips' })] },
+          chat: { when: 'The user picks a trip' },
+        }),
+      }),
+    );
+  });
+
+  it('requires network.request and public https connections', async () => {
+    await expect(
+      service.create('user-1', null, {
+        ...base,
+        manifest: {
+          surfaces: [{ type: 'page' }],
+          connections: [
+            { key: 'x', name: 'X', baseUrl: 'https://api.example.com' },
+          ],
+        },
+      }),
+    ).rejects.toThrow('network.request');
+    for (const baseUrl of [
+      'http://api.example.com',
+      'https://127.0.0.1',
+      'https://localhost',
+      'https://user:pw@api.example.com',
+    ]) {
+      await expect(
+        service.create('user-1', null, {
+          ...base,
+          manifest: {
+            surfaces: [{ type: 'page' }],
+            capabilities: [{ name: 'network.request' }],
+            connections: [{ key: 'x', name: 'X', baseUrl }],
+          },
+        }),
+      ).rejects.toThrow('public https');
+    }
+  });
+
+  it('only shows apps in chat when they have a widget', async () => {
+    await expect(
+      service.create('user-1', null, {
+        ...base,
+        manifest: { surfaces: [{ type: 'page' }], chat: { when: 'Always' } },
+      }),
+    ).rejects.toThrow('widget surface');
+  });
+
+  it('refuses to grant capabilities the app did not request', async () => {
+    const plugin = {
+      pluginId: 'plugin-1',
+      manifest: { capabilities: [{ name: 'tasks.read' }], surfaces: [] },
+      grants: null,
+    };
+    jest.spyOn(service, 'findOwned').mockResolvedValue(plugin as any);
+    await expect(
+      service.updateGrants('user-1', 'plugin-1', {
+        capabilities: [{ name: 'tasks.write', enabled: true }],
+      }),
+    ).rejects.toThrow('was not requested');
+  });
+});
+
+describe('svgDataUrl', () => {
+  it('accepts a plain SVG glyph', () => {
+    expect(
+      svgDataUrl(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M1 1h22v22H1z"/></svg>',
+      ),
+    ).toMatch(/^data:image\/svg\+xml;base64,/);
+  });
+
+  it.each([
+    '<svg><script>alert(1)</script></svg>',
+    '<svg onload="alert(1)"></svg>',
+    '<svg><image href="https://tracker.example/x.png"/></svg>',
+    '<svg><foreignObject></foreignObject></svg>',
+    '<html></html>',
+  ])('rejects %s', (svg) => {
+    expect(() => svgDataUrl(svg)).toThrow();
+  });
+});

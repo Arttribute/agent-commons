@@ -78,6 +78,9 @@ jobs:
       - name: Test wallet balance response and network selection
         run: node --experimental-strip-types --test apps/commons-app/lib/wallet-networks.test.mjs
 
+      - name: Test Commons app host bridge and capability catalog
+        run: node --experimental-strip-types --test apps/commons-app/components/plugins/plugin-rpc.test.mjs apps/commons-app/components/plugins/plugin-storage.test.mjs apps/commons-app/components/plugins/capabilities.test.mjs
+
       - name: Test payment authorization and concurrent budgets
         env:
           PAYMENT_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
@@ -88,3 +91,6 @@ jobs:
 
       - name: Test Arcade skill assignment contract
         run: pnpm --filter commons-api exec jest --runInBand skill/skill.controller.spec.ts skill/skill.service.spec.ts
+
+      - name: Test Commons app grants, gateway, data and network guards
+        run: pnpm --filter commons-api exec jest --runInBand ui-plugin

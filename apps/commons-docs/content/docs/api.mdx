@@ -510,8 +510,20 @@ JSON-RPC methods: `tasks/send`, `tasks/sendSubscribe`, `tasks/get`,
 | GET | `/v1/providers` | Capability provider configuration |
 | PUT | `/v1/providers/:capability` | Configure a capability provider |
 | DELETE | `/v1/providers/:capability` | Reset to the default |
-| GET | `/v1/ui-plugins` | List sandboxed UI plugins |
-| PUT | `/v1/ui-plugins` | Register or update a plugin |
+| GET | `/v1/ui-plugins` | List Commons apps |
+| PUT | `/v1/ui-plugins` | Register or update an app draft |
+| GET | `/v1/ui-plugins/capabilities` | Capability catalog |
+| PUT | `/v1/ui-plugins/:pluginId/status` | Enable (with grants) or turn off an app |
+| PUT | `/v1/ui-plugins/:pluginId/grants` | Change what an app may do |
+| PUT | `/v1/ui-plugins/:pluginId/appearance` | Set or reset the app icon |
+| GET | `/v1/ui-plugins/:pluginId/connections` | External connections and their status |
+| PUT | `/v1/ui-plugins/:pluginId/connections/:key` | Save a connection key or turn it off |
+| GET | `/v1/ui-plugins/:pluginId/storage` | Storage provider for app data |
+| PUT | `/v1/ui-plugins/:pluginId/storage` | Use Commons, Supabase or MongoDB storage |
+| POST | `/v1/ui-plugins/:pluginId/gateway` | App bridge calls that run on the server |
+| GET | `/v1/ui-plugins/layout` | Pinned apps by page |
+| PUT | `/v1/ui-plugins/layout` | Pin apps for a page or all pages |
+| DELETE | `/v1/ui-plugins/layout?scope=` | Use the all-pages pins again |
 | POST | `/v1/audio/transcriptions` | Transcribe audio |
 | POST | `/v1/goals` | Create a goal |
 | GET | `/v1/goals/:goalId` | Get a goal |

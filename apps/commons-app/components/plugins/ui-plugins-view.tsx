@@ -1,14 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  AppWindow,
-  ExternalLink,
-  Loader2,
-  Plus,
-  ShieldCheck,
-} from "lucide-react";
+import { ExternalLink, Loader2, MessageSquare, Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
@@ -17,17 +11,22 @@ import {
   openUiPluginCreator,
 } from "@/lib/commons-copilot-events";
 import { notifyUiPluginsChanged } from "@/lib/ui-plugin-events";
-import type { UiPlugin } from "./types";
+import { useCommonsAppsStore } from "@/lib/commons-apps-store";
+import { AppIcon } from "./app-icon";
+import { AppSettingsSheet, useAccessSummary } from "./app-settings-sheet";
+import { pluginHasSurface, type UiPlugin } from "./types";
 
 export function UiPluginsView() {
   const [plugins, setPlugins] = useState<UiPlugin[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingIds, setSavingIds] = useState<Set<string>>(() => new Set());
-  const savingIdsRef = useRef(new Set<string>());
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<{
+    pluginId: string;
+    mode: "review" | "settings";
+  } | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(async () => {
-    setLoading(true);
     const response = await fetch("/api/ui-plugins", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     setPlugins(response.ok && Array.isArray(payload.data) ? payload.data : []);
@@ -35,86 +34,39 @@ export function UiPluginsView() {
   }, []);
   useEffect(() => void load(), [load]);
 
-  const toggle = async (plugin: UiPlugin, active: boolean) => {
-    if (savingIdsRef.current.has(plugin.pluginId)) return;
-    savingIdsRef.current.add(plugin.pluginId);
-    setSavingIds(new Set(savingIdsRef.current));
-    const optimisticPlugin: UiPlugin = {
-      ...plugin,
-      status: active ? "active" : "disabled",
-    };
+  const replace = useCallback((plugin: UiPlugin) => {
     setPlugins((items) =>
-      items.map((item) =>
-        item.pluginId === plugin.pluginId ? optimisticPlugin : item,
-      ),
+      items.map((item) => (item.pluginId === plugin.pluginId ? plugin : item)),
     );
-    // Removing a widget optimistically is safe and makes disabling feel
-    // immediate. Enabling waits for the API to re-check the pinned,
-    // verified deployment before the widget host is allowed to mount it.
-    if (!active) {
-      notifyUiPluginsChanged({
-        pluginId: plugin.pluginId,
-        status: optimisticPlugin.status,
-        plugin: optimisticPlugin,
-      });
-    }
+    useCommonsAppsStore.getState().replacePlugin(plugin);
+  }, []);
+
+  const disable = async (plugin: UiPlugin) => {
+    setSavingId(plugin.pluginId);
+    notifyUiPluginsChanged({ pluginId: plugin.pluginId, status: "disabled" });
     try {
-      const response = await fetch(
-        `/api/ui-plugins/${plugin.pluginId}/status`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: active ? "active" : "disabled" }),
-        },
-      );
+      const response = await fetch(`/api/ui-plugins/${plugin.pluginId}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "disabled" }),
+      });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setPlugins((items) =>
-          items.map((item) =>
-            item.pluginId === plugin.pluginId ? plugin : item,
-          ),
-        );
-        notifyUiPluginsChanged({
-          pluginId: plugin.pluginId,
-          status: plugin.status,
-          plugin,
-        });
-        toast({
-          title: "Could not update app",
-          description: payload.message || payload.error || "Please try again.",
-          variant: "destructive",
-        });
-        return;
-      }
-      setPlugins((items) =>
-        items.map((item) =>
-          item.pluginId === plugin.pluginId ? payload.data : item,
-        ),
-      );
+      if (!response.ok) throw new Error(payload.message || "Please try again.");
+      replace(payload.data);
       notifyUiPluginsChanged({
         pluginId: plugin.pluginId,
         status: payload.data.status,
         plugin: payload.data,
       });
-    } catch {
-      setPlugins((items) =>
-        items.map((item) =>
-          item.pluginId === plugin.pluginId ? plugin : item,
-        ),
-      );
-      notifyUiPluginsChanged({
-        pluginId: plugin.pluginId,
-        status: plugin.status,
-        plugin,
-      });
+    } catch (error) {
+      notifyUiPluginsChanged({ pluginId: plugin.pluginId, status: plugin.status, plugin });
       toast({
-        title: "Could not update app",
-        description: "The app registry could not be reached. Please try again.",
+        title: "Could not turn off app",
+        description: error instanceof Error ? error.message : undefined,
         variant: "destructive",
       });
     } finally {
-      savingIdsRef.current.delete(plugin.pluginId);
-      setSavingIds(new Set(savingIdsRef.current));
+      setSavingId(null);
     }
   };
 
@@ -125,23 +77,19 @@ export function UiPluginsView() {
       </div>
     );
   }
+
+  const active = plugins.filter((plugin) => plugin.status === "active");
+  const inactive = plugins.filter((plugin) => plugin.status !== "active");
+  const selected = plugins.find((plugin) => plugin.pluginId === sheet?.pluginId) ?? null;
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <div className="flex items-start gap-3">
-          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-foreground" />
-          <p>
-            Custom apps run in isolated frames. Review each app and its
-            permissions before enabling it; generated drafts never appear in
-            your UI automatically.
-          </p>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <p className="text-xs text-muted-foreground">
-          Opens an editable brief; nothing runs until you send it.
+    <div className="mx-auto max-w-3xl space-y-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-lg text-sm text-muted-foreground">
+          Apps run in isolated frames and can only use the access you give them.
+          Pin them to the apps bar at the top of each page.
         </p>
-        <Button asChild>
+        <Button asChild size="sm" variant="outline">
           <a
             href={CREATE_UI_PLUGIN_HASH}
             role="button"
@@ -150,87 +98,145 @@ export function UiPluginsView() {
               openUiPluginCreator();
             }}
           >
-            <Plus className="mr-2 h-4 w-4" />
-            Open Commons Copilot
+            <Plus className="mr-1.5 h-4 w-4" />
+            Build an app
           </a>
         </Button>
       </div>
+
       {!plugins.length ? (
         <div className="rounded-xl border border-dashed p-12 text-center">
-          <AppWindow className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-          <p className="font-medium">No custom apps yet</p>
+          <p className="font-medium">No apps yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Prompt Commons Copilot to make a page or floating widget.
+            Ask Commons Copilot or any agent to build one. It appears here for
+            review.
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border bg-background">
-          {plugins.map((plugin) => (
-            <div
-              key={plugin.pluginId}
-              className="flex flex-wrap items-center gap-4 border-b p-4 last:border-b-0"
-            >
-              <div className="rounded-lg border bg-muted p-2">
-                <AppWindow className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="truncate font-medium">{plugin.name}</p>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                    v{plugin.version}
-                  </span>
-                </div>
-                <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                  {plugin.description ||
-                    plugin.manifest.surfaces
-                      .map((surface) => surface.type)
-                      .join(" + ")}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Commons access:{" "}
-                  {plugin.manifest.capabilities?.length
-                    ? plugin.manifest.capabilities
-                        .map((grant) =>
-                          grant.resourceIds?.length
-                            ? `${grant.name} (${grant.resourceIds.length} scoped)`
-                            : grant.name,
-                        )
-                        .join(", ")
-                    : "none"}
-                </p>
-                {plugin.manifest.permissions.length > 0 && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    UI permissions: {plugin.manifest.permissions.join(", ")}
-                  </p>
-                )}
-              </div>
-              {plugin.manifest.surfaces.some(
-                (surface) => surface.type === "page",
-              ) && (
-                <Link
-                  href={`/apps/${encodeURIComponent(plugin.slug)}`}
-                  className="inline-flex items-center gap-1.5 text-sm hover:underline"
-                >
-                  Open <ExternalLink className="h-3.5 w-3.5" />
-                </Link>
-              )}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {plugin.status === "active" ? "Enabled" : "Disabled"}
-                </span>
-                {savingIds.has(plugin.pluginId) ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Switch
-                    checked={plugin.status === "active"}
-                    onCheckedChange={(checked) => toggle(plugin, checked)}
-                    aria-label={`Enable ${plugin.name}`}
-                  />
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+        <>
+          {inactive.length > 0 && (
+            <AppSection title="Needs review">
+              {inactive.map((plugin) => (
+                <AppRow
+                  key={plugin.pluginId}
+                  plugin={plugin}
+                  saving={savingId === plugin.pluginId}
+                  onToggle={() => setSheet({ pluginId: plugin.pluginId, mode: "review" })}
+                  onSettings={() => setSheet({ pluginId: plugin.pluginId, mode: "review" })}
+                />
+              ))}
+            </AppSection>
+          )}
+          {active.length > 0 && (
+            <AppSection title="Enabled">
+              {active.map((plugin) => (
+                <AppRow
+                  key={plugin.pluginId}
+                  plugin={plugin}
+                  saving={savingId === plugin.pluginId}
+                  onToggle={() => void disable(plugin)}
+                  onSettings={() => setSheet({ pluginId: plugin.pluginId, mode: "settings" })}
+                />
+              ))}
+            </AppSection>
+          )}
+        </>
+      )}
+
+      <AppSettingsSheet
+        plugin={selected}
+        mode={sheet?.mode ?? "settings"}
+        open={Boolean(sheet && selected)}
+        onOpenChange={(open) => {
+          if (!open) setSheet(null);
+        }}
+        onUpdated={replace}
+      />
+    </div>
+  );
+}
+
+function AppSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h2>
+      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function AppRow({
+  plugin,
+  saving,
+  onToggle,
+  onSettings,
+}: {
+  plugin: UiPlugin;
+  saving: boolean;
+  onToggle: () => void;
+  onSettings: () => void;
+}) {
+  const summary = useAccessSummary(plugin);
+  const isActive = plugin.status === "active";
+  const tags = [
+    pluginHasSurface(plugin, "page") && "Page",
+    pluginHasSurface(plugin, "widget") && "Widget",
+  ].filter(Boolean) as string[];
+  const access = [
+    summary.read && `reads ${summary.read}`,
+    summary.write && `changes ${summary.write}`,
+    summary.services && `${summary.services} service${summary.services > 1 ? "s" : ""}`,
+  ].filter(Boolean) as string[];
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <AppIcon plugin={plugin} size={36} />
+      <button type="button" onClick={onSettings} className="min-w-0 flex-1 text-left">
+        <span className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{plugin.name}</span>
+          <span className="text-[11px] text-muted-foreground">v{plugin.version}</span>
+          {plugin.manifest.chat && (
+            <MessageSquare className="h-3 w-3 text-muted-foreground" aria-label="Works in chat" />
+          )}
+        </span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {plugin.description || tags.join(" · ")}
+        </span>
+        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+          {[tags.join(" + "), access.length ? access.join(", ") : "no Commons access"]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      </button>
+      {isActive && pluginHasSurface(plugin, "page") && (
+        <Link
+          href={`/apps/${encodeURIComponent(plugin.slug)}`}
+          aria-label={`Open ${plugin.name}`}
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <ExternalLink className="h-4 w-4" />
+        </Link>
+      )}
+      <button
+        type="button"
+        onClick={onSettings}
+        aria-label={`${plugin.name} settings`}
+        className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <Settings2 className="h-4 w-4" />
+      </button>
+      {saving ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Switch
+          checked={isActive}
+          onCheckedChange={onToggle}
+          aria-label={isActive ? `Turn off ${plugin.name}` : `Review and enable ${plugin.name}`}
+        />
       )}
     </div>
   );

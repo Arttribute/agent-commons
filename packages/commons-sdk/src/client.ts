@@ -106,6 +106,10 @@ import {
   CapabilityProviderInput,
   UiPlugin,
   CreateUiPluginParams,
+  UiPluginConnectionStatus,
+  UiPluginLayout,
+  UiPluginStorageSettings,
+  UpdateUiPluginGrantsParams,
   ProvenanceTrajectory,
 } from "./types";
 
@@ -1444,14 +1448,95 @@ export class CommonsClient {
       create: (input: CreateUiPluginParams): Promise<{ data: UiPlugin }> =>
         this.request("PUT", "/v1/ui-plugins", input),
 
+      /** Enabling with `grants` records the owner's review in the same step. */
       setStatus: (
         pluginId: string,
         status: "draft" | "active" | "disabled",
+        grants?: UpdateUiPluginGrantsParams,
       ): Promise<{ data: UiPlugin }> =>
         this.request(
           "PUT",
           `/v1/ui-plugins/${encodeURIComponent(pluginId)}/status`,
-          { status },
+          grants ? { status, grants } : { status },
+        ),
+
+      updateGrants: (
+        pluginId: string,
+        grants: UpdateUiPluginGrantsParams,
+      ): Promise<{ data: UiPlugin }> =>
+        this.request(
+          "PUT",
+          `/v1/ui-plugins/${encodeURIComponent(pluginId)}/grants`,
+          grants,
+        ),
+
+      /** Pass a PNG, JPEG, WebP or SVG data URL, or null to use the app's own icon. */
+      setIcon: (
+        pluginId: string,
+        iconUrl: string | null,
+      ): Promise<{ data: UiPlugin }> =>
+        this.request(
+          "PUT",
+          `/v1/ui-plugins/${encodeURIComponent(pluginId)}/appearance`,
+          { iconUrl },
+        ),
+
+      connections: (
+        pluginId: string,
+      ): Promise<{ data: UiPluginConnectionStatus[] }> =>
+        this.request(
+          "GET",
+          `/v1/ui-plugins/${encodeURIComponent(pluginId)}/connections`,
+        ),
+
+      /** Store (or with `secret: null`, remove) the key for a declared connection. */
+      saveConnection: (
+        pluginId: string,
+        key: string,
+        input: { secret?: string | null; enabled?: boolean },
+      ): Promise<{ data: UiPluginConnectionStatus[] }> =>
+        this.request(
+          "PUT",
+          `/v1/ui-plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(key)}`,
+          input,
+        ),
+
+      storage: (pluginId: string): Promise<{ data: UiPluginStorageSettings }> =>
+        this.request(
+          "GET",
+          `/v1/ui-plugins/${encodeURIComponent(pluginId)}/storage`,
+        ),
+
+      /** Tests the connection before saving it. */
+      setStorage: (
+        pluginId: string,
+        input: {
+          provider: UiPluginStorageSettings["provider"];
+          url?: string;
+          database?: string;
+          tablePrefix?: string;
+          secret?: string;
+        },
+      ): Promise<{ data: UiPluginStorageSettings }> =>
+        this.request(
+          "PUT",
+          `/v1/ui-plugins/${encodeURIComponent(pluginId)}/storage`,
+          input,
+        ),
+
+      layout: (): Promise<{ data: UiPluginLayout }> =>
+        this.request("GET", "/v1/ui-plugins/layout"),
+
+      setPins: (
+        scope: string,
+        pluginIds: string[],
+      ): Promise<{ data: UiPluginLayout }> =>
+        this.request("PUT", "/v1/ui-plugins/layout", { scope, pluginIds }),
+
+      resetPins: (scope: string): Promise<{ data: UiPluginLayout }> =>
+        this.request(
+          "DELETE",
+          `/v1/ui-plugins/layout?scope=${encodeURIComponent(scope)}`,
         ),
 
       delete: (pluginId: string): Promise<{ deleted: boolean }> =>

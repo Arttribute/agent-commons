@@ -1,3 +1,5 @@
+import type { UiPluginCapabilityName } from "./capabilities";
+
 export type UiPluginStatus = "draft" | "active" | "disabled";
 
 export type UiPluginSurfaceType = "page" | "widget";
@@ -11,19 +13,40 @@ export type UiPluginSurface = {
 
 export type UiPluginPermission = "theme.read" | "navigation" | "storage";
 
-export type UiPluginCapabilityName =
-  | "agents.read"
-  | "tasks.read"
-  | "tasks.write"
-  | "workflows.read"
-  | "workflows.execute"
-  | "library.read"
-  | "tools.read"
-  | "copilot.prompt";
+export type { UiPluginCapabilityName };
+
+export type UiPluginApproval = "ask" | "auto";
 
 export type UiPluginCapabilityGrant = {
   name: UiPluginCapabilityName;
   resourceIds?: string[];
+  approval?: UiPluginApproval;
+};
+
+export type UiPluginConnection = {
+  key: string;
+  name: string;
+  description?: string;
+  baseUrl: string;
+  auth: {
+    type: "none" | "bearer" | "header" | "query" | "basic";
+    name?: string;
+  };
+  methods: string[];
+  pathPrefixes: string[];
+};
+
+export type UiPluginCollection = {
+  name: string;
+  description?: string;
+  fields?: Record<string, { type: string; required?: boolean }>;
+};
+
+export type UiPluginGrants = {
+  capabilities: UiPluginCapabilityGrant[];
+  agentDataAccess: "none" | "read" | "readwrite";
+  chatEnabled: boolean;
+  reviewedAt: string;
 };
 
 export type UiPlugin = {
@@ -41,9 +64,27 @@ export type UiPlugin = {
     permissions: UiPluginPermission[];
     capabilities?: UiPluginCapabilityGrant[];
     networkAccess?: { allowedDomains: string[] };
+    icon?: string;
+    category?: string;
+    chat?: { when: string; inputDescription?: string };
+    connections?: UiPluginConnection[];
+    data?: { collections: UiPluginCollection[] };
   };
+  iconUrl?: string | null;
+  grants?: UiPluginGrants | null;
+  /** The owner-approved grant set the API enforces. */
+  effectiveCapabilities?: UiPluginCapabilityGrant[];
   updatedAt: string;
 };
+
+/** Grants the host enforces: the owner's review, or the manifest for legacy rows. */
+export function pluginGrants(plugin: UiPlugin): UiPluginCapabilityGrant[] {
+  return plugin.effectiveCapabilities ?? plugin.manifest.capabilities ?? [];
+}
+
+export function pluginHasSurface(plugin: UiPlugin, type: UiPluginSurfaceType) {
+  return plugin.manifest.surfaces.some((surface) => surface.type === type);
+}
 
 export function isUiPlugin(value: unknown): value is UiPlugin {
   if (!value || typeof value !== "object") return false;

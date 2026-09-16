@@ -44,8 +44,11 @@ import {
 } from './web-search.provider';
 import { CapabilityProviderService } from '~/provider';
 import {
+  AppDataService,
   UiPluginService,
   type UiPluginCapabilityGrant,
+  type UiPluginCollectionInput,
+  type UiPluginConnectionInput,
   type UiPluginPermission,
   type UiPluginSurface,
 } from '~/ui-plugin';
@@ -447,7 +450,13 @@ export interface CommonTool {
   annotateCanvas(props: {
     projectId: string;
     revisionId: string;
-    kind: 'comment' | 'point' | 'region' | 'time_range' | 'transcript' | 'freehand';
+    kind:
+      | 'comment'
+      | 'point'
+      | 'region'
+      | 'time_range'
+      | 'transcript'
+      | 'freehand';
     body: string;
     geometry?: Record<string, unknown>;
     startMs?: number;
@@ -779,6 +788,99 @@ export interface CommonTool {
     permissions?: UiPluginPermission[];
     /** Least-privilege host capabilities used by the app through @agent-commons/ui. */
     capabilities?: UiPluginCapabilityGrant[];
+    /** Path of an SVG icon file in the code project, e.g. "icon.svg". Always ship one. */
+    icon?: string;
+    /** Short category such as "planning", "finance" or "research". */
+    category?: string;
+    /**
+     * Set when agents should show this app inside chat. `when` describes the
+     * moment it helps (for example "the user must pick between travel
+     * options"); `inputDescription` describes the input object it reads from
+     * commons.chat.getInput(). Requires a widget surface.
+     */
+    chat?: { when: string; inputDescription?: string };
+    /**
+     * External APIs the app calls with commons.http.request. The owner adds
+     * keys in Commons; the app never sees them. Requires network.request.
+     */
+    connections?: Array<{
+      key: string;
+      name: string;
+      description?: string;
+      /** Public https base URL, e.g. "https://api.openweathermap.org/data/2.5". */
+      baseUrl: string;
+      auth?: {
+        type?: 'none' | 'bearer' | 'header' | 'query' | 'basic';
+        /** Header or query parameter name for header/query auth. */
+        name?: string;
+      };
+      /** Allowed HTTP methods. Defaults to GET. */
+      methods?: Array<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'>;
+      /** Allowed paths under baseUrl. Defaults to "/". */
+      pathPrefixes?: string[];
+    }>;
+    /** Collections the app stores through commons.data (requires data.read/data.write). */
+    data?: {
+      collections: Array<{
+        name: string;
+        description?: string;
+        fields?: Record<
+          string,
+          {
+            type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+            required?: boolean;
+          }
+        >;
+      }>;
+    };
+  }): Promise<any>;
+
+  /** List the Commons apps the user enabled, with when to show each in chat and data access. */
+  listCommonsApps(props: { agentId?: string }): Promise<any>;
+
+  /**
+   * Show an enabled Commons app inline in this chat. Use it only when the
+   * app's chat guidance matches the moment. The user interacts with it and
+   * its response arrives as their next message.
+   */
+  showCommonsApp(props: {
+    agentId?: string;
+    /** App slug or id from listCommonsApps. */
+    app: string;
+    /** One sentence shown above the app explaining why it is here. */
+    reason: string;
+    /** Input object matching the app's inputDescription. */
+    input?: Record<string, any>;
+  }): Promise<any>;
+
+  /** Read records an enabled Commons app stores, when its owner allows agent reads. */
+  queryCommonsAppData(props: {
+    agentId?: string;
+    app: string;
+    /** Omit to list the app's collections. */
+    collection?: string;
+    /** Fetch one record by id instead of querying. */
+    id?: string;
+    /** Top-level field filters, e.g. { "status": "open", "score": { "gte": 3 } }. */
+    where?: Record<string, any>;
+    orderBy?: string;
+    direction?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+  }): Promise<any>;
+
+  /** Create, update or delete a record in an enabled Commons app, when its owner allows agent writes. */
+  writeCommonsAppData(props: {
+    agentId?: string;
+    app: string;
+    collection: string;
+    operation: 'insert' | 'update' | 'delete';
+    /** Required for update and delete. */
+    id?: string;
+    /** Record fields for insert and update. */
+    data?: Record<string, any>;
+    /** Replace the whole record on update instead of merging fields. */
+    replace?: boolean;
   }): Promise<any>;
 
   /**
@@ -1070,6 +1172,7 @@ export class CommonToolService {
     private usage: UsageService,
     private capabilityProviders: CapabilityProviderService,
     private uiPlugins: UiPluginService,
+    private appData: AppDataService,
     private brains: BrainService,
     private media: MediaService,
     private canvas: CanvasService,
@@ -1676,7 +1779,13 @@ export class CommonToolService {
     props: {
       projectId: string;
       revisionId: string;
-      kind: 'comment' | 'point' | 'region' | 'time_range' | 'transcript' | 'freehand';
+      kind:
+        | 'comment'
+        | 'point'
+        | 'region'
+        | 'time_range'
+        | 'transcript'
+        | 'freehand';
       body: string;
       geometry?: Record<string, unknown>;
       startMs?: number;
@@ -2245,11 +2354,26 @@ export class CommonToolService {
       surfaces: UiPluginSurface[];
       permissions?: UiPluginPermission[];
       capabilities?: UiPluginCapabilityGrant[];
+      icon?: string;
+      category?: string;
+      chat?: { when: string; inputDescription?: string };
+      connections?: UiPluginConnectionInput[];
+      data?: { collections: UiPluginCollectionInput[] };
     },
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    const { surfaces, permissions, capabilities, ...input } = props;
+    const {
+      surfaces,
+      permissions,
+      capabilities,
+      icon,
+      category,
+      chat,
+      connections,
+      data,
+      ...input
+    } = props;
     const plugin = await this.uiPlugins.createForAgent(agentId, {
       ...input,
       manifest: {
@@ -2258,14 +2382,161 @@ export class CommonToolService {
         permissions,
         capabilities,
         networkAccess: { allowedDomains: [] },
+        icon,
+        category,
+        chat,
+        connections,
+        data,
       },
     });
     return {
-      ...plugin,
+      pluginId: plugin.pluginId,
+      name: plugin.name,
+      slug: plugin.slug,
+      status: plugin.status,
+      version: plugin.version,
+      hasIcon: Boolean(plugin.iconUrl),
+      requestedCapabilities: (plugin.manifest.capabilities ?? []).map(
+        (grant) => grant.name,
+      ),
+      connections: (plugin.manifest.connections ?? []).map(
+        (connection) => connection.key,
+      ),
       reviewRequired: true,
       message:
-        'The UI plugin is registered as a draft. Its owner must review and enable it in Studio Customize → Apps.',
+        'The app is registered as a draft. Its owner reviews its permissions, connects any external services, and enables it in Studio → Customize → Apps. Agents cannot grant permissions.',
     };
+  }
+
+  async listCommonsApps(
+    props: { agentId?: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const apps = await this.uiPlugins.listActiveForAgent(agentId);
+    return { apps, total: apps.length };
+  }
+
+  async showCommonsApp(
+    props: {
+      agentId?: string;
+      app: string;
+      reason: string;
+      input?: Record<string, any>;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const { plugin } = await this.uiPlugins.resolveActiveForAgent(
+      agentId,
+      props.app,
+    );
+    const view = (await this.uiPlugins.listActiveForAgent(agentId)).find(
+      (candidate) => candidate.pluginId === plugin.pluginId,
+    );
+    if (!view?.chat.available) {
+      throw new BadRequestException(
+        `${plugin.name} is not available in chat. Its owner has not enabled chat for it, or it has no widget.`,
+      );
+    }
+    const input = props.input ?? {};
+    if (Buffer.byteLength(JSON.stringify(input)) > 16_000) {
+      throw new BadRequestException('input must be smaller than 16 KB');
+    }
+    return {
+      commonsAppWidget: {
+        widgetId: randomUUID(),
+        pluginId: plugin.pluginId,
+        slug: plugin.slug,
+        name: plugin.name,
+        reason: String(props.reason ?? '')
+          .trim()
+          .slice(0, 300),
+        input,
+      },
+      message: `${plugin.name} is now shown in the chat. Wait for the user's response from the app before continuing.`,
+    };
+  }
+
+  async queryCommonsAppData(
+    props: {
+      agentId?: string;
+      app: string;
+      collection?: string;
+      id?: string;
+      where?: Record<string, any>;
+      orderBy?: string;
+      direction?: 'asc' | 'desc';
+      limit?: number;
+      offset?: number;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    if (!props.collection) {
+      return this.appData.executeForAgent(agentId, props.app, {
+        op: 'collections',
+      });
+    }
+    if (props.id) {
+      return this.appData.executeForAgent(agentId, props.app, {
+        op: 'get',
+        collection: props.collection,
+        id: props.id,
+      });
+    }
+    return this.appData.executeForAgent(agentId, props.app, {
+      op: 'query',
+      collection: props.collection,
+      query: {
+        where: props.where,
+        orderBy: props.orderBy,
+        direction: props.direction,
+        limit: props.limit,
+        offset: props.offset,
+      },
+    });
+  }
+
+  async writeCommonsAppData(
+    props: {
+      agentId?: string;
+      app: string;
+      collection: string;
+      operation: 'insert' | 'update' | 'delete';
+      id?: string;
+      data?: Record<string, any>;
+      replace?: boolean;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    switch (props.operation) {
+      case 'insert':
+        return this.appData.executeForAgent(agentId, props.app, {
+          op: 'insert',
+          collection: props.collection,
+          data: props.data ?? {},
+        });
+      case 'update':
+        return this.appData.executeForAgent(agentId, props.app, {
+          op: 'update',
+          collection: props.collection,
+          id: props.id ?? '',
+          data: props.data ?? {},
+          replace: props.replace,
+        });
+      case 'delete':
+        return this.appData.executeForAgent(agentId, props.app, {
+          op: 'delete',
+          collection: props.collection,
+          id: props.id ?? '',
+        });
+      default:
+        throw new BadRequestException(
+          'operation must be insert, update or delete',
+        );
+    }
   }
 
   async testCodeProject(
@@ -2311,8 +2582,13 @@ export class CommonToolService {
 
   /* ─────────────────────────  COMMON ARCADE  ───────────────────────── */
 
-  private async arcadeActor(agentId?: string, metadata?: ToolExecutionMetadata) {
-    return this.arcade.actorForAgent(this.requireToolAgentId(agentId, metadata));
+  private async arcadeActor(
+    agentId?: string,
+    metadata?: ToolExecutionMetadata,
+  ) {
+    return this.arcade.actorForAgent(
+      this.requireToolAgentId(agentId, metadata),
+    );
   }
 
   async arcade_list_projects(
@@ -2352,7 +2628,12 @@ export class CommonToolService {
   }
 
   async arcade_test_game(
-    props: { agentId?: string; projectId: string; seed?: string; steps?: number },
+    props: {
+      agentId?: string;
+      projectId: string;
+      seed?: string;
+      steps?: number;
+    },
     metadata?: ToolExecutionMetadata,
   ) {
     const actor = await this.arcadeActor(props.agentId, metadata);

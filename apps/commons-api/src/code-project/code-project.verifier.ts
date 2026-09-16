@@ -17,6 +17,7 @@ import {
   resolveVerifierHostOrigin,
   type VerifierBridgeCall,
 } from './code-project.verifier-host';
+import { UI_PLUGIN_METHOD_CAPABILITIES } from '~/ui-plugin/ui-plugin.capabilities';
 
 type VerificationScenario = {
   name: string;
@@ -661,17 +662,7 @@ async function readBridgeCalls(page: import('playwright').Page) {
 function exercisedCapabilities(
   checks: Array<{ bridgeCalls: VerifierBridgeCall[] }>,
 ) {
-  const byMethod: Record<string, string> = {
-    'agents.list': 'agents.read',
-    'tasks.list': 'tasks.read',
-    'tasks.create': 'tasks.write',
-    'tasks.update': 'tasks.write',
-    'workflows.list': 'workflows.read',
-    'workflows.execute': 'workflows.execute',
-    'library.list': 'library.read',
-    'tools.list': 'tools.read',
-    'copilot.open': 'copilot.prompt',
-  };
+  const byMethod: Record<string, string> = UI_PLUGIN_METHOD_CAPABILITIES;
   return [
     ...new Set(
       checks.flatMap((check) =>

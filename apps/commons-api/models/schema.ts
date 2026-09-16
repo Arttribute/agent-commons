@@ -14,6 +14,8 @@ import {
   vector,
   foreignKey,
   check,
+  pgSchema,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { relations } from 'drizzle-orm';
@@ -343,20 +345,60 @@ export const uiPlugin = pgTable(
         }>;
         permissions: Array<'theme.read' | 'navigation' | 'storage'>;
         capabilities?: Array<{
-          name:
-            | 'agents.read'
-            | 'tasks.read'
-            | 'tasks.write'
-            | 'workflows.read'
-            | 'workflows.execute'
-            | 'library.read'
-            | 'tools.read'
-            | 'copilot.prompt';
+          name: string;
           resourceIds?: string[];
         }>;
         networkAccess?: { allowedDomains: string[] };
+        /** Deployment-relative icon path declared by the app author. */
+        icon?: string;
+        category?: string;
+        /** When agents should bring this app into a chat, and what it expects. */
+        chat?: { when: string; inputDescription?: string };
+        /** External services the app wants to call through the Commons proxy. */
+        connections?: Array<{
+          key: string;
+          name: string;
+          description?: string;
+          baseUrl: string;
+          auth: {
+            type: 'none' | 'bearer' | 'header' | 'query' | 'basic';
+            name?: string;
+          };
+          methods: string[];
+          pathPrefixes: string[];
+        }>;
+        /** Collections the app stores through `commons.data`. */
+        data?: {
+          collections: Array<{
+            name: string;
+            description?: string;
+            fields?: Record<
+              string,
+              {
+                type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+                required?: boolean;
+              }
+            >;
+          }>;
+        };
       }>()
       .notNull(),
+    /** Resolved icon: an immutable deployment asset or an owner upload. */
+    iconUrl: text('icon_url'),
+    /**
+     * What the owner allowed. Null means the app was enabled before grants
+     * existed and keeps its reviewed manifest as the grant set.
+     */
+    grants: jsonb('grants').$type<{
+      capabilities: Array<{
+        name: string;
+        resourceIds?: string[];
+        approval?: 'ask' | 'auto';
+      }>;
+      agentDataAccess: 'none' | 'read' | 'readwrite';
+      chatEnabled: boolean;
+      reviewedAt: string;
+    }>(),
     status: text('status').default('draft').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .default(sql`timezone('utc', now())`)
@@ -388,6 +430,114 @@ export const uiPlugin = pgTable(
       ],
       name: 'ui_plugin_deployment_project_fk',
     }).onDelete('cascade'),
+  }),
+);
+
+/** Owner-supplied credentials for a connection an app declared. */
+export const uiPluginConnection = pgTable(
+  'ui_plugin_connection',
+  {
+    connectionId: uuid('connection_id')
+      .default(sql`uuid_generate_v4()`)
+      .primaryKey(),
+    pluginId: uuid('plugin_id')
+      .notNull()
+      .references(() => uiPlugin.pluginId, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id').notNull(),
+    key: text('key').notNull(),
+    encryptedSecret: text('encrypted_secret'),
+    secretHint: text('secret_hint'),
+    enabled: pgBoolean('enabled').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    pluginKeyIdx: uniqueIndex('idx_ui_plugin_connection_key').on(
+      table.pluginId,
+      table.key,
+    ),
+  }),
+);
+
+/** Where an app's `commons.data` records live. Absent means Commons storage. */
+export const uiPluginStorage = pgTable('ui_plugin_storage', {
+  pluginId: uuid('plugin_id')
+    .primaryKey()
+    .references(() => uiPlugin.pluginId, { onDelete: 'cascade' }),
+  ownerUserId: text('owner_user_id').notNull(),
+  provider: text('provider').default('commons').notNull(),
+  config: jsonb('config')
+    .$type<{
+      url?: string;
+      database?: string;
+      tablePrefix?: string;
+    }>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
+  encryptedSecret: text('encrypted_secret'),
+  secretHint: text('secret_hint'),
+  lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .default(sql`timezone('utc', now())`)
+    .notNull(),
+});
+
+/** Pinned apps per page scope. The `global` scope applies everywhere else. */
+export const uiPluginLayout = pgTable(
+  'ui_plugin_layout',
+  {
+    ownerUserId: text('owner_user_id').notNull(),
+    scope: text('scope').notNull(),
+    pluginIds: jsonb('plugin_ids')
+      .$type<string[]>()
+      .default(sql`'[]'::jsonb`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.ownerUserId, table.scope] }),
+  }),
+);
+
+/*
+ * App data lives in its own Postgres schema. Apps define their own record
+ * shapes, so nothing here leaks into the platform tables in `public`.
+ */
+export const commonsAppData = pgSchema('commons_app_data');
+
+export const appRecord = commonsAppData.table(
+  'record',
+  {
+    recordId: uuid('record_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    pluginId: uuid('plugin_id')
+      .notNull()
+      .references(() => uiPlugin.pluginId, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id').notNull(),
+    collection: text('collection').notNull(),
+    data: jsonb('data').$type<Record<string, unknown>>().notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    collectionIdx: index('idx_app_record_collection').on(
+      table.pluginId,
+      table.collection,
+      table.createdAt,
+    ),
   }),
 );
 
