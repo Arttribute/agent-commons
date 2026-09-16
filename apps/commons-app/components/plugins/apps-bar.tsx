@@ -3,11 +3,10 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Blocks, ExternalLink, Pin, Search, Settings2, X } from "lucide-react";
+import { Blocks, Pin, Search, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Popover,
-  PopoverAnchor,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
@@ -26,11 +25,7 @@ import {
   useCommonsApps,
 } from "@/lib/commons-apps-store";
 import { AppIcon } from "./app-icon";
-import { PluginFrame } from "./plugin-frame";
-import type { PluginRpcResize } from "./plugin-rpc";
 import { pluginHasSurface, type UiPlugin } from "./types";
-
-const PANEL_HEADER_HEIGHT = 40;
 
 /**
  * Top-right apps bar: up to six pinned app icons plus a menu of every enabled
@@ -41,34 +36,45 @@ export function CommonsAppsBar({ className }: { className?: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const { toast } = useToast();
-  const { plugins, layout, maxPinned, loaded, setPins, resetScope } =
-    useCommonsApps();
+  const {
+    plugins,
+    layout,
+    maxPinned,
+    loaded,
+    setPins,
+    resetScope,
+    openWindows,
+    toggleWindow,
+    focusWindow,
+  } = useCommonsApps();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [openPluginId, setOpenPluginId] = useState<string | null>(null);
 
   const scope = appsScopeForPath(pathname);
   const activeApps = useMemo(
     () => plugins.filter((plugin) => plugin.status === "active"),
     [plugins],
   );
-  const reviewCount = plugins.filter((plugin) => plugin.status === "draft").length;
+  const reviewCount = plugins.filter(
+    (plugin) => plugin.status === "draft",
+  ).length;
   const { pinned, customized } = resolvePins(layout, scope, plugins);
   const editScope = customized ? scope : GLOBAL_APPS_SCOPE;
-  const openPlugin = activeApps.find((plugin) => plugin.pluginId === openPluginId);
 
   const openApp = useCallback(
-    (plugin: UiPlugin) => {
+    (plugin: UiPlugin, fromMenu = false) => {
       setMenuOpen(false);
-      if (pluginHasSurface(plugin, "widget")) {
-        setOpenPluginId((current) =>
-          current === plugin.pluginId ? null : plugin.pluginId,
-        );
-      } else {
-        setOpenPluginId(null);
+      if (!pluginHasSurface(plugin, "widget")) {
         router.push(`/apps/${encodeURIComponent(plugin.slug)}`);
+        return;
+      }
+      // From the menu, bring an open window forward instead of closing it.
+      if (fromMenu && openWindows.includes(plugin.pluginId)) {
+        focusWindow(plugin.pluginId);
+      } else {
+        toggleWindow(plugin.pluginId);
       }
     },
-    [router],
+    [focusWindow, openWindows, router, toggleWindow],
   );
 
   const togglePin = async (plugin: UiPlugin) => {
@@ -111,95 +117,78 @@ export function CommonsAppsBar({ className }: { className?: string }) {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <Popover
-        open={Boolean(openPlugin)}
-        onOpenChange={(open) => {
-          if (!open) setOpenPluginId(null);
-        }}
+      <div
+        className={cn(
+          "flex h-9 flex-shrink-0 items-center gap-0.5 rounded-full border border-border bg-background px-1 shadow-card",
+          className,
+        )}
       >
-        <PopoverAnchor asChild>
-          <div
-            className={cn(
-              "flex h-9 flex-shrink-0 items-center gap-0.5 rounded-full border border-border bg-background px-1 shadow-card",
-              className,
-            )}
-          >
-            {pinned.map((plugin) => (
-              <Tooltip key={plugin.pluginId}>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={plugin.name}
-                    aria-pressed={openPluginId === plugin.pluginId}
-                    onClick={() => openApp(plugin)}
-                    className={cn(
-                      "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-muted",
-                      openPluginId === plugin.pluginId && "bg-muted",
-                    )}
-                  >
-                    <AppIcon plugin={plugin} size={18} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  {plugin.name}
-                </TooltipContent>
-              </Tooltip>
-            ))}
-            {pinned.length > 0 && (
-              <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />
-            )}
-            <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      aria-label="Apps"
-                      className="relative flex h-7 w-7 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted"
-                    >
-                      <Blocks className="h-4 w-4" strokeWidth={1.75} />
-                      {reviewCount > 0 && (
-                        <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-500" />
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  Apps
-                </TooltipContent>
-              </Tooltip>
-              <PopoverContent align="end" sideOffset={8} className="w-80 p-0">
-                <AppsMenu
-                  apps={activeApps}
-                  pinnedIds={pinned.map((plugin) => plugin.pluginId)}
-                  maxPinned={maxPinned}
-                  scopeLabel={appsScopeLabel(scope)}
-                  customized={customized}
-                  reviewCount={reviewCount}
-                  onOpen={openApp}
-                  onTogglePin={togglePin}
-                  onScopeMode={setScopeMode}
-                  onNavigate={() => setMenuOpen(false)}
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-        </PopoverAnchor>
-        {openPlugin && (
-          <PopoverContent
-            align="end"
-            sideOffset={8}
-            className="overflow-hidden p-0"
-            onOpenAutoFocus={(event) => event.preventDefault()}
-          >
-            <AppPanel
-              key={`${openPlugin.pluginId}:${openPlugin.updatedAt}`}
-              plugin={openPlugin}
-              onClose={() => setOpenPluginId(null)}
+        {pinned.map((plugin) => {
+          const isOpen = openWindows.includes(plugin.pluginId);
+          return (
+            <Tooltip key={plugin.pluginId}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={plugin.name}
+                  aria-pressed={isOpen}
+                  onClick={() => openApp(plugin)}
+                  className={cn(
+                    "relative flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-muted",
+                    isOpen && "bg-muted",
+                  )}
+                >
+                  <AppIcon plugin={plugin} size={18} />
+                  {isOpen && (
+                    <span className="absolute bottom-0.5 left-1/2 h-0.5 w-2 -translate-x-1/2 rounded-full bg-foreground/60" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                {plugin.name}
+              </TooltipContent>
+            </Tooltip>
+          );
+        })}
+        {pinned.length > 0 && (
+          <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />
+        )}
+        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Apps"
+                  className="relative flex h-7 w-7 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted"
+                >
+                  <Blocks className="h-4 w-4" strokeWidth={1.75} />
+                  {reviewCount > 0 && (
+                    <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                  )}
+                </button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              Apps
+            </TooltipContent>
+          </Tooltip>
+          <PopoverContent align="end" sideOffset={8} className="w-80 p-0">
+            <AppsMenu
+              apps={activeApps}
+              pinnedIds={pinned.map((plugin) => plugin.pluginId)}
+              maxPinned={maxPinned}
+              scopeLabel={appsScopeLabel(scope)}
+              customized={customized}
+              reviewCount={reviewCount}
+              onOpen={(plugin) => openApp(plugin, true)}
+              onTogglePin={togglePin}
+              onScopeMode={setScopeMode}
+              onNavigate={() => setMenuOpen(false)}
             />
           </PopoverContent>
-        )}
-      </Popover>
+        </Popover>
+      </div>
     </TooltipProvider>
   );
 }
@@ -320,7 +309,9 @@ function AppsMenu({
                 >
                   <AppIcon plugin={plugin} size={22} />
                   <span className="min-w-0">
-                    <span className="block truncate text-sm">{plugin.name}</span>
+                    <span className="block truncate text-sm">
+                      {plugin.name}
+                    </span>
                     {plugin.description && (
                       <span className="block truncate text-xs text-muted-foreground">
                         {plugin.description}
@@ -330,7 +321,9 @@ function AppsMenu({
                 </button>
                 <button
                   type="button"
-                  aria-label={isPinned ? `Unpin ${plugin.name}` : `Pin ${plugin.name}`}
+                  aria-label={
+                    isPinned ? `Unpin ${plugin.name}` : `Pin ${plugin.name}`
+                  }
                   aria-pressed={isPinned}
                   title={
                     full
@@ -382,79 +375,3 @@ function AppsMenu({
     </div>
   );
 }
-
-function AppPanel({
-  plugin,
-  onClose,
-}: {
-  plugin: UiPlugin;
-  onClose: () => void;
-}) {
-  const surface = plugin.manifest.surfaces.find(
-    (candidate) => candidate.type === "widget",
-  );
-  const [size, setSize] = useState({
-    width: surface?.width ?? 380,
-    height: surface?.height ?? 480,
-  });
-  const resize = useCallback((requested: PluginRpcResize) => {
-    const next = {
-      width: Math.min(requested.width, window.innerWidth - 24),
-      height: Math.min(
-        requested.height,
-        window.innerHeight - 96 - PANEL_HEADER_HEIGHT,
-      ),
-    };
-    setSize(next);
-    return next;
-  }, []);
-
-  return (
-    <section
-      aria-label={plugin.name}
-      className="flex flex-col"
-      style={{
-        width: size.width,
-        maxWidth: "calc(100vw - 24px)",
-        height: size.height + PANEL_HEADER_HEIGHT,
-        maxHeight: "calc(100dvh - 96px)",
-      }}
-    >
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border pl-3 pr-1.5">
-        <AppIcon plugin={plugin} size={16} />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {surface?.title || plugin.name}
-        </span>
-        {pluginHasSurface(plugin, "page") && (
-          <Link
-            href={`/apps/${encodeURIComponent(plugin.slug)}`}
-            onClick={onClose}
-            aria-label="Open full page"
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Link>
-        )}
-        <button
-          type="button"
-          aria-label="Close app"
-          onClick={onClose}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </header>
-      <div className="min-h-0 flex-1 bg-background">
-        {surface ? (
-          <PluginFrame
-            plugin={plugin}
-            surface="widget"
-            className="h-full w-full border-0"
-            onResizeRequest={resize}
-          />
-        ) : null}
-      </div>
-    </section>
-  );
-}
-

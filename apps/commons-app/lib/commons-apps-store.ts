@@ -17,6 +17,13 @@ type CommonsAppsState = {
   setPins: (scope: string, pluginIds: string[]) => Promise<void>;
   resetScope: (scope: string) => Promise<void>;
   replacePlugin: (plugin: UiPlugin) => void;
+  /** Open app windows in the order they were opened (stable render order). */
+  openWindows: string[];
+  /** Stacking order of open windows, last item on top. */
+  windowStack: string[];
+  toggleWindow: (pluginId: string) => void;
+  focusWindow: (pluginId: string) => void;
+  closeWindow: (pluginId: string) => void;
 };
 
 let refreshSequence = 0;
@@ -98,6 +105,39 @@ export const useCommonsAppsStore = create<CommonsAppsState>((set, get) => ({
       throw error;
     }
   },
+
+  openWindows: [],
+  windowStack: [],
+  toggleWindow: (pluginId) =>
+    set((state) =>
+      state.openWindows.includes(pluginId)
+        ? {
+            openWindows: state.openWindows.filter((id) => id !== pluginId),
+            windowStack: state.windowStack.filter((id) => id !== pluginId),
+          }
+        : {
+            openWindows: [...state.openWindows, pluginId],
+            windowStack: [...state.windowStack, pluginId],
+          },
+    ),
+  // Only the stack changes: moving an iframe in the DOM would reload the app.
+  focusWindow: (pluginId) =>
+    set((state) =>
+      !state.openWindows.includes(pluginId) ||
+      state.windowStack[state.windowStack.length - 1] === pluginId
+        ? state
+        : {
+            windowStack: [
+              ...state.windowStack.filter((id) => id !== pluginId),
+              pluginId,
+            ],
+          },
+    ),
+  closeWindow: (pluginId) =>
+    set((state) => ({
+      openWindows: state.openWindows.filter((id) => id !== pluginId),
+      windowStack: state.windowStack.filter((id) => id !== pluginId),
+    })),
 
   replacePlugin: (plugin) =>
     set((state) => ({
