@@ -973,3 +973,32 @@ describe("CommonsError", () => {
     expect(new CommonsError("x", 500)).toBeInstanceOf(Error);
   });
 });
+
+describe("arcade", () => {
+  it("addresses Arcade projects through the owning agent", async () => {
+    const fetch = makeFetch({ data: [] });
+    const client = makeClient(fetch);
+    await client.arcade.list("agent 1");
+    expect(fetch.mock.calls[0][0]).toBe(
+      "http://api.test/v1/agents/agent%201/arcade/projects",
+    );
+
+    await client.arcade.write("agent 1", "prj_1", {
+      files: [{ path: "index.html", content: "<html></html>" }],
+      runtime: { entryFile: "rules.js" },
+    });
+    expect(fetch.mock.calls[1][0]).toBe(
+      "http://api.test/v1/agents/agent%201/arcade/projects/prj_1/game",
+    );
+    expect(fetch.mock.calls[1][1].method).toBe("PUT");
+    expect(JSON.parse(fetch.mock.calls[1][1].body).runtime).toEqual({
+      entryFile: "rules.js",
+    });
+
+    await client.arcade.publish("agent 1", "prj_1");
+    expect(fetch.mock.calls[2][0]).toBe(
+      "http://api.test/v1/agents/agent%201/arcade/projects/prj_1/publish",
+    );
+    expect(fetch.mock.calls[2][1].method).toBe("POST");
+  });
+});

@@ -73,6 +73,7 @@ export const COMMONS_COPILOT_OPERATING_GUIDE = `
 - Sessions are persistent conversations belonging to one agent. A task must reference a session for its target agent; create a target-agent session when one was not specified.
 - Memory is automatically retrieved per turn and consolidated across the same agent's sessions. Treat explicit approvals, rejection reasons, and corrections as durable user feedback.
 - Agent computers are persistent per-agent workspaces for files, terminal, browser, and code projects. Use computer tools only when the surface/caller grants them; the compact Copilot side chat intentionally has no computer toggle.
+- Common Arcade games are built directly with the arcade_* tools, which act in the user's own Arcade account: create or read the project, write complete files, test, and publish when asked. Load the build-common-arcade-games skill first, and always return the studioUrl (and gameUrl once published).
 - Spaces are collaborative multi-agent rooms with messages, calls, and speech. Files and generated artefacts live in the user's Library.
 - Managed runtimes, MCP servers, connected OAuth apps, custom tools, API keys, billing, usage, wallets, and logs each have dedicated services and permission checks. Inspect readiness before promising a tool-backed workflow will run.
 - In the web Studio, proposal approval is represented by a copilot_change audit record. Manual mode waits; scoped mode auto-applies only listed scopes; full mode auto-applies account changes. Ownership and secret fields are never delegated.

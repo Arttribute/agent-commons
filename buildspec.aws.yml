@@ -103,6 +103,13 @@ phases:
       - infra/aws/set-express-alarm-threshold.sh "$SERVICE_NAME" 100 || true
       - (while sleep 20; do infra/aws/set-express-alarm-threshold.sh "$SERVICE_NAME" 100 || true; done) & ALARM_GUARD_PID=$!
       - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then SEARCH_SHARED_KEY=$(openssl rand -hex 32); else SEARCH_SHARED_KEY=""; fi
+      # The Common Arcade connector needs the Commons service client credentials.
+      # Wire them only when the runtime secret holds both keys, so a deploy never
+      # references a key that is not there.
+      - |
+        ARCADE_CONNECTOR_ENABLED=$(aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_ARN" --query SecretString --output text --region "$AWS_REGION" \
+          | jq -r 'if (.AGENT_COMMONS_SERVICE_CLIENT_ID // "") != "" and (.AGENT_COMMONS_SERVICE_CLIENT_SECRET // "") != "" then "true" else "false" end')
+        echo "Arcade connector enabled: $ARCADE_CONNECTOR_ENABLED"
       - >-
         aws cloudformation deploy
         --stack-name "$STACK_NAME"
@@ -153,6 +160,7 @@ phases:
         ProvenanceDefaultMode="${PROVENANCE_DEFAULT_MODE:-metadata}"
         ProvenanceFullCaptureEnabled="${PROVENANCE_FULL_CAPTURE_ENABLED:-true}"
         ProvenanceOnchainEnabled="${PROVENANCE_ONCHAIN_ENABLED:-false}"
+        ArcadeConnectorEnabled="$ARCADE_CONNECTOR_ENABLED"
         --region "$AWS_REGION"
       - ENDPOINT=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`Endpoint`].OutputValue' --output text --region "$AWS_REGION")
       - ENDPOINT="https://${ENDPOINT#https://}"

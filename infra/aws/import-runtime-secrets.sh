@@ -26,6 +26,8 @@ missing=()
 is_optional_key() {
   case "$1" in
     BRAVE_SEARCH_API_KEY) return 0 ;;
+    # Common Arcade connector; the deploy enables it only when both are present.
+    AGENT_COMMONS_SERVICE_CLIENT_ID|AGENT_COMMONS_SERVICE_CLIENT_SECRET) return 0 ;;
     *) return 1 ;;
   esac
 }

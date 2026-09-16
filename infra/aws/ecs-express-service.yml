@@ -148,6 +148,13 @@ Parameters:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
+  # Common Arcade connector. Enabled by the deploy only when the runtime secret
+  # holds AGENT_COMMONS_SERVICE_CLIENT_ID/SECRET: ECS refuses to start a task
+  # whose secret reference names a missing key.
+  ArcadeConnectorEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
   ProvenanceKitApiUrl:
     Type: String
     Default: ""
@@ -178,6 +185,7 @@ Conditions:
   IsBraveSearch: !Equals [!Ref WebSearchProvider, brave]
   IsSearxngSearch: !Equals [!Ref WebSearchProvider, searxng]
   IsProvenanceKitEnabled: !Equals [!Ref ProvenanceKitExportEnabled, "true"]
+  IsArcadeConnectorEnabled: !Equals [!Ref ArcadeConnectorEnabled, "true"]
 
 Resources:
   SearchService:
@@ -425,6 +433,16 @@ Resources:
             - IsProvenanceKitEnabled
             - Name: PROVENANCEKIT_API_KEY
               ValueFrom: !Sub "${RuntimeSecretArn}:PROVENANCEKIT_API_KEY::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsArcadeConnectorEnabled
+            - Name: AGENT_COMMONS_SERVICE_CLIENT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_COMMONS_SERVICE_CLIENT_ID::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsArcadeConnectorEnabled
+            - Name: AGENT_COMMONS_SERVICE_CLIENT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:AGENT_COMMONS_SERVICE_CLIENT_SECRET::"
             - !Ref AWS::NoValue
           - !If
             - IsGoogleOAuthEnabled
