@@ -12,7 +12,10 @@ export async function GET(request: NextRequest) {
   const querySuffix = `?owner=${encodeURIComponent(user.userId)}`;
   const url = `${baseUrl}/v1/agents${querySuffix}`;
   try {
-    const res = await fetch(url, { cache: "no-store", headers: await backendAuthHeaders() });
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: await backendAuthHeaders({ preferUserToken: true }),
+    });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {
@@ -36,7 +39,10 @@ export async function POST(request: NextRequest) {
     };
     const res = await fetch(`${baseUrl}/v1/agents`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...await backendAuthHeaders() },
+      headers: {
+        "Content-Type": "application/json",
+        ...await backendAuthHeaders({ preferUserToken: true }),
+      },
       body: JSON.stringify(ownedBody),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
