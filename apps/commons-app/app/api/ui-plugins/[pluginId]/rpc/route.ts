@@ -101,6 +101,7 @@ export async function POST(
     });
   };
 
+  const authHeaders = await backendAuthHeaders();
   const result = await dispatchPluginRpc(parsed.request, {
     plugin,
     surface: "page",
@@ -108,6 +109,38 @@ export async function POST(
     confirmAction: () => confirmed,
     navigate: () => undefined,
     openCopilot: () => undefined,
+    // Gateway methods run in the Commons API, which re-reads the owner's
+    // grants and approval rules on every call.
+    gateway: async (gatewayRequest) => {
+      const response = await fetch(
+        `${baseUrl}/v1/ui-plugins/${encodeURIComponent(pluginId)}/gateway`,
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json", ...authHeaders },
+          body: JSON.stringify({
+            request: {
+              method: gatewayRequest.method,
+              params: gatewayRequest.params,
+            },
+            confirmed,
+          }),
+        },
+      );
+      const payload = await response.json().catch(() => null);
+      if (payload && typeof payload === "object" && "result" in payload) {
+        return payload.result;
+      }
+      const error = payload?.error;
+      throw Object.assign(
+        new Error(
+          typeof error?.message === "string"
+            ? error.message.slice(0, 300)
+            : "Commons could not complete this app request.",
+        ),
+        { code: typeof error?.code === "number" ? error.code : -32050 },
+      );
+    },
   });
   return NextResponse.json(result);
 }

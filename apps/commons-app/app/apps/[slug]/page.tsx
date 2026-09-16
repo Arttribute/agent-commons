@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Loader2, ShieldAlert } from "lucide-react";
+import { AppIcon } from "@/components/plugins/app-icon";
+import { CommonsAppsBar } from "@/components/plugins/apps-bar";
 import { PluginFrame } from "@/components/plugins/plugin-frame";
 import { isUiPlugin, type UiPlugin } from "@/components/plugins/types";
 import { subscribeToUiPluginChanges } from "@/lib/ui-plugin-events";
@@ -104,7 +106,7 @@ export default function CustomAppPage() {
             href="/studio/customize/apps"
             className="mt-5 inline-flex items-center gap-2 text-sm underline"
           >
-            <ArrowLeft className="h-4 w-4" /> Back to Customize Apps
+            <ArrowLeft className="h-4 w-4" /> Back to Apps
           </Link>
         </div>
       </main>
@@ -127,12 +129,14 @@ export default function CustomAppPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <div className="min-w-0">
+        <AppIcon plugin={plugin} size={28} />
+        <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold">{plugin.name}</h1>
           <p className="text-xs text-muted-foreground">
-            Sandboxed custom app · v{plugin.version}
+            {plugin.description || `v${plugin.version}`}
           </p>
         </div>
+        <CommonsAppsBar />
       </header>
       <PluginFrame
         plugin={plugin}

@@ -538,3 +538,120 @@ test("copilot prompts require both capability and user confirmation", async () =
     result: { opened: true },
   });
 });
+
+test("owner grants replace manifest capabilities and control approval", async () => {
+  const granted = {
+    ...plugin({ capabilities: [{ name: "workflows.execute" }] }),
+    effectiveCapabilities: [{ name: "workflows.execute", approval: "auto" }],
+  };
+  const execute = request("workflows.execute", { workflowId: "wf-1" });
+  assert.equal(pluginRpcActionForRequest(execute, granted), null);
+  assert.ok(pluginRpcActionForRequest(execute));
+
+  let confirmations = 0;
+  const response = await dispatchPluginRpc(execute, {
+    plugin: granted,
+    surface: "page",
+    fetcher: async () =>
+      new Response(JSON.stringify({ executionId: "ex-1", status: "started" })),
+    confirmAction: () => {
+      confirmations += 1;
+      return true;
+    },
+    navigate: () => undefined,
+    openCopilot: () => undefined,
+  });
+  assert.equal(confirmations, 0);
+  assert.equal(response.result.executionId, "ex-1");
+
+  const revoked = { ...granted, effectiveCapabilities: [] };
+  const denied = await dispatchPluginRpc(execute, {
+    plugin: revoked,
+    surface: "page",
+    confirmAction: () => true,
+    navigate: () => undefined,
+    openCopilot: () => undefined,
+  });
+  assert.equal(denied.error.code, -32001);
+});
+
+test("gateway methods are scoped and forwarded to the Commons API", async () => {
+  const app = {
+    ...plugin({ capabilities: [{ name: "data.read" }] }),
+    effectiveCapabilities: [{ name: "data.read", resourceIds: ["notes"] }],
+  };
+  const forwarded = [];
+  const options = {
+    plugin: app,
+    surface: "widget",
+    confirmAction: () => true,
+    navigate: () => undefined,
+    openCopilot: () => undefined,
+    gateway: async (gatewayRequest) => {
+      forwarded.push(gatewayRequest.method);
+      return { items: [], hasMore: false };
+    },
+  };
+  const ok = await dispatchPluginRpc(
+    request("data.query", { collection: "notes" }),
+    options,
+  );
+  assert.deepEqual(ok.result, { items: [], hasMore: false });
+  const outOfScope = await dispatchPluginRpc(
+    request("data.query", { collection: "secrets" }),
+    options,
+  );
+  assert.equal(outOfScope.error.code, -32002);
+  const failing = await dispatchPluginRpc(request("data.get", { collection: "notes", id: "a" }), {
+    ...options,
+    gateway: async () => {
+      throw Object.assign(new Error("Record not found"), { code: -32050 });
+    },
+  });
+  assert.deepEqual(failing.error, { code: -32050, message: "Record not found" });
+  assert.deepEqual(forwarded, ["data.query"]);
+});
+
+test("external writes ask for approval while reads do not", () => {
+  const app = {
+    ...plugin({ capabilities: [{ name: "network.request" }] }),
+    effectiveCapabilities: [{ name: "network.request", approval: "ask" }],
+  };
+  assert.equal(
+    pluginRpcActionForRequest(
+      request("http.request", { connection: "weather", method: "GET", path: "/" }),
+      app,
+    ),
+    null,
+  );
+  assert.ok(
+    pluginRpcActionForRequest(
+      request("http.request", { connection: "weather", method: "POST", path: "/" }),
+      app,
+    ),
+  );
+});
+
+test("chat.respond only works for apps shown in a conversation", async () => {
+  const app = plugin();
+  const base = {
+    plugin: app,
+    surface: "widget",
+    confirmAction: () => true,
+    navigate: () => undefined,
+    openCopilot: () => undefined,
+  };
+  const outside = await dispatchPluginRpc(
+    request("chat.respond", { message: "Book it" }),
+    base,
+  );
+  assert.equal(outside.error.code, -32602);
+
+  const sent = [];
+  const inside = await dispatchPluginRpc(
+    request("chat.respond", { message: "Book it", data: { option: 2 } }),
+    { ...base, chatRespond: (response) => sent.push(response) > 0 },
+  );
+  assert.deepEqual(inside.result, { sent: true });
+  assert.deepEqual(sent, [{ message: "Book it", data: { option: 2 } }]);
+});

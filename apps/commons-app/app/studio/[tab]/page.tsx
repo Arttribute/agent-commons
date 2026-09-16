@@ -11,6 +11,7 @@ import {
 import { StudioAgentLauncher } from "@/components/studio/agent-launcher";
 import { LauncherGreeting } from "@/components/studio/launcher-greeting";
 import { CreditsMenu } from "@/components/billing/credits-menu";
+import { CommonsAppsBar } from "@/components/plugins/apps-bar";
 import { ToolsManagementView } from "@/components/tools/management/tools-management-view";
 import { WorkflowsListView } from "@/components/workflows/workflows-list-view";
 import { CreateWorkflowDialog } from "@/components/workflows/create-workflow-dialog";
@@ -302,6 +303,7 @@ const StudioPage: NextPage = () => {
   return (
     <div className="relative flex h-full min-w-0 flex-col bg-page">
       <PageHeader title={pageCopy.title} description={pageCopy.description}>
+        <CommonsAppsBar />
         <CreditsMenu />
         <CreateButton
           label={createLabel}

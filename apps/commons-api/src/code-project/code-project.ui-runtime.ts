@@ -29,6 +29,8 @@ let context = {
   surface: new URLSearchParams(window.location.search).get('commonsSurface') === 'widget' ? 'widget' : 'page',
   viewport: { width: window.innerWidth, height: window.innerHeight },
   capabilities: [],
+  placement: 'panel',
+  chat: null,
 };
 
 function applyContext(next) {
@@ -99,7 +101,43 @@ export const commons = {
     listener(context);
     return () => listeners.delete(listener);
   },
-  agents: { list: (params) => request('agents.list', params) },
+  agents: {
+    list: (params) => request('agents.list', params),
+    run: (params) => request('agents.run', params),
+  },
+  sessions: {
+    list: (params) => request('sessions.list', params),
+    get: (params) => request('sessions.get', params),
+  },
+  memory: {
+    list: (params) => request('memory.list', params),
+    create: (params) => request('memory.create', params),
+  },
+  skills: { list: (params) => request('skills.list', params) },
+  spaces: { list: (params) => request('spaces.list', params) },
+  credits: { get: () => request('credits.get', {}) },
+  data: {
+    collections: () => request('data.collections', {}),
+    get: (collection, id) => request('data.get', { collection, id }),
+    query: (collection, query = {}) => request('data.query', { collection, query }),
+    insert: (collection, data) => request('data.insert', { collection, data }),
+    update: (collection, id, data, options = {}) =>
+      request('data.update', { collection, id, data, replace: Boolean(options.replace) }),
+    delete: (collection, id) => request('data.delete', { collection, id }),
+  },
+  http: {
+    request: (params) => request('http.request', params),
+    get: (connection, path, query) => request('http.request', { connection, method: 'GET', path, query }),
+    post: (connection, path, body) => request('http.request', { connection, method: 'POST', path, body }),
+  },
+  chat: {
+    /** True when the app is shown inside a chat conversation. */
+    isInChat: () => context.placement === 'chat',
+    /** The input the agent passed when it showed this app. */
+    getInput: () => (context.chat && context.chat.input) || null,
+    /** Send the user's result back to the conversation as their reply. */
+    respond: (params) => request('chat.respond', params),
+  },
   tasks: {
     list: (params) => request('tasks.list', params),
     create: (params) => request('tasks.create', params),

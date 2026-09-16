@@ -2,19 +2,15 @@ import type {
   BrowserCheckCapability,
   BrowserCheckCapabilityName,
 } from './code-project.types';
+import {
+  UI_PLUGIN_CAPABILITY_NAMES,
+  UI_PLUGIN_METHOD_CAPABILITIES,
+} from '~/ui-plugin/ui-plugin.capabilities';
 
 export const VERIFIER_HOST_ORIGIN = 'https://commons-verifier.invalid';
 
-export const BROWSER_CHECK_CAPABILITIES: BrowserCheckCapabilityName[] = [
-  'agents.read',
-  'tasks.read',
-  'tasks.write',
-  'workflows.read',
-  'workflows.execute',
-  'library.read',
-  'tools.read',
-  'copilot.prompt',
-];
+export const BROWSER_CHECK_CAPABILITIES: BrowserCheckCapabilityName[] =
+  UI_PLUGIN_CAPABILITY_NAMES;
 
 const CAPABILITY_SET = new Set<BrowserCheckCapabilityName>(
   BROWSER_CHECK_CAPABILITIES,
@@ -33,6 +29,7 @@ type HostConfig = {
   previewOrigin: string;
   scenario: HostScenario;
   capabilities: BrowserCheckCapabilityName[];
+  methodCapabilities: Record<string, string>;
   fixtures: typeof VERIFIER_FIXTURES;
 };
 
@@ -227,6 +224,79 @@ export const VERIFIER_FIXTURES = {
       studioPath: '/studio/tools/tool-email',
     },
   ],
+  sessions: [
+    {
+      sessionId: '00000000-0000-4000-8000-000000000001',
+      agentId: 'agent-commons-copilot',
+      agentName: 'Commons Copilot',
+      title: 'Launch readiness review',
+      createdAt: '2026-08-20T09:00:00.000Z',
+      updatedAt: '2026-08-20T09:12:00.000Z',
+      sessionPath: '/sessions/00000000-0000-4000-8000-000000000001',
+    },
+    {
+      sessionId: '00000000-0000-4000-8000-000000000002',
+      agentId: 'agent-customer-ops',
+      agentName: 'Customer operations',
+      title: 'Weekly support themes',
+      createdAt: '2026-08-19T14:00:00.000Z',
+      updatedAt: '2026-08-19T14:30:00.000Z',
+      sessionPath: '/sessions/00000000-0000-4000-8000-000000000002',
+    },
+  ],
+  memories: [
+    {
+      memoryId: 'memory-launch-cadence',
+      agentId: 'agent-commons-copilot',
+      memoryType: 'procedural',
+      summary: 'Ship releases on Tuesdays after QA sign-off.',
+      content: 'The team ships releases on Tuesdays once QA has signed off.',
+      tags: ['releases'],
+      importanceScore: 0.8,
+      createdAt: '2026-08-12T10:00:00.000Z',
+    },
+    {
+      memoryId: 'memory-tone',
+      agentId: 'agent-customer-ops',
+      memoryType: 'semantic',
+      summary: 'Customers prefer short, plain answers.',
+      content: 'Customers respond best to short, plain-language answers.',
+      tags: ['support'],
+      importanceScore: 0.6,
+      createdAt: '2026-08-10T10:00:00.000Z',
+    },
+  ],
+  skills: [
+    {
+      skillId: 'skill-create-documents',
+      slug: 'create-documents',
+      name: 'Create documents',
+      description: 'Write and format DOCX and PDF documents.',
+      tags: ['documents'],
+      icon: 'file-text',
+      ownerType: 'platform',
+    },
+    {
+      skillId: 'skill-build-websites',
+      slug: 'build-websites',
+      name: 'Build websites',
+      description: 'Design and publish responsive sites.',
+      tags: ['web'],
+      icon: 'globe',
+      ownerType: 'platform',
+    },
+  ],
+  spaces: [
+    {
+      spaceId: 'space-product',
+      name: 'Product team',
+      description: 'Planning and launch coordination.',
+      isPublic: false,
+      createdAt: '2026-08-01T10:00:00.000Z',
+      updatedAt: '2026-08-21T10:00:00.000Z',
+      spacePath: '/spaces/space-product',
+    },
+  ],
 } as const;
 
 export function normalizeBrowserCheckCapabilities(
@@ -325,6 +395,7 @@ export function createVerifierHostHtml(args: {
     previewOrigin: new URL(args.appUrl).origin,
     scenario: args.scenario,
     capabilities: args.capabilities,
+    methodCapabilities: UI_PLUGIN_METHOD_CAPABILITIES,
     fixtures: VERIFIER_FIXTURES,
   };
   const runtime = `(${verifierHostRuntime.toString()})(${inlineJson(config)});`;
@@ -370,17 +441,18 @@ function verifierHostRuntime(config: HostConfig) {
   const granted = new Set<string>(config.capabilities);
   const calls: VerifierBridgeCall[] = [];
   const storage = new Map<string, string>();
-  const methodCapabilities: Record<string, string> = {
-    'agents.list': 'agents.read',
-    'tasks.list': 'tasks.read',
-    'tasks.create': 'tasks.write',
-    'tasks.update': 'tasks.write',
-    'workflows.list': 'workflows.read',
-    'workflows.execute': 'workflows.execute',
-    'library.list': 'library.read',
-    'tools.list': 'tools.read',
-    'copilot.open': 'copilot.prompt',
-  };
+  const data = new Map<
+    string,
+    Array<{
+      id: string;
+      data: Record<string, unknown>;
+      createdAt: string;
+      updatedAt: string;
+    }>
+  >();
+  const dataCollections = () =>
+    new Set(['items', ...data.keys()].filter((name) => name));
+  const methodCapabilities = config.methodCapabilities;
   const verifier = {
     rpcCalls: calls,
     contextMessages: 0,
@@ -554,6 +626,155 @@ function verifierHostRuntime(config: HostConfig) {
     }
     if (method === 'copilot.open') {
       return { opened: true, simulated: true };
+    }
+    if (method === 'agents.run') {
+      return {
+        agentId: boundedText(params.agentId, 'agent-commons-copilot', 200),
+        sessionId: '00000000-0000-4000-8000-000000000001',
+        reply:
+          'Here is a short preview reply. The release checklist is on track and two follow-ups remain.',
+        simulated: true,
+      };
+    }
+    if (method === 'sessions.list') {
+      return list(config.fixtures.sessions, params, ['title', 'agentName']);
+    }
+    if (method === 'sessions.get') {
+      const session =
+        config.fixtures.sessions.find(
+          (candidate) => candidate.sessionId === params.sessionId,
+        ) ?? config.fixtures.sessions[0];
+      return {
+        ...session,
+        messages: [
+          {
+            role: 'user',
+            content: 'What is left before the launch?',
+            timestamp: '2026-08-20T09:00:00.000Z',
+          },
+          {
+            role: 'assistant',
+            content: 'Two items remain: final QA and the announcement draft.',
+            timestamp: '2026-08-20T09:00:04.000Z',
+          },
+        ],
+        simulated: true,
+      };
+    }
+    if (method === 'memory.list') {
+      return list(config.fixtures.memories, params, ['summary', 'content']);
+    }
+    if (method === 'memory.create') {
+      return {
+        memoryId: 'memory-verification-preview',
+        agentId: boundedText(params.agentId, 'agent-commons-copilot', 200),
+        memoryType: 'semantic',
+        summary: boundedText(
+          params.summary ?? params.content,
+          'Preview memory',
+        ),
+        simulated: true,
+      };
+    }
+    if (method === 'skills.list') {
+      return list(config.fixtures.skills, params, ['name', 'description']);
+    }
+    if (method === 'spaces.list') {
+      return list(config.fixtures.spaces, params, ['name', 'description']);
+    }
+    if (method === 'credits.get') {
+      return {
+        available: 1240,
+        balance: 1300,
+        reserved: 60,
+        currency: 'credits',
+        simulated: true,
+      };
+    }
+    if (method === 'data.collections') {
+      return {
+        provider: 'commons',
+        collections: [...dataCollections()].map((name) => ({
+          name,
+          count: (data.get(name) ?? []).length,
+        })),
+        simulated: true,
+      };
+    }
+    if (method.startsWith('data.')) {
+      const collection = boundedText(params.collection, '', 40);
+      if (!/^[a-z][a-z0-9_]{0,39}$/.test(collection)) return undefined;
+      const records = data.get(collection) ?? [];
+      data.set(collection, records);
+      const now = '2026-08-23T08:00:00.000Z';
+      if (method === 'data.insert') {
+        const record = {
+          id: `record-${collection}-${records.length + 1}`,
+          data:
+            params.data &&
+            typeof params.data === 'object' &&
+            !Array.isArray(params.data)
+              ? (params.data as Record<string, unknown>)
+              : {},
+          createdAt: now,
+          updatedAt: now,
+        };
+        records.push(record);
+        return record;
+      }
+      const index = records.findIndex((record) => record.id === params.id);
+      if (method === 'data.get') return index >= 0 ? records[index] : undefined;
+      if (method === 'data.update') {
+        if (index < 0) return undefined;
+        const patch =
+          params.data &&
+          typeof params.data === 'object' &&
+          !Array.isArray(params.data)
+            ? (params.data as Record<string, unknown>)
+            : {};
+        records[index] = {
+          ...records[index],
+          data: params.replace ? patch : { ...records[index].data, ...patch },
+          updatedAt: now,
+        };
+        return records[index];
+      }
+      if (method === 'data.delete') {
+        if (index >= 0) records.splice(index, 1);
+        return { deleted: index >= 0 };
+      }
+      if (method === 'data.query') {
+        const query =
+          params.query && typeof params.query === 'object'
+            ? (params.query as Record<string, unknown>)
+            : params;
+        const limit = boundedLimit(query.limit);
+        return {
+          items: records.slice(0, limit),
+          hasMore: records.length > limit,
+        };
+      }
+      return undefined;
+    }
+    if (method === 'http.request') {
+      return {
+        status: 200,
+        ok: true,
+        headers: { 'content-type': 'application/json' },
+        body: {
+          fixture: true,
+          connection: boundedText(params.connection, 'service', 40),
+          path: boundedText(params.path, '/', 200),
+          items: [
+            { id: 'item-1', title: 'Preview result', value: 42 },
+            { id: 'item-2', title: 'Second result', value: 17 },
+          ],
+        },
+        simulated: true,
+      };
+    }
+    if (method === 'chat.respond') {
+      return { sent: true, simulated: true };
     }
     if (method === 'navigation.open') {
       const path = boundedText(params.path, '/', 500);

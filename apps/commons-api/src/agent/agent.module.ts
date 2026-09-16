@@ -19,6 +19,7 @@ import { FilesModule } from '~/files';
 import { ComputerModule } from '~/computer';
 import { PinataModule } from '~/pinata/pinata.module';
 import { SkillModule } from '~/skill/skill.module';
+import { UiPluginModule } from '~/ui-plugin/ui-plugin.module';
 import { RuntimeController } from './runtime/runtime.controller';
 import { RuntimeMigrationService } from './runtime/runtime-migration.service';
 import { RuntimeManagementService } from './runtime/runtime-management.service';
@@ -44,6 +45,7 @@ import { CopilotService } from './copilot.service';
     ComputerModule,
     PinataModule,
     SkillModule,
+    UiPluginModule,
   ],
   controllers: [
     AgentController,

@@ -12,7 +12,6 @@ import { FloatingCommonsCopilot } from "@/components/copilot/floating-commons-co
 import { auth } from "@/auth";
 import type { Session } from "next-auth";
 import { getAppBaseUrl } from "@/lib/app-url";
-import { PluginWidgetHost } from "@/components/plugins/plugin-widget-host";
 
 const spaceGrotesk = Space_Grotesk({
   weight: ["400", "500", "600", "700"],
@@ -108,7 +107,6 @@ export default async function RootLayout({
                   {children}
                 </div>
                 <FloatingCommonsCopilot />
-                <PluginWidgetHost />
                 <Toaster />
               </GlobalSearchProvider>
             </SidebarProvider>

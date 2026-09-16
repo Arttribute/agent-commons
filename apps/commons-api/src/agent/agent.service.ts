@@ -41,6 +41,7 @@ import {
 } from 'openai/resources/chat/completions';
 import { Except } from 'type-fest';
 import typia from 'typia';
+import { UiPluginService } from '~/ui-plugin/ui-plugin.service';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from '~/modules/database/database.service';
 import { EncryptionService } from '~/modules/encryption';
@@ -223,6 +224,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     private spaceTools: SpaceToolsService,
     @Inject(forwardRef(() => CopilotService))
     private copilotService: CopilotService,
+    private uiPlugins: UiPluginService,
   ) {}
 
   /* ─────────────────────────  INIT  ───────────────────────── */
@@ -548,12 +550,13 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       For React prototypes, landing pages, dashboards, and other static frontend experiences, use lightweight code projects first. They do not require a computer and publish to durable low-cost public URLs.
       - **createCodeProject** — create a React project with initial files. **writeCodeProjectFiles** — write complete files directly; never squeeze source code into shell commands.
       - **readCodeProject** — inspect the current files and latest deployment. **publishCodeProject** — compile and publish the project.
-      - **registerUiPlugin** — register a verified deployment as a sandboxed Commons page/widget draft. Request only the capabilities the app uses; the owner reviews and enables it.
+      - **registerUiPlugin** — register a verified deployment as a Commons app draft (page and/or widget). Always ship an \`icon.svg\` and pass \`icon\`. Request only the capabilities the app exercises, declare \`data.collections\` for \`commons.data\`, \`connections\` for external APIs called through \`commons.http.request\` (never embed keys), and \`chat.when\` when the app should appear inside conversations. The owner reviews permissions, connects services and enables it; agents cannot grant permissions.
+      - **listCommonsApps**, **showCommonsApp**, **queryCommonsAppData**, **writeCommonsAppData** — use apps the user has enabled: show one inline in chat when its guidance fits, and read or write its records only when the owner allowed agent data access.
       - **testCodeProject** — run Chromium checks at the intended page/widget surfaces and exact widget size, in responsive light/dark scenarios. Inspect screenshots, runtime/console/network/overflow/accessibility failures, and important interactions. A successful build is not enough: fix, republish, and re-test until it passes before saying it works.
       - **exportCodeProjectToComputer** — move the project into the persistent computer when the work needs a backend, arbitrary packages, repository operations, ML/GPU compute, or unrestricted tooling.
       - Lightweight projects compile Tailwind and app/globals.css and bundle React, @agent-commons/ui, Lucide, supported Radix primitives, Recharts, Framer Motion, clsx/tailwind-merge, Three/R3F, and Phaser. Use 3D/game libraries only when the task calls for them. Browser CDNs, remote imports, direct external requests, arbitrary packages, Next.js servers, and arbitrary build plugins are unavailable.
       - Unless the user explicitly requests another visual direction, Commons pages/widgets must feel native to Agent Commons: use @agent-commons/ui semantic tokens and primitives, Space Grotesk, Lucide icons, restrained neutral surfaces, compact controls, and the host light/dark theme. Do not invent a generic black dashboard, browser-default typography, neon gradients, or a disconnected visual system.
-      - Generated code runs in an opaque sandbox. It cannot use cookies, IndexedDB, direct localStorage, or arbitrary network requests. Use the least-privilege Commons host bridge for data, actions, navigation, theme, and permissioned namespaced storage; request only capabilities the app actually exercises.
+      - Generated code runs in an opaque sandbox. It cannot use cookies, IndexedDB, direct localStorage, or direct network requests. Use the least-privilege Commons host bridge from @agent-commons/ui: \`commons.data\` for persistent records (Commons storage or the owner's Supabase/MongoDB), \`commons.http.request\` for declared external connections, \`commons.agents\`, \`commons.sessions\`, \`commons.tasks\`, \`commons.workflows\`, \`commons.memory\`, \`commons.skills\`, \`commons.spaces\`, \`commons.credits\` for workspace data, and \`commons.chat.getInput()\`/\`commons.chat.respond()\` for in-chat widgets. testCodeProject exercises every requested capability with fixtures.
       - Design from the exact container dimensions, fit widgets without outer scrolling, handle loading/empty/error states, and prefer one purposeful write containing the complete related files. Test the important interactions on every requested surface in both themes, then fix, republish, and re-test until the verifier passes.
 
       ### Goals
@@ -602,6 +605,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       sessionTasks,
       computerBlock,
       skillsBlock,
+      appsBlock,
     ] = await Promise.all([
       this.getAgent({ agentId }),
       this.getChildSessions(sessionId),
@@ -617,6 +621,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       this.skillService
         .buildPromptIndex(agentId, firstUserMessage)
         .catch(() => ''),
+      this.uiPlugins.buildAgentPromptBlock(agentId).catch(() => ''),
     ]);
     const childSessionsInfo =
       childSessions.length > 0
@@ -640,7 +645,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           memoryBlock,
           sessionTasks,
           computerBlock,
-          skillsBlock,
+          `${skillsBlock}${appsBlock}`,
         ),
       },
     ];
@@ -1001,21 +1006,20 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             sessionRecord?.model as any,
             this.encryption,
           );
-          const effectiveModel = props.model ? this.modelProviderFactory.resolveRunModel(props.model) : this.modelProviderFactory.resolveSessionModel(
-            sessionModel,
-            {
-              provider: (agent.modelProvider as any) ?? 'openai',
-              modelId: agent.modelId ?? 'gpt-5.4-mini',
-              apiKey: decryptedApiKey,
-              baseUrl: agent.modelBaseUrl ?? undefined,
-              temperature: agent.temperature ?? 0,
-              maxTokens: agent.maxTokens ?? undefined,
-              topP: agent.topP ?? undefined,
-              presencePenalty: agent.presencePenalty ?? undefined,
-              frequencyPenalty: agent.frequencyPenalty ?? undefined,
-              reasoningEffort: this.resolveAdaptiveReasoningEffort(props),
-            },
-          );
+          const effectiveModel = props.model
+            ? this.modelProviderFactory.resolveRunModel(props.model)
+            : this.modelProviderFactory.resolveSessionModel(sessionModel, {
+                provider: (agent.modelProvider as any) ?? 'openai',
+                modelId: agent.modelId ?? 'gpt-5.4-mini',
+                apiKey: decryptedApiKey,
+                baseUrl: agent.modelBaseUrl ?? undefined,
+                temperature: agent.temperature ?? 0,
+                maxTokens: agent.maxTokens ?? undefined,
+                topP: agent.topP ?? undefined,
+                presencePenalty: agent.presencePenalty ?? undefined,
+                frequencyPenalty: agent.frequencyPenalty ?? undefined,
+                reasoningEffort: this.resolveAdaptiveReasoningEffort(props),
+              });
           // A thinking level picked in the composer wins over both the
           // session/agent defaults and the adaptive trivial-turn hint.
           const requestedEffort = normalizeReasoningEffortInput(
@@ -2102,6 +2106,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               sessionTasks,
               computerBlock,
               skillsBlock,
+              appsBlock,
             ] = await Promise.all([
               this.getAgent({ agentId }),
               this.getChildSessions(currentSessionId),
@@ -2119,6 +2124,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               this.skillService
                 .buildPromptIndex(agentId, firstUserText)
                 .catch(() => ''),
+              this.uiPlugins.buildAgentPromptBlock(agentId).catch(() => ''),
             ]);
             const childSessionsInfo =
               childSessions.length > 0
@@ -2144,7 +2150,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 memoryBlock,
                 sessionTasks,
                 computerBlock,
-                skillsBlock,
+                `${skillsBlock}${appsBlock}`,
               ),
             } as any);
             emitStatus('context', 'completed', 'Conversation context ready');

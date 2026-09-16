@@ -1302,17 +1302,30 @@ export type UiPluginPermission = "theme.read" | "navigation" | "storage";
 
 export type UiPluginCapabilityName =
   | "agents.read"
+  | "agents.run"
+  | "sessions.read"
+  | "memory.read"
+  | "memory.write"
+  | "skills.read"
   | "tasks.read"
   | "tasks.write"
   | "workflows.read"
   | "workflows.execute"
   | "library.read"
   | "tools.read"
+  | "spaces.read"
+  | "credits.read"
+  | "data.read"
+  | "data.write"
+  | "network.request"
   | "copilot.prompt";
+
+export type UiPluginApproval = "ask" | "auto";
 
 export interface UiPluginCapabilityGrant {
   name: UiPluginCapabilityName;
   resourceIds?: string[];
+  approval?: UiPluginApproval;
 }
 
 export interface UiPluginSurface {
@@ -1320,6 +1333,53 @@ export interface UiPluginSurface {
   title?: string;
   width?: number;
   height?: number;
+}
+
+export interface UiPluginConnection {
+  key: string;
+  name: string;
+  description?: string;
+  baseUrl: string;
+  auth: {
+    type: "none" | "bearer" | "header" | "query" | "basic";
+    name?: string;
+  };
+  methods: string[];
+  pathPrefixes: string[];
+}
+
+export interface UiPluginCollection {
+  name: string;
+  description?: string;
+  fields?: Record<
+    string,
+    {
+      type: "string" | "number" | "boolean" | "object" | "array";
+      required?: boolean;
+    }
+  >;
+}
+
+export interface UiPluginGrants {
+  capabilities: UiPluginCapabilityGrant[];
+  agentDataAccess: "none" | "read" | "readwrite";
+  chatEnabled: boolean;
+  reviewedAt: string;
+}
+
+export interface UiPluginManifest {
+  schemaVersion: "1" | "2";
+  surfaces: UiPluginSurface[];
+  permissions: UiPluginPermission[];
+  capabilities?: UiPluginCapabilityGrant[];
+  networkAccess?: { allowedDomains: string[] };
+  /** Project file path of the app's SVG icon, e.g. "icon.svg". */
+  icon?: string;
+  category?: string;
+  /** When agents should show the app in chat, and the input it reads. */
+  chat?: { when: string; inputDescription?: string };
+  connections?: UiPluginConnection[];
+  data?: { collections: UiPluginCollection[] };
 }
 
 export interface UiPlugin {
@@ -1334,13 +1394,13 @@ export interface UiPlugin {
   description?: string | null;
   version: string;
   entryUrl: string;
-  manifest: {
-    schemaVersion: "1" | "2";
-    surfaces: UiPluginSurface[];
-    permissions: UiPluginPermission[];
-    capabilities?: UiPluginCapabilityGrant[];
-    networkAccess?: { allowedDomains: string[] };
-  };
+  manifest: UiPluginManifest;
+  /** Validated icon data URL. */
+  iconUrl?: string | null;
+  /** What the owner allowed. Null for apps enabled before grants existed. */
+  grants?: UiPluginGrants | null;
+  /** The grant set the API enforces. */
+  effectiveCapabilities?: UiPluginCapabilityGrant[];
   status: "draft" | "active" | "disabled";
   createdAt: string;
   updatedAt: string;
@@ -1352,13 +1412,50 @@ export interface CreateUiPluginParams {
   description?: string;
   version?: string;
   codeProjectId: string;
-  manifest: {
-    schemaVersion?: "1" | "2";
+  manifest: Omit<Partial<UiPluginManifest>, "surfaces" | "connections"> & {
     surfaces: UiPluginSurface[];
-    permissions?: UiPluginPermission[];
-    capabilities?: UiPluginCapabilityGrant[];
-    networkAccess?: { allowedDomains?: string[] };
+    connections?: Array<
+      Omit<UiPluginConnection, "auth" | "methods" | "pathPrefixes"> & {
+        auth?: Partial<UiPluginConnection["auth"]>;
+        methods?: string[];
+        pathPrefixes?: string[];
+      }
+    >;
   };
+}
+
+export interface UpdateUiPluginGrantsParams {
+  capabilities?: Array<{
+    name: UiPluginCapabilityName;
+    enabled?: boolean;
+    resourceIds?: string[];
+    approval?: UiPluginApproval;
+  }>;
+  agentDataAccess?: UiPluginGrants["agentDataAccess"];
+  chatEnabled?: boolean;
+}
+
+export interface UiPluginConnectionStatus extends UiPluginConnection {
+  configured: boolean;
+  enabled: boolean;
+  secretHint: string | null;
+}
+
+export interface UiPluginStorageSettings {
+  provider: "commons" | "supabase" | "mongodb";
+  url: string | null;
+  database: string | null;
+  tablePrefix: string;
+  secretHint: string | null;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+  collections: UiPluginCollection[];
+}
+
+export interface UiPluginLayout {
+  maxPinned: number;
+  /** Pinned app ids by page scope. `global` applies to every other page. */
+  scopes: Record<string, string[]>;
 }
 
 // ─── Memory ───────────────────────────────────────────────────────────────────

@@ -49,12 +49,22 @@ type FrameState =
       message: string;
     };
 
+export type PluginChatContext = {
+  widgetId: string;
+  sessionId?: string;
+  reason?: string;
+  input: Record<string, unknown>;
+};
+
 export function PluginFrame({
   plugin,
   surface,
   title,
   className,
   onResizeRequest,
+  placement = "panel",
+  chat,
+  onChatRespond,
 }: {
   plugin: UiPlugin;
   surface: UiPluginSurfaceType;
@@ -63,6 +73,13 @@ export function PluginFrame({
   onResizeRequest?: (
     requested: PluginRpcResize,
   ) => PluginRpcResize | Promise<PluginRpcResize>;
+  /** Where the frame is shown. Apps adapt to `chat` via their context. */
+  placement?: "panel" | "chat";
+  chat?: PluginChatContext;
+  onChatRespond?: (response: {
+    message: string;
+    data?: Record<string, unknown>;
+  }) => boolean | Promise<boolean>;
 }) {
   const iframe = useRef<HTMLIFrameElement>(null);
   const ready = useRef(false);
@@ -159,11 +176,23 @@ export function PluginFrame({
           },
           ...(canReadTheme ? { theme: readTheme() } : {}),
           capabilities,
+          placement,
+          chat: chat
+            ? { input: chat.input, reason: chat.reason ?? null }
+            : null,
         },
         frame.origin,
       );
     },
-    [canReadTheme, capabilities, frame, plugin.pluginId, surface],
+    [
+      canReadTheme,
+      capabilities,
+      chat,
+      frame,
+      placement,
+      plugin.pluginId,
+      surface,
+    ],
   );
 
   useEffect(() => {
@@ -247,6 +276,8 @@ export function PluginFrame({
             openCopilot: () => undefined,
             resize: onResizeRequest,
             storage: pluginStorage,
+            chatRespond:
+              placement === "chat" && onChatRespond ? onChatRespond : undefined,
           });
         }
 
@@ -260,7 +291,7 @@ export function PluginFrame({
               authorization.message,
             );
           }
-          const action = pluginRpcActionForRequest(request);
+          const action = pluginRpcActionForRequest(request, plugin);
           if (action) {
             confirmed = await confirmAction(action);
             if (!confirmed) {
@@ -331,7 +362,9 @@ export function PluginFrame({
   }, [
     confirmAction,
     frame,
+    onChatRespond,
     onResizeRequest,
+    placement,
     plugin,
     pluginStorage,
     router,
@@ -410,7 +443,7 @@ export function PluginFrame({
               {confirmation?.summary}{" "}
               {confirmation?.method === "copilot.open"
                 ? "Nothing will be sent until you review the draft and press Send in Copilot."
-                : "Commons will perform this action using your account only after you confirm."}
+                : "Commons will perform this action using your account only after you confirm. You can change approvals in the app settings."}
             </AlertDialogDescription>
             {confirmation?.details.length ? (
               <dl className="max-h-72 space-y-3 overflow-y-auto rounded-lg border bg-muted/30 p-3 text-sm">

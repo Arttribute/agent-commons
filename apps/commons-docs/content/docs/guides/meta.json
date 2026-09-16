@@ -4,6 +4,7 @@
     "agents",
     "tools-mcp",
     "skills",
+    "apps",
     "knowledge",
     "memory",
     "workflows",

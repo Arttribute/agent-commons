@@ -32,6 +32,7 @@ import { AudioModule } from './audio';
 import { CodeProjectModule } from './code-project';
 import { CapabilityProviderModule } from './provider';
 import { UiPluginModule } from './ui-plugin';
+import { UiPluginGatewayModule } from './ui-plugin/ui-plugin-gateway.module';
 import { ProvenanceModule } from './provenance';
 import { BrainModule } from './brain';
 import { MediaModule } from './media';
@@ -68,6 +69,7 @@ import { MediaModule } from './media';
     CodeProjectModule,
     CapabilityProviderModule,
     UiPluginModule,
+    UiPluginGatewayModule,
     AudioModule,
     MemoryModule,
     WalletModule,

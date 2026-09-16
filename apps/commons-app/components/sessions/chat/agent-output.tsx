@@ -12,6 +12,11 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import type { StreamActivity } from "@/context/AgentContext";
+import {
+  AppChatCard,
+  collectCommonsAppWidgets,
+  type AppChatResponse,
+} from "@/components/plugins/app-chat-card";
 import { MiniComputer } from "@/components/computers/mini-computer";
 import type { AgentComputer } from "@/components/computers/computer-types";
 import { ArtifactCard } from "@/components/artifacts/artifact-card";
@@ -65,6 +70,9 @@ interface AgentOutputProps {
    */
   showAgentHeader?: boolean;
   onOpenArtifact?: (artifact: ArtifactRef) => void;
+  sessionId?: string;
+  /** Receives a response from a Commons app an agent showed in this turn. */
+  onAppRespond?: (response: AppChatResponse) => void;
 }
 
 export default function AgentOutput({
@@ -77,6 +85,8 @@ export default function AgentOutput({
   agentAvatar,
   showAgentHeader = false,
   onOpenArtifact,
+  sessionId,
+  onAppRespond,
 }: AgentOutputProps) {
   const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
   const activities = normalizeActivities(
@@ -97,6 +107,23 @@ export default function AgentOutput({
           .map((call) => call.result),
       ),
     [metadata?.toolCalls],
+  );
+
+  const appWidgets = useMemo(
+    () =>
+      collectCommonsAppWidgets([
+        ...(metadata?.toolCalls ?? [])
+          .filter((call) => call.name === "showCommonsApp")
+          .map((call) => call.result),
+        ...(metadata?.activity ?? [])
+          .filter(
+            (activity) =>
+              activity.toolName === "showCommonsApp" &&
+              activity.status === "completed",
+          )
+          .map((activity) => activity.payload?.output),
+      ]),
+    [metadata?.activity, metadata?.toolCalls],
   );
 
   if (
@@ -261,6 +288,14 @@ export default function AgentOutput({
           >
             {content}
           </ReactMarkdown>
+          {appWidgets.map((widget) => (
+            <AppChatCard
+              key={widget.widgetId}
+              widget={widget}
+              sessionId={sessionId}
+              onRespond={onAppRespond}
+            />
+          ))}
           {onOpenArtifact && generatedArtifacts.length > 0 && (
             <div className="not-prose mt-3 grid gap-2">
               {generatedArtifacts.map((artifact) => (
@@ -537,6 +572,10 @@ function normalizeActivities(
 
 function titleForToolCall(name: string, status?: string) {
   const failed = status === "error" || status === "failed";
+  if (name === "showCommonsApp") return failed ? "Could not show app" : "Showed an app";
+  if (name === "listCommonsApps") return "Checked enabled apps";
+  if (name === "queryCommonsAppData") return "Read app data";
+  if (name === "writeCommonsAppData") return failed ? "Could not update app data" : "Updated app data";
   if (name === "startAgentComputer")
     return failed ? "Agent computer failed" : "Agent computer ready";
   if (name === "listAgentComputers") return "Checked agent computers";

@@ -1,42 +1,32 @@
 import type {
   UiPlugin,
   UiPluginCapabilityGrant,
-  UiPluginCapabilityName,
   UiPluginSurfaceType,
 } from "./types";
+import { pluginGrants } from "./types.ts";
+import {
+  UI_PLUGIN_CAPABILITIES,
+  UI_PLUGIN_GATEWAY_METHODS,
+  UI_PLUGIN_METHOD_CAPABILITIES,
+  defaultApproval,
+  type UiPluginCapabilityName,
+} from "./capabilities.ts";
 
 const MAX_REQUEST_BYTES = 32_000;
 const MAX_LIST_ITEMS = 100;
 const DEFAULT_LIST_ITEMS = 50;
 const MAX_STRING_LENGTH = 8_000;
 
-const METHOD_CAPABILITIES = {
-  "agents.list": "agents.read",
-  "tasks.list": "tasks.read",
-  "tasks.create": "tasks.write",
-  "tasks.update": "tasks.write",
-  "workflows.list": "workflows.read",
-  "workflows.execute": "workflows.execute",
-  "library.list": "library.read",
-  "tools.list": "tools.read",
-  "copilot.open": "copilot.prompt",
-} as const satisfies Partial<Record<PluginRpcMethod, UiPluginCapabilityName>>;
+const HOST_METHODS = [
+  "navigation.open",
+  "storage.get",
+  "storage.set",
+  "storage.remove",
+  "ui.resize",
+  "chat.respond",
+] as const;
 
-export type PluginRpcMethod =
-  | "agents.list"
-  | "tasks.list"
-  | "tasks.create"
-  | "tasks.update"
-  | "workflows.list"
-  | "workflows.execute"
-  | "library.list"
-  | "tools.list"
-  | "copilot.open"
-  | "navigation.open"
-  | "storage.get"
-  | "storage.set"
-  | "storage.remove"
-  | "ui.resize";
+export type PluginRpcMethod = string;
 
 export type PluginRpcRequest = {
   jsonrpc: "2.0";
@@ -54,11 +44,7 @@ export type PluginRpcResponse =
     };
 
 export type PluginRpcAction = {
-  method:
-    | "tasks.create"
-    | "tasks.update"
-    | "workflows.execute"
-    | "copilot.open";
+  method: string;
   summary: string;
   details: Array<{ label: string; value: string }>;
 };
@@ -87,6 +73,13 @@ export type PluginRpcDispatcherOptions = {
     set: (key: string, value: string) => void | Promise<void>;
     remove: (key: string) => void | Promise<void>;
   };
+  /** Runs gateway methods through the Commons API with the approval result. */
+  gateway?: (request: PluginRpcRequest) => Promise<unknown>;
+  /** Sends an in-chat app's response into its conversation. */
+  chatRespond?: (response: {
+    message: string;
+    data?: Record<string, unknown>;
+  }) => boolean | Promise<boolean>;
 };
 
 export type PluginRpcLimit = {
@@ -99,21 +92,9 @@ export type PluginRpcLimitError = {
   message: string;
 };
 
-const RPC_METHODS = new Set<PluginRpcMethod>([
-  "agents.list",
-  "tasks.list",
-  "tasks.create",
-  "tasks.update",
-  "workflows.list",
-  "workflows.execute",
-  "library.list",
-  "tools.list",
-  "copilot.open",
-  "navigation.open",
-  "storage.get",
-  "storage.set",
-  "storage.remove",
-  "ui.resize",
+const RPC_METHODS = new Set<string>([
+  ...Object.keys(UI_PLUGIN_METHOD_CAPABILITIES),
+  ...HOST_METHODS,
 ]);
 
 /**
@@ -221,10 +202,12 @@ export async function dispatchPluginRpc(
     const error =
       cause instanceof PluginRpcError
         ? cause
-        : new PluginRpcError(
-            -32603,
-            "The Commons request could not be completed.",
-          );
+        : isGatewayFailure(cause)
+          ? new PluginRpcError(cause.code, cause.message)
+          : new PluginRpcError(
+              -32603,
+              "The Commons request could not be completed.",
+            );
     return {
       jsonrpc: "2.0",
       id: request.id,
@@ -234,7 +217,33 @@ export async function dispatchPluginRpc(
 }
 
 export function pluginCapabilityNames(plugin: UiPlugin) {
-  return (plugin.manifest.capabilities ?? []).map((grant) => grant.name);
+  return pluginGrants(plugin).map((grant) => grant.name);
+}
+
+export function isGatewayPluginRpcMethod(method: string) {
+  return UI_PLUGIN_GATEWAY_METHODS.has(method);
+}
+
+/**
+ * Whether the owner's grant asks for approval before this request runs. The
+ * API applies the same rule, so skipping the dialog here cannot skip approval.
+ */
+export function pluginRpcNeedsApproval(
+  plugin: UiPlugin,
+  request: PluginRpcRequest,
+) {
+  const name = UI_PLUGIN_METHOD_CAPABILITIES[request.method];
+  if (!name) return false;
+  const definition = UI_PLUGIN_CAPABILITIES[name];
+  if (definition.access === "read") return false;
+  const grant = pluginGrants(plugin).find((item) => item.name === name);
+  const approval = grant?.approval ?? defaultApproval(name);
+  if (approval === "auto") return false;
+  if (request.method === "http.request") {
+    const method = String(request.params.method ?? "GET").toUpperCase();
+    return !["GET", "HEAD"].includes(method);
+  }
+  return true;
 }
 
 /**
@@ -258,7 +267,7 @@ export function preflightPluginRpcRequest(
       }
       const body = taskCreateBody(request.params);
       if (body.workflowId) {
-        const workflowGrant = plugin.manifest.capabilities?.find(
+        const workflowGrant = pluginGrants(plugin).find(
           (candidate) => candidate.name === "workflows.execute",
         );
         if (!workflowGrant) {
@@ -270,7 +279,7 @@ export function preflightPluginRpcRequest(
         assertResourceAllowed(workflowGrant, body.workflowId);
       }
       if (body.tools?.length) {
-        const toolsGrant = plugin.manifest.capabilities?.find(
+        const toolsGrant = pluginGrants(plugin).find(
           (candidate) => candidate.name === "tools.read",
         );
         if (!toolsGrant) {
@@ -290,6 +299,26 @@ export function preflightPluginRpcRequest(
         grant,
         requiredId(request.params.workflowId, "workflowId"),
       );
+    } else if (request.method === "http.request") {
+      assertResourceAllowed(
+        grant,
+        requiredString(request.params.connection, "connection", 40),
+      );
+    } else if (
+      request.method.startsWith("data.") &&
+      request.method !== "data.collections"
+    ) {
+      assertResourceAllowed(
+        grant,
+        requiredString(request.params.collection, "collection", 40),
+      );
+    } else if (
+      ["agents.run", "memory.list", "memory.create"].includes(request.method)
+    ) {
+      assertResourceAllowed(
+        grant,
+        requiredId(request.params.agentId, "agentId"),
+      );
     }
     return { ok: true };
   } catch (cause) {
@@ -303,7 +332,74 @@ export function preflightPluginRpcRequest(
 
 export function pluginRpcActionForRequest(
   request: PluginRpcRequest,
+  plugin?: UiPlugin,
 ): PluginRpcAction | null {
+  if (plugin && !pluginRpcNeedsApproval(plugin, request)) return null;
+  if (request.method === "agents.run") {
+    return {
+      method: request.method,
+      summary: "Send this prompt to your agent? It uses credits.",
+      details: actionDetails([
+        ["Agent", optionalId(request.params.agentId)],
+        ["Prompt", optionalString(request.params.prompt, 8_000)],
+        ["Session", optionalId(request.params.sessionId)],
+      ]),
+    };
+  }
+  if (request.method === "memory.create") {
+    return {
+      method: request.method,
+      summary: "Save this to your agent's memory?",
+      details: actionDetails([
+        ["Agent", optionalId(request.params.agentId)],
+        ["Memory", optionalString(request.params.content, 4_000)],
+      ]),
+    };
+  }
+  if (request.method === "http.request") {
+    return {
+      method: request.method,
+      summary: "Send this request to an external service?",
+      details: actionDetails([
+        ["Connection", optionalString(request.params.connection, 40)],
+        [
+          "Request",
+          `${String(request.params.method ?? "GET").toUpperCase()} ${optionalString(request.params.path, 500) ?? "/"}`,
+        ],
+        [
+          "Body",
+          request.params.body === undefined
+            ? undefined
+            : typeof request.params.body === "string"
+              ? request.params.body
+              : safeStringify(request.params.body),
+        ],
+      ]),
+    };
+  }
+  if (
+    request.method === "data.insert" ||
+    request.method === "data.update" ||
+    request.method === "data.delete"
+  ) {
+    return {
+      method: request.method,
+      summary:
+        request.method === "data.delete"
+          ? "Delete this record from the app's data?"
+          : "Save this record to the app's data?",
+      details: actionDetails([
+        ["Collection", optionalString(request.params.collection, 40)],
+        ["Record", optionalString(request.params.id, 64)],
+        [
+          "Data",
+          request.params.data === undefined
+            ? undefined
+            : safeStringify(request.params.data),
+        ],
+      ]),
+    };
+  }
   if (request.method === "tasks.create") {
     const body = taskCreateBody(request.params);
     return {
@@ -387,13 +483,7 @@ export function pluginRpcCopilotPrompt(request: PluginRpcRequest) {
 }
 
 export function isHostPluginRpcMethod(method: PluginRpcMethod) {
-  return [
-    "navigation.open",
-    "storage.get",
-    "storage.set",
-    "storage.remove",
-    "ui.resize",
-  ].includes(method);
+  return (HOST_METHODS as readonly string[]).includes(method);
 }
 
 export function isSafePluginNavigationPath(value: unknown): value is string {
@@ -426,6 +516,24 @@ async function dispatch(
 ) {
   const fetcher = options.fetcher ?? fetch;
   const grant = requiredGrant(options.plugin, request.method);
+  const approve = async () => {
+    const action = pluginRpcActionForRequest(request, options.plugin);
+    if (!action) return;
+    const accepted = await options.confirmAction(action);
+    if (!accepted)
+      throw new PluginRpcError(-32003, "The user cancelled this action.");
+  };
+
+  if (isGatewayPluginRpcMethod(request.method)) {
+    const preflight = preflightPluginRpcRequest(options.plugin, request);
+    if (!preflight.ok) {
+      throw new PluginRpcError(preflight.code, preflight.message);
+    }
+    if (!options.gateway) {
+      throw new PluginRpcError(-32050, "Commons is temporarily unavailable.");
+    }
+    return options.gateway(request);
+  }
 
   switch (request.method) {
     case "agents.list": {
@@ -465,11 +573,7 @@ async function dispatch(
       }
       const body = taskCreateBody(request.params);
       await validateTaskCreateReferences(fetcher, options.plugin, body);
-      const accepted = await options.confirmAction(
-        pluginRpcActionForRequest(request)!,
-      );
-      if (!accepted)
-        throw new PluginRpcError(-32003, "The user cancelled this action.");
+      await approve();
       let sessionId: string | undefined = body.sessionId;
       if (!sessionId) {
         const sessionResult = await fetchJson(fetcher, "/api/sessions", {
@@ -503,11 +607,7 @@ async function dispatch(
       const taskId = requiredId(request.params.taskId, "taskId");
       assertResourceAllowed(grant, taskId);
       const patch = taskUpdateBody(request.params);
-      const accepted = await options.confirmAction(
-        pluginRpcActionForRequest(request)!,
-      );
-      if (!accepted)
-        throw new PluginRpcError(-32003, "The user cancelled this action.");
+      await approve();
       const result = await fetchJson(
         fetcher,
         `/api/tasks/${encodeURIComponent(taskId)}`,
@@ -541,11 +641,7 @@ async function dispatch(
       const workflowId = requiredId(request.params.workflowId, "workflowId");
       assertResourceAllowed(grant, workflowId);
       const inputData = safeJsonRecord(request.params.inputData ?? {});
-      const accepted = await options.confirmAction(
-        pluginRpcActionForRequest(request)!,
-      );
-      if (!accepted)
-        throw new PluginRpcError(-32003, "The user cancelled this action.");
+      await approve();
       const result = await fetchJson(
         fetcher,
         `/api/workflows/${encodeURIComponent(workflowId)}/execute`,
@@ -602,11 +698,7 @@ async function dispatch(
 
     case "copilot.open": {
       const prompt = pluginRpcCopilotPrompt(request);
-      const accepted = await options.confirmAction(
-        pluginRpcActionForRequest(request)!,
-      );
-      if (!accepted)
-        throw new PluginRpcError(-32003, "The user cancelled this action.");
+      await approve();
       options.openCopilot(prompt);
       return { opened: true };
     }
@@ -650,6 +742,28 @@ async function dispatch(
       return { removed: true };
     }
 
+    case "chat.respond": {
+      if (!options.chatRespond) {
+        throw new PluginRpcError(
+          -32602,
+          "This app is not open in a chat conversation.",
+        );
+      }
+      const message = requiredString(request.params.message, "message", 2_000);
+      const data =
+        request.params.data === undefined
+          ? undefined
+          : safeJsonRecord(request.params.data);
+      const sent = await options.chatRespond({ message, data });
+      if (!sent) {
+        throw new PluginRpcError(
+          -32003,
+          "This response was not sent to the conversation.",
+        );
+      }
+      return { sent: true };
+    }
+
     case "ui.resize": {
       if (options.surface !== "widget") {
         throw new PluginRpcError(
@@ -685,12 +799,12 @@ function requiredGrant(plugin: UiPlugin, method: PluginRpcMethod) {
     }
     return undefined;
   }
-  if (method === "ui.resize") return undefined;
-  const capability =
-    METHOD_CAPABILITIES[method as keyof typeof METHOD_CAPABILITIES];
+  if (method === "ui.resize" || method === "chat.respond") return undefined;
+  const capability: UiPluginCapabilityName | undefined =
+    UI_PLUGIN_METHOD_CAPABILITIES[method];
   if (!capability)
     throw new PluginRpcError(-32601, "This Commons method is not available.");
-  const grant = plugin.manifest.capabilities?.find(
+  const grant = pluginGrants(plugin).find(
     (candidate) => candidate.name === capability,
   );
   if (!grant) {
@@ -700,6 +814,23 @@ function requiredGrant(plugin: UiPlugin, method: PluginRpcMethod) {
     );
   }
   return grant;
+}
+
+function isGatewayFailure(
+  value: unknown,
+): value is Error & { code: number } {
+  return (
+    value instanceof Error &&
+    typeof (value as { code?: unknown }).code === "number"
+  );
+}
+
+function safeStringify(value: unknown) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return "[unreadable]";
+  }
 }
 
 async function fetchJson(
@@ -931,7 +1062,7 @@ async function validateTaskCreateReferences(
   }
 
   if (body.workflowId) {
-    const workflowGrant = plugin.manifest.capabilities?.find(
+    const workflowGrant = pluginGrants(plugin).find(
       (candidate) => candidate.name === "workflows.execute",
     );
     if (!workflowGrant) {
@@ -965,7 +1096,7 @@ async function validateTaskCreateReferences(
   }
 
   if (body.tools?.length) {
-    const toolsGrant = plugin.manifest.capabilities?.find(
+    const toolsGrant = pluginGrants(plugin).find(
       (candidate) => candidate.name === "tools.read",
     );
     if (!toolsGrant) {

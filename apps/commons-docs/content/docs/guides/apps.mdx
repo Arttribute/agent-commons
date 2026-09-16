@@ -1,0 +1,134 @@
+---
+title: Apps
+description: Build custom apps that read and change your workspace, call external services, store data, and appear in chat, with access you control.
+---
+
+A Commons app is a small React interface an agent builds and publishes for you.
+It can open as a full page, as a panel from the apps bar, or inside a chat
+conversation. Apps run in an isolated frame. They never receive your session,
+cookies or API keys, and they can only do what you allow.
+
+## How an app gets to your workspace
+
+1. An agent writes the project, publishes it, and runs `testCodeProject`.
+   Testing exercises every surface and capability the app asks for.
+2. The agent calls `registerUiPlugin`. The app arrives as a draft.
+3. You review it in **Studio → Customize → Apps**. You choose what it may
+   do, connect any external services, pick where its data lives, and enable it.
+4. New apps are pinned to the apps bar if there is room.
+
+Agents cannot grant permissions. Republishing an app keeps your settings, but
+any new capability it asks for stays off until you allow it.
+
+## Access
+
+The manifest lists what an app requests. Your grants decide what it gets:
+
+- turn any requested capability off;
+- limit a capability to specific agents, workflows, collections or
+  connections; and
+- for anything that changes data, choose **Ask me** (approve each action) or
+  **Allow**.
+
+| Capability | What the app can do |
+|---|---|
+| `agents.read` | List agents |
+| `agents.run` | Send a prompt to an agent and read the reply (uses credits) |
+| `sessions.read` | List chat sessions and read messages |
+| `memory.read` · `memory.write` | Read or add agent memories |
+| `skills.read` · `spaces.read` · `credits.read` | Read skills, spaces, credit balance |
+| `tasks.read` · `tasks.write` | Read, create and edit tasks |
+| `workflows.read` · `workflows.execute` | Read and run workflows |
+| `library.read` · `tools.read` | Read library items and tools |
+| `data.read` · `data.write` | Read and write the app's own records |
+| `network.request` | Call the external services you connect |
+| `copilot.prompt` | Draft a Copilot prompt for you to review |
+
+Reads and writes to the app's own data never ask. Agent runs, task and workflow
+changes, memory writes, and external requests that change data ask by default.
+
+Every call is checked again on the server against your current grants, so
+turning something off takes effect immediately.
+
+## External services
+
+An app declares each service it calls:
+
+```json
+{
+  "key": "weather",
+  "name": "OpenWeather",
+  "baseUrl": "https://api.openweathermap.org/data/2.5",
+  "auth": { "type": "query", "name": "appid" },
+  "methods": ["GET"],
+  "pathPrefixes": ["/weather", "/forecast"]
+}
+```
+
+You add the key in the app's **Services** tab. Commons encrypts it and attaches
+it on the server. Requests must stay inside the base URL, methods and paths
+declared, go to public HTTPS hosts only, and do not follow redirects. Responses
+are limited to 1 MB.
+
+Auth types are `none`, `bearer`, `header`, `query` and `basic`.
+
+## Data
+
+`commons.data` stores JSON records in named collections that belong to one app
+and its owner. The app code is the same wherever the data lives:
+
+| Storage | Setup |
+|---|---|
+| Commons (default) | Nothing. Records live in a separate `commons_app_data` schema, apart from platform tables. Up to 20,000 records and 100 MB per app. |
+| Supabase | Project URL and key. Create one table per collection with an `id` primary key. Your row level security still applies. |
+| MongoDB | Connection string and database. Collections are created as needed. |
+
+Queries filter top-level fields with `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`
+and `contains`, sort by one field, and return up to 100 records per page.
+Records must be under 64 KB. Collections and field types come from the
+manifest and are checked on every write. Switching storage does not move
+existing records.
+
+## The apps bar
+
+Enabled apps live in the apps bar at the top right of Studio, Library,
+Knowledge and chat pages. Up to six apps can be pinned. Hover an icon to see
+its name, click to open the app in a panel, and use the apps menu to open any
+other app, pin or unpin it, or keep separate pins for the current page.
+
+## Apps in chat
+
+An app with `chat.when` guidance and a widget can appear inside a conversation.
+Agents see enabled apps and their guidance, call `showCommonsApp` with a reason
+and input when the moment fits (for example, when you need to choose between
+options), and wait for your response. The app reads the input with
+`commons.chat.getInput()` and sends your choice back with
+`commons.chat.respond()`, which arrives as your next message. Each app in chat
+can respond once.
+
+You can turn chat off per app, and separately allow agents to read or write the
+app's data with `queryCommonsAppData` and `writeCommonsAppData`.
+
+## Icons and publishing
+
+Apps ship an SVG icon in the project (`icon.svg`) and pass `icon` when
+registering. Icons must not contain scripts, event handlers or external
+references. You can upload a PNG, JPEG, WebP or SVG under 96 KB to replace it.
+
+## API
+
+The same settings are available through the SDK:
+
+```ts
+await client.uiPlugins.setStatus(pluginId, "active", {
+  capabilities: [
+    { name: "data.read" },
+    { name: "agents.run", resourceIds: ["agent_123"], approval: "ask" },
+  ],
+  agentDataAccess: "read",
+  chatEnabled: true,
+});
+await client.uiPlugins.saveConnection(pluginId, "weather", { secret: process.env.OPENWEATHER_KEY });
+await client.uiPlugins.setStorage(pluginId, { provider: "commons" });
+await client.uiPlugins.setPins("global", [pluginId]);
+```
