@@ -21,6 +21,12 @@ const url = process.env.PAYMENT_TEST_DATABASE_URL;
         'utf8',
       ),
     );
+    await client.unsafe(
+      readFileSync(
+        'migrations/versioned/034_sponsored_seat_attempts.sql',
+        'utf8',
+      ),
+    );
     await client`INSERT INTO agent VALUES(${agent}) ON CONFLICT DO NOTHING`;
     await client`INSERT INTO agent_wallet VALUES(${wallet},${agent},true,'eoa','enc:test') ON CONFLICT DO NOTHING`;
     service = new PaymentSessionService(drizzle(client) as any);
@@ -71,5 +77,52 @@ const url = process.env.PAYMENT_TEST_DATABASE_URL;
     await expect(
       service.load(agent, session.id, 'runtime-1'),
     ).rejects.toThrow();
+  });
+  it('keeps zero-cost seat joins idempotent and revocable without allowing zero-value payments', async () => {
+    const created = await service.create(
+      agent,
+      wallet,
+      'sponsored-runtime',
+      {
+        network: 'eip155:84532',
+        asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        payTo: '0x1111111111111111111111111111111111111111',
+        origin: 'https://payments.test',
+        maxPaymentUnits: '100',
+        arcade: {
+          matchId: 'mat_sponsored',
+          poolId: `0x${'1'.repeat(64)}`,
+          seatId: `0x${'2'.repeat(64)}`,
+          allowedOperations: ['stake'],
+        },
+      },
+      '100',
+      new Date(Date.now() + 60000).toISOString(),
+    );
+    const session = await service.load(
+      agent,
+      created.id as string,
+      'sponsored-runtime',
+    );
+    await expect(
+      service.reserve(session, 'zero-payment', '0', 'https://payments.test'),
+    ).rejects.toThrow();
+    const results = await Promise.allSettled([
+      service.reserveSeatJoin(session, 'sponsored-join'),
+      service.reserveSeatJoin(session, 'sponsored-join'),
+    ]);
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      BigInt(
+        (await service.load(agent, session.id, 'sponsored-runtime'))
+          .reserved_units,
+      ),
+    ).toBe(0n);
+    await service.revoke(agent, session.id);
+    await expect(
+      service.reserveSeatJoin(session, 'another-join'),
+    ).rejects.toThrow('expired or revoked');
   });
 });

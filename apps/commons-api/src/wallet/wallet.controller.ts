@@ -171,6 +171,16 @@ export class WalletController {
     return this.walletService.arcadeObservation(agentId, dto);
   }
 
+  @Post('agent/:agentId/arcade/autoplay')
+  async arcadeAutoplay(
+    @Param('agentId') agentId: string,
+    @Body() dto: Parameters<WalletService['arcadeAutoplay']>[1],
+    @Req() req: Request,
+  ) {
+    await this.authorizePaymentExecution(req, agentId);
+    return this.walletService.arcadeAutoplay(agentId, dto);
+  }
+
   @Post('agent/:agentId/payment-sessions')
   @OwnerOnly({ table: 'agent', idParam: 'agentId' })
   async createPaymentSession(
@@ -207,6 +217,17 @@ export class WalletController {
   @OwnerOnly({ table: 'agent', idParam: 'agentId' })
   runtimeSessions(@Param('agentId') agentId: string) {
     return this.walletService.runtimeSessions(agentId);
+  }
+
+  @Get('agent/:agentId/payment-capabilities')
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
+  paymentCapabilities() {
+    return {
+      openSeatDeposits: true,
+      sponsoredSeatDeposits: true,
+      autonomousPlay: true,
+      gaslessSeatEntry: true,
+    };
   }
 
   @Get('agent/:agentId/payment-sessions')

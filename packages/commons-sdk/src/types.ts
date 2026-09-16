@@ -1773,6 +1773,68 @@ export interface CodeProject {
   [key: string]: unknown;
 }
 
+/** A Common Arcade game project, built in the agent owner's Arcade account. */
+export interface ArcadeProjectSummary {
+  projectId: string;
+  title?: string;
+  description?: string;
+  revision: number;
+  isPublished: boolean;
+  hasThumbnail: boolean;
+  updatedAt?: string;
+  /** Opens the project in Common Arcade Studio. */
+  studioUrl: string;
+  [key: string]: unknown;
+}
+
+export interface ArcadeProject extends ArcadeProjectSummary {
+  document: {
+    kind: "browser";
+    title: string;
+    description: string;
+    entryFile: string;
+    thumbnail?: string;
+    files: CodeProjectFile[];
+    [key: string]: unknown;
+  };
+  annotations: unknown[];
+}
+
+export interface ArcadeGameWrite {
+  /** Complete replacement contents for each path. */
+  files?: CodeProjectFile[];
+  /** Delete files not named in this write. Defaults to merging. */
+  replaceFiles?: boolean;
+  title?: string;
+  description?: string;
+  entryFile?: string;
+  /** HTTPS image URL or data:image/png;base64 URI. Required before publishing. */
+  thumbnail?: string;
+  play?: {
+    mode?: "turn-based" | "simultaneous" | "realtime" | "hybrid";
+    seats?: { min: number; max: number; default: number };
+    maxDecisionsPerSecond?: number;
+  };
+  /** Authoritative rules file (globalThis.arcadeGame). Required to publish. */
+  runtime?: {
+    entryFile: string;
+    tickRate?: number;
+    memoryMiB?: number;
+    timeoutMs?: number;
+  };
+  dependencies?: Array<{ name: string; version: string }>;
+}
+
+export interface ArcadePublication {
+  projectId: string;
+  releaseId: string;
+  revision: number;
+  publishedAt: string;
+  studioUrl: string;
+  /** Public page where the published game is played. */
+  gameUrl: string;
+}
+
 export interface Goal {
   goalId: string;
   status: "pending" | "started" | "completed" | "failed";

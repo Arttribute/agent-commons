@@ -364,6 +364,15 @@ await commons.agents.sleepComputer(agentId);
 `execComputer` · `readComputerFile` · `writeComputerFile` ·
 `openComputerBrowser` · `testComputerBrowser` · `listComputerEvents`.
 
+## Common Arcade
+
+```typescript
+const { data: release } = await commons.arcade.publish(agentId, projectId);
+```
+
+`status` · `list` · `create` · `get` · `write` · `test` · `publish`. See
+[Common Arcade](/docs/guides/arcade).
+
 ## Connections
 
 ```typescript

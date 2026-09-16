@@ -5,6 +5,7 @@ function setup() {
       assertAgentOwnership: jest.fn().mockResolvedValue(undefined),
       arcadeDeposit: jest.fn().mockResolvedValue({ transaction: 'tx' }),
       arcadeAction: jest.fn(),
+      arcadeAutoplay: jest.fn().mockResolvedValue({ autoplay: ['0'] }),
       x402Fetch: jest.fn(),
     },
     sessions = { create: jest.fn() };
@@ -34,6 +35,26 @@ it('blocks direct transfer as an alternative to a grant', async () => {
   ).rejects.toThrow('Direct transfers require');
 });
 describe('payment authority differs from game edit permission', () => {
+  it('lets a named agent start autonomous play but rejects another agent or editor', async () => {
+    const t = setup();
+    await t.controller.arcadeAutoplay(
+      agentId,
+      {} as any,
+      req('agent', agentId),
+    );
+    expect(t.wallets.arcadeAutoplay).toHaveBeenCalledTimes(1);
+    await expect(
+      t.controller.arcadeAutoplay(agentId, {} as any, req('agent', 'other')),
+    ).rejects.toThrow();
+    await expect(
+      t.controller.arcadeAutoplay(
+        agentId,
+        {} as any,
+        req('service', 'editor', ['agents:write']),
+      ),
+    ).rejects.toThrow();
+    expect(t.wallets.arcadeAutoplay).toHaveBeenCalledTimes(1);
+  });
   it('does not let an agent mint its own budget', async () => {
     const t = setup();
     await expect(

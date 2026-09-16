@@ -87,6 +87,10 @@ import {
   SpaceMessage,
   CodeProject,
   CodeProjectFile,
+  ArcadeProjectSummary,
+  ArcadeProject,
+  ArcadeGameWrite,
+  ArcadePublication,
   Goal,
   OAuthProvider,
   OAuthConnection,
@@ -2693,6 +2697,56 @@ export class CommonsClient {
           `${base(agentId)}/${encodeURIComponent(projectId)}/github`,
           params ?? {},
         ),
+    };
+  }
+
+  /**
+   * Common Arcade games built through an agent. Arcade attributes every project
+   * to the agent's owner, so results open in the owner's own Arcade Studio.
+   */
+  get arcade() {
+    const base = (agentId: string) =>
+      `/v1/agents/${encodeURIComponent(agentId)}/arcade`;
+    const project = (agentId: string, projectId: string) =>
+      `${base(agentId)}/projects/${encodeURIComponent(projectId)}`;
+    return {
+      status: (agentId: string): Promise<{ data: { connected: boolean } }> =>
+        this.request("GET", `${base(agentId)}/status`),
+
+      list: (agentId: string): Promise<{ data: ArcadeProjectSummary[] }> =>
+        this.request("GET", `${base(agentId)}/projects`),
+
+      create: (
+        agentId: string,
+        params: { title: string; description?: string },
+      ): Promise<{ data: ArcadeProjectSummary & { files: string[] } }> =>
+        this.request("POST", `${base(agentId)}/projects`, params),
+
+      get: (
+        agentId: string,
+        projectId: string,
+      ): Promise<{ data: ArcadeProject }> =>
+        this.request("GET", project(agentId, projectId)),
+
+      write: (
+        agentId: string,
+        projectId: string,
+        params: ArcadeGameWrite,
+      ): Promise<{ data: ArcadeProjectSummary & { files: string[] } }> =>
+        this.request("PUT", `${project(agentId, projectId)}/game`, params),
+
+      test: (
+        agentId: string,
+        projectId: string,
+        params?: { seed?: string; steps?: number },
+      ): Promise<{ data: Record<string, unknown> }> =>
+        this.request("POST", `${project(agentId, projectId)}/test`, params ?? {}),
+
+      publish: (
+        agentId: string,
+        projectId: string,
+      ): Promise<{ data: ArcadePublication }> =>
+        this.request("POST", `${project(agentId, projectId)}/publish`, {}),
     };
   }
 

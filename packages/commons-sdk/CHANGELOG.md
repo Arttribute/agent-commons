@@ -1,5 +1,18 @@
 # @agent-commons/sdk
 
+## 0.7.0
+
+### Minor Changes
+
+- 10586e7: Add Common Arcade support. `client.arcade` lists, creates, reads, writes, tests,
+  and publishes Arcade game projects through an agent, and `agc arcade` exposes the
+  same actions, including `push` to upload a local game directory. Projects belong
+  to the agent's owner and open in their Arcade Studio.
+- bec3bf6: Add per-agent skill assignments, agent-scoped library items, configurable capability providers, portable skill imports, and sandboxed UI plugin management.
+- 01a4cf3: Add typed `/v1/knowledge` APIs for portable Markdown, durable folder management,
+  OKF v0.2 analysis, graph retrieval, provider connectors, revisions, and subject
+  grants.
+
 ## 0.6.0
 
 ### Minor Changes

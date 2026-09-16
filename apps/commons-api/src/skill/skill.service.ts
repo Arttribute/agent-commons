@@ -842,6 +842,12 @@ const BUNDLED_SKILL_CONFIG: Record<
   'build-common-arcade-games': {
     name: 'Build Common Arcade Games',
     tools: [
+      'arcade_list_projects',
+      'arcade_read_project',
+      'arcade_create_project',
+      'arcade_write_game',
+      'arcade_test_game',
+      'arcade_publish_game',
       'startAgentComputer',
       'runComputerCommand',
       'readComputerFile',
@@ -852,7 +858,7 @@ const BUNDLED_SKILL_CONFIG: Record<
     triggers: ['game', 'arcade', 'simulation', 'playable', 'gameplay'],
     tags: ['games', 'web', 'code', 'testing'],
     icon: 'gamepad-2',
-    version: '1.0.0',
+    version: '1.1.0',
   },
 };
 

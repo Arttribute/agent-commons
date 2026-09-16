@@ -5,25 +5,50 @@ description: Create, revise, test, and publish playable live games of any genre 
 
 # Build Common Arcade Games
 
-Work on the real Studio project through the `arcade_*` tools. The user's message is the brief; inspect project state with tools instead of asking the user to restate information the project already contains.
+Work on the real Studio project through the `arcade_*` tools. The user's message is the brief; inspect project state with tools instead of asking the user to restate information the project already contains. These tools act in the user's own Arcade account, so everything you build opens in their Studio.
 
 ## Tools
 
-- `arcade_read_project` — read the current revision, files and open annotations before any edit.
-- `arcade_write_live_game` — write a complete live game: browser presentation files that assign `window.arcade.render` and call `window.arcade.submit`, plus a deterministic rules file that assigns `globalThis.arcadeGame`. This is the default for every genre.
-- `arcade_write_preview_game` — a browser-only prototype. Use only when the user explicitly asks for a non-live preview.
-- `arcade_test_game` — compile, validate live readiness and run the headless runtime test. A game is live-ready only when it returns `liveReady: true`.
-- `arcade_configure_earnings` — optional paid-match earning terms and remix licensing on the draft.
-- `arcade_publish_game` / `arcade_unpublish_game` — only when the owner asks.
+- `arcade_create_project` creates a new Studio project for the user.
+- `arcade_list_projects` finds the user's existing projects when the request is vague.
+- `arcade_read_project` reads the current revision, files, metadata, open annotations, and limits before edits.
+- `arcade_write_game` writes complete source files and project metadata. Send whole files, never patches.
+- `arcade_test_game` compiles the project, validates live readiness, and runs the headless runtime test.
+- `arcade_publish_game` publishes a tested live game when the owner asks.
 
 ## Workflow
 
-1. Call `arcade_read_project` and read the practices below.
+1. Identify the project. When the request names one, or the conversation is already about one, call `arcade_read_project` before editing. Use `arcade_list_projects` to find it when the user is vague. When there is no project yet, call `arcade_create_project` with a title.
 2. Plan the smallest complete change that fulfills the request. Build the mechanics the user asked for; never substitute a grid or tic-tac-toe game for another genre.
-3. Write the complete game with `arcade_write_live_game`, including a responsive screen, readable controls, restart behavior and clear score or outcome feedback.
+3. Write the complete game with `arcade_write_game`, including a responsive screen, readable controls, restart behavior, clear score or outcome feedback, a thumbnail, and an authoritative runtime rules file.
 4. Call `arcade_test_game`. Repair every failure and warning with another write, then test again.
 5. Publish only when asked, and report the release identifier the tool returned.
 6. Finish with what is playable, the controls, the checks the tools confirmed, and anything unresolved.
+
+## Publishable games
+
+Arcade only publishes games whose rules run in its authoritative sandbox. A game that lives entirely in browser code can be previewed and tested but never published, so build the live shape from the start unless the user explicitly asks for a private prototype.
+
+A publishable game has two parts, both saved with `arcade_write_game`:
+
+- **Rules** in a server file such as `rules.js`, declared with `runtime: { entryFile: "rules.js" }`. It assigns `globalThis.arcadeGame` with pure synchronous methods:
+
+  ```js
+  globalThis.arcadeGame = {
+    initialize(context) {},                    // -> initial state; context.roster lists seats, context.seed seeds randomness
+    validateAction(state, action, context) {}, // -> null when legal, otherwise a reason string
+    applyAction(state, action, context) {},    // -> { state, events }
+    tick(state, context) {},                   // required for realtime and hybrid games -> { state, events }
+    observe(state, seatId, context) {},        // -> { visibleState, legalActions, feedback? }
+    result(state) {},                          // -> null until the game ends, then { outcome, standings }
+  }
+  ```
+
+  All values must be JSON-serializable. The sandbox has no network, filesystem, host clock, or `Math.random`: derive randomness from `context.seed` kept in state, and timing from `context.elapsedMs` / `context.deltaMs`. Keep state to what actions change.
+
+- **Presentation** in the HTML entry file. It assigns `window.arcade = { render(state, context) {} }` and calls `window.arcade.submit(action)` from human controls. Arcade installs `submit`; never implement or wrap it, and never duplicate rule transitions in browser code. Respect `context.inputEnabled`.
+
+Set `play.mode` to match the rules (`turn-based`, or `realtime` with a `tick`) and keep `play.seats` consistent with the roster the rules expect.
 
 ## Live-game practices
 

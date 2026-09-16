@@ -1,5 +1,22 @@
 # @agent-commons/cli
 
+## 0.6.0
+
+### Minor Changes
+
+- 10586e7: Add Common Arcade support. `client.arcade` lists, creates, reads, writes, tests,
+  and publishes Arcade game projects through an agent, and `agc arcade` exposes the
+  same actions, including `push` to upload a local game directory. Projects belong
+  to the agent's owner and open in their Arcade Studio.
+- a4d7d05: Add `agc code`, initial task and prompt-file support, project instructions, and local read-only mode for the VS Code coding workspace. Harden local path boundaries and approval defaults, preserve the original agent when resuming, and stop changing Git hooks at chat startup.
+
+### Patch Changes
+
+- Updated dependencies [10586e7]
+- Updated dependencies [bec3bf6]
+- Updated dependencies [01a4cf3]
+  - @agent-commons/sdk@0.7.0
+
 ## 0.5.0
 
 ### Minor Changes

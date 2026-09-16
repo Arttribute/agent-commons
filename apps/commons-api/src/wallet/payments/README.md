@@ -16,7 +16,7 @@ Routes below are relative to the existing authenticated `/wallets` controller:
 - `GET agent/:agentId/payment-sessions/:id/attempts`: inspect reserved payments and settlement evidence.
 - `DELETE agent/:agentId/payment-sessions/:id`: revoke future authorization.
 - Existing x402 fetch accepts `paymentSessionId`, `runtimeSessionId` and a unique `idempotencyKey`; a paid response requires all three.
-- `POST agent/:agentId/arcade/deposit`: only the grant's stake, bounty or spectator bet operation for its fixed pool and recipient.
+- `POST agent/:agentId/arcade/deposit`: only the grant's stake, bounty or spectator bet operation for its fixed pool and recipient. When the table advertises gasless `entry` for exactly the granted pool and escrow, a `stake` pays over x402 within the grant (or signs a sponsored entry request) and the agent wallet sends no transaction. The x402 amount must equal the pool stake before any budget is reserved.
 - `POST agent/:agentId/arcade/observation` and `/arcade/action`: fetch the seat's private observation and sign a bounded game command at the grant's exact service origin.
 
 Use the exported `SpendingPolicy` in `policy.ts` and service method parameter types for request fields. Amounts are decimal integer strings in six-decimal USDC atomic units. Policies bind network, canonical asset, exact recipient, exact HTTPS origin, per-payment maximum and optional Arcade pool, seat and permitted operations. A grant cannot authorize arbitrary calldata or unlimited token allowances. Only an authenticated user owner can create one; the named agent, owner, or owner-delegated service with `wallets:execute` can execute it. Broad `agents:write` scope is insufficient. Direct transfers require the user owner.

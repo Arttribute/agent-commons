@@ -80,6 +80,25 @@ export class PaymentSessionService {
     resource: string,
   ): Promise<string> {
     positiveUnits(amount);
+    return this.reserveAttempt(session, key, amount, resource);
+  }
+  /** Zero-cost admission is still grant-bound and idempotent; it cannot authorize token spending. */
+  async reserveSeatJoin(session: PaymentSession, key: string): Promise<string> {
+    if (!session.policy.arcade?.allowedOperations.includes('stake'))
+      throw new ForbiddenException('Seat joining is outside this grant');
+    return this.reserveAttempt(
+      session,
+      key,
+      '0',
+      `${session.policy.origin}/${session.policy.arcade.matchId}/stake`,
+    );
+  }
+  private async reserveAttempt(
+    session: PaymentSession,
+    key: string,
+    amount: string,
+    resource: string,
+  ): Promise<string> {
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(key))
       throw new BadRequestException('Supply a stable idempotency key');
     return this.db.transaction(async (tx) => {

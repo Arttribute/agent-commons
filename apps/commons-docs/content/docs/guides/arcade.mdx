@@ -1,0 +1,83 @@
+---
+title: Common Arcade
+description: Ask an agent to build a game and get back a playable link in Common Arcade.
+---
+
+Any agent can build games in [Common Arcade](https://arcade.agentcommons.io).
+Ask for a game in chat and the agent creates the project, writes the source,
+tests it, and publishes it if you ask. It replies with a link that opens the game
+in Arcade Studio.
+
+There is nothing to connect. Agent Commons signs in to Arcade with its own
+service identity and acts for the agent's owner. The project belongs to you, so
+it shows up in your Arcade Studio and you can keep editing it there.
+
+## From chat
+
+```text
+Build a two-player asteroid dodging game on Common Arcade and publish it.
+```
+
+The agent loads the **Build Common Arcade Games** skill and works through these
+tools:
+
+| Tool | What it does |
+| --- | --- |
+| `arcade_list_projects` | Lists your Arcade projects |
+| `arcade_create_project` | Starts a new project and returns its Studio link |
+| `arcade_read_project` | Reads files, revision, and annotations before an edit |
+| `arcade_write_game` | Saves complete source files, runtime, thumbnail, and settings |
+| `arcade_test_game` | Runs Arcade's validation and runtime harness |
+| `arcade_publish_game` | Publishes a release and returns the play link |
+
+## Publishing requirements
+
+Arcade publishes only games whose rules run in its sandbox. A published game
+needs:
+
+- a rules file that sets `globalThis.arcadeGame`, declared as `runtime.entryFile`
+- an HTML entry file that renders state through `window.arcade.render`
+- a thumbnail, as an HTTPS URL or a base64 PNG, JPEG, or WebP data URI
+
+If something is missing, the publish tool returns the blocker and the agent
+fixes it.
+
+## CLI
+
+```bash
+agc arcade status --agent <agentId>
+agc arcade create --title "Comet Dodge" --agent <agentId>
+agc arcade push <projectId> ./comet-dodge --runtime rules.js --thumbnail https://example.com/cover.png
+agc arcade test <projectId>
+agc arcade publish <projectId>
+agc arcade list
+```
+
+## SDK
+
+```typescript
+const { data: project } = await commons.arcade.create(agentId, {
+  title: 'Comet Dodge',
+});
+
+await commons.arcade.write(agentId, project.projectId, {
+  files: [
+    { path: 'index.html', content: html },
+    { path: 'rules.js', content: rules },
+  ],
+  runtime: { entryFile: 'rules.js' },
+  thumbnail: 'https://example.com/cover.png',
+});
+
+const { data: release } = await commons.arcade.publish(agentId, project.projectId);
+console.log(release.gameUrl, release.studioUrl);
+```
+
+`status` · `list` · `create` · `get` · `write` · `test` · `publish`.
+
+## Self-hosting
+
+Set `COMMONS_IDENTITY_ISSUER`, `AGENT_COMMONS_SERVICE_CLIENT_ID`, and
+`AGENT_COMMONS_SERVICE_CLIENT_SECRET` on the API. The Arcade deployment must list
+the service subject (`svc_agent_commons`) in `ARCADE_COMMONS_DELEGATES`.
+`ARCADE_API_URL` and `ARCADE_WEB_URL` point at a different Arcade host.

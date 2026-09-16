@@ -31,6 +31,8 @@ import {
   type BrowserCheckSurface,
   type CodeProjectFileInput,
 } from '~/code-project';
+import { ArcadeService } from '~/arcade';
+import type { ArcadeGameWrite } from '~/arcade';
 import { DatabaseService } from '~/modules/database/database.service';
 import { UsageService } from '~/modules/usage';
 import * as schema from '#/models/schema';
@@ -799,6 +801,84 @@ export interface CommonTool {
     directory?: string;
   }): Promise<any>;
 
+  /* ─────────────────────────  COMMON ARCADE  ───────────────────────── */
+
+  /** List the owner's Common Arcade game projects with their Studio links. */
+  arcade_list_projects(props: { agentId?: string }): Promise<any>;
+
+  /**
+   * Read a Common Arcade project before changing it: its document, complete
+   * source files, current revision and open annotations.
+   */
+  arcade_read_project(props: {
+    agentId?: string;
+    projectId: string;
+  }): Promise<any>;
+
+  /**
+   * Start a new Common Arcade game project in the owner's account. Returns the
+   * project id and the Studio URL where the creator opens it.
+   */
+  arcade_create_project(props: {
+    agentId?: string;
+    title: string;
+    description?: string;
+  }): Promise<any>;
+
+  /**
+   * Write complete game source files into a Common Arcade project. Send whole
+   * files, never patches. A playable game needs a responsive screen, visible
+   * controls, restart behaviour and score or outcome feedback.
+   */
+  arcade_write_game(props: {
+    agentId?: string;
+    projectId: string;
+    /** Complete replacement contents for each path. */
+    files: Array<{ path: string; content: string }>;
+    title?: string;
+    description?: string;
+    /** HTML file that loads the game; defaults to the project's current entry. */
+    entryFile?: string;
+    /** HTTPS image URL or data:image/png;base64 URI. Required before publishing. */
+    thumbnail?: string;
+    /** Delete files not named in this call. Defaults to merging. */
+    replaceFiles?: boolean;
+    play?: {
+      mode?: 'turn-based' | 'simultaneous' | 'realtime' | 'hybrid';
+      seats?: { min: number; max: number; default: number };
+      maxDecisionsPerSecond?: number;
+    };
+    /** Authoritative rules file (globalThis.arcadeGame). Required to publish. */
+    runtime?: {
+      entryFile: string;
+      tickRate?: number;
+      memoryMiB?: number;
+      timeoutMs?: number;
+    };
+    /** npm packages resolved through esm.sh, at exact versions. */
+    dependencies?: Array<{ name: string; version: string }>;
+  }): Promise<any>;
+
+  /**
+   * Run Arcade's validation and deterministic runtime harness against the
+   * saved project. Repair any reported problem and test again before publishing.
+   */
+  arcade_test_game(props: {
+    agentId?: string;
+    projectId: string;
+    seed?: string;
+    steps?: number;
+  }): Promise<any>;
+
+  /**
+   * Publish the project as an immutable Arcade release. Only call this when the
+   * user asked to publish. Returns the Studio and playable game URLs.
+   */
+  arcade_publish_game(props: {
+    agentId?: string;
+    projectId: string;
+  }): Promise<any>;
+
   /**
    * Create a new shared space for multi-agent communication
    */
@@ -993,6 +1073,7 @@ export class CommonToolService {
     private brains: BrainService,
     private media: MediaService,
     private canvas: CanvasService,
+    private arcade: ArcadeService,
   ) {}
 
   private async capabilityOwner(agentId: string) {
@@ -2226,6 +2307,67 @@ export class CommonToolService {
       runId: metadata?.runId,
       toolCallId: metadata?.toolCallId,
     });
+  }
+
+  /* ─────────────────────────  COMMON ARCADE  ───────────────────────── */
+
+  private async arcadeActor(agentId?: string, metadata?: ToolExecutionMetadata) {
+    return this.arcade.actorForAgent(this.requireToolAgentId(agentId, metadata));
+  }
+
+  async arcade_list_projects(
+    props: { agentId?: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const actor = await this.arcadeActor(props.agentId, metadata);
+    return { projects: await this.arcade.listProjects(actor) };
+  }
+
+  async arcade_read_project(
+    props: { agentId?: string; projectId: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const actor = await this.arcadeActor(props.agentId, metadata);
+    return this.arcade.readProject(actor, props.projectId);
+  }
+
+  async arcade_create_project(
+    props: { agentId?: string; title: string; description?: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const actor = await this.arcadeActor(props.agentId, metadata);
+    return this.arcade.createProject(actor, {
+      title: props.title,
+      description: props.description,
+    });
+  }
+
+  async arcade_write_game(
+    props: ArcadeGameWrite & { agentId?: string; projectId: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const { agentId, projectId, ...write } = props;
+    const actor = await this.arcadeActor(agentId, metadata);
+    return this.arcade.writeGame(actor, projectId, write);
+  }
+
+  async arcade_test_game(
+    props: { agentId?: string; projectId: string; seed?: string; steps?: number },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const actor = await this.arcadeActor(props.agentId, metadata);
+    return this.arcade.testGame(actor, props.projectId, {
+      seed: props.seed,
+      steps: props.steps,
+    });
+  }
+
+  async arcade_publish_game(
+    props: { agentId?: string; projectId: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const actor = await this.arcadeActor(props.agentId, metadata);
+    return this.arcade.publishGame(actor, props.projectId);
   }
 
   /* ─────────────────────────  SPACE METHODS  ───────────────────────── */

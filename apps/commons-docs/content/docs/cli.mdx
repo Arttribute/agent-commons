@@ -289,6 +289,17 @@ agc projects export <projectId> --directory /workspace/site
 agc projects github <projectId> --repository my-site --public
 ```
 
+## Common Arcade
+
+```bash
+agc arcade create --title "Comet Dodge" --agent <agentId>
+agc arcade push <projectId> ./comet-dodge --runtime rules.js --thumbnail <url>
+agc arcade test <projectId>
+agc arcade publish <projectId>
+```
+
+See [Common Arcade](/docs/guides/arcade).
+
 ## Memory
 
 ```bash

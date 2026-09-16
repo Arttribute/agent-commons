@@ -29,6 +29,7 @@ import { CapabilityProviderModule } from '~/provider';
 import { UiPluginModule } from '~/ui-plugin';
 import { BrainModule } from '~/brain';
 import { MediaModule } from '~/media';
+import { ArcadeModule } from '~/arcade';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { MediaModule } from '~/media';
     UiPluginModule,
     BrainModule,
     MediaModule,
+    ArcadeModule,
   ],
   controllers: [
     ToolController,

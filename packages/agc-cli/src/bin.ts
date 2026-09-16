@@ -27,6 +27,7 @@ import { logsCommand } from "./commands/logs.js";
 import { computerCommand } from "./commands/computer.js";
 import { libraryCommand } from "./commands/library.js";
 import { projectsCommand } from "./commands/projects.js";
+import { arcadeCommand } from "./commands/arcade.js";
 import { apiKeysCommand } from "./commands/api-keys.js";
 import { provenanceCommand } from "./commands/provenance.js";
 import { banner, select, spin, c, sym } from "./ui.js";
@@ -300,6 +301,7 @@ program.addCommand(toolsCommand());
 program.addCommand(connectionsCommand());
 program.addCommand(libraryCommand());
 program.addCommand(projectsCommand());
+program.addCommand(arcadeCommand());
 program.addCommand(apiKeysCommand());
 program.addCommand(provenanceCommand());
 
