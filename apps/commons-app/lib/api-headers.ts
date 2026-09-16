@@ -6,6 +6,8 @@ const serviceTokenCache = new Map<
   string,
   { value: string; expiresAt: number }
 >();
+const serviceTokenFlights = new Map<string, Promise<string | null>>();
+const serviceTokenBackoff = new Map<string, number>();
 const SERVICE_TOKEN_SCOPE =
   "agents:create agents:read agents:write agents:run activity:read usage:read compute:read compute:write";
 
@@ -132,6 +134,35 @@ async function commonsIdentityServiceToken() {
   const cached = serviceTokenCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now() + 30_000) return cached.value;
 
+  const backoffUntil = serviceTokenBackoff.get(cacheKey);
+  if (backoffUntil && backoffUntil > Date.now()) return null;
+
+  const existingFlight = serviceTokenFlights.get(cacheKey);
+  if (existingFlight) return existingFlight;
+
+  const flight = mintCommonsIdentityServiceToken({
+    issuer,
+    clientId,
+    clientSecret,
+    cacheKey,
+  }).finally(() => {
+    serviceTokenFlights.delete(cacheKey);
+  });
+  serviceTokenFlights.set(cacheKey, flight);
+  return flight;
+}
+
+async function mintCommonsIdentityServiceToken({
+  issuer,
+  clientId,
+  clientSecret,
+  cacheKey,
+}: {
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  cacheKey: string;
+}) {
   const response = await fetch(`${issuer.replace(/\/$/, "")}/oauth2/token`, {
     method: "POST",
     headers: {
@@ -150,6 +181,17 @@ async function commonsIdentityServiceToken() {
   if (!response?.ok) {
     if (response) {
       const body = await response.text().catch(() => "");
+      if (response.status === 429) {
+        const retryAfter = Number(response.headers.get("retry-after"));
+        const delayMs =
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? retryAfter * 1000
+            : 15_000;
+        serviceTokenBackoff.set(
+          cacheKey,
+          Date.now() + delayMs,
+        );
+      }
       console.error("Commons identity service token request failed", {
         status: response.status,
         body: body.slice(0, 240),
