@@ -30,6 +30,7 @@ import { UiPluginModule } from '~/ui-plugin';
 import { BrainModule } from '~/brain';
 import { MediaModule } from '~/media';
 import { ArcadeModule } from '~/arcade';
+import { WalletModule } from '~/wallet/wallet.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { ArcadeModule } from '~/arcade';
     BrainModule,
     MediaModule,
     ArcadeModule,
+    WalletModule,
   ],
   controllers: [
     ToolController,

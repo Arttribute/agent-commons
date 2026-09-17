@@ -89,6 +89,39 @@ const { txHash } = await commons.wallets.transfer(wallet.walletId, {
 
 `amount` is a decimal string in whole tokens — `'5'` is 5 USDC, not 5 units.
 
+## Let an agent send on its own
+
+By default an agent cannot move funds. To let it pay people or other agents
+without asking you each time, set a transfer allowance in **Studio → Agent →
+Wallet → Agent spending**:
+
+| Setting | What it does |
+|---|---|
+| Network | Base Sepolia, Arc Testnet or Celo Sepolia. Testnets only. |
+| Total budget | Most USDC the agent can send under this allowance. |
+| Max per transfer | Largest single payment. |
+| Allowed recipients | Optional list of addresses. Empty allows any recipient. |
+| Expires after | 1, 7 or 30 days. |
+
+The agent then has two tools in any run, including scheduled tasks, heartbeats
+and agent-to-agent runs:
+
+- `getWalletBalance`: address, USDC and gas balance, and the allowance left on a network.
+- `transferUsdc`: send USDC to a `0x` address, or to another agent by its ID.
+
+```text
+Send 1 USDC to 0x4413c8be289ea99935b02a934ceb5d3298260d86 on base sepolia
+```
+
+Each transfer is checked against the wallet balance first, then reserved
+against the budget before it is signed. A repeated tool call does not pay
+twice. If the network never confirms whether a transfer went out, its amount
+stays counted against the budget until you check the explorer. Revoke an
+allowance at any time. The wallet also needs a little native balance for gas.
+
+Only the signed-in owner can create or revoke an allowance. API keys and
+agent credentials cannot raise an agent's own budget.
+
 ## x402 payments
 
 x402 is the `402 Payment Required` flow for paid HTTP APIs. Point the wallet at
@@ -113,8 +146,9 @@ failing and asking you to subscribe.
 
 ## Safety
 
-- **Fund for the job.** An agent can only spend what its wallet holds, so the
-  balance is the spending limit. Keep it small and top it up.
+- **Fund for the job.** An agent can only spend what its wallet holds, and on
+  its own only what its transfer allowance permits. Keep both small and top
+  them up.
 - **Separate wallets for separate risks.** One agent, one wallet, one purpose.
 - **Watch the ledger.** `agc wallet balance` and
   [provenance](/docs/guides/provenance) show what was spent and on what.

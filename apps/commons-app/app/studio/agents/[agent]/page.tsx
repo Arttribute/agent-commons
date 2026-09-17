@@ -50,6 +50,7 @@ import { AgentAutonomy } from "@/components/agents/agent-autonomy";
 import { AgentMcpSection } from "@/components/mcp/agent-mcp-section";
 import { AddToAgentBalance } from "@/components/finances/add-to-agent-balance";
 import { AgentTransactions } from "@/components/finances/agent-transactions";
+import { AgentTransferAllowance } from "@/components/finances/agent-transfer-allowance";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
 import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
 import { AgentArtifactsView } from "@/components/artifacts/agent-artifacts-view";
@@ -2611,6 +2612,17 @@ function WalletView({ agentId }: { agentId: string }) {
                 : "USDC and native transfers on the selected network."}
           </p>
         </Panel>
+        {wallet && (
+          <div className="lg:col-span-2">
+            <Panel title="Agent spending">
+              <AgentTransferAllowance
+                agentId={agentId}
+                walletId={wallet.id}
+                defaultChainId={selectedChainId}
+              />
+            </Panel>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -8,11 +8,20 @@ function setup() {
       arcadeAutoplay: jest.fn().mockResolvedValue({ autoplay: ['0'] }),
       x402Fetch: jest.fn(),
     },
-    sessions = { create: jest.fn() };
+    sessions = { create: jest.fn() },
+    allowances = {
+      create: jest.fn().mockResolvedValue({ id: 'allowance' }),
+      revoke: jest.fn().mockResolvedValue({ revoked: true }),
+    };
   return {
     wallets,
     sessions,
-    controller: new WalletController(wallets as any, sessions as any),
+    allowances,
+    controller: new WalletController(
+      wallets as any,
+      sessions as any,
+      allowances as any,
+    ),
   };
 }
 const req = (
@@ -101,5 +110,45 @@ describe('payment authority differs from game edit permission', () => {
       ),
     ).rejects.toThrow();
     expect(t.wallets.arcadeDeposit).not.toHaveBeenCalled();
+  });
+});
+
+describe('transfer allowances are owner-set', () => {
+  const dto = {
+    walletId: 'wallet',
+    chainId: '84532',
+    budget: '10',
+    maxPerTransfer: '1',
+    expiresAt: new Date(Date.now() + 86400000).toISOString(),
+  };
+  it('rejects agents and delegated services, even with an owner header', async () => {
+    const t = setup();
+    const delegated = {
+      ...req('service', 'app', ['agents:write']),
+      headers: { 'x-owner-id': 'owner' },
+    };
+    for (const caller of [req('agent', agentId), delegated]) {
+      await expect(
+        t.controller.createTransferAllowance(agentId, dto, caller),
+      ).rejects.toThrow('Only the agent owner');
+      await expect(
+        t.controller.revokeTransferAllowance(agentId, 'id', caller),
+      ).rejects.toThrow('Only the agent owner');
+    }
+    expect(t.allowances.create).not.toHaveBeenCalled();
+    expect(t.allowances.revoke).not.toHaveBeenCalled();
+  });
+  it('lets the signed-in owner create one', async () => {
+    const t = setup();
+    await t.controller.createTransferAllowance(
+      agentId,
+      dto,
+      req('user', 'owner'),
+    );
+    expect(t.wallets.assertAgentOwnership).toHaveBeenCalledWith(
+      agentId,
+      'owner',
+    );
+    expect(t.allowances.create).toHaveBeenCalledWith(agentId, 'owner', dto);
   });
 });

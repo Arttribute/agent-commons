@@ -2,6 +2,12 @@ import { payArcadeDeposit } from './payments/arcade-payments';
 import { walletChain } from './payments/chains';
 import { readWalletActivity } from './payments/wallet-activity';
 import { PaymentSessionService } from './payments/payment-session.service';
+import {
+  AUTONOMOUS_TRANSFER_CHAINS,
+  TransferAllowanceService,
+  usdcUnits,
+  type WalletTransferRecord,
+} from './payments/transfer-allowance.service';
 import { payX402Challenge } from './payments/x402-client';
 import {
   Injectable,
@@ -22,6 +28,10 @@ import {
   formatUnits,
   parseUnits,
   encodeFunctionData,
+  BaseError,
+  HttpRequestError,
+  TimeoutError,
+  WaitForTransactionReceiptTimeoutError,
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from '#/lib/baseSepolia';
@@ -43,6 +53,19 @@ export interface TransferDto {
 /** Base Sepolia USDC contract address */
 const USDC_ADDRESS_BASE_SEPOLIA =
   '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as const;
+
+const ERC20_TRANSFER_ABI = [
+  {
+    name: 'transfer',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'value', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+] as const;
 
 const ERC20_BALANCE_ABI = [
   {
@@ -67,6 +90,7 @@ export class WalletService {
     private encryption: EncryptionService,
     private capabilityProviders: CapabilityProviderService,
     private paymentSessions: PaymentSessionService,
+    private transferAllowances: TransferAllowanceService,
   ) {}
 
   /**
@@ -758,6 +782,236 @@ export class WalletService {
       finish: (id, state, receipt) =>
         this.paymentSessions.finish(id, state, receipt),
     });
+  }
+
+  // ── Autonomous agent transfers ─────────────────────────────────────────────
+
+  /**
+   * Balance and remaining owner-set transfer budget for the agent's primary
+   * wallet, as seen by the agent's own tools.
+   */
+  async agentWalletSummary(agentId: string, chainId?: string) {
+    const wallet = await this.getPrimaryWallet(agentId);
+    if (!wallet)
+      return {
+        hasWallet: false,
+        message:
+          'This agent has no wallet. The owner can create one in Studio → Agent → Wallet.',
+      };
+    const target = chainId ?? wallet.chainId;
+    const [balance, allowances] = await Promise.all([
+      this.getBalance(wallet.id, target),
+      this.transferAllowances.active(agentId, wallet.id, target),
+    ]);
+    const network = walletChain(target);
+    return {
+      hasWallet: true,
+      address: wallet.address,
+      network: network.chain.name,
+      chainId: target,
+      usdc: balance.usdc,
+      native: balance.native,
+      nativeSymbol: network.chain.nativeCurrency.symbol,
+      transferAllowances: allowances.map((a) => ({
+        remainingUsdc: formatUnits(
+          BigInt(a.budget_units) - BigInt(a.spent_units),
+          6,
+        ),
+        maxPerTransferUsdc: formatUnits(BigInt(a.max_transfer_units), 6),
+        recipients: a.recipients?.length ? a.recipients : 'any',
+        expiresAt: a.expires_at,
+      })),
+    };
+  }
+
+  /**
+   * Send USDC from the agent's primary wallet within an owner-set transfer
+   * allowance. Budget is reserved under a row lock before signing and kept
+   * unless the transfer definitely did not happen.
+   */
+  async agentTransfer(input: {
+    agentId: string;
+    to: string;
+    amount: string;
+    chainId?: string;
+    idempotencyKey: string;
+    sessionId?: string;
+  }) {
+    const wallet = await this.db.query.agentWallet.findFirst({
+      where: (w) => and(eq(w.agentId, input.agentId), eq(w.isActive, true)),
+      orderBy: (w, { asc }) => [asc(w.createdAt)],
+    });
+    if (
+      !wallet?.encryptedPrivateKey ||
+      wallet.walletType !== 'eoa' ||
+      wallet.provider === 'custom'
+    )
+      throw new BadRequestException(
+        'This agent needs an active platform-managed wallet to send funds',
+      );
+    const chainId = input.chainId ?? wallet.chainId;
+    if (!AUTONOMOUS_TRANSFER_CHAINS.includes(chainId))
+      throw new BadRequestException(
+        'Agent transfers are limited to Base Sepolia, Arc Testnet and Celo Sepolia',
+      );
+    const network = walletChain(chainId);
+    const to = await this.resolveRecipient(input.to);
+    if (to.toLowerCase() === wallet.address.toLowerCase())
+      throw new BadRequestException("Recipient is this agent's own wallet");
+    const amountUnits = usdcUnits(input.amount);
+
+    const account = privateKeyToAccount(
+      this.decryptKey(wallet.encryptedPrivateKey) as `0x${string}`,
+    );
+    const publicClient = createPublicClient({
+      chain: network.chain,
+      transport: http(undefined, { timeout: 15_000, retryCount: 1 }),
+    });
+
+    // Catch empty balances and missing gas before any budget is reserved.
+    const usdcBalance = (await publicClient.readContract({
+      address: network.token,
+      abi: ERC20_BALANCE_ABI,
+      functionName: 'balanceOf',
+      args: [account.address],
+    })) as bigint;
+    if (usdcBalance < amountUnits)
+      throw new BadRequestException(
+        `Insufficient USDC on ${network.chain.name}: wallet holds ${formatUnits(usdcBalance, 6)}`,
+      );
+    let request: Parameters<
+      ReturnType<typeof createWalletClient>['writeContract']
+    >[0];
+    try {
+      ({ request } = await publicClient.simulateContract({
+        account,
+        address: network.token,
+        abi: ERC20_TRANSFER_ABI,
+        functionName: 'transfer',
+        args: [to as `0x${string}`, amountUnits],
+      }));
+    } catch (error) {
+      throw new BadRequestException(
+        `Transfer would fail on ${network.chain.name}: ${this.shortError(error)}`,
+      );
+    }
+
+    const { transfer, replayed } = await this.transferAllowances.reserve({
+      agentId: input.agentId,
+      walletId: wallet.id,
+      chainId,
+      to,
+      amountUnits,
+      idempotencyKey: input.idempotencyKey,
+      sessionId: input.sessionId,
+    });
+    if (replayed) return this.transferResult(transfer, network);
+
+    const walletClient = createWalletClient({
+      account,
+      chain: network.chain,
+      transport: http(undefined, { timeout: 30_000, retryCount: 0 }),
+    });
+    let txHash: `0x${string}`;
+    try {
+      txHash = await walletClient.writeContract(request);
+    } catch (error) {
+      // A rejected request never reached the chain; a lost response might have.
+      const ambiguous = this.isAmbiguousNetworkError(error);
+      await this.transferAllowances.finish(
+        transfer.id,
+        ambiguous ? 'unknown' : 'failed',
+        { error: this.shortError(error) },
+      );
+      throw new BadRequestException(
+        ambiguous
+          ? 'The network did not confirm whether the transfer was sent. Its budget stays reserved; check the wallet activity before retrying.'
+          : `Transfer was rejected: ${this.shortError(error)}`,
+      );
+    }
+    await this.transferAllowances.markSent(transfer.id, txHash);
+
+    try {
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        timeout: 90_000,
+      });
+      const state = receipt.status === 'success' ? 'confirmed' : 'failed';
+      await this.transferAllowances.finish(transfer.id, state, {
+        txHash,
+        error: state === 'failed' ? 'Transaction reverted' : undefined,
+      });
+      return this.transferResult(
+        { ...transfer, state, tx_hash: txHash },
+        network,
+      );
+    } catch (error) {
+      await this.transferAllowances.finish(transfer.id, 'unknown', {
+        txHash,
+        error: this.shortError(error),
+      });
+      return this.transferResult(
+        { ...transfer, state: 'unknown', tx_hash: txHash },
+        network,
+      );
+    }
+  }
+
+  /** Accept a 0x address or another agent's ID (its primary wallet). */
+  private async resolveRecipient(value: string): Promise<string> {
+    const target = String(value ?? '').trim();
+    if (/^0x[0-9a-fA-F]{40}$/.test(target)) return target;
+    const recipient = target
+      ? await this.getPrimaryWallet(target).catch(() => null)
+      : null;
+    if (!recipient)
+      throw new BadRequestException(
+        'Recipient must be a 0x address or the ID of an agent that has a wallet',
+      );
+    return recipient.address;
+  }
+
+  private transferResult(
+    transfer: Pick<
+      WalletTransferRecord,
+      'state' | 'tx_hash' | 'to_address' | 'amount_units' | 'chain_id'
+    >,
+    network: ReturnType<typeof walletChain>,
+  ) {
+    const explorer = network.chain.blockExplorers?.default.url;
+    return {
+      status: transfer.state,
+      amountUsdc: formatUnits(BigInt(transfer.amount_units), 6),
+      to: transfer.to_address,
+      network: network.chain.name,
+      chainId: transfer.chain_id,
+      txHash: transfer.tx_hash,
+      explorerUrl:
+        explorer && transfer.tx_hash
+          ? `${explorer}/tx/${transfer.tx_hash}`
+          : null,
+      note:
+        transfer.state === 'unknown'
+          ? 'Sent but not yet confirmed; check the explorer before sending again.'
+          : undefined,
+    };
+  }
+
+  private isAmbiguousNetworkError(error: unknown) {
+    if (!(error instanceof BaseError)) return true;
+    return Boolean(
+      error.walk(
+        (e) =>
+          e instanceof TimeoutError ||
+          e instanceof HttpRequestError ||
+          e instanceof WaitForTransactionReceiptTimeoutError,
+      ),
+    );
+  }
+
+  private shortError(error: unknown) {
+    if (error instanceof BaseError) return error.shortMessage;
+    return (error as Error)?.message?.slice(0, 200) ?? 'Unknown error';
   }
 
   /* ─────────────────────────  PRIVATE HELPERS  ───────────────────────── */
