@@ -71,6 +71,16 @@ export class WalletController {
     return this.walletService.getBalance(walletId, chainId);
   }
 
+  /** Recent on-chain USDC and native activity for a wallet on one network */
+  @Get(':walletId/transactions')
+  @OwnerOnly({ table: 'wallet', idParam: 'walletId' })
+  getTransactions(
+    @Param('walletId') walletId: string,
+    @Query('chainId') chainId?: string,
+  ) {
+    return this.walletService.getActivity(walletId, chainId);
+  }
+
   /** Transfer USDC or ETH from a wallet to another address */
   @Post(':walletId/transfer')
   @OwnerOnly({ table: 'wallet', idParam: 'walletId' })

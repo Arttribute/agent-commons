@@ -43,7 +43,7 @@ export default function AgentFinances({ agentId }: AgentFinancesProps) {
               <p className="text-xl font-semibold">
                 {balanceLoading || loading
                   ? "…"
-                  : (balance?.native ?? "0").slice(0, 6)}
+                  : (balance?.native.slice(0, 6) ?? "Unavailable")}
               </p>
               <p className="text-xs">ETH</p>
             </div>

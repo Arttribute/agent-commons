@@ -30,3 +30,26 @@ export interface WalletResponseDto {
   isActive: boolean;
   createdAt: Date;
 }
+
+export interface WalletActivityItem {
+  hash: string;
+  chainId: string;
+  /** token = USDC transfer, native = value transfer, call = outgoing contract call */
+  kind: 'token' | 'native' | 'call';
+  direction: 'in' | 'out' | 'self';
+  asset: string;
+  amount: string; // formatted
+  from: string;
+  to: string | null;
+  timestamp: string | null;
+  status: 'success' | 'failed' | 'pending';
+  method: string | null;
+}
+
+export interface WalletActivityDto {
+  address: string;
+  chainId: string;
+  /** false when the network has no activity index (history lives on its explorer) */
+  supported: boolean;
+  items: WalletActivityItem[];
+}

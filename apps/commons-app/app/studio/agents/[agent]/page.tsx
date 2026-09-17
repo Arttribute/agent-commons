@@ -50,6 +50,7 @@ import { AgentAutonomy } from "@/components/agents/agent-autonomy";
 import { AgentMcpSection } from "@/components/mcp/agent-mcp-section";
 import { AddToAgentBalance } from "@/components/finances/add-to-agent-balance";
 import { AgentTransactions } from "@/components/finances/agent-transactions";
+import { NetworkBalances } from "@/components/wallets/network-balances";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
 import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
 import { AgentArtifactsView } from "@/components/artifacts/agent-artifacts-view";
@@ -2522,7 +2523,7 @@ function UsageView({ agentId }: { agentId: string }) {
 }
 
 function WalletView({ agentId }: { agentId: string }) {
-  const { wallet, balance, loading, balanceLoading } = useAgentWallet(agentId);
+  const { wallet, loading } = useAgentWallet(agentId);
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -2538,22 +2539,12 @@ function WalletView({ agentId }: { agentId: string }) {
         title="Wallet"
         subtitle="Funding, balances, and wallet activity for this agent."
       />
-      <div className="mx-auto grid max-w-5xl gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="mx-auto grid max-w-5xl gap-4 p-5">
         <Panel title="Primary wallet">
           {loading ? (
             <Skeleton className="h-32 w-full" />
           ) : wallet ? (
             <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Stat
-                  label="USDC"
-                  value={balanceLoading ? "Loading" : (balance?.usdc ?? "0")}
-                />
-                <Stat
-                  label="Native"
-                  value={balanceLoading ? "Loading" : (balance?.native ?? "0")}
-                />
-              </div>
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <Label className="text-xs text-muted-foreground">Address</Label>
                 <div className="mt-2 flex items-center gap-2">
@@ -2574,19 +2565,22 @@ function WalletView({ agentId }: { agentId: string }) {
                   </Button>
                 </div>
               </div>
-              <AddToAgentBalance agentId={agentId} />
+              <NetworkBalances wallet={wallet} />
             </div>
           ) : (
             <AddToAgentBalance agentId={agentId} />
           )}
         </Panel>
-        <Panel title="Transactions">
-          <AgentTransactions transactions={[]} />
-          <p className="mt-3 text-xs text-muted-foreground">
-            Transaction history is shown when wallet transaction records are
-            available from the wallet provider.
-          </p>
-        </Panel>
+        {wallet && (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <Panel title="Transactions">
+              <AgentTransactions wallet={wallet} />
+            </Panel>
+            <Panel title="Fund wallet">
+              <AddToAgentBalance agentId={agentId} />
+            </Panel>
+          </div>
+        )}
       </div>
     </div>
   );

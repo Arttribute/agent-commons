@@ -1,5 +1,6 @@
 import { payArcadeDeposit } from './payments/arcade-payments';
 import { walletChain } from './payments/chains';
+import { readWalletActivity } from './payments/wallet-activity';
 import { PaymentSessionService } from './payments/payment-session.service';
 import { payX402Challenge } from './payments/x402-client';
 import {
@@ -8,6 +9,7 @@ import {
   ForbiddenException,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { DatabaseService } from '~/modules/database/database.service';
 import { EncryptionService } from '~/modules/encryption';
@@ -26,6 +28,7 @@ import { baseSepolia } from '#/lib/baseSepolia';
 import { safeFetch } from '~/utils/safe-fetch';
 import type {
   CreateWalletDto,
+  WalletActivityDto,
   WalletBalanceDto,
   WalletResponseDto,
 } from './dto/wallet.dto';
@@ -194,6 +197,7 @@ export class WalletService {
   async listWallets(agentId: string): Promise<WalletResponseDto[]> {
     const wallets = await this.db.query.agentWallet.findMany({
       where: (w) => eq(w.agentId, agentId),
+      orderBy: (w, { asc }) => [asc(w.createdAt)],
     });
     return wallets.map(this.toResponse);
   }
@@ -215,6 +219,7 @@ export class WalletService {
   async getPrimaryWallet(agentId: string): Promise<WalletResponseDto | null> {
     const wallet = await this.db.query.agentWallet.findFirst({
       where: (w) => and(eq(w.agentId, agentId), eq(w.isActive, true)),
+      orderBy: (w, { asc }) => [asc(w.createdAt)],
     });
     return wallet ? this.toResponse(wallet) : null;
   }
@@ -274,6 +279,43 @@ export class WalletService {
       native: formatUnits(nativeBalance, 18),
       usdc: formatUnits(usdcBalance as bigint, 6),
     };
+  }
+
+  /**
+   * Recent on-chain USDC transfers and native transactions for a wallet on
+   * the requested network, read from that network's public block index.
+   */
+  async getActivity(
+    walletId: string,
+    chainId?: string,
+  ): Promise<WalletActivityDto> {
+    const wallet = await this.db.query.agentWallet.findFirst({
+      where: (w) => eq(w.id, walletId),
+    });
+    if (!wallet) throw new NotFoundException(`Wallet ${walletId} not found`);
+    const targetChain = chainId ?? wallet.chainId;
+    try {
+      walletChain(targetChain);
+    } catch {
+      throw new BadRequestException('Unsupported wallet network');
+    }
+    if (wallet.provider === 'custom')
+      return {
+        address: wallet.address,
+        chainId: targetChain,
+        supported: false,
+        items: [],
+      };
+    try {
+      return await readWalletActivity(wallet.address, targetChain);
+    } catch (error) {
+      this.logger.warn(
+        `Wallet activity unavailable for ${walletId} on ${targetChain}: ${
+          (error as Error).message
+        }`,
+      );
+      throw new ServiceUnavailableException('Wallet activity unavailable');
+    }
   }
 
   /**
