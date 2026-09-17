@@ -48,6 +48,7 @@ import { EncryptionService } from '~/modules/encryption';
 import { SessionService } from '~/session/session.service';
 import { ToolService } from '~/tool/tool.service';
 import { CommonTool } from '../tool/tools/common-tool.service';
+import { WalletTool } from '../tool/tools/ethereum-tool.service';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
 import { IChatGptSchema } from '@samchon/openapi';
 import { getPosthog } from '~/helpers/posthog';
@@ -83,7 +84,7 @@ import { filterPlatformToolsForAgent } from './copilot-tool-policy';
 
 const got = import('got');
 
-const app = typia.llm.application<CommonTool, 'chatgpt'>();
+const app = typia.llm.application<CommonTool & WalletTool, 'chatgpt'>();
 
 const COMMONS_COPILOT_AVATAR = '/commons-copilot.png';
 

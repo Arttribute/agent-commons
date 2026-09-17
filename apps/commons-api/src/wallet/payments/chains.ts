@@ -12,6 +12,12 @@ export const WALLET_CHAINS: Record<
       rpcUrls: {
         default: { http: ['https://forno.celo-sepolia.celo-testnet.org'] },
       },
+      blockExplorers: {
+        default: {
+          name: 'Blockscout',
+          url: 'https://celo-sepolia.blockscout.com',
+        },
+      },
       testnet: true,
     }),
     token: '0x01C5C0122039549AD1493B8220cABEdD739BC44E' as Address,
@@ -33,6 +39,9 @@ export const WALLET_CHAINS: Record<
       name: 'Arc Testnet',
       nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
       rpcUrls: { default: { http: ['https://rpc.testnet.arc.io'] } },
+      blockExplorers: {
+        default: { name: 'ArcScan', url: 'https://testnet.arcscan.app' },
+      },
       testnet: true,
     }),
     token: '0x3600000000000000000000000000000000000000' as Address,

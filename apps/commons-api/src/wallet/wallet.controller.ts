@@ -1,4 +1,8 @@
 import { PaymentSessionService } from './payments/payment-session.service';
+import {
+  TransferAllowanceService,
+  type CreateTransferAllowanceDto,
+} from './payments/transfer-allowance.service';
 import type { SpendingPolicy } from './payments/policy';
 import {
   Controller,
@@ -25,6 +29,7 @@ export class WalletController {
   constructor(
     private readonly walletService: WalletService,
     private readonly paymentSessions: PaymentSessionService,
+    private readonly transferAllowances: TransferAllowanceService,
   ) {}
 
   /** Create a new wallet for an agent */
@@ -223,6 +228,44 @@ export class WalletController {
       dto.expiresAt,
     );
   }
+  /**
+   * Owner-set budget that lets the agent send USDC on its own, including from
+   * scheduled tasks, heartbeats and agent-to-agent runs.
+   */
+  @Post('agent/:agentId/transfer-allowances')
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
+  async createTransferAllowance(
+    @Param('agentId') agentId: string,
+    @Body() dto: CreateTransferAllowanceDto,
+    @Req() req: Request,
+  ) {
+    const ownerId = await this.assertUserOwner(req, agentId);
+    return this.transferAllowances.create(agentId, ownerId, dto);
+  }
+
+  @Get('agent/:agentId/transfer-allowances')
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
+  listTransferAllowances(@Param('agentId') agentId: string) {
+    return this.transferAllowances.list(agentId);
+  }
+
+  @Delete('agent/:agentId/transfer-allowances/:allowanceId')
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
+  async revokeTransferAllowance(
+    @Param('agentId') agentId: string,
+    @Param('allowanceId') allowanceId: string,
+    @Req() req: Request,
+  ) {
+    await this.assertUserOwner(req, agentId);
+    return this.transferAllowances.revoke(agentId, allowanceId);
+  }
+
+  @Get('agent/:agentId/transfers')
+  @OwnerOnly({ table: 'agent', idParam: 'agentId' })
+  listAgentTransfers(@Param('agentId') agentId: string) {
+    return this.transferAllowances.transfers(agentId);
+  }
+
   @Get('agent/:agentId/runtime-sessions')
   @OwnerOnly({ table: 'agent', idParam: 'agentId' })
   runtimeSessions(@Param('agentId') agentId: string) {
@@ -260,6 +303,22 @@ export class WalletController {
     @Param('paymentSessionId') id: string,
   ) {
     return this.paymentSessions.revoke(agentId, id);
+  }
+
+  /**
+   * Spending limits are set only by the signed-in human owner. Service and
+   * agent credentials cannot raise an agent's budget, even with delegation.
+   */
+  private async assertUserOwner(req: Request, agentId: string) {
+    const principal = (req as any).principal;
+    const ownerId =
+      principal?.principalType === 'user' ? principal.principalId : undefined;
+    if (!ownerId)
+      throw new ForbiddenException(
+        'Only the agent owner can change its transfer allowance',
+      );
+    await this.walletService.assertAgentOwnership(agentId, ownerId);
+    return ownerId;
   }
 
   private async authorizePaymentExecution(req: Request, agentId: string) {
