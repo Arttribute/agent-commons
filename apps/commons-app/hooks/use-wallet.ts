@@ -26,12 +26,17 @@ function unwrapData<T>(value: T | { data?: T }): T {
 
 import { parseWalletBalance } from "@/lib/wallet-networks";
 
-export function useAgentWallet(agentId: string | undefined) {
+/**
+ * @param chainId network to read the balance on; defaults to the wallet's own
+ * chain. The same EOA address holds separate balances on every network.
+ */
+export function useAgentWallet(agentId: string | undefined, chainId?: string) {
   const [wallet, setWallet] = useState<AgentWallet | null>(null);
   const [balance, setBalance] = useState<WalletBalance | null>(null);
   const [loading, setLoading] = useState(false);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const generation = useRef(0);
+  const balanceGeneration = useRef(0);
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,30 +76,41 @@ export function useAgentWallet(agentId: string | undefined) {
 
   const fetchBalance = useCallback(async () => {
     if (!wallet?.id || wallet.agentId !== agentId) return;
+    const balanceChainId = chainId ?? wallet.chainId;
     const current = generation.current;
+    const request = ++balanceGeneration.current;
+    const isLatest = () =>
+      generation.current === current && balanceGeneration.current === request;
     setBalance(null);
     setBalanceError(null);
     setBalanceLoading(true);
     try {
       const response = await fetch(
-        `/api/wallets/${encodeURIComponent(wallet.id)}/balance?chainId=${encodeURIComponent(wallet.chainId)}`,
+        `/api/wallets/${encodeURIComponent(wallet.id)}/balance?chainId=${encodeURIComponent(balanceChainId)}`,
       );
       const data = await readApiJson<WalletBalance | { data?: WalletBalance }>(
         response,
       );
-      const parsed = parseWalletBalance(data, wallet.chainId);
+      const parsed = parseWalletBalance(data, balanceChainId);
       if (parsed.address.toLowerCase() !== wallet.address.toLowerCase())
         throw new Error("Wallet mismatch");
-      if (generation.current === current) setBalance(parsed);
+      if (isLatest()) setBalance(parsed);
     } catch {
-      if (generation.current === current) {
+      if (isLatest()) {
         setBalance(null);
         setBalanceError("Balance unavailable");
       }
     } finally {
-      if (generation.current === current) setBalanceLoading(false);
+      if (isLatest()) setBalanceLoading(false);
     }
-  }, [agentId, wallet?.id, wallet?.agentId, wallet?.address, wallet?.chainId]);
+  }, [
+    agentId,
+    chainId,
+    wallet?.id,
+    wallet?.agentId,
+    wallet?.address,
+    wallet?.chainId,
+  ]);
 
   useEffect(() => {
     fetchWallet();
@@ -140,4 +156,67 @@ export function useAgentWallet(agentId: string | undefined) {
     refetchBalance: fetchBalance,
     createWallet,
   };
+}
+
+export interface WalletActivityItem {
+  hash: string;
+  chainId: string;
+  kind: "token" | "native" | "call";
+  direction: "in" | "out" | "self";
+  asset: string;
+  amount: string;
+  from: string;
+  to: string | null;
+  timestamp: string | null;
+  status: "success" | "failed" | "pending";
+  method: string | null;
+}
+
+/** Recent on-chain activity for a wallet on one network. */
+export function useWalletActivity(
+  wallet: Pick<AgentWallet, "id" | "address"> | null,
+  chainId: string | undefined,
+) {
+  const [items, setItems] = useState<WalletActivityItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const generation = useRef(0);
+
+  const fetchActivity = useCallback(async () => {
+    const current = ++generation.current;
+    setItems([]);
+    setError(null);
+    if (!wallet?.id || !chainId) return;
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `/api/wallets/${encodeURIComponent(wallet.id)}/transactions?chainId=${encodeURIComponent(chainId)}`,
+        { cache: "no-store" },
+      );
+      const data = unwrapData(
+        await readApiJson<{
+          address: string;
+          chainId: string;
+          items: WalletActivityItem[];
+        }>(response),
+      );
+      if (
+        data?.chainId !== chainId ||
+        data.address?.toLowerCase() !== wallet.address.toLowerCase() ||
+        !Array.isArray(data.items)
+      )
+        throw new Error("Activity did not match this wallet");
+      if (generation.current === current) setItems(data.items);
+    } catch {
+      if (generation.current === current) setError("Transactions unavailable");
+    } finally {
+      if (generation.current === current) setLoading(false);
+    }
+  }, [wallet?.id, wallet?.address, chainId]);
+
+  useEffect(() => {
+    fetchActivity();
+  }, [fetchActivity]);
+
+  return { items, loading, error, refetch: fetchActivity };
 }

@@ -9,6 +9,9 @@ import { useAgentWallet } from "@/hooks/use-wallet";
 interface AddToAgentBalanceProps {
   agentId: string;
   onFundSuccess?: () => void;
+  /** Controlled funding network; the balance shown elsewhere follows it. */
+  chainId?: string;
+  onChainIdChange?: (chainId: string) => void;
 }
 
 /**
@@ -18,11 +21,15 @@ interface AddToAgentBalanceProps {
 export function AddToAgentBalance({
   agentId,
   onFundSuccess,
+  chainId: controlledChainId,
+  onChainIdChange,
 }: AddToAgentBalanceProps) {
   const { wallet, balance, loading, balanceLoading, createWallet } =
     useAgentWallet(agentId);
   const [copied, setCopied] = useState(false);
-  const [chainId, setChainId] = useState("84532");
+  const [localChainId, setLocalChainId] = useState("84532");
+  const chainId = controlledChainId ?? localChainId;
+  const setChainId = onChainIdChange ?? setLocalChainId;
   const network = walletNetwork(chainId)!;
 
   async function copy(text: string) {
