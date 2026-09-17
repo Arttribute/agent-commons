@@ -50,7 +50,6 @@ import { AgentAutonomy } from "@/components/agents/agent-autonomy";
 import { AgentMcpSection } from "@/components/mcp/agent-mcp-section";
 import { AddToAgentBalance } from "@/components/finances/add-to-agent-balance";
 import { AgentTransactions } from "@/components/finances/agent-transactions";
-import { NetworkBalances } from "@/components/wallets/network-balances";
 import { AgentMemoryView } from "@/components/memory/agent-memory-view";
 import { AgentComputerSurface } from "@/components/computers/agent-computer-surface";
 import { AgentArtifactsView } from "@/components/artifacts/agent-artifacts-view";
@@ -91,7 +90,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useAgents } from "@/hooks/use-agents";
 import { useAgentSkills } from "@/hooks/use-skills";
-import { useAgentWallet } from "@/hooks/use-wallet";
+import { useAgentWallet, useWalletActivity } from "@/hooks/use-wallet";
+import { walletNetwork } from "@/lib/wallet-networks";
 import { cn } from "@/lib/utils";
 import { normalizeConversationStarters } from "@/lib/conversation-starters";
 import { normalizePrincipalId } from "@/lib/principal-id";
@@ -2523,8 +2523,12 @@ function UsageView({ agentId }: { agentId: string }) {
 }
 
 function WalletView({ agentId }: { agentId: string }) {
-  const { wallet, loading } = useAgentWallet(agentId);
+  const [chainId, setChainId] = useState<string>();
+  const { wallet, balance, loading, balanceLoading, balanceError } =
+    useAgentWallet(agentId, chainId);
+  const activity = useWalletActivity(wallet, chainId ?? wallet?.chainId);
   const [copied, setCopied] = useState(false);
+  const selectedChainId = chainId ?? wallet?.chainId;
 
   const copy = async () => {
     if (!wallet?.address) return;
@@ -2533,18 +2537,40 @@ function WalletView({ agentId }: { agentId: string }) {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const balanceValue = (value?: string) =>
+    balanceLoading
+      ? "Loading"
+      : (value ?? (balanceError ? "Unavailable" : "0"));
+
+  const transactions = activity.items
+    .filter((item) => item.kind !== "call")
+    .map((item) => ({
+      id: item.hash,
+      type: item.direction === "in" ? "incoming" : "outgoing",
+      amount: `${item.amount} ${item.asset}`,
+      walletAddress: item.direction === "in" ? item.from : (item.to ?? ""),
+      timestamp: item.timestamp ? new Date(item.timestamp) : new Date(),
+      description: `${item.status === "success" ? "Confirmed" : item.status} on ${
+        walletNetwork(item.chainId)?.name ?? item.chainId
+      } · ${item.hash}`,
+    }));
+
   return (
     <div className="min-h-0 overflow-auto">
       <SectionHeader
         title="Wallet"
         subtitle="Funding, balances, and wallet activity for this agent."
       />
-      <div className="mx-auto grid max-w-5xl gap-4 p-5">
+      <div className="mx-auto grid max-w-5xl gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_380px]">
         <Panel title="Primary wallet">
           {loading ? (
             <Skeleton className="h-32 w-full" />
           ) : wallet ? (
             <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Stat label="USDC" value={balanceValue(balance?.usdc)} />
+                <Stat label="Native" value={balanceValue(balance?.native)} />
+              </div>
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <Label className="text-xs text-muted-foreground">Address</Label>
                 <div className="mt-2 flex items-center gap-2">
@@ -2565,22 +2591,26 @@ function WalletView({ agentId }: { agentId: string }) {
                   </Button>
                 </div>
               </div>
-              <NetworkBalances wallet={wallet} />
+              <AddToAgentBalance
+                agentId={agentId}
+                chainId={selectedChainId}
+                onChainIdChange={setChainId}
+              />
             </div>
           ) : (
             <AddToAgentBalance agentId={agentId} />
           )}
         </Panel>
-        {wallet && (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-            <Panel title="Transactions">
-              <AgentTransactions wallet={wallet} />
-            </Panel>
-            <Panel title="Fund wallet">
-              <AddToAgentBalance agentId={agentId} />
-            </Panel>
-          </div>
-        )}
+        <Panel title="Transactions">
+          <AgentTransactions transactions={transactions} />
+          <p className="mt-3 text-xs text-muted-foreground">
+            {activity.loading
+              ? "Loading transactions…"
+              : activity.error
+                ? "Transactions could not be loaded for this network."
+                : "USDC and native transfers on the selected network."}
+          </p>
+        </Panel>
       </div>
     </div>
   );
