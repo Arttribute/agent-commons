@@ -19,6 +19,7 @@ export function NetworkBalances({
   const [loading, setLoading] = useState(false);
   const [version, refresh] = useState(0);
   const generation = useRef(0);
+  const walletKey = useRef("");
   const networks = WALLET_NETWORKS.filter((n) =>
     wallet.provider === "custom"
       ? n.chainId === wallet.chainId
@@ -27,7 +28,10 @@ export function NetworkBalances({
   useEffect(() => {
     const current = ++generation.current,
       controller = new AbortController();
-    setBalances({});
+    const key = `${wallet.id}:${wallet.address}:${wallet.chainId}`;
+    // Keep the last known values while polling the same wallet.
+    if (walletKey.current !== key) setBalances({});
+    walletKey.current = key;
     setLoading(true);
     Promise.allSettled(
       networks.map(async (network) => {
@@ -47,15 +51,21 @@ export function NetworkBalances({
             setBalances((b) => ({ ...b, [network.chainId]: balance }));
         } catch {
           if (generation.current === current && !controller.signal.aborted)
-            setBalances((b) => ({ ...b, [network.chainId]: null }));
+            setBalances((b) => ({
+              ...b,
+              [network.chainId]: b[network.chainId] ?? null,
+            }));
         }
       }),
     ).then(() => {
       if (generation.current === current) setLoading(false);
     });
+    // Poll so newly confirmed deposits show up without a manual refresh.
+    const timer = setInterval(() => refresh((v) => v + 1), 30_000);
     return () => {
       generation.current++;
       controller.abort();
+      clearInterval(timer);
     };
   }, [wallet.id, wallet.address, wallet.chainId, wallet.provider, version]);
   return (
