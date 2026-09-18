@@ -38,3 +38,23 @@ export type AccessProgramForm = {
   passes: AccessCodeForm[];
   affiliates: AffiliateForm[];
 };
+
+const emptyAccessProgram: AccessProgramForm = {
+  discounts: [],
+  earlyPaymentDiscounts: [],
+  scholarships: [],
+  passes: [],
+  affiliates: [],
+};
+
+export function normalizeAccessProgramForm(value?: Partial<AccessProgramForm>): AccessProgramForm {
+  return {
+    ...emptyAccessProgram,
+    ...(value || {}),
+    discounts: value?.discounts || [],
+    earlyPaymentDiscounts: value?.earlyPaymentDiscounts || [],
+    scholarships: value?.scholarships || [],
+    passes: value?.passes || [],
+    affiliates: value?.affiliates || [],
+  };
+}

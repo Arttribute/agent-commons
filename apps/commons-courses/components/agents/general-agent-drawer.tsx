@@ -65,7 +65,7 @@ export function GeneralAgentDrawer({ context }: Props) {
         aria-label="Open assistant"
         onClick={() => setOpen(true)}
         className={cn(
-          "fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-slate-800",
+          "fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-slate-800",
           open && "hidden"
         )}
       >
@@ -84,10 +84,10 @@ export function GeneralAgentDrawer({ context }: Props) {
           <aside className="flex h-full w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-xl">
             <header className="flex items-start justify-between gap-3 border-b border-slate-100 p-4">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                <p className="text-[10px] font-medium text-slate-400">
                   CommonLab copilot
                 </p>
-                <h2 className="mt-1 text-base font-bold text-slate-950">
+                <h2 className="mt-1 text-base font-semibold text-slate-950">
                   Find your next learning step
                 </h2>
               </div>

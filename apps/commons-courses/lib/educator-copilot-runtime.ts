@@ -1,4 +1,5 @@
 import type { CommonsClient } from "@agent-commons/sdk";
+import { describeEducatorConsole } from "@/lib/educator-nav";
 import { Types } from "mongoose";
 import type { CopilotUser } from "@/lib/educator-copilot-agent";
 import {
@@ -182,20 +183,8 @@ export async function buildWorkspaceSnapshot({
   }
 
   lines.push("");
-  lines.push("Navigation map (use with the navigate tool):");
-  lines.push(
-    [
-      "- /educator (dashboard)",
-      "- /educator/analytics (portfolio analytics)",
-      "- /educator/copilot (Create with AI studio)",
-      "- /educator/settings",
-      "- /educator/skills (skill badges)",
-      "- /educator/courses/new (create course)",
-    ].join("\n")
-  );
-  lines.push(
-    "- Per course: /educator/courses/<slug> (dashboard), /content (modules & lessons editor), /live (live and in-person sessions), /experiences (immersive worlds), /skills (skill paths), /students, /assignments, /analytics, /edit (course settings), /collaborators, /payments, /access, /notifications"
-  );
+  lines.push("Navigation map (use with the navigate tool; query views like ?tab= are linkable):");
+  lines.push(describeEducatorConsole());
 
   if (pageContext) {
     lines.push("");

@@ -1,224 +1,59 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { buildManagedCoursesFilter } from "@/lib/educator-auth";
 import Course from "@/models/Course";
 import EducatorProfile from "@/models/EducatorProfile";
-import Payment from "@/models/Payment";
-import Enrollment from "@/models/Enrollment";
-import { Nav } from "@/components/nav";
-import {
-  ArrowRight,
-  Award,
-  BookOpen,
-  CreditCard,
-  LayoutDashboard,
-  Rocket,
-  Sparkles,
-  Users,
-} from "lucide-react";
+import LiveSession from "@/models/LiveSession";
+import { CopilotLauncher, type LauncherShortcut } from "@/components/educator/copilot-launcher";
 
-export default async function EducatorDashboardPage() {
+export default async function EducatorHomePage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/auth/signin?callbackUrl=/educator");
 
   await connectDB();
-  const sharedCourseFilter = buildManagedCoursesFilter({
+  const filter = buildManagedCoursesFilter({
     userId: session.user.id,
     email: session.user.email,
     role: session.user.role,
   });
-  const sharedCourseCount =
-    session.user.role === "admin"
-      ? 0
-      : await Course.countDocuments(sharedCourseFilter);
+  const sharedCourseCount = session.user.role === "admin" ? 0 : await Course.countDocuments(filter);
   const profile = await EducatorProfile.findOne({ userId: session.user.id }).lean();
   if (!profile && session.user.role !== "admin" && sharedCourseCount === 0) {
     redirect("/educator/settings");
   }
 
-  const courses = await Course.find(
-    session.user.role === "admin" ? {} : sharedCourseFilter
-  ).sort({ updatedAt: -1 }).lean();
-  const courseIds = courses.map((course) => course._id);
-  const [enrollmentCount, payments] = await Promise.all([
-    Enrollment.countDocuments({ courseId: { $in: courseIds } }),
-    Payment.find({ courseId: { $in: courseIds }, status: "completed" }).lean(),
-  ]);
-  const gross = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  const courses = await Course.find(session.user.role === "admin" ? {} : filter)
+    .select("title slug published")
+    .sort({ updatedAt: -1 })
+    .limit(20)
+    .lean<Array<{ _id: unknown; title: string; slug: string; published?: boolean }>>();
+  const liveSessions = await LiveSession.find({
+    courseId: { $in: courses.map((course) => course._id) },
+    status: { $in: ["live", "lobby"] },
+  })
+    .select("title courseSlug")
+    .limit(2)
+    .lean<Array<{ _id: unknown; title: string; courseSlug: string }>>();
 
-  return (
-    <div className="min-h-screen bg-white">
-      <Nav />
-      <main className="mx-auto max-w-6xl px-4 pb-16 pt-24 sm:px-6 lg:px-8">
-        <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <p className="mb-2 text-xs uppercase tracking-[0.2em] text-slate-400">
-              Educator console
-            </p>
-            <h1 className="text-3xl font-bold text-slate-950">
-              Manage your learning community
-            </h1>
-            <p className="mt-2 text-sm text-slate-500">
-              Courses are the base. Skill badges and builder quests help learners
-              practice daily, show progress, and move toward real projects.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link
-              href="/educator/analytics"
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              Analytics
-            </Link>
-            <Link
-              href="/educator/copilot"
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              AI copilot
-            </Link>
-            <Link
-              href="/educator/settings"
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              Settings
-            </Link>
-            <Link
-              href="/educator/courses/new"
-              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:opacity-90"
-            >
-              New course
-            </Link>
-          </div>
-        </div>
+  const shortcuts: LauncherShortcut[] = [
+    ...liveSessions.map((item) => ({
+      href: `/educator/courses/${item.courseSlug}/live/${String(item._id)}?tab=run`,
+      label: item.title,
+      dot: "live" as const,
+    })),
+    ...courses.slice(0, 3).map((course) => ({
+      href: `/educator/courses/${course.slug}`,
+      label: course.title,
+      dot: course.published ? ("published" as const) : ("draft" as const),
+    })),
+    { href: "/educator/courses/new", label: "New course", icon: "new" },
+    { href: "/educator/courses", label: "All courses", icon: "courses" },
+    { href: "/educator/analytics", label: "Analytics", icon: "analytics" },
+    { href: "/educator/copilot", label: "Create from files", icon: "ai" },
+  ];
 
-        <div className="mb-8 grid gap-4 md:grid-cols-3">
-          <Metric icon={BookOpen} label="Courses" value={courses.length} />
-          <Metric icon={Users} label="Students" value={enrollmentCount} />
-          <Metric icon={CreditCard} label="Completed sales" value={gross.toLocaleString()} />
-        </div>
+  const firstName = (session.user.name || "").split(" ")[0];
 
-        <section className="mb-8 grid gap-4 md:grid-cols-4">
-          <FormatCard
-            icon={BookOpen}
-            title="Courses"
-            body="Create structured learning paths with modules, lessons, assignments, and access."
-            href="/educator/courses/new"
-            action="Create course"
-          />
-          <FormatCard
-            icon={Award}
-            title="Skill badges"
-            body="Attach atomic daily challenges to courses so learners can earn skills and keep streaks."
-            href="/educator/skills"
-            action="Manage skills"
-          />
-          <FormatCard
-            icon={Sparkles}
-            title="AI copilot"
-            body="Upload course material and create a draft course or skill path for review."
-            href="/educator/copilot"
-            action="Create with AI"
-          />
-          <FormatCard
-            icon={Rocket}
-            title="Builder quests"
-            body="Guide learners into prototypes, build nights, hackathons, demos, and showcases."
-            href="/builders"
-            action="View Builders"
-          />
-        </section>
-
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">Your courses</h2>
-          </div>
-          {courses.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 p-10 text-center">
-              <p className="mb-4 text-sm text-slate-500">
-                Create your first course and publish when ready.
-              </p>
-              <Link
-                href="/educator/courses/new"
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-bold text-white"
-              >
-                Create course <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              {courses.map((course) => (
-                <Link
-                  key={String(course._id)}
-                  href={`/educator/courses/${course.slug}`}
-                  className="grid gap-3 border-b border-slate-100 p-4 transition-colors last:border-b-0 hover:bg-slate-50 md:grid-cols-[1fr_auto]"
-                >
-                  <div>
-                    <div className="mb-1 flex flex-wrap items-center gap-2">
-                      <h3 className="font-bold text-slate-900">{course.title}</h3>
-                      <span className="rounded-md border border-slate-200 px-2 py-0.5 text-xs text-slate-500">
-                        {course.published ? "Published" : "Draft"}
-                      </span>
-                    </div>
-                    <p className="text-sm text-slate-500">{course.tagline}</p>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
-                    <LayoutDashboard className="h-4 w-4 text-slate-400" />
-                    Open dashboard
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
-      </main>
-    </div>
-  );
-}
-
-function Metric({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof BookOpen;
-  label: string;
-  value: string | number;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 p-5">
-      <Icon className="mb-4 h-5 w-5 text-slate-400" />
-      <p className="text-2xl font-bold text-slate-950">{value}</p>
-      <p className="text-sm text-slate-500">{label}</p>
-    </div>
-  );
-}
-
-function FormatCard({
-  icon: Icon,
-  title,
-  body,
-  href,
-  action,
-}: {
-  icon: typeof BookOpen;
-  title: string;
-  body: string;
-  href: string;
-  action: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="rounded-xl border border-slate-200 p-5 transition-colors hover:border-slate-300 hover:bg-slate-50"
-    >
-      <Icon className="mb-4 h-5 w-5 text-slate-500" />
-      <h2 className="font-bold text-slate-950">{title}</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{body}</p>
-      <p className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-slate-900">
-        {action} <ArrowRight className="h-3.5 w-3.5" />
-      </p>
-    </Link>
-  );
+  return <CopilotLauncher greeting={firstName ? `Welcome back, ${firstName}` : "Welcome back"} shortcuts={shortcuts} />;
 }

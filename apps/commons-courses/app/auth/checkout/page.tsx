@@ -51,19 +51,19 @@ function CheckoutSignIn() {
           <div className="flex h-7 w-7 items-center justify-center rounded bg-slate-950">
             <FlaskConical className="h-3.5 w-3.5 text-white" />
           </div>
-          <span className="text-sm font-bold tracking-tight text-slate-900">
+          <span className="text-sm font-semibold tracking-tight text-slate-900">
             CommonLab
           </span>
         </Link>
         {error ? (
           <>
-            <h1 className="mb-2 text-2xl font-bold text-slate-900">
+            <h1 className="mb-2 text-2xl font-semibold text-slate-900">
               We could not finish sign-in
             </h1>
             <p className="mb-6 text-sm text-slate-500">{error}</p>
             <Link
               href="/auth/signin"
-              className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-bold text-white"
+              className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white"
             >
               Sign in
             </Link>

@@ -86,7 +86,7 @@ export function EnrolledBanner({
           <BookOpen className="h-4 w-4 text-green-700" />
         </div>
         <div>
-          <p className="text-sm font-bold text-green-900">You&apos;re enrolled</p>
+          <p className="text-sm font-semibold text-green-900">You&apos;re enrolled</p>
           {state.progress > 0 && (
             <p className="text-xs text-green-700 mt-0.5">
               {state.progress}% complete
@@ -103,7 +103,7 @@ export function EnrolledBanner({
         href={state.hasStarted ? `/courses/${courseSlug}/learn` : `/courses/${courseSlug}`}
         aria-disabled={!state.hasStarted}
         className={cn(
-          "inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-opacity",
+          "inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity",
           !state.hasStarted
             ? "bg-slate-100 text-slate-500"
             : state.progress > 0

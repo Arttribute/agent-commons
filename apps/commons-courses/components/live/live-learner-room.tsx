@@ -473,17 +473,17 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
           <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10">
             <Radio className="h-6 w-6 text-[var(--course-accent)]" />
           </span>
-          <p className="mt-8 text-xs font-bold uppercase tracking-[0.22em] text-[var(--course-accent)]">
+          <p className="mt-8 text-xs font-medium text-[var(--course-accent)]">
             You’re in the room
           </p>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             {session.title}
           </h1>
           <p className="mt-4 text-sm leading-6 opacity-70">
             The facilitator will begin shortly. Keep this page open; your
             workbook will update automatically.
           </p>
-          <div className="mx-auto mt-8 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-bold">
+          <div className="mx-auto mt-8 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-semibold">
             <Users className="h-4 w-4" />
             {session.participantCount} joined
           </div>
@@ -512,7 +512,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             <FlaskConical className="h-4 w-4" />
           </Link>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-bold sm:text-sm">
+            <p className="truncate text-xs font-semibold sm:text-sm">
               {session.title}
             </p>
             <p className="mt-0.5 inline-flex items-center gap-1.5 text-[9px] font-medium text-slate-500 sm:text-[10px]">
@@ -527,7 +527,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
           </div>
           <span
             className={cn(
-              "hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold sm:inline-flex",
+              "hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold sm:inline-flex",
               connection === "synced"
                 ? "bg-emerald-50 text-emerald-700"
                 : "bg-amber-50 text-amber-700",
@@ -556,7 +556,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             onClick={() => setWorkbookOpen(true)}
             aria-expanded={workbookOpen}
             aria-controls="live-workbook-drawer"
-            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-[var(--course-surface)] px-3 text-xs font-bold shadow-sm hover:border-slate-300"
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-[var(--course-surface)] px-3 text-xs font-semibold shadow-sm hover:border-slate-300"
           >
             <BookOpen className="h-4 w-4" />
             <span className="hidden sm:inline">Activities</span>
@@ -628,7 +628,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             <div className="flex min-h-[55dvh] items-center justify-center rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-8 text-center">
               <div>
                 <Radio className="mx-auto h-6 w-6 opacity-25" />
-                <p className="mt-4 text-sm font-bold">
+                <p className="mt-4 text-sm font-semibold">
                   Ready for the next activity
                 </p>
                 <p className="mt-2 text-xs leading-5 opacity-50">
@@ -638,7 +638,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
                 {connection !== "synced" ? (
                   <button
                     onClick={() => void load(true)}
-                    className="mt-5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold"
+                    className="mt-5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold"
                   >
                     Reconnect now
                   </button>
@@ -661,7 +661,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
                       activity.id,
                   );
                 }}
-                className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 disabled:opacity-30"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 disabled:opacity-30"
               >
                 <ArrowLeft className="h-4 w-4" /> Previous
               </button>
@@ -671,7 +671,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
                   availableActivityIndex >= availableActivities.length - 1
                 }
                 onClick={goNext}
-                className="inline-flex items-center gap-2 text-sm font-bold text-slate-700 disabled:opacity-30"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 disabled:opacity-30"
               >
                 Next <ArrowRight className="h-4 w-4" />
               </button>
@@ -723,7 +723,7 @@ function ProgrammePartStrip({
 }) {
   return (
     <section className="mb-5" aria-label="Programme sessions">
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] opacity-45">
+      <p className="mb-2 text-[10px] font-medium opacity-45">
         Programme sessions
       </p>
       <div className="grid gap-2 sm:grid-cols-2 lg:flex">
@@ -748,7 +748,7 @@ function ProgrammePartStrip({
             >
               <span
                 className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold",
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold",
                   active
                     ? "bg-[var(--course-primary)] text-[var(--course-on-primary)]"
                     : "bg-slate-100 text-slate-500",
@@ -757,7 +757,7 @@ function ProgrammePartStrip({
                 {index + 1}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-bold">
+                <span className="block truncate text-sm font-semibold">
                   {part.title}
                 </span>
                 <span className="mt-0.5 block text-[10px] font-medium opacity-55">
@@ -798,19 +798,19 @@ function EnrollmentRequired({
         <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#71E0E7]/15 text-[#71E0E7]">
           <GraduationCap className="h-6 w-6" />
         </span>
-        <p className="mt-7 text-xs font-bold uppercase tracking-[0.2em] text-[#71E0E7]">
+        <p className="mt-7 text-xs font-medium text-[#71E0E7]">
           Enrollment required
         </p>
-        <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
           Join the course to enter this room
         </h1>
         <p className="mt-3 text-sm leading-6 text-slate-300">{gate.message}</p>
         {gate.courseTitle ? (
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.05] p-4">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            <p className="text-[10px] font-medium text-slate-400">
               Course
             </p>
-            <p className="mt-1 text-sm font-bold text-white">
+            <p className="mt-1 text-sm font-semibold text-white">
               {gate.courseTitle}
             </p>
           </div>
@@ -826,7 +826,7 @@ function EnrollmentRequired({
               type="button"
               onClick={onEnroll}
               disabled={enrolling}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#B8F56D] px-5 py-3.5 text-sm font-bold text-slate-950 transition hover:bg-[#c7fa83] disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#B8F56D] px-5 py-3.5 text-sm font-semibold text-slate-950 transition hover:bg-[#c7fa83] disabled:opacity-60"
             >
               {enrolling ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -838,14 +838,14 @@ function EnrollmentRequired({
           ) : gate.courseSlug ? (
             <Link
               href={`/courses/${gate.courseSlug}`}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3.5 text-sm font-bold text-slate-950"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3.5 text-sm font-semibold text-slate-950"
             >
               View enrollment options <ArrowRight className="h-4 w-4" />
             </Link>
           ) : null}
           <Link
             href="/join"
-            className="block w-full py-2 text-center text-xs font-bold text-slate-400 hover:text-white"
+            className="block w-full py-2 text-center text-xs font-semibold text-slate-400 hover:text-white"
           >
             Use a different session code
           </Link>
@@ -894,7 +894,7 @@ function WorkbookDrawer({
             <BookOpen className="h-4 w-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 id="workbook-title" className="font-bold">
+            <h2 id="workbook-title" className="font-semibold">
               Activities
             </h2>
             <p className="mt-1 text-xs opacity-55">
@@ -918,7 +918,7 @@ function WorkbookDrawer({
             type="button"
             onClick={onDownload}
             disabled={!responseCount}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 py-3 text-xs font-bold text-[var(--course-on-primary)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 py-3 text-xs font-semibold text-[var(--course-on-primary)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
           >
             <Download className="h-4 w-4" />
             Download my workbook
@@ -950,7 +950,7 @@ function WorkbookDrawer({
                 {session.parts.length ? (
                   <div className="mb-2 flex items-center gap-2 px-2">
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-bold">
+                      <span className="block truncate text-xs font-semibold">
                         {part.title}
                       </span>
                       <span className="text-[10px] opacity-50">
@@ -1002,14 +1002,14 @@ function WorkbookDrawer({
                               "cursor-default opacity-45",
                           )}
                         >
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-current/10 text-[10px] font-bold">
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-current/10 text-[10px] font-semibold">
                             {String(index + 1).padStart(2, "0")}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block text-sm font-bold leading-5">
+                            <span className="block text-sm font-semibold leading-5">
                               {item.title || `Activity ${index + 1}`}
                             </span>
-                            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide opacity-50">
+                            <span className="mt-0.5 block text-[10px] font-medium opacity-50">
                               {selected
                                 ? "Showing now"
                                 : done
@@ -1082,12 +1082,12 @@ function LearnerActivity({
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-[var(--course-surface)]">
       <div className="p-6 sm:p-9">
         <div className="flex items-center justify-between gap-3">
-          <span className="rounded-full bg-[var(--course-accent)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-[var(--course-on-accent)]">
+          <span className="rounded-full bg-[var(--course-accent)] px-2.5 py-1 text-[10px] font-medium text-[var(--course-on-accent)]">
             {labelFor(activity.type)}
           </span>
           <span className="flex items-center gap-3">
             {activity.required ? (
-              <span className="hidden text-[10px] font-bold uppercase tracking-wide opacity-50 sm:inline">
+              <span className="hidden text-[10px] font-medium opacity-50 sm:inline">
                 Required
               </span>
             ) : null}
@@ -1095,7 +1095,7 @@ function LearnerActivity({
               <button
                 type="button"
                 onClick={onDownload}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-bold transition hover:border-slate-300 hover:bg-[var(--course-background)]"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-semibold transition hover:border-slate-300 hover:bg-[var(--course-background)]"
                 title="Download this saved response"
               >
                 <Download className="h-3.5 w-3.5" />
@@ -1104,7 +1104,7 @@ function LearnerActivity({
             ) : null}
           </span>
         </div>
-        <h1 className="mt-6 text-3xl font-bold tracking-tight">
+        <h1 className="mt-6 text-3xl font-semibold tracking-tight">
           {activity.title || labelFor(activity.type)}
         </h1>
         {activity.prompt ? (
@@ -1117,7 +1117,7 @@ function LearnerActivity({
         ) : null}
         {activity.successCriteria ? (
           <div className="mt-4 border-l-2 border-[var(--course-highlight)] pl-4">
-            <p className="text-[10px] font-bold uppercase tracking-wide opacity-50">
+            <p className="text-[10px] font-medium opacity-50">
               Done when
             </p>
             <p className="mt-1 text-sm leading-6 opacity-80">
@@ -1130,7 +1130,7 @@ function LearnerActivity({
             href={activity.resourceUrl}
             target="_blank"
             rel="noreferrer"
-            className="mt-5 inline-flex items-center gap-2 text-sm font-bold underline underline-offset-4"
+            className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4"
           >
             Open activity resource <ExternalLink className="h-4 w-4" />
           </a>
@@ -1227,7 +1227,7 @@ function LearnerActivity({
                   }
                   onClick={() => onChange(option.id)}
                   className={cn(
-                    "border bg-white text-sm font-bold transition",
+                    "border bg-white text-sm font-semibold transition",
                     activity.responseStyle === "scale"
                       ? "aspect-square min-h-12 rounded-full p-2 text-center sm:aspect-auto sm:min-h-16 sm:rounded-xl"
                       : "min-h-16 rounded-xl p-4 text-left",
@@ -1266,7 +1266,7 @@ function LearnerActivity({
                   (Boolean(response) && !canRevisePoll)
                 }
                 onClick={() => onChange(encodeOtherResponse(typedOther || ""))}
-                className="flex w-full items-center gap-3 text-left text-sm font-bold disabled:opacity-60"
+                className="flex w-full items-center gap-3 text-left text-sm font-semibold disabled:opacity-60"
               >
                 <span
                   className={cn(
@@ -1302,7 +1302,7 @@ function LearnerActivity({
               <button
                 onClick={() => onSubmit()}
                 disabled={!hasValidValue || submitting || !responseChanged}
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40"
               >
                 {submitting ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1322,7 +1322,7 @@ function LearnerActivity({
               disabled={
                 !hasValidValue || submitting || activity.status !== "open"
               }
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40"
             >
               {submitting ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1343,7 +1343,7 @@ function LearnerActivity({
             <button
               onClick={() => onSubmit("complete")}
               disabled={submitting || activity.status !== "open"}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40"
             >
               <Check className="h-4 w-4" />{" "}
               {activity.type === "break" ? "I’m back" : "Mark as viewed"}
@@ -1374,7 +1374,7 @@ function LearnerActivity({
             <button
               onClick={() => onSubmit()}
               disabled={!value || submitting || activity.status !== "open"}
-              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
+              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40"
             >
               {submitting ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1468,7 +1468,7 @@ function CardCollectionResponsePanel({
       >
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-bold">Your task anatomy cards</p>
+            <p className="text-sm font-semibold">Your task anatomy cards</p>
             <p className="mt-1 text-xs opacity-55">
               Add as many tasks as useful. Each one stays editable while this
               activity is open.
@@ -1478,7 +1478,7 @@ function CardCollectionResponsePanel({
             type="button"
             onClick={addCard}
             disabled={!canEdit || current.items.length >= 50}
-            className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-xs font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-xs font-semibold text-[var(--course-on-primary)] disabled:opacity-40"
           >
             <Plus className="h-4 w-4" /> Add task card
           </button>
@@ -1505,10 +1505,10 @@ function CardCollectionResponsePanel({
                         : "hover:bg-[var(--course-background)]",
                     )}
                   >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-current/10 text-[10px] font-bold">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-current/10 text-[10px] font-semibold">
                       {index + 1}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-bold">
+                    <span className="min-w-0 flex-1 truncate font-semibold">
                       {title || `Untitled task ${index + 1}`}
                     </span>
                   </button>
@@ -1525,7 +1525,7 @@ function CardCollectionResponsePanel({
                 )}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] opacity-50">
+                  <p className="text-xs font-medium opacity-50">
                     Task{" "}
                     {current.items.findIndex((item) => item.id === active.id) +
                       1}
@@ -1534,7 +1534,7 @@ function CardCollectionResponsePanel({
                     <button
                       type="button"
                       onClick={() => removeCard(active.id)}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600"
                     >
                       <Trash2 className="h-4 w-4" /> Remove
                     </button>
@@ -1562,7 +1562,7 @@ function CardCollectionResponsePanel({
             className="mt-5 flex min-h-48 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-[var(--course-surface)] p-8 text-center disabled:opacity-50"
           >
             <Plus className="h-6 w-6 opacity-40" />
-            <span className="mt-3 text-sm font-bold">
+            <span className="mt-3 text-sm font-semibold">
               Add your first task card
             </span>
             <span className="mt-1 text-xs opacity-50">
@@ -1583,7 +1583,7 @@ function CardCollectionResponsePanel({
                     onSubmit({ items: current.items, finalized: false })
                   }
                   disabled={!changed || submitting}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-40"
                 >
                   <Save className="h-4 w-4" /> Save progress
                 </button>
@@ -1593,7 +1593,7 @@ function CardCollectionResponsePanel({
                     onSubmit({ items: current.items, finalized: true })
                   }
                   disabled={!complete || submitting}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-semibold text-[var(--course-on-primary)] disabled:opacity-40"
                 >
                   {submitting ? (
                     <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1626,7 +1626,7 @@ function StructuredField({
     <label
       className={cn("block", field.type === "long_text" && "md:col-span-2")}
     >
-      <span className="text-sm font-bold leading-6">
+      <span className="text-sm font-semibold leading-6">
         {field.label}
         {field.required ? <span className="ml-1 text-red-500">*</span> : null}
       </span>
@@ -1648,7 +1648,7 @@ function StructuredField({
                 disabled={disabled}
                 onClick={() => onChange(number)}
                 className={cn(
-                  "min-h-11 rounded-xl border text-sm font-bold",
+                  "min-h-11 rounded-xl border text-sm font-semibold",
                   value === number
                     ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
                     : "border-slate-200 bg-white",
@@ -1728,7 +1728,7 @@ function LinkedScorecardResponsePanel({
     return (
       <div className="border-t border-slate-100 bg-[var(--course-background)] p-5 sm:p-7">
         <div className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-7 text-center">
-          <p className="text-sm font-bold">Create your task cards first</p>
+          <p className="text-sm font-semibold">Create your task cards first</p>
           <p className="mt-2 text-xs leading-6 opacity-55">
             Your saved tasks will appear here automatically—there is nothing to
             retype.
@@ -1737,7 +1737,7 @@ function LinkedScorecardResponsePanel({
             <button
               type="button"
               onClick={() => onOpenActivity(activity.sourceActivityId || "")}
-              className="mt-5 rounded-xl bg-[var(--course-primary)] px-4 py-3 text-xs font-bold text-[var(--course-on-primary)]"
+              className="mt-5 rounded-xl bg-[var(--course-primary)] px-4 py-3 text-xs font-semibold text-[var(--course-on-primary)]"
             >
               Open task anatomy cards
             </button>
@@ -1794,7 +1794,7 @@ function LinkedScorecardResponsePanel({
         className={cn("mx-auto max-w-5xl", structuredResponseWorkspaceClass)}
       >
         <div className="shrink-0">
-          <p className="text-sm font-bold">Compare your captured tasks</p>
+          <p className="text-sm font-semibold">Compare your captured tasks</p>
           <p className="mt-1 text-xs opacity-55">
             Score each task, then choose the strongest first task to offload.
           </p>
@@ -1828,7 +1828,7 @@ function LinkedScorecardResponsePanel({
               >
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 sm:px-5">
                   <div>
-                    <p className="font-bold">{titleFor(sourceItem.id)}</p>
+                    <p className="font-semibold">{titleFor(sourceItem.id)}</p>
                     <p className="mt-1 text-[11px] opacity-50">
                       Score {total}/
                       {criteria.reduce(
@@ -1848,7 +1848,7 @@ function LinkedScorecardResponsePanel({
                       })
                     }
                     className={cn(
-                      "rounded-full border px-3 py-2 text-xs font-bold",
+                      "rounded-full border px-3 py-2 text-xs font-semibold",
                       selected
                         ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
                         : "border-slate-200",
@@ -1862,14 +1862,14 @@ function LinkedScorecardResponsePanel({
                     <div key={criterion.id}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-bold">{criterion.label}</p>
+                          <p className="text-xs font-semibold">{criterion.label}</p>
                           {criterion.description ? (
                             <p className="mt-1 text-[11px] leading-5 opacity-50">
                               {criterion.description}
                             </p>
                           ) : null}
                         </div>
-                        <span className="text-xs font-bold opacity-50">
+                        <span className="text-xs font-semibold opacity-50">
                           {scored?.scores[criterion.id] || "–"}
                         </span>
                       </div>
@@ -1886,7 +1886,7 @@ function LinkedScorecardResponsePanel({
                               updateScore(sourceItem.id, criterion.id, number)
                             }
                             className={cn(
-                              "min-h-9 rounded-lg border text-xs font-bold",
+                              "min-h-9 rounded-lg border text-xs font-semibold",
                               scored?.scores[criterion.id] === number
                                 ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
                                 : "border-slate-200 bg-white",
@@ -1907,7 +1907,7 @@ function LinkedScorecardResponsePanel({
             );
           })}
           <label className="block rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-5">
-            <span className="text-sm font-bold">
+            <span className="text-sm font-semibold">
               Why is this a safe, useful first build?
             </span>
             <textarea
@@ -1936,7 +1936,7 @@ function LinkedScorecardResponsePanel({
                 type="button"
                 onClick={() => onSubmit({ ...current, finalized: false })}
                 disabled={!changed || submitting}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-40"
               >
                 <Save className="h-4 w-4" /> Save progress
               </button>
@@ -1944,7 +1944,7 @@ function LinkedScorecardResponsePanel({
                 type="button"
                 onClick={() => onSubmit({ ...current, finalized: true })}
                 disabled={!ready || submitting}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-semibold text-[var(--course-on-primary)] disabled:opacity-40"
               >
                 <Check className="h-4 w-4" /> Confirm first task
               </button>
@@ -2009,12 +2009,12 @@ function WorksheetResponsePanel({
       >
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-bold">Fill in your workbook</p>
+            <p className="text-sm font-semibold">Fill in your workbook</p>
             <p className="mt-1 text-xs opacity-55">
               Your progress is private to you and your facilitators.
             </p>
           </div>
-          <span className="rounded-full bg-[var(--course-surface)] px-3 py-1.5 text-xs font-bold opacity-70">
+          <span className="rounded-full bg-[var(--course-surface)] px-3 py-1.5 text-xs font-semibold opacity-70">
             {answered}/{fields.length} answered
           </span>
         </div>
@@ -2031,7 +2031,7 @@ function WorksheetResponsePanel({
               key={section.title}
               className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-6"
             >
-              <h2 className="text-sm font-bold uppercase tracking-[0.14em] opacity-55">
+              <h2 className="text-sm font-medium opacity-55">
                 {section.title}
               </h2>
               <div className="mt-5 space-y-5">
@@ -2042,7 +2042,7 @@ function WorksheetResponsePanel({
                       key={field.id}
                       className="block"
                     >
-                      <span className="text-sm font-bold leading-6">
+                      <span className="text-sm font-semibold leading-6">
                         {field.label}
                         {field.required ? (
                           <span className="ml-1 text-red-500">*</span>
@@ -2068,7 +2068,7 @@ function WorksheetResponsePanel({
                                 disabled={!canEdit}
                                 onClick={() => update(field.id, number)}
                                 className={cn(
-                                  "min-h-12 rounded-xl border text-sm font-bold transition",
+                                  "min-h-12 rounded-xl border text-sm font-semibold transition",
                                   fieldValue === number
                                     ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
                                     : "border-slate-200 bg-white hover:border-slate-400",
@@ -2141,7 +2141,7 @@ function WorksheetResponsePanel({
                   onSubmit({ values: current.values, finalized: false })
                 }
                 disabled={!answered || submitting || !changed}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-40"
               >
                 <Save className="h-4 w-4" /> Save progress
               </button>
@@ -2151,7 +2151,7 @@ function WorksheetResponsePanel({
                   onSubmit({ values: current.values, finalized: true })
                 }
                 disabled={!answered || !requiredComplete || submitting}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-semibold text-[var(--course-on-primary)] disabled:opacity-40"
               >
                 {submitting ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -2225,15 +2225,15 @@ function PrioritizationResponsePanel({
         <section className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-45">
+              <p className="text-[10px] font-medium opacity-45">
                 Step 1 · Capture
               </p>
-              <h2 className="mt-1 text-lg font-bold">List every routine</h2>
+              <h2 className="mt-1 text-lg font-semibold">List every routine</h2>
               <p className="mt-1 text-xs leading-5 opacity-60">
                 Keep each entry short. Quantity first; you will choose later.
               </p>
             </div>
-            <span className="rounded-full bg-[var(--course-background)] px-2.5 py-1 text-xs font-bold opacity-70">
+            <span className="rounded-full bg-[var(--course-background)] px-2.5 py-1 text-xs font-semibold opacity-70">
               {current.items.length}/50
             </span>
           </div>
@@ -2257,7 +2257,7 @@ function PrioritizationResponsePanel({
                 type="button"
                 onClick={addItem}
                 disabled={!draft.trim() || current.items.length >= 50}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-5 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-5 text-sm font-semibold text-[var(--course-on-primary)] disabled:opacity-40"
               >
                 <Plus className="h-4 w-4" /> Add
               </button>
@@ -2269,7 +2269,7 @@ function PrioritizationResponsePanel({
                 key={item.id}
                 className="group flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-slate-950"
               >
-                <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[10px] font-bold text-slate-500">
+                <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[10px] font-semibold text-slate-500">
                   {index + 1}
                 </span>
                 <input
@@ -2314,10 +2314,10 @@ function PrioritizationResponsePanel({
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-5">
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-45">
+          <p className="text-[10px] font-medium opacity-45">
             Step 2 · Shortlist
           </p>
-          <h2 className="mt-1 text-lg font-bold">
+          <h2 className="mt-1 text-lg font-semibold">
             Choose up to {maxSelections}
           </h2>
           <p className="mt-1 text-xs leading-5 opacity-60">
@@ -2356,7 +2356,7 @@ function PrioritizationResponsePanel({
                       item.selected && "fill-current",
                     )}
                   />
-                  <span className="font-bold leading-5">{item.text}</span>
+                  <span className="font-semibold leading-5">{item.text}</span>
                 </button>
               );
             })}
@@ -2384,7 +2384,7 @@ function PrioritizationResponsePanel({
                   onSubmit({ items: current.items, finalized: false })
                 }
                 disabled={!current.items.length || submitting || !changed}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-40"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-40"
               >
                 <Save className="h-4 w-4" /> Save progress
               </button>
@@ -2394,7 +2394,7 @@ function PrioritizationResponsePanel({
                   onSubmit({ items: current.items, finalized: true })
                 }
                 disabled={!readyToFinish || submitting}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-bold text-[var(--course-on-primary)] disabled:opacity-40"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 text-sm font-semibold text-[var(--course-on-primary)] disabled:opacity-40"
               >
                 {submitting ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -2413,14 +2413,14 @@ function PrioritizationResponsePanel({
 
 function Saved({ message = "Response saved" }: { message?: string }) {
   return (
-    <div className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+    <div className="mt-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
       <CheckCircle2 className="h-4 w-4 shrink-0" /> {message}
     </div>
   );
 }
 function ResponsesClosed() {
   return (
-    <div className="flex items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-600">
+    <div className="flex items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600">
       <LockKeyhole className="h-4 w-4" /> Responses are closed
     </div>
   );
@@ -2442,7 +2442,7 @@ function Centered({ message, error }: { message: string; error?: boolean }) {
         {error ? (
           <Link
             href="/join"
-            className="mt-5 inline-block text-sm font-bold text-slate-900 underline"
+            className="mt-5 inline-block text-sm font-semibold text-slate-900 underline"
           >
             Try another code
           </Link>

@@ -1,18 +1,28 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import {
-  ArrowRight,
-  CalendarClock,
-  CheckCircle2,
-  LoaderCircle,
-  Plus,
-  Radio,
-  Sparkles,
-  Users,
-} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, Radio } from "lucide-react";
+import { CourseSectionHeader } from "@/components/educator/course-section-header";
+import { Button } from "@/components/ui/button";
+import { Drawer } from "@/components/ui/drawer";
+import { Field, Input } from "@/components/ui/field";
+import { Badge, EmptyState, List, ListRow } from "@/components/ui/surface";
+import { cn } from "@/lib/utils";
 import type { LiveSessionRecord } from "@/types/live-session";
+
+const templates = [
+  {
+    value: "facilitated_workshop" as const,
+    title: "Workshop rhythm",
+    body: "Setup, diagnostic, content, practice, retrieval, break and exit reflection.",
+  },
+  {
+    value: "blank" as const,
+    title: "Blank room",
+    body: "Start empty and add only what you need.",
+  },
+];
 
 export function LiveSessionManager({
   courseSlug,
@@ -21,17 +31,16 @@ export function LiveSessionManager({
   courseSlug: string;
   courseTitle: string;
 }) {
+  const router = useRouter();
   const [sessions, setSessions] = useState<LiveSessionRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState(`${courseTitle} · live workshop`);
-  const [template, setTemplate] = useState<"facilitated_workshop" | "blank">(
-    "facilitated_workshop",
-  );
+  const [title, setTitle] = useState(`${courseTitle} · live session`);
+  const [template, setTemplate] = useState<"facilitated_workshop" | "blank">("facilitated_workshop");
   const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
-    setLoading(true);
     const res = await fetch(`/api/educator/courses/${courseSlug}/live-sessions`);
     const data = await res.json().catch(() => ({}));
     if (res.ok) setSessions(data.sessions || []);
@@ -44,7 +53,8 @@ export function LiveSessionManager({
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  async function createSession() {
+  async function createSession(event: React.FormEvent) {
+    event.preventDefault();
     if (!title.trim() || creating) return;
     setCreating(true);
     setNotice("");
@@ -55,7 +65,7 @@ export function LiveSessionManager({
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data.session) {
-      window.location.href = `/educator/courses/${courseSlug}/live/${data.session.id}`;
+      router.push(`/educator/courses/${courseSlug}/live/${data.session.id}`);
       return;
     }
     setNotice(data.error || "Could not create the session.");
@@ -63,135 +73,102 @@ export function LiveSessionManager({
   }
 
   return (
-    <div className="space-y-7" data-copilot-target="live-session-library">
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-            Facilitation
-          </p>
-          <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
-            Live sessions
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Turn course material into a paced room with a learner workbook,
-            setup checks, practice, polls, quizzes, and evidence capture.
-          </p>
-        </div>
-        <span className="inline-flex items-center gap-2 rounded-full bg-[#71E0E7]/20 px-3 py-1.5 text-xs font-bold text-slate-700">
-          <Radio className="h-3.5 w-3.5" /> In person or hybrid
-        </span>
-      </header>
+    <div data-copilot-target="live-session-library">
+      <CourseSectionHeader
+        section="live"
+        info="Run a paced room with a learner workbook, setup checks, polls, quizzes and reflections. Works in person or hybrid."
+        actions={
+          <Button variant="primary" icon={Plus} onClick={() => setCreateOpen(true)}>
+            New session
+          </Button>
+        }
+      />
 
-      <section className="grid overflow-hidden rounded-2xl border border-slate-200 bg-white lg:grid-cols-[1.05fr_.95fr]">
-        <div className="p-6 sm:p-8">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-white">
-            <Plus className="h-5 w-5" />
-          </div>
-          <h3 className="mt-5 text-xl font-bold text-slate-950">Prepare a room</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            Start with a proven workshop rhythm or build a clean run-of-show from scratch.
-          </p>
-          <label className="mt-6 block text-xs font-bold uppercase tracking-wide text-slate-600">
-            Session title
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium outline-none focus:border-slate-400"
+      {notice && !createOpen ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{notice}</p> : null}
+
+      {loading ? (
+        <div className="h-40 animate-pulse rounded-xl border border-border bg-white" />
+      ) : sessions.length ? (
+        <List>
+          {sessions.map((session) => (
+            <ListRow
+              key={session.id}
+              href={`/educator/courses/${courseSlug}/live/${session.id}`}
+              leading={
+                <span
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-lg",
+                    session.status === "live" ? "bg-red-50 text-red-600" : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  <Radio className="h-4 w-4" strokeWidth={1.75} />
+                </span>
+              }
+              title={session.title}
+              meta={`${session.activities.length} activities · ${session.participantCount} joined`}
+              trailing={<SessionStatus status={session.status} />}
             />
-          </label>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <TemplateChoice
-              active={template === "facilitated_workshop"}
-              title="Workshop rhythm"
-              body="Setup, diagnostic, content, practice, retrieval, break, and exit reflection."
-              onClick={() => setTemplate("facilitated_workshop")}
-            />
-            <TemplateChoice
-              active={template === "blank"}
-              title="Blank room"
-              body="Start clean and add only the activities this learning moment needs."
-              onClick={() => setTemplate("blank")}
-            />
-          </div>
-          {notice ? <p className="mt-4 text-sm text-red-600">{notice}</p> : null}
-          <button
-            type="button"
-            onClick={createSession}
-            disabled={creating || !title.trim()}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-50"
-          >
-            {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          ))}
+        </List>
+      ) : (
+        <EmptyState
+          icon={Radio}
+          title="No live sessions yet"
+          action={
+            <Button variant="primary" icon={Plus} onClick={() => setCreateOpen(true)}>
+              New session
+            </Button>
+          }
+        />
+      )}
+
+      <Drawer
+        as="form"
+        onSubmit={createSession}
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="New live session"
+        footer={
+          <Button type="submit" variant="primary" loading={creating} disabled={!title.trim()}>
             Create session
-          </button>
+          </Button>
+        }
+      >
+        <div className="space-y-5">
+          <Field label="Title">
+            <Input value={title} autoFocus onChange={(event) => setTitle(event.target.value)} />
+          </Field>
+          <div>
+            <p className="mb-1.5 text-sm font-medium">Start from</p>
+            <div className="space-y-2">
+              {templates.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setTemplate(item.value)}
+                  className={cn(
+                    "w-full rounded-xl border px-4 py-3 text-left transition-colors",
+                    template === item.value
+                      ? "border-stone-900 bg-white shadow-card"
+                      : "border-border bg-white hover:bg-page",
+                  )}
+                >
+                  <span className="block text-sm font-medium">{item.title}</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">{item.body}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {notice ? <p className="text-sm text-red-600">{notice}</p> : null}
         </div>
-        <div className="border-t border-slate-200 bg-slate-50 p-6 sm:p-8 lg:border-l lg:border-t-0">
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
-            One coherent learning system
-          </p>
-          <div className="mt-5 space-y-5">
-            <Feature title="Before the room" body="Run setup checks and diagnostics before teaching time is lost." />
-            <Feature title="During the room" body="Control the pace, reveal one activity at a time, and see participation live." />
-            <Feature title="After the room" body="Keep learner work and results attached to the course instead of scattered across tools." />
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-950">Session library</h3>
-          <span className="text-xs font-medium text-slate-400">{sessions.length} total</span>
-        </div>
-        {loading ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
-            Loading sessions…
-          </div>
-        ) : sessions.length ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {sessions.map((session) => (
-              <Link
-                key={session.id}
-                href={`/educator/courses/${courseSlug}/live/${session.id}`}
-                className="group rounded-2xl border border-slate-200 bg-white p-5 transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <Status value={session.status} />
-                  <ArrowRight className="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-700" />
-                </div>
-                <h4 className="mt-4 text-base font-bold text-slate-950">{session.title}</h4>
-                <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500">
-                  <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5" />{session.activities.length} activities</span>
-                  <span className="inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />{session.participantCount} joined</span>
-                  <span className="inline-flex items-center gap-1.5"><CalendarClock className="h-3.5 w-3.5" />{session.pace === "facilitator" ? "Facilitator paced" : "Learner paced"}</span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
-            <Radio className="mx-auto h-6 w-6 text-slate-300" />
-            <p className="mt-3 text-sm font-bold text-slate-800">No live rooms yet</p>
-            <p className="mt-1 text-sm text-slate-500">Create one above and shape it around your session.</p>
-          </div>
-        )}
-      </section>
+      </Drawer>
     </div>
   );
 }
 
-function TemplateChoice({ active, title, body, onClick }: { active: boolean; title: string; body: string; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className={`rounded-xl border p-4 text-left transition ${active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 hover:border-slate-300"}`}>
-      <span className="text-sm font-bold">{title}</span>
-      <span className={`mt-1 block text-xs leading-5 ${active ? "text-slate-300" : "text-slate-500"}`}>{body}</span>
-    </button>
-  );
-}
-
-function Feature({ title, body }: { title: string; body: string }) {
-  return <div className="border-l-2 border-[#71E0E7] pl-4"><p className="text-sm font-bold text-slate-900">{title}</p><p className="mt-1 text-sm leading-6 text-slate-500">{body}</p></div>;
-}
-
-function Status({ value }: { value: LiveSessionRecord["status"] }) {
-  const styles = value === "live" ? "bg-red-50 text-red-700" : value === "lobby" ? "bg-cyan-50 text-cyan-700" : value === "ended" ? "bg-slate-100 text-slate-500" : "bg-amber-50 text-amber-700";
-  return <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${styles}`}>{value}</span>;
+export function SessionStatus({ status }: { status: LiveSessionRecord["status"] }) {
+  if (status === "live") return <Badge tone="live" dot>Live</Badge>;
+  if (status === "lobby") return <Badge tone="info" dot>Lobby open</Badge>;
+  if (status === "ended") return <Badge>Ended</Badge>;
+  return <Badge tone="warning">Draft</Badge>;
 }

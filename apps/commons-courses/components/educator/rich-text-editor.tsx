@@ -65,7 +65,7 @@ export function RichTextEditor({
 
   return (
     <label className="block">
-      <span className="text-sm font-bold text-slate-700">{label}</span>
+      <span className="text-sm font-semibold text-slate-700">{label}</span>
       <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="flex flex-wrap gap-1 border-b border-slate-100 bg-slate-50 p-2">
           <ToolButton label="Paragraph" onClick={() => run("formatBlock", "p")}>
@@ -111,7 +111,7 @@ export function RichTextEditor({
             document.execCommand("insertText", false, text);
             emitChange();
           }}
-          className="min-h-40 space-y-3 px-3 py-3 text-sm leading-7 text-slate-800 outline-none empty:before:text-slate-400 empty:before:content-['Start_writing...'] [&_h2]:text-xl [&_h2]:font-black [&_h2]:text-slate-950 [&_h3]:text-lg [&_h3]:font-black [&_h3]:text-slate-950 [&_mark]:rounded [&_mark]:bg-yellow-200 [&_mark]:px-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
+          className="min-h-40 space-y-3 px-3 py-3 text-sm leading-7 text-slate-800 outline-none empty:before:text-slate-400 empty:before:content-['Start_writing...'] [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-slate-950 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-slate-950 [&_mark]:rounded [&_mark]:bg-yellow-200 [&_mark]:px-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
         />
       </div>
     </label>

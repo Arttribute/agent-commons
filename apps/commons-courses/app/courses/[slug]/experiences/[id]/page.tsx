@@ -44,11 +44,11 @@ export default function LearnerExperiencePage({
     return (
       <main className="flex min-h-dvh items-center justify-center bg-slate-950 px-6 text-center text-white">
         <div>
-          <h1 className="text-2xl font-bold">This experience is unavailable</h1>
+          <h1 className="text-2xl font-semibold">This experience is unavailable</h1>
           <p className="mt-2 text-sm text-white/55">{error}</p>
           <Link
             href={`/courses/${slug}`}
-            className="mt-6 inline-flex rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950"
+            className="mt-6 inline-flex rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-950"
           >
             Back to course
           </Link>

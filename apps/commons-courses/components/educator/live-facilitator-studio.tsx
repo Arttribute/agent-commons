@@ -1,29 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   BarChart3,
-  BookOpen,
   Check,
   ChevronRight,
   CircleStop,
   Clipboard,
   Download,
   ExternalLink,
-  GripVertical,
+  Layers,
   Link2,
   LoaderCircle,
   LockKeyhole,
   MonitorUp,
-  MoreHorizontal,
   Play,
   Plus,
-  QrCode,
   Radio,
-  Save,
-  Settings2,
   Share2,
   Trash2,
   Users,
@@ -44,6 +41,14 @@ import type { CourseMaterialRecord } from "@/types/course-material";
 import type { LabWorkspaceRecord } from "@/types/lab-workspace";
 import { CourseMaterialViewer } from "@/components/course-material-viewer";
 import { LearnerLabWorkspace } from "@/components/labs/learner-lab-workspace";
+import { SessionStatus } from "@/components/educator/live-session-manager";
+import { Button, IconButton } from "@/components/ui/button";
+import { Field, FieldGrid, Input, Select, Switch, SwitchRow, Textarea } from "@/components/ui/field";
+import { Popover } from "@/components/ui/popover";
+import { Badge, Card, EmptyState, IndexChip, NavItem, SectionTitle } from "@/components/ui/surface";
+import { SaveBar } from "@/components/ui/save-bar";
+import { Segmented, Tabs, useQueryTab } from "@/components/ui/tabs";
+import { InfoTip } from "@/components/ui/tooltip";
 
 type StudioData = {
   session: LiveSessionRecord;
@@ -51,82 +56,64 @@ type StudioData = {
   results: Record<string, LiveActivityResults>;
 };
 
+const STUDIO_TABS = ["plan", "run", "invite", "settings"] as const;
+
 const activityChoices: Array<{
   type: LiveActivityType;
   label: string;
   hint: string;
 }> = [
-  {
-    type: "content",
-    label: "Workbook page",
-    hint: "Notes, examples, and resources",
-  },
-  {
-    type: "setup_check",
-    label: "Setup check",
-    hint: "Catch blockers before teaching",
-  },
-  { type: "poll", label: "Poll", hint: "Diagnostic, pulse, or opinion" },
+  { type: "content", label: "Workbook page", hint: "Notes, examples and resources" },
+  { type: "setup_check", label: "Setup check", hint: "Catch blockers before teaching" },
+  { type: "poll", label: "Poll", hint: "Diagnostic, pulse or opinion" },
   { type: "quiz", label: "Quiz", hint: "Retrieval with a correct answer" },
-  {
-    type: "prioritization",
-    label: "Idea shortlist",
-    hint: "Capture many ideas, then choose priorities",
-  },
-  {
-    type: "worksheet",
-    label: "Fillable worksheet",
-    hint: "Structured fields learners can save and complete",
-  },
-  {
-    type: "card_collection",
-    label: "Repeatable cards",
-    hint: "Learners add any number of structured cards",
-  },
-  {
-    type: "linked_scorecard",
-    label: "Linked scorecard",
-    hint: "Score and choose from cards captured earlier",
-  },
-  {
-    type: "reflection",
-    label: "Reflection",
-    hint: "Open response or exit ticket",
-  },
-  {
-    type: "task",
-    label: "Practice task",
-    hint: "Instructions and evidence hand-in",
-  },
+  { type: "prioritization", label: "Idea shortlist", hint: "Capture ideas, then choose priorities" },
+  { type: "worksheet", label: "Fillable worksheet", hint: "Structured fields learners complete" },
+  { type: "card_collection", label: "Repeatable cards", hint: "Learners add structured cards" },
+  { type: "linked_scorecard", label: "Linked scorecard", hint: "Score cards captured earlier" },
+  { type: "reflection", label: "Reflection", hint: "Open response or exit ticket" },
+  { type: "task", label: "Practice task", hint: "Instructions and evidence hand-in" },
   { type: "break", label: "Break", hint: "Keep timing visible" },
 ];
 
+/** Fields that belong to the saved plan (everything the Save button sends). */
+function planSnapshot(session: LiveSessionRecord) {
+  return JSON.stringify({
+    title: session.title,
+    description: session.description,
+    pace: session.pace,
+    access: session.access,
+    invitedEmails: session.invitedEmails,
+    scheduledStart: session.scheduledStart,
+    settings: session.settings,
+    activities: session.activities,
+    parts: session.parts,
+  });
+}
+
 export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
   const [data, setData] = useState<StudioData | null>(null);
-  const [tab, setTab] = useState<"plan" | "facilitate" | "share">("plan");
+  const [savedPlan, setSavedPlan] = useState("");
+  const [tab, setTab] = useQueryTab(STUDIO_TABS, "plan");
   const [selectedId, setSelectedId] = useState("");
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
+  const [notice, setNotice] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   const [materials, setMaterials] = useState<CourseMaterialRecord[]>([]);
   const [labWorkspaces, setLabWorkspaces] = useState<LabWorkspaceRecord[]>([]);
 
   const load = useCallback(
     async (quiet = false) => {
-      if (!quiet) setNotice("");
-      const res = await fetch(`/api/educator/live-sessions/${sessionId}`, {
-        cache: "no-store",
-      });
+      if (!quiet) setNotice(null);
+      const res = await fetch(`/api/educator/live-sessions/${sessionId}`, { cache: "no-store" });
       const next = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (!quiet) setNotice(next.error || "Could not load this session.");
+        if (!quiet) setNotice({ tone: "error", text: next.error || "Could not load this session." });
         return;
       }
       setData(next);
-      setSelectedId(
-        (current) => current || next.session.activities[0]?.id || "",
-      );
+      setSavedPlan(planSnapshot(next.session));
+      setSelectedId((current) => current || next.session.activities[0]?.id || "");
     },
     [sessionId],
   );
@@ -135,58 +122,56 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+
   useEffect(() => {
     const slug = data?.session.courseSlug;
     if (!slug) return;
     void fetch(`/api/educator/courses/${slug}/materials`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => setMaterials(body?.materials || []));
-    void fetch(`/api/educator/courses/${slug}/lab-workspaces`, {
-      cache: "no-store",
-    })
+    void fetch(`/api/educator/courses/${slug}/lab-workspaces`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => setLabWorkspaces(body?.workspaces || []));
   }, [data?.session.courseSlug]);
+
+  // Refresh participation while the room is open, except while editing.
   useEffect(() => {
-    if (
-      tab === "plan" ||
-      (data?.session.status !== "live" && data?.session.status !== "lobby")
-    )
-      return;
+    if (tab === "plan" || tab === "settings") return;
+    if (data?.session.status !== "live" && data?.session.status !== "lobby") return;
     const interval = window.setInterval(() => void load(true), 3000);
     return () => window.clearInterval(interval);
   }, [data?.session.status, load, tab]);
 
-  const selected = data?.session.activities.find(
-    (activity) => activity.id === selectedId,
+  const dirty = useMemo(
+    () => (data ? planSnapshot(data.session) !== savedPlan : false),
+    [data, savedPlan],
   );
+
+  const selected = data?.session.activities.find((activity) => activity.id === selectedId);
   const current = data?.session.activities.find(
     (activity) => activity.id === data.session.currentActivityId,
   );
   const currentPart = data?.session.parts.find(
-    (part) =>
-      part.id === data.session.currentPartId ||
-      part.activityIds.includes(current?.id || ""),
+    (part) => part.id === data.session.currentPartId || part.activityIds.includes(current?.id || ""),
   );
   const currentPartActivities = currentPart
     ? currentPart.activityIds.flatMap((activityId) => {
-        const activity = data?.session.activities.find(
-          (candidate) => candidate.id === activityId,
-        );
+        const activity = data?.session.activities.find((candidate) => candidate.id === activityId);
         return activity ? [activity] : [];
       })
     : data?.session.activities || [];
-  const currentPartIndex = currentPartActivities.findIndex(
-    (activity) => activity.id === current?.id,
-  );
+  const currentPartIndex = currentPartActivities.findIndex((activity) => activity.id === current?.id);
   const nextActivity = currentPartActivities[currentPartIndex + 1];
 
   function updateSession(patch: Partial<LiveSessionRecord>) {
     setData((currentData) =>
-      currentData
-        ? { ...currentData, session: { ...currentData.session, ...patch } }
-        : currentData,
+      currentData ? { ...currentData, session: { ...currentData.session, ...patch } } : currentData,
     );
+  }
+
+  function updateSettings(patch: Partial<LiveSessionRecord["settings"]>) {
+    if (!data) return;
+    updateSession({ settings: { ...data.session.settings, ...patch } });
   }
 
   function updateActivity(activityId: string, patch: Partial<LiveActivity>) {
@@ -201,7 +186,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
   async function savePlan() {
     if (!data || saving) return;
     setSaving(true);
-    setNotice("");
+    setNotice(null);
     const res = await fetch(`/api/educator/live-sessions/${sessionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -220,8 +205,8 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
     const next = await res.json().catch(() => ({}));
     if (res.ok) {
       setData((value) => (value ? { ...value, session: next.session } : value));
-      setNotice("Session plan saved.");
-    } else setNotice(next.error || "Could not save the session plan.");
+      setSavedPlan(planSnapshot(next.session));
+    } else setNotice({ tone: "error", text: next.error || "Could not save the session plan." });
     setSaving(false);
   }
 
@@ -233,7 +218,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
   ) {
     if (running) return;
     setRunning(true);
-    setNotice("");
+    setNotice(null);
     const res = await fetch(`/api/educator/live-sessions/${sessionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -241,37 +226,33 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
     });
     const next = await res.json().catch(() => ({}));
     if (res.ok) {
-      setData((currentData) =>
-        currentData ? { ...currentData, session: next.session } : currentData,
-      );
+      setData((currentData) => (currentData ? { ...currentData, session: next.session } : currentData));
+      setSavedPlan(planSnapshot(next.session));
       const active = next.session?.activities?.find(
         (item: LiveActivity) => item.id === next.session.currentActivityId,
       );
-      setNotice(
+      const message =
         commandName === "activate" || commandName === "start"
-          ? `Learners are now seeing ${active?.title || "the active activity"}.`
+          ? `Learners now see ${active?.title || "the active activity"}.`
           : commandName === "close_activity"
-            ? "Responses are closed. Learners still see this activity while you debrief."
+            ? "Responses closed. Learners still see this activity while you debrief."
             : commandName === "open_lobby"
-              ? "Lobby open. Learners can join; activities remain hidden until you begin."
+              ? "Lobby open. Learners can join; activities stay hidden until you begin."
               : commandName === "end"
                 ? "Session ended. Learner responses are saved."
-                : "Live room updated.",
-      );
+                : null;
+      if (message) setNotice({ tone: "info", text: message });
       void load(true);
-      if (commandName === "open_lobby") setTab("share");
-      if (commandName === "start" || commandName === "activate")
-        setTab("facilitate");
-    } else setNotice(next.error || "Could not update the live room.");
+      if (commandName === "open_lobby") setTab("invite");
+      if (commandName === "start" || commandName === "activate") setTab("run");
+    } else setNotice({ tone: "error", text: next.error || "Could not update the live room." });
     setRunning(false);
   }
 
   function addActivity(type: LiveActivityType) {
     if (!data) return;
     const id = crypto.randomUUID();
-    const label =
-      activityChoices.find((choice) => choice.type === type)?.label ||
-      "Activity";
+    const label = activityChoices.find((choice) => choice.type === type)?.label || "Activity";
     const activity: LiveActivity = {
       id,
       type,
@@ -281,10 +262,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
       randomizeOptions: type === "quiz",
       showResults: type === "poll" || type === "quiz" || type === "setup_check",
       entryLabel: type === "prioritization" ? "Add an idea" : undefined,
-      selectionPrompt:
-        type === "prioritization"
-          ? "Choose the ideas you want to take forward."
-          : undefined,
+      selectionPrompt: type === "prioritization" ? "Choose the ideas you want to take forward." : undefined,
       minItems: type === "prioritization" ? 3 : undefined,
       maxSelections: type === "prioritization" ? 3 : undefined,
       worksheetFields:
@@ -292,10 +270,7 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
           ? [
               {
                 id: "card-title",
-                label:
-                  type === "card_collection"
-                    ? "Card title"
-                    : "Workbook question",
+                label: type === "card_collection" ? "Card title" : "Workbook question",
                 type: "long_text",
                 required: true,
               },
@@ -304,38 +279,22 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
       itemTitleFieldId: type === "card_collection" ? "card-title" : undefined,
       sourceActivityId:
         type === "linked_scorecard"
-          ? data.session.activities.find(
-              (item) => item.type === "card_collection",
-            )?.id
+          ? data.session.activities.find((item) => item.type === "card_collection")?.id
           : undefined,
       scoreCriteria:
         type === "linked_scorecard"
-          ? [
-              {
-                id: "impact",
-                label: "Impact",
-                min: 1,
-                max: 5,
-                lowLabel: "Low",
-                highLabel: "High",
-              },
-            ]
+          ? [{ id: "impact", label: "Impact", min: 1, max: 5, lowLabel: "Low", highLabel: "High" }]
           : [],
       points: type === "quiz" ? 1 : 0,
       options: ["poll", "quiz", "setup_check"].includes(type)
         ? [
-            {
-              id: crypto.randomUUID(),
-              label: "Option 1",
-              isCorrect: type === "quiz",
-            },
+            { id: crypto.randomUUID(), label: "Option 1", isCorrect: type === "quiz" },
             { id: crypto.randomUUID(), label: "Option 2", isCorrect: false },
           ]
         : [],
     };
     updateSession({ activities: [...data.session.activities, activity] });
     setSelectedId(id);
-    setAddOpen(false);
   }
 
   function moveActivity(id: string, direction: -1 | 1) {
@@ -344,554 +303,180 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
     const index = activities.findIndex((activity) => activity.id === id);
     const nextIndex = index + direction;
     if (index < 0 || nextIndex < 0 || nextIndex >= activities.length) return;
-    [activities[index], activities[nextIndex]] = [
-      activities[nextIndex],
-      activities[index],
-    ];
+    [activities[index], activities[nextIndex]] = [activities[nextIndex], activities[index]];
     updateSession({ activities });
   }
 
   function removeActivity(id: string) {
     if (!data) return;
-    const activities = data.session.activities.filter(
-      (activity) => activity.id !== id,
-    );
+    if (!window.confirm("Remove this activity?")) return;
+    const activities = data.session.activities.filter((activity) => activity.id !== id);
     updateSession({ activities });
     setSelectedId(activities[0]?.id || "");
   }
 
   if (!data) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-500">
-        {notice || "Loading live session…"}
+      <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-white text-sm text-muted-foreground">
+        {notice?.text || (
+          <>
+            <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Loading live session
+          </>
+        )}
       </div>
     );
   }
 
-  const joinPath = `/live/${data.session.id}`;
-  const joinUrl =
-    typeof window === "undefined"
-      ? joinPath
-      : `${window.location.origin}${joinPath}`;
-  const joinPortal =
-    typeof window === "undefined" ? "/join" : `${window.location.origin}/join`;
-  const qrPath = `/api/educator/live-sessions/${data.session.id}/qr`;
+  const session = data.session;
+  const joinPath = `/live/${session.id}`;
+  const joinUrl = typeof window === "undefined" ? joinPath : `${window.location.origin}${joinPath}`;
+  const joinPortal = typeof window === "undefined" ? "/join" : `${window.location.origin}/join`;
+  const qrPath = `/api/educator/live-sessions/${session.id}/qr`;
 
   return (
     <div
-      style={getCourseThemeStyle(data.session.courseTheme) as CSSProperties}
-      className="space-y-5"
+      style={getCourseThemeStyle(session.courseTheme) as CSSProperties}
       data-copilot-target="live-facilitation-studio"
     >
-      <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+      <Link
+        href={`/educator/courses/${session.courseSlug}/live`}
+        className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
+        Live sessions
+      </Link>
+      <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <SessionStatus status={data.session.status} />
-            <span className="text-xs text-slate-400">
-              Code {formatCode(data.session.joinCode)}
-            </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-lg font-medium tracking-tight">{session.title}</h1>
+            <SessionStatus status={session.status} />
           </div>
-          <h2 className="mt-2 truncate text-2xl font-bold tracking-tight text-slate-950">
-            {data.session.title}
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {data.session.activities.length} activities ·{" "}
-            {data.session.participantCount} learners joined
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Code {formatCode(session.joinCode)} · {session.participantCount} joined ·{" "}
+            {session.activities.length} activities
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {data.session.status === "draft" ? (
-            <button
-              onClick={() => command("open_lobby")}
-              disabled={running}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              <MonitorUp className="h-4 w-4" /> Open room for joining
-            </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {session.parts.length ? (
+            <ProgrammeMenu
+              parts={session.parts}
+              running={running}
+              onOpen={(partId) => command("open_part", undefined, partId)}
+              onClose={(partId) => command("close_part", undefined, partId)}
+              onPaceChange={(partId, pace) => command("set_part_pace", undefined, partId, pace)}
+            />
           ) : null}
-          {data.session.status === "lobby" ||
-          (data.session.status === "live" && !current) ? (
-            <button
+          {session.status === "draft" ? (
+            <Button icon={MonitorUp} onClick={() => command("open_lobby")} disabled={running}>
+              Open for joining
+            </Button>
+          ) : null}
+          {session.status === "lobby" || (session.status === "live" && !current) ? (
+            <Button
+              variant="primary"
+              icon={Play}
               onClick={() => command("start")}
-              disabled={running || !data.session.activities.length}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40"
+              disabled={running || !session.activities.length}
             >
-              <Play className="h-4 w-4" />{" "}
-              {data.session.status === "live"
-                ? "Restore live activity"
-                : "Present first activity"}
-            </button>
+              {session.status === "live" ? "Restore activity" : "Start"}
+            </Button>
           ) : null}
-          {data.session.status === "live" ? (
-            <button
-              onClick={() => command("end")}
-              disabled={running}
-              className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-700 hover:bg-red-50"
-            >
-              <CircleStop className="h-4 w-4" /> End session
-            </button>
+          {session.status === "live" ? (
+            <Button variant="danger" icon={CircleStop} onClick={() => command("end")} disabled={running}>
+              End
+            </Button>
           ) : null}
         </div>
       </header>
 
-      <div className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1.5">
-        <Tab
-          active={tab === "plan"}
-          onClick={() => setTab("plan")}
-          icon={BookOpen}
-        >
-          Plan
-        </Tab>
-        <Tab
-          active={tab === "facilitate"}
-          onClick={() => setTab("facilitate")}
-          icon={Radio}
-        >
-          Facilitate
-        </Tab>
-        <Tab
-          active={tab === "share"}
-          onClick={() => setTab("share")}
-          icon={QrCode}
-        >
-          Invite learners
-        </Tab>
-      </div>
+      <Tabs
+        className="mb-5"
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: "plan", label: "Plan" },
+          { value: "run", label: "Run" },
+          { value: "invite", label: "Invite" },
+          { value: "settings", label: "Settings" },
+        ]}
+      />
 
       {notice ? (
         <div
           className={cn(
-            "rounded-xl px-4 py-3 text-sm",
-            notice.includes("saved")
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-amber-50 text-amber-800",
+            "mb-4 rounded-lg px-3 py-2 text-sm",
+            notice.tone === "error" ? "bg-red-50 text-red-700" : "bg-muted text-stone-700",
           )}
         >
-          {notice}
+          {notice.text}
         </div>
       ) : null}
 
-      {data.session.parts.length ? (
-        <ProgrammeSessionControls
-          parts={data.session.parts}
-          running={running}
-          onOpen={(partId) => command("open_part", undefined, partId)}
-          onClose={(partId) => command("close_part", undefined, partId)}
-          onPaceChange={(partId, pace) =>
-            command("set_part_pace", undefined, partId, pace)
-          }
-        />
-      ) : null}
-
       {tab === "plan" ? (
-        <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
-          <aside className="rounded-2xl border border-slate-200 bg-white p-3">
-            <div className="flex items-center justify-between px-2 py-2">
-              <div>
-                <p className="text-sm font-bold text-slate-950">Run of show</p>
-                <p className="text-xs text-slate-400">
-                  Learners see this as a workbook
-                </p>
-              </div>
-              <button
-                onClick={() => setAddOpen((value) => !value)}
-                className="rounded-lg bg-slate-950 p-2 text-white"
-                aria-label="Add activity"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-            {addOpen ? <AddMenu onAdd={addActivity} /> : null}
-            <div className="mt-2 space-y-1">
-              {data.session.activities.map((activity, index) => (
-                <button
-                  key={activity.id}
-                  onClick={() => setSelectedId(activity.id)}
-                  className={cn(
-                    "group flex w-full items-center gap-2 rounded-xl px-2 py-2.5 text-left",
-                    selectedId === activity.id
-                      ? "bg-slate-950 text-white"
-                      : "hover:bg-slate-50",
-                  )}
-                >
-                  <GripVertical
-                    className={cn(
-                      "h-4 w-4 shrink-0",
-                      selectedId === activity.id
-                        ? "text-slate-500"
-                        : "text-slate-300",
-                    )}
-                  />
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/10 text-[10px] font-bold">
-                    {index + 1}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-bold">
-                      {activity.title}
-                    </span>
-                    <span
-                      className={cn(
-                        "block text-[10px] uppercase tracking-wide",
-                        selectedId === activity.id
-                          ? "text-slate-400"
-                          : "text-slate-400",
-                      )}
-                    >
-                      {activityLabel(activity.type)}
-                      {activity.estimatedMinutes
-                        ? ` · ${activity.estimatedMinutes} min`
-                        : ""}
-                    </span>
-                  </span>
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-40" />
-                </button>
-              ))}
-              {!data.session.activities.length ? (
-                <p className="px-3 py-8 text-center text-sm text-slate-400">
-                  Add the first learning moment.
-                </p>
-              ) : null}
-            </div>
-          </aside>
-
-          <div className="space-y-5">
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-slate-950">
-                    Session settings
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    One room, adaptable delivery
-                  </p>
-                </div>
-                <Settings2 className="h-4 w-4 text-slate-300" />
-              </div>
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <Field label="Session title">
-                  <input
-                    value={data.session.title}
-                    onChange={(event) =>
-                      updateSession({ title: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                {data.session.parts.length ? (
-                  <Field label="Programme delivery">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
-                      Pace is set for each programme session above.
-                    </div>
-                  </Field>
-                ) : (
-                  <Field label="Delivery pace">
-                    <select
-                      value={data.session.pace}
-                      onChange={(event) =>
-                        updateSession({
-                          pace: event.target.value as LiveSessionRecord["pace"],
-                        })
-                      }
-                      className={inputClass}
-                    >
-                      <option value="facilitator">
-                        Facilitator controls each step
-                      </option>
-                      <option value="learner">
-                        Learners move at their own pace
-                      </option>
-                    </select>
-                  </Field>
-                )}
-                <Field label="Who can join">
-                  <select
-                    value={data.session.access}
-                    onChange={(event) =>
-                      updateSession({
-                        access: event.target
-                          .value as LiveSessionRecord["access"],
-                      })
-                    }
-                    className={inputClass}
-                  >
-                    <option value="enrolled">Enrolled learners</option>
-                    <option value="invited">Invited email addresses</option>
-                    <option value="open">Anyone with the link</option>
-                  </select>
-                </Field>
-                <Field label="Scheduled start">
-                  <input
-                    type="datetime-local"
-                    value={toDateTimeLocal(data.session.scheduledStart)}
-                    onChange={(event) =>
-                      updateSession({
-                        scheduledStart: event.target.value
-                          ? new Date(event.target.value).toISOString()
-                          : undefined,
-                      })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-              </div>
-              {data.session.access === "invited" ? (
-                <Field label="Invited emails">
-                  <textarea
-                    value={data.session.invitedEmails.join("\n")}
-                    onChange={(event) =>
-                      updateSession({
-                        invitedEmails: event.target.value
-                          .split(/[\n,;]/)
-                          .map((email) => email.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                    rows={3}
-                    placeholder="one@email.com"
-                    className={`${inputClass} mt-2 resize-y`}
-                  />
-                </Field>
-              ) : null}
-              <div className="mt-4 flex flex-wrap gap-4">
-                <Toggle
-                  checked={data.session.settings.allowLateJoin}
-                  onChange={(value) =>
-                    updateSession({
-                      settings: {
-                        ...data.session.settings,
-                        allowLateJoin: value,
-                      },
-                    })
-                  }
-                  label="Allow late join"
-                />
-                <Toggle
-                  checked={data.session.settings.showParticipantNames}
-                  onChange={(value) =>
-                    updateSession({
-                      settings: {
-                        ...data.session.settings,
-                        showParticipantNames: value,
-                      },
-                    })
-                  }
-                  label="Names in private results"
-                />
-                <Toggle
-                  checked={data.session.settings.showLeaderboard}
-                  onChange={(value) =>
-                    updateSession({
-                      settings: {
-                        ...data.session.settings,
-                        showLeaderboard: value,
-                      },
-                    })
-                  }
-                  label="Leaderboard"
-                />
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-sm font-bold text-slate-950">
-                    Learner copilot
-                  </p>
-                  <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
-                    Choose whether learners can use AI guidance inside this live
-                    room, and keep its help within the boundaries of your
-                    session.
-                  </p>
-                </div>
-                <Toggle
-                  checked={data.session.settings.learnerCopilot.enabled}
-                  onChange={(enabled) =>
-                    updateSession({
-                      settings: {
-                        ...data.session.settings,
-                        learnerCopilot: {
-                          ...data.session.settings.learnerCopilot,
-                          enabled,
-                        },
-                      },
-                    })
-                  }
-                  label={
-                    data.session.settings.learnerCopilot.enabled
-                      ? "Visible to learners"
-                      : "Hidden from learners"
-                  }
-                />
-              </div>
-              <div
-                className={cn(
-                  "mt-5 grid gap-3 md:grid-cols-2",
-                  !data.session.settings.learnerCopilot.enabled && "opacity-45",
-                )}
-              >
-                <CopilotPermission
-                  title="Explain the current activity"
-                  description="Clarify the visible prompt, instructions, and concepts."
-                  checked={
-                    data.session.settings.learnerCopilot.explainCurrentActivity
-                  }
-                  disabled={!data.session.settings.learnerCopilot.enabled}
-                  onChange={(explainCurrentActivity) =>
-                    updateSession({
-                      settings: {
-                        ...data.session.settings,
-                        learnerCopilot: {
-                          ...data.session.settings.learnerCopilot,
-                          explainCurrentActivity,
-                        },
-                      },
-                    })
-                  }
-                />
-                <CopilotPermission
-                  title="Coach learner responses"
-                  description="Use questions and hints without writing or submitting answers."
-                  checked={data.session.settings.learnerCopilot.coachResponses}
-                  disabled={!data.session.settings.learnerCopilot.enabled}
-                  onChange={(coachResponses) =>
-                    updateSession({
-                      settings: {
-                        ...data.session.settings,
-                        learnerCopilot: {
-                          ...data.session.settings.learnerCopilot,
-                          coachResponses,
-                        },
-                      },
-                    })
-                  }
-                />
-                <CopilotPermission
-                  title="Use wider course material"
-                  description="Draw from material beyond the activity currently on screen."
-                  checked={
-                    data.session.settings.learnerCopilot.useCourseMaterials
-                  }
-                  disabled={!data.session.settings.learnerCopilot.enabled}
-                  onChange={(useCourseMaterials) =>
-                    updateSession({
-                      settings: {
-                        ...data.session.settings,
-                        learnerCopilot: {
-                          ...data.session.settings.learnerCopilot,
-                          useCourseMaterials,
-                        },
-                      },
-                    })
-                  }
-                />
-                <CopilotPermission
-                  title="Give direct explanations"
-                  description="Explain concepts directly instead of always starting with hints."
-                  checked={
-                    data.session.settings.learnerCopilot.giveDirectExplanations
-                  }
-                  disabled={!data.session.settings.learnerCopilot.enabled}
-                  onChange={(giveDirectExplanations) =>
-                    updateSession({
-                      settings: {
-                        ...data.session.settings,
-                        learnerCopilot: {
-                          ...data.session.settings.learnerCopilot,
-                          giveDirectExplanations,
-                        },
-                      },
-                    })
-                  }
-                />
-              </div>
-              <p className="mt-4 text-[11px] leading-5 text-slate-400">
-                Hidden quiz answers and private facilitator notes are never
-                available to the learner copilot.
-              </p>
-            </section>
-
+        <>
+          <div className="grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+            <RunOfShow
+              session={session}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onAdd={addActivity}
+            />
             {selected ? (
               <ActivityEditor
+                key={selected.id}
                 activity={selected}
-                activities={data.session.activities}
+                activities={session.activities}
                 materials={materials}
                 labWorkspaces={labWorkspaces}
-                index={data.session.activities.findIndex(
-                  (activity) => activity.id === selected.id,
-                )}
+                index={session.activities.findIndex((activity) => activity.id === selected.id)}
+                total={session.activities.length}
                 onChange={(patch) => updateActivity(selected.id, patch)}
                 onMove={(direction) => moveActivity(selected.id, direction)}
                 onRemove={() => removeActivity(selected.id)}
               />
-            ) : null}
-            <div className="sticky bottom-4 flex justify-end">
-              <button
-                onClick={savePlan}
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-lg disabled:opacity-50"
-              >
-                {saving ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}{" "}
-                Save plan
-              </button>
-            </div>
+            ) : (
+              <EmptyState icon={Layers} title="Add the first activity" />
+            )}
           </div>
-        </div>
+          <SaveBar dirty={dirty} saving={saving} onSave={savePlan} label="Save plan" />
+        </>
       ) : null}
 
-      {tab === "facilitate" ? (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      {tab === "settings" ? (
+        <>
+          <SessionSettings session={session} onSession={updateSession} onSettings={updateSettings} />
+          <SaveBar dirty={dirty} saving={saving} onSave={savePlan} label="Save settings" />
+        </>
+      ) : null}
+
+      {tab === "run" ? (
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <Card padded={false} className="overflow-hidden">
             {current ? (
               <>
-                <div className="border-b border-slate-100 p-6 sm:p-8">
+                <div className="border-b border-border p-6">
                   <div className="flex items-center justify-between gap-3">
-                    <span
-                      className={cn(
-                        "rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest",
-                        current.status === "open"
-                          ? "bg-red-50 text-red-700"
-                          : "bg-slate-100 text-slate-600",
-                      )}
-                    >
-                      {current.status === "open"
-                        ? "Learners see this now"
-                        : "Responses closed · still presented"}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      {current.estimatedMinutes
-                        ? `${current.estimatedMinutes} min`
-                        : activityLabel(current.type)}
+                    <Badge tone={current.status === "open" ? "live" : "neutral"} dot={current.status === "open"}>
+                      {current.status === "open" ? "Learners see this now" : "Responses closed"}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {activityLabel(current.type)}
+                      {current.estimatedMinutes ? ` · ${current.estimatedMinutes} min` : ""}
                     </span>
                   </div>
-                  <p className="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-                    {activityLabel(current.type)}
-                  </p>
-                  <h3 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
-                    {current.title}
-                  </h3>
+                  <h2 className="mt-5 text-2xl font-medium tracking-tight">{current.title}</h2>
                   {current.prompt ? (
-                    <p className="mt-4 text-lg leading-8 text-slate-700">
-                      {current.prompt}
-                    </p>
+                    <p className="mt-3 text-base leading-7 text-stone-700">{current.prompt}</p>
                   ) : null}
                   {current.facilitatorNotes ? (
-                    <div className="mt-6 rounded-xl bg-amber-50 p-4">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">
-                        Private facilitator note
-                      </p>
-                      <p className="mt-1 text-sm leading-6 text-amber-900">
-                        {current.facilitatorNotes}
-                      </p>
+                    <div className="mt-5 rounded-lg bg-amber-50 px-4 py-3">
+                      <p className="text-xs font-medium text-amber-700">Private note</p>
+                      <p className="mt-1 text-sm leading-6 text-amber-900">{current.facilitatorNotes}</p>
                     </div>
                   ) : null}
                 </div>
                 {current.materialId ? (
-                  <div className="border-b border-slate-100 p-4 sm:p-6">
+                  <div className="border-b border-border p-4 sm:p-6">
                     <CourseMaterialViewer
                       key={current.id}
                       materialId={current.materialId}
@@ -903,273 +488,174 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
                   </div>
                 ) : null}
                 {current.labWorkspaceId ? (
-                  <div className="border-b border-slate-100 p-4 sm:p-6">
-                    <LearnerLabWorkspace
-                      workspaceId={current.labWorkspaceId}
-                      entryPath={current.labEntryPath}
-                      compact
-                    />
+                  <div className="border-b border-border p-4 sm:p-6">
+                    <LearnerLabWorkspace workspaceId={current.labWorkspaceId} entryPath={current.labEntryPath} compact />
                   </div>
                 ) : null}
                 <LiveResults
                   activity={current}
                   results={data.results[current.id]}
-                  responses={data.session.responseCounts[current.id] || 0}
-                  participants={data.session.participantCount}
+                  responses={session.responseCounts[current.id] || 0}
+                  participants={session.participantCount}
                 />
-                <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                  <button
+                <div className="flex flex-col gap-3 border-t border-border bg-page px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <Button
+                    icon={LockKeyhole}
                     onClick={() => command("close_activity", current.id)}
                     disabled={running || current.status === "closed"}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 disabled:opacity-40"
                   >
-                    <LockKeyhole className="h-4 w-4" /> Close responses
-                  </button>
+                    Close responses
+                  </Button>
                   {nextActivity ? (
-                    <button
-                      onClick={() => command("activate", nextActivity.id)}
-                      disabled={running}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white"
-                    >
+                    <Button variant="primary" onClick={() => command("activate", nextActivity.id)} disabled={running}>
                       Next: {nextActivity.title}
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
+                      <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
+                    </Button>
                   ) : (
-                    <button
-                      onClick={() => command("end")}
-                      disabled={running}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white"
-                    >
-                      <Check className="h-4 w-4" /> Finish session
-                    </button>
+                    <Button variant="primary" icon={Check} onClick={() => command("end")} disabled={running}>
+                      Finish session
+                    </Button>
                   )}
                 </div>
               </>
             ) : (
               <div className="p-12 text-center">
-                <Radio className="mx-auto h-7 w-7 text-slate-300" />
-                <h3 className="mt-4 text-lg font-bold text-slate-900">
-                  {data.session.status === "live"
-                    ? "Restore the live activity"
-                    : "The room is ready"}
-                </h3>
-                <p className="mt-2 text-sm text-slate-500">
-                  {data.session.status === "live"
-                    ? "The room is live, but no activity is currently presented. Restore the first activity for everyone."
-                    : "Open the lobby, invite learners, then start when the room is settled."}
+                <Radio className="mx-auto h-6 w-6 text-stone-300" strokeWidth={1.75} />
+                <p className="mt-3 text-sm font-medium">
+                  {session.status === "live"
+                    ? "No activity is presented"
+                    : session.status === "ended"
+                      ? "This session has ended"
+                      : "The room is ready"}
                 </p>
-                {data.session.status === "draft" ? (
-                  <button
-                    onClick={() => command("open_lobby")}
-                    className="mt-5 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white"
-                  >
-                    Open lobby
-                  </button>
-                ) : data.session.status === "lobby" ||
-                  data.session.status === "live" ? (
-                  <button
-                    onClick={() => command("start")}
-                    className="mt-5 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white"
-                  >
-                    {data.session.status === "live"
-                      ? "Restore first activity"
-                      : "Start first activity"}
-                  </button>
-                ) : null}
+                <div className="mt-4 flex justify-center">
+                  {session.status === "draft" ? (
+                    <Button variant="primary" icon={MonitorUp} onClick={() => command("open_lobby")}>
+                      Open lobby
+                    </Button>
+                  ) : session.status === "lobby" || session.status === "live" ? (
+                    <Button variant="primary" icon={Play} onClick={() => command("start")}>
+                      {session.status === "live" ? "Restore first activity" : "Start first activity"}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             )}
-          </section>
-          <aside className="space-y-5">
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-950">Room</h3>
-                <Users className="h-4 w-4 text-slate-300" />
-              </div>
-              <div className="mt-4 flex items-end justify-between">
-                <div>
-                  <p className="text-3xl font-bold text-slate-950">
-                    {data.session.participantCount}
-                  </p>
-                  <p className="text-xs text-slate-400">learners joined</p>
-                </div>
+          </Card>
+          <aside className="space-y-4">
+            <Card padded={false}>
+              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Users className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
+                  {session.participantCount} in the room
+                </span>
                 <button
-                  onClick={() => setTab("share")}
-                  className="text-xs font-bold text-slate-700 hover:text-slate-950"
+                  type="button"
+                  onClick={() => setTab("invite")}
+                  className="text-xs text-muted-foreground hover:text-foreground"
                 >
-                  Show join screen
+                  Join screen
                 </button>
               </div>
-              <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">
+              <div className="max-h-56 space-y-0.5 overflow-y-auto p-2">
                 {data.participants.map((participant) => (
-                  <div
-                    key={participant.id}
-                    className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2"
-                  >
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                    <span className="truncate text-xs font-medium text-slate-700">
-                      {participant.displayName}
-                    </span>
+                  <div key={participant.id} className="flex items-center gap-2 rounded-md px-2 py-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span className="truncate text-sm text-stone-700">{participant.displayName}</span>
                   </div>
                 ))}
+                {!data.participants.length ? (
+                  <p className="px-2 py-4 text-center text-xs text-muted-foreground">Nobody has joined yet.</p>
+                ) : null}
               </div>
-            </section>
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h3 className="text-sm font-bold text-slate-950">Run of show</h3>
-              <div className="mt-3 space-y-1">
-                {data.session.activities.map((activity, index) => (
-                  <button
-                    key={activity.id}
-                    onClick={() => command("activate", activity.id)}
-                    disabled={
-                      data.session.status === "ended" ||
-                      Boolean(
-                        data.session.parts.find((part) =>
-                          part.activityIds.includes(activity.id),
-                        )?.status === "closed",
-                      )
-                    }
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left",
-                      activity.id === current?.id
-                        ? "bg-slate-950 text-white"
-                        : "hover:bg-slate-50",
-                    )}
-                  >
-                    <span className="text-[10px] font-bold opacity-50">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-xs font-bold">
-                      {activity.title}
-                    </span>
-                    {activity.status === "closed" ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    ) : null}
-                  </button>
-                ))}
+            </Card>
+            <Card padded={false}>
+              <p className="border-b border-border px-4 py-3 text-sm font-medium">Jump to</p>
+              <div className="max-h-[420px] space-y-0.5 overflow-y-auto p-2">
+                {session.activities.map((activity, index) => {
+                  const partClosed =
+                    session.parts.find((part) => part.activityIds.includes(activity.id))?.status === "closed";
+                  return (
+                    <button
+                      key={activity.id}
+                      type="button"
+                      onClick={() => command("activate", activity.id)}
+                      disabled={session.status === "ended" || partClosed}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors disabled:opacity-40",
+                        activity.id === current?.id ? "bg-accent" : "hover:bg-muted",
+                      )}
+                    >
+                      <IndexChip value={index + 1} active={activity.id === current?.id} />
+                      <span className="min-w-0 flex-1 truncate text-sm">{activity.title}</span>
+                      {activity.status === "closed" ? (
+                        <Check className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2} />
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
-            </section>
+            </Card>
           </aside>
         </div>
       ) : null}
 
-      {tab === "share" ? (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="flex min-h-[440px] flex-col items-center justify-center rounded-2xl bg-slate-950 p-8 text-center text-white sm:p-12">
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#71E0E7]">
-              Join the live session
-            </p>
-            <h3 className="mt-4 max-w-2xl text-3xl font-bold tracking-tight sm:text-4xl">
-              {data.session.title}
-            </h3>
-            <div className="mt-8 grid items-center gap-8 sm:grid-cols-[220px_1fr] sm:text-left">
-              <div className="rounded-2xl bg-white p-3">
+      {tab === "invite" ? (
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <section className="flex min-h-[420px] flex-col items-center justify-center rounded-xl bg-stone-900 p-8 text-center text-white sm:p-12">
+            <p className="text-sm text-stone-400">Join the live session</p>
+            <h2 className="mt-3 max-w-2xl text-3xl font-medium tracking-tight">{session.title}</h2>
+            <div className="mt-8 grid items-center gap-8 sm:grid-cols-[200px_1fr] sm:text-left">
+              <div className="rounded-xl bg-white p-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`${qrPath}?format=png`}
-                  alt={`QR code to join ${data.session.title}`}
+                  alt={`QR code to join ${session.title}`}
                   className="aspect-square w-full"
                 />
               </div>
               <div>
-                <p className="text-sm text-slate-400">
-                  Scan the QR code, or visit
-                </p>
-                <p className="mt-1 break-all text-lg font-bold">{joinPortal}</p>
-                <p className="mt-6 text-sm text-slate-400">Enter code</p>
-                <p className="mt-1 text-5xl font-bold tracking-[0.16em] text-[#B8F56D]">
-                  {formatCode(data.session.joinCode)}
+                <p className="text-sm text-stone-400">Scan, or visit</p>
+                <p className="mt-1 break-all text-lg font-medium">{joinPortal}</p>
+                <p className="mt-6 text-sm text-stone-400">and enter</p>
+                <p className="mt-1 text-5xl font-medium tracking-[0.14em] text-teal-200">
+                  {formatCode(session.joinCode)}
                 </p>
               </div>
             </div>
           </section>
-          <aside className="space-y-5">
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h3 className="text-sm font-bold text-slate-950">
-                Share options
-              </h3>
-              <p className="mt-1 text-xs leading-5 text-slate-400">
-                Use the QR code in slides, handouts, messages, or signage.
-              </p>
-              <div className="mt-4 space-y-2">
-                <a
-                  href={`${qrPath}?format=png&download=1`}
-                  download
-                  className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
-                >
-                  <Download className="h-4 w-4" /> Download QR code · PNG
-                </a>
-                <a
-                  href={`${qrPath}?format=svg&download=1`}
-                  download
-                  className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
-                >
-                  <Download className="h-4 w-4" /> Download QR code · SVG
-                </a>
-                <ShareQrButton
-                  qrUrl={`${qrPath}?format=png`}
-                  joinUrl={joinUrl}
-                  title={data.session.title}
-                />
-                <CopyButton
-                  label="Copy direct join link"
-                  value={joinUrl}
-                  icon={Link2}
-                />
-                <CopyButton
-                  label="Copy six-digit code"
-                  value={data.session.joinCode}
-                  icon={Clipboard}
-                />
-                <a
-                  href={joinUrl}
-                  target="_blank"
-                  className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
-                >
-                  <ExternalLink className="h-4 w-4" /> Preview learner view
-                </a>
-              </div>
-            </section>
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h3 className="text-sm font-bold text-slate-950">Join policy</h3>
-              <dl className="mt-4 space-y-3 text-xs">
+          <aside className="space-y-4">
+            <Card padded={false} className="p-2">
+              <ShareLink href={`${qrPath}?format=png&download=1`} icon={Download} label="Download QR (PNG)" />
+              <ShareLink href={`${qrPath}?format=svg&download=1`} icon={Download} label="Download QR (SVG)" />
+              <ShareQrButton qrUrl={`${qrPath}?format=png`} joinUrl={joinUrl} title={session.title} />
+              <CopyButton label="Copy join link" value={joinUrl} icon={Link2} />
+              <CopyButton label="Copy code" value={session.joinCode} icon={Clipboard} />
+              <ShareLink href={joinUrl} icon={ExternalLink} label="Preview learner view" external />
+            </Card>
+            <Card>
+              <dl className="space-y-2.5 text-sm">
                 <ShareRow
-                  label="Access"
+                  label="Who can join"
                   value={
-                    data.session.access === "open"
-                      ? "Anyone with link"
-                      : data.session.access === "invited"
+                    session.access === "open"
+                      ? "Anyone with the link"
+                      : session.access === "invited"
                         ? "Invited emails"
                         : "Enrolled learners"
                   }
                 />
-                <ShareRow
-                  label="Pace"
-                  value={
-                    data.session.parts.length
-                      ? "Set per programme session"
-                      : data.session.pace === "facilitator"
-                      ? "You control it"
-                      : "Learners control it"
-                  }
-                />
-                <ShareRow
-                  label="Late join"
-                  value={
-                    data.session.settings.allowLateJoin
-                      ? "Allowed"
-                      : "Locked after start"
-                  }
-                />
-                <ShareRow
-                  label="Learner copilot"
-                  value={
-                    data.session.settings.learnerCopilot.enabled
-                      ? "Available"
-                      : "Hidden"
-                  }
-                />
+                <ShareRow label="Late join" value={session.settings.allowLateJoin ? "Allowed" : "Locked after start"} />
+                <ShareRow label="Learner copilot" value={session.settings.learnerCopilot.enabled ? "On" : "Off"} />
               </dl>
-            </section>
+              <button
+                type="button"
+                onClick={() => setTab("settings")}
+                className="mt-4 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Change in settings
+              </button>
+            </Card>
           </aside>
         </div>
       ) : null}
@@ -1177,7 +663,99 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
   );
 }
 
-function ProgrammeSessionControls({
+function RunOfShow({
+  session,
+  selectedId,
+  onSelect,
+  onAdd,
+}: {
+  session: LiveSessionRecord;
+  selectedId: string;
+  onSelect: (id: string) => void;
+  onAdd: (type: LiveActivityType) => void;
+}) {
+  // Group activities under programme sessions when the room has them.
+  const groups = useMemo(() => {
+    const indexOf = new Map(session.activities.map((activity, index) => [activity.id, index]));
+    if (!session.parts.length) {
+      return [{ id: "all", title: "", items: session.activities }];
+    }
+    const assigned = new Set(session.parts.flatMap((part) => part.activityIds));
+    const partGroups = session.parts.map((part) => ({
+      id: part.id,
+      title: part.title,
+      items: part.activityIds
+        .map((id) => session.activities.find((activity) => activity.id === id))
+        .filter((activity): activity is LiveActivity => Boolean(activity))
+        .sort((a, b) => (indexOf.get(a.id) || 0) - (indexOf.get(b.id) || 0)),
+    }));
+    const loose = session.activities.filter((activity) => !assigned.has(activity.id));
+    return loose.length ? [...partGroups, { id: "loose", title: "Not in a session", items: loose }] : partGroups;
+  }, [session.activities, session.parts]);
+  const numberOf = (id: string) => session.activities.findIndex((activity) => activity.id === id) + 1;
+
+  return (
+    <aside className="rounded-xl border border-border bg-white shadow-card lg:sticky lg:top-0">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+        <div className="flex items-center gap-1">
+          <span className="text-sm font-medium">Run of show</span>
+          <InfoTip>Learners see this sequence as their workbook.</InfoTip>
+        </div>
+        <Popover
+          align="end"
+          className="w-64 p-1.5"
+          trigger={({ toggle }) => <IconButton label="Add activity" icon={Plus} size="sm" onClick={toggle} />}
+        >
+          {({ close }) => (
+            <div className="max-h-80 overflow-y-auto">
+              {activityChoices.map((choice) => (
+                <button
+                  key={choice.type}
+                  type="button"
+                  onClick={() => {
+                    onAdd(choice.type);
+                    close();
+                  }}
+                  className="w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-muted"
+                >
+                  <span className="block text-sm">{choice.label}</span>
+                  <span className="block text-xs text-muted-foreground">{choice.hint}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </Popover>
+      </div>
+      <div className="max-h-[calc(100dvh-17rem)] overflow-y-auto p-2">
+        {groups.map((group) => (
+          <div key={group.id} className="mb-1">
+            {group.title ? (
+              <p className="truncate px-2.5 pb-1 pt-2 text-xs font-medium text-muted-foreground">{group.title}</p>
+            ) : null}
+            <div className="space-y-0.5">
+              {group.items.map((activity) => (
+                <NavItem
+                  key={activity.id}
+                  active={selectedId === activity.id}
+                  onClick={() => onSelect(activity.id)}
+                  leading={<IndexChip value={numberOf(activity.id)} active={selectedId === activity.id} />}
+                  title={activity.title}
+                  meta={`${activityLabel(activity.type)}${activity.estimatedMinutes ? ` · ${activity.estimatedMinutes} min` : ""}`}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+        {!session.activities.length ? (
+          <p className="px-3 py-8 text-center text-sm text-muted-foreground">No activities yet.</p>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
+
+/** Compact control for programme sessions: open, close and pace each part. */
+function ProgrammeMenu({
   parts,
   running,
   onOpen,
@@ -1190,239 +768,220 @@ function ProgrammeSessionControls({
   onClose: (partId: string) => void;
   onPaceChange: (partId: string, pace: LiveSessionPart["pace"]) => void;
 }) {
+  const openCount = parts.filter((part) => part.status === "open").length;
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-sm font-bold text-slate-950">
-            Programme sessions
-          </h3>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Keep one learner link. Open any combination of sessions and choose
-            how learners move through each one.
-          </p>
-        </div>
-        <BookOpen className="h-4 w-4 shrink-0 text-slate-300" />
+    <Popover
+      align="end"
+      className="w-[360px] p-0"
+      trigger={({ open, toggle }) => (
+        <Button icon={Layers} onClick={toggle} aria-expanded={open}>
+          Programme
+          <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground">
+            {openCount}/{parts.length} open
+          </span>
+        </Button>
+      )}
+    >
+      <div className="flex items-center gap-1 border-b border-border px-4 py-3">
+        <span className="text-sm font-medium">Programme sessions</span>
+        <InfoTip>
+          Learners keep one link. Open any combination of sessions, and choose whether each one is educator guided or
+          self-guided.
+        </InfoTip>
       </div>
-      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+      <div className="max-h-[60vh] divide-y divide-border overflow-y-auto">
         {parts.map((part, index) => {
           const open = part.status === "open";
           return (
-            <article
-              key={part.id}
-              className={cn(
-                "rounded-xl border p-4",
-                open
-                  ? "border-emerald-200 bg-emerald-50/40"
-                  : "border-slate-200 bg-slate-50/50",
-              )}
-            >
-              <div className="flex items-start gap-3">
-                <span
-                  className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold",
-                    open
-                      ? "bg-emerald-600 text-white"
-                      : "bg-white text-slate-500 shadow-sm",
-                  )}
-                >
-                  {index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="truncate text-sm font-bold text-slate-950">
-                      {part.title}
-                    </h4>
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide",
-                        open
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-slate-200 text-slate-500",
-                      )}
-                    >
-                      {open ? "Open" : "Closed"}
-                    </span>
-                  </div>
-                  {part.description ? (
-                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
-                      {part.description}
-                    </p>
-                  ) : null}
-                </div>
+            <div key={part.id} className="px-4 py-3">
+              <div className="flex items-center gap-3">
+                <IndexChip value={index + 1} active={open} />
+                <span className="min-w-0 flex-1 truncate text-sm">{part.title}</span>
+                <Switch
+                  checked={open}
+                  disabled={running}
+                  label={`${part.title} open to learners`}
+                  onChange={(checked) => (checked ? onOpen(part.id) : onClose(part.id))}
+                />
               </div>
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <div className="mt-2 pl-9">
                 <select
                   value={part.pace}
                   disabled={running}
-                  onChange={(event) =>
-                    onPaceChange(
-                      part.id,
-                      event.target.value as LiveSessionPart["pace"],
-                    )
-                  }
-                  className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700"
-                  aria-label={`${part.title} delivery pace`}
+                  onChange={(event) => onPaceChange(part.id, event.target.value as LiveSessionPart["pace"])}
+                  aria-label={`${part.title} pace`}
+                  className="rounded-md border-0 bg-muted px-2 py-1 text-xs text-stone-600 outline-none"
                 >
-                  <option value="learner">Learner self-guided</option>
+                  <option value="learner">Self-guided</option>
                   <option value="facilitator">Educator guided</option>
                 </select>
-                <button
-                  type="button"
-                  disabled={running}
-                  onClick={() => (open ? onClose(part.id) : onOpen(part.id))}
-                  className={cn(
-                    "rounded-lg px-3 py-2 text-xs font-bold",
-                    open
-                      ? "border border-emerald-200 bg-white text-emerald-700"
-                      : "bg-slate-950 text-white disabled:opacity-50",
-                  )}
-                >
-                  {open ? "Close to learners" : "Open this session"}
-                </button>
               </div>
-            </article>
+            </div>
           );
         })}
       </div>
-    </section>
+    </Popover>
   );
 }
 
-const inputClass =
-  "mt-2 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none focus:border-slate-400";
+function SessionSettings({
+  session,
+  onSession,
+  onSettings,
+}: {
+  session: LiveSessionRecord;
+  onSession: (patch: Partial<LiveSessionRecord>) => void;
+  onSettings: (patch: Partial<LiveSessionRecord["settings"]>) => void;
+}) {
+  const [view, setView] = useState<"general" | "copilot">("general");
+  const copilot = session.settings.learnerCopilot;
+  const setCopilot = (patch: Partial<typeof copilot>) =>
+    onSettings({ learnerCopilot: { ...copilot, ...patch } });
 
-function Tab({
-  active,
-  onClick,
-  icon: Icon,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: typeof Radio;
-  children: React.ReactNode;
-}) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "inline-flex min-w-max items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold",
-        active
-          ? "bg-slate-950 text-white"
-          : "text-slate-500 hover:bg-slate-50 hover:text-slate-900",
-      )}
-    >
-      <Icon className="h-4 w-4" />
-      {children}
-    </button>
-  );
-}
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">
-      {label}
-      {children}
-    </label>
-  );
-}
-function Toggle({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  label: string;
-}) {
-  return (
-    <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-bold text-slate-600">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          "relative h-5 w-9 rounded-full transition",
-          checked ? "bg-slate-950" : "bg-slate-200",
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-0.5 h-4 w-4 rounded-full bg-white transition",
-            checked ? "left-[18px]" : "left-0.5",
-          )}
-        />
-      </button>
-      {label}
-    </label>
-  );
-}
-
-function CopilotPermission({
-  title,
-  description,
-  checked,
-  disabled,
-  onChange,
-}: {
-  title: string;
-  description: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <label
-      className={cn(
-        "flex gap-3 rounded-xl border border-slate-200 p-4",
-        disabled
-          ? "cursor-not-allowed"
-          : "cursor-pointer hover:border-slate-300",
-      )}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-        className="mt-0.5 h-4 w-4 accent-slate-950"
+    <div className="max-w-3xl space-y-5">
+      <Segmented
+        items={[
+          { value: "general", label: "General" },
+          { value: "copilot", label: "Learner copilot" },
+        ]}
+        value={view}
+        onChange={setView}
       />
-      <span>
-        <span className="block text-xs font-bold text-slate-800">{title}</span>
-        <span className="mt-1 block text-[11px] leading-5 text-slate-500">
-          {description}
-        </span>
-      </span>
-    </label>
-  );
-}
-
-function AddMenu({ onAdd }: { onAdd: (type: LiveActivityType) => void }) {
-  return (
-    <div className="mb-3 grid gap-1 rounded-xl border border-slate-200 bg-slate-50 p-2">
-      {activityChoices.map((choice) => (
-        <button
-          key={choice.type}
-          onClick={() => onAdd(choice.type)}
-          className="rounded-lg px-3 py-2 text-left hover:bg-white"
-        >
-          <span className="block text-xs font-bold text-slate-800">
-            {choice.label}
-          </span>
-          <span className="block text-[10px] text-slate-400">
-            {choice.hint}
-          </span>
-        </button>
-      ))}
+      {view === "general" ? (
+        <>
+          <Card className="space-y-4">
+            <Field label="Session title">
+              <Input value={session.title} onChange={(event) => onSession({ title: event.target.value })} />
+            </Field>
+            <FieldGrid>
+              <Field label="Who can join">
+                <Select
+                  value={session.access}
+                  onChange={(event) => onSession({ access: event.target.value as LiveSessionRecord["access"] })}
+                >
+                  <option value="enrolled">Enrolled learners</option>
+                  <option value="invited">Invited email addresses</option>
+                  <option value="open">Anyone with the link</option>
+                </Select>
+              </Field>
+              <Field label="Scheduled start" optional>
+                <Input
+                  type="datetime-local"
+                  value={toDateTimeLocal(session.scheduledStart)}
+                  onChange={(event) =>
+                    onSession({
+                      scheduledStart: event.target.value ? new Date(event.target.value).toISOString() : undefined,
+                    })
+                  }
+                />
+              </Field>
+              {session.parts.length ? null : (
+                <Field label="Pace">
+                  <Select
+                    value={session.pace}
+                    onChange={(event) => onSession({ pace: event.target.value as LiveSessionRecord["pace"] })}
+                  >
+                    <option value="facilitator">You control each step</option>
+                    <option value="learner">Learners move at their own pace</option>
+                  </Select>
+                </Field>
+              )}
+            </FieldGrid>
+            {session.access === "invited" ? (
+              <Field label="Invited emails" info="One per line, or separated by commas.">
+                <Textarea
+                  rows={3}
+                  placeholder="name@example.com"
+                  value={session.invitedEmails.join("\n")}
+                  onChange={(event) =>
+                    onSession({
+                      invitedEmails: event.target.value
+                        .split(/[\n,;]/)
+                        .map((email) => email.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                />
+              </Field>
+            ) : null}
+          </Card>
+          <Card className="divide-y divide-border py-2">
+            <SwitchRow
+              label="Allow late join"
+              checked={session.settings.allowLateJoin}
+              onChange={(allowLateJoin) => onSettings({ allowLateJoin })}
+            />
+            <SwitchRow
+              label="Show names in private results"
+              checked={session.settings.showParticipantNames}
+              onChange={(showParticipantNames) => onSettings({ showParticipantNames })}
+            />
+            <SwitchRow
+              label="Leaderboard"
+              checked={session.settings.showLeaderboard}
+              onChange={(showLeaderboard) => onSettings({ showLeaderboard })}
+            />
+          </Card>
+        </>
+      ) : (
+        <>
+          <Card className="py-2">
+            <SwitchRow
+              label="Available to learners"
+              info="Hidden quiz answers and private facilitator notes are never shared with the learner copilot."
+              checked={copilot.enabled}
+              onChange={(enabled) => setCopilot({ enabled })}
+            />
+          </Card>
+          <Card className={cn("divide-y divide-border py-2", !copilot.enabled && "opacity-60")}>
+            <SwitchRow
+              label="Explain the current activity"
+              description="Clarify the visible prompt, instructions and concepts."
+              checked={copilot.explainCurrentActivity}
+              disabled={!copilot.enabled}
+              onChange={(explainCurrentActivity) => setCopilot({ explainCurrentActivity })}
+            />
+            <SwitchRow
+              label="Coach learner responses"
+              description="Questions and hints, without writing answers."
+              checked={copilot.coachResponses}
+              disabled={!copilot.enabled}
+              onChange={(coachResponses) => setCopilot({ coachResponses })}
+            />
+            <SwitchRow
+              label="Use wider course material"
+              description="Draw on material beyond the current activity."
+              checked={copilot.useCourseMaterials}
+              disabled={!copilot.enabled}
+              onChange={(useCourseMaterials) => setCopilot({ useCourseMaterials })}
+            />
+            <SwitchRow
+              label="Give direct explanations"
+              description="Explain directly instead of always starting with hints."
+              checked={copilot.giveDirectExplanations}
+              disabled={!copilot.enabled}
+              onChange={(giveDirectExplanations) => setCopilot({ giveDirectExplanations })}
+            />
+          </Card>
+        </>
+      )}
     </div>
   );
+}
+
+type EditorTab = "content" | "responses" | "resources" | "notes";
+
+function hasResponseDesign(type: LiveActivityType) {
+  return [
+    "poll",
+    "quiz",
+    "setup_check",
+    "prioritization",
+    "worksheet",
+    "card_collection",
+    "linked_scorecard",
+  ].includes(type);
 }
 
 function ActivityEditor({
@@ -1431,6 +990,7 @@ function ActivityEditor({
   materials,
   labWorkspaces,
   index,
+  total,
   onChange,
   onMove,
   onRemove,
@@ -1440,783 +1000,672 @@ function ActivityEditor({
   materials: CourseMaterialRecord[];
   labWorkspaces: LabWorkspaceRecord[];
   index: number;
+  total: number;
   onChange: (patch: Partial<LiveActivity>) => void;
   onMove: (direction: -1 | 1) => void;
   onRemove: () => void;
 }) {
-  function updateOption(
-    id: string,
-    patch: Partial<LiveActivity["options"][number]>,
-  ) {
-    onChange({
-      options: activity.options.map((option) =>
-        option.id === id ? { ...option, ...patch } : option,
-      ),
-    });
+  const [tab, setTab] = useState<EditorTab>("content");
+  const responses = hasResponseDesign(activity.type);
+  const activeTab = tab === "responses" && !responses ? "content" : tab;
+
+  return (
+    <div className="min-w-0">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Badge>
+            {index + 1} of {total} · {activityLabel(activity.type)}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-1">
+          <IconButton label="Move up" icon={ArrowUp} size="sm" onClick={() => onMove(-1)} disabled={index === 0} />
+          <IconButton label="Move down" icon={ArrowDown} size="sm" onClick={() => onMove(1)} disabled={index === total - 1} />
+          <IconButton label="Remove activity" icon={Trash2} size="sm" onClick={onRemove} />
+        </div>
+      </div>
+      <Tabs
+        className="mb-5"
+        value={activeTab}
+        onChange={setTab}
+        items={[
+          { value: "content", label: "Content" },
+          { value: "responses", label: "Responses", hidden: !responses },
+          { value: "resources", label: "Resources" },
+          { value: "notes", label: "Notes" },
+        ]}
+      />
+
+      {activeTab === "content" ? (
+        <Card className="space-y-4">
+          <Field label="Title">
+            <Input value={activity.title} onChange={(event) => onChange({ title: event.target.value })} />
+          </Field>
+          <FieldGrid>
+            <Field label="Type">
+              <Select
+                value={activity.type}
+                onChange={(event) => onChange({ type: event.target.value as LiveActivityType })}
+              >
+                {activityChoices.map((choice) => (
+                  <option key={choice.type} value={choice.type}>
+                    {choice.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Minutes">
+              <Input
+                type="number"
+                min={1}
+                value={activity.estimatedMinutes || ""}
+                onChange={(event) => onChange({ estimatedMinutes: Number(event.target.value) || undefined })}
+              />
+            </Field>
+          </FieldGrid>
+          <Field label="Prompt or key idea">
+            <Textarea rows={3} value={activity.prompt || ""} onChange={(event) => onChange({ prompt: event.target.value })} />
+          </Field>
+          <Field label="Learner instructions" optional>
+            <Textarea
+              rows={4}
+              value={activity.instructions || ""}
+              onChange={(event) => onChange({ instructions: event.target.value })}
+            />
+          </Field>
+          {activity.type === "task" || activity.type === "reflection" ? (
+            <Field label="Success criteria" optional>
+              <Textarea
+                rows={2}
+                value={activity.successCriteria || ""}
+                onChange={(event) => onChange({ successCriteria: event.target.value })}
+              />
+            </Field>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {activeTab === "responses" ? (
+        <ResponseDesign activity={activity} activities={activities} onChange={onChange} />
+      ) : null}
+
+      {activeTab === "resources" ? (
+        <ResourcesEditor
+          activity={activity}
+          materials={materials}
+          labWorkspaces={labWorkspaces}
+          onChange={onChange}
+        />
+      ) : null}
+
+      {activeTab === "notes" ? (
+        <div className="space-y-4">
+          <Card>
+            <Field label="Private facilitator notes" info="Only you see these, including while running the room.">
+              <Textarea
+                rows={5}
+                value={activity.facilitatorNotes || ""}
+                onChange={(event) => onChange({ facilitatorNotes: event.target.value })}
+              />
+            </Field>
+          </Card>
+          <Card className="divide-y divide-border py-2">
+            <SwitchRow
+              label="Required"
+              info="Learners must complete this activity to finish the workbook."
+              checked={activity.required}
+              onChange={(required) => onChange({ required })}
+            />
+            {activity.type === "quiz" ? (
+              <div className="flex items-center justify-between gap-4 py-3">
+                <span className="text-sm">Points</span>
+                <Input
+                  type="number"
+                  min={0}
+                  className="w-24"
+                  value={activity.points}
+                  onChange={(event) => onChange({ points: Number(event.target.value) || 0 })}
+                />
+              </div>
+            ) : null}
+          </Card>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ResourcesEditor({
+  activity,
+  materials,
+  labWorkspaces,
+  onChange,
+}: {
+  activity: LiveActivity;
+  materials: CourseMaterialRecord[];
+  labWorkspaces: LabWorkspaceRecord[];
+  onChange: (patch: Partial<LiveActivity>) => void;
+}) {
+  const selectedLabWorkspace = labWorkspaces.find((workspace) => workspace.id === activity.labWorkspaceId);
+  const learnerLabFiles = (selectedLabWorkspace?.files || []).filter((file) => file.audience === "learner");
+  const labFolders = labWorkspaceFolderPaths(learnerLabFiles);
+
+  return (
+    <div className="space-y-4">
+      <Card className="space-y-4">
+        <SectionTitle title="Slides or document" />
+        <FieldGrid>
+          <Field label="Material">
+            <Select
+              value={activity.materialId || ""}
+              onChange={(event) => onChange({ materialId: event.target.value || undefined })}
+            >
+              <option value="">None</option>
+              {materials.map((material) => (
+                <option key={material.id} value={material.id}>
+                  {material.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {activity.materialId ? (
+            <Field label="Start at slide" info="The deck opens here when this activity is presented.">
+              <Input
+                type="number"
+                min={1}
+                max={500}
+                value={activity.materialStartSlide || 1}
+                onChange={(event) =>
+                  onChange({ materialStartSlide: Math.max(1, Number(event.target.value) || 1) })
+                }
+              />
+            </Field>
+          ) : null}
+        </FieldGrid>
+      </Card>
+      <Card className="space-y-4">
+        <SectionTitle title="Lab workspace" />
+        <FieldGrid>
+          <Field label="Lab">
+            <Select
+              value={activity.labWorkspaceId || ""}
+              onChange={(event) =>
+                onChange({ labWorkspaceId: event.target.value || undefined, labEntryPath: undefined })
+              }
+            >
+              <option value="">None</option>
+              {labWorkspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.title}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {selectedLabWorkspace ? (
+            <Field label="Open learners at" info="Learners land here when this activity is presented.">
+              <Select
+                value={activity.labEntryPath || ""}
+                onChange={(event) => onChange({ labEntryPath: event.target.value || undefined })}
+              >
+                <option value="">Workspace home</option>
+                {labFolders.length ? (
+                  <optgroup label="Folders">
+                    {labFolders.map((path) => (
+                      <option key={path} value={path}>
+                        {labPathLabel(path)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+                {learnerLabFiles.length ? (
+                  <optgroup label="Files">
+                    {learnerLabFiles.map((file) => (
+                      <option key={file.id} value={file.path}>
+                        {labPathLabel(file.path)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+              </Select>
+            </Field>
+          ) : null}
+        </FieldGrid>
+      </Card>
+      <Card>
+        <Field label="External link" optional>
+          <Input
+            type="url"
+            placeholder="https://"
+            value={activity.resourceUrl || ""}
+            onChange={(event) => onChange({ resourceUrl: event.target.value })}
+          />
+        </Field>
+      </Card>
+    </div>
+  );
+}
+
+function ResponseDesign({
+  activity,
+  activities,
+  onChange,
+}: {
+  activity: LiveActivity;
+  activities: LiveActivity[];
+  onChange: (patch: Partial<LiveActivity>) => void;
+}) {
+  function updateOption(id: string, patch: Partial<LiveActivity["options"][number]>) {
+    onChange({ options: activity.options.map((option) => (option.id === id ? { ...option, ...patch } : option)) });
   }
-  function addOption() {
-    onChange({
-      options: [
-        ...activity.options,
-        {
-          id: crypto.randomUUID(),
-          label: `Option ${activity.options.length + 1}`,
-          isCorrect: false,
-        },
-      ],
-    });
-  }
-  function updateWorksheetField(
-    id: string,
-    patch: Partial<LiveWorksheetField>,
-  ) {
+  function updateWorksheetField(id: string, patch: Partial<LiveWorksheetField>) {
     onChange({
       worksheetFields: (activity.worksheetFields || []).map((field) =>
         field.id === id ? { ...field, ...patch } : field,
       ),
     });
   }
-  function addWorksheetField() {
+  function updateCriterion(id: string, patch: Partial<NonNullable<LiveActivity["scoreCriteria"]>[number]>) {
     onChange({
-      worksheetFields: [
-        ...(activity.worksheetFields || []),
-        {
-          id: crypto.randomUUID(),
-          label: "New question",
-          type: "short_text",
-          required: false,
-        },
-      ],
+      scoreCriteria: (activity.scoreCriteria || []).map((item) => (item.id === id ? { ...item, ...patch } : item)),
     });
   }
-  const selectedLabWorkspace = labWorkspaces.find(
-    (workspace) => workspace.id === activity.labWorkspaceId,
-  );
-  const learnerLabFiles = (selectedLabWorkspace?.files || []).filter(
-    (file) => file.audience === "learner",
-  );
-  const labFolders = labWorkspaceFolderPaths(learnerLabFiles);
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
-            Activity {index + 1} · {activityLabel(activity.type)}
-          </p>
-          <h3 className="mt-1 text-lg font-bold text-slate-950">
-            Design the learning moment
-          </h3>
-        </div>
-        <div className="flex gap-1">
-          <IconButton
-            label="Move up"
-            onClick={() => onMove(-1)}
-            icon={ArrowUp}
-          />
-          <IconButton
-            label="Move down"
-            onClick={() => onMove(1)}
-            icon={ArrowDown}
-          />
-          <IconButton label="Remove" onClick={onRemove} icon={Trash2} danger />
-        </div>
-      </div>
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <Field label="Activity type">
-          <select
-            value={activity.type}
-            onChange={(event) =>
-              onChange({ type: event.target.value as LiveActivityType })
-            }
-            className={inputClass}
-          >
-            {activityChoices.map((choice) => (
-              <option key={choice.type} value={choice.type}>
-                {choice.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Estimated time">
-          <input
-            type="number"
-            min={1}
-            value={activity.estimatedMinutes || ""}
-            onChange={(event) =>
-              onChange({
-                estimatedMinutes: Number(event.target.value) || undefined,
-              })
-            }
-            className={inputClass}
-          />
-        </Field>
-      </div>
-      <Field label="Title">
-        <input
-          value={activity.title}
-          onChange={(event) => onChange({ title: event.target.value })}
-          className={inputClass}
-        />
-      </Field>
-      <Field label="Prompt or key idea">
-        <textarea
-          rows={3}
-          value={activity.prompt || ""}
-          onChange={(event) => onChange({ prompt: event.target.value })}
-          className={`${inputClass} resize-y`}
-        />
-      </Field>
-      <Field label="Learner instructions">
-        <textarea
-          rows={4}
-          value={activity.instructions || ""}
-          onChange={(event) => onChange({ instructions: event.target.value })}
-          className={`${inputClass} resize-y`}
-        />
-      </Field>
-      {activity.type === "task" || activity.type === "reflection" ? (
-        <Field label="Success criteria">
-          <textarea
-            rows={2}
-            value={activity.successCriteria || ""}
-            onChange={(event) =>
-              onChange({ successCriteria: event.target.value })
-            }
-            className={`${inputClass} resize-y`}
-          />
-        </Field>
-      ) : null}
-      {activity.type === "prioritization" ? (
-        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
-            Capture and shortlist
-          </p>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Field label="Entry prompt">
-              <input
-                value={activity.entryLabel || ""}
-                onChange={(event) =>
-                  onChange({ entryLabel: event.target.value })
-                }
-                placeholder="Add a routine"
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Selection prompt">
-              <input
-                value={activity.selectionPrompt || ""}
-                onChange={(event) =>
-                  onChange({ selectionPrompt: event.target.value })
-                }
-                placeholder="Choose what to take forward"
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Minimum entries to finish">
-              <input
-                type="number"
-                min={1}
-                max={50}
-                value={activity.minItems || 3}
-                onChange={(event) =>
+
+  if (["poll", "quiz", "setup_check"].includes(activity.type)) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <SectionTitle
+            title="Options"
+            info={activity.type === "quiz" ? "Tick the correct answer." : undefined}
+            action={
+              <Button
+                size="sm"
+                icon={Plus}
+                onClick={() =>
                   onChange({
-                    minItems: Math.max(
-                      1,
-                      Math.min(50, Number(event.target.value) || 1),
-                    ),
+                    options: [
+                      ...activity.options,
+                      { id: crypto.randomUUID(), label: `Option ${activity.options.length + 1}`, isCorrect: false },
+                    ],
                   })
                 }
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Maximum shortlist size">
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={activity.maxSelections || 3}
-                onChange={(event) =>
-                  onChange({
-                    maxSelections: Math.max(
-                      1,
-                      Math.min(10, Number(event.target.value) || 1),
-                    ),
-                  })
-                }
-                className={inputClass}
-              />
-            </Field>
-          </div>
-          <p className="mt-3 text-[11px] leading-5 text-slate-500">
-            Learners can add up to 50 entries, save progress, and revise their
-            shortlist while the activity remains open.
-          </p>
-        </div>
-      ) : null}
-      {activity.type === "worksheet" || activity.type === "card_collection" ? (
-        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
-                {activity.type === "card_collection"
-                  ? "Fields on every card"
-                  : "Worksheet fields"}
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                {activity.type === "card_collection"
-                  ? "Learners can create up to 50 cards with this same structure."
-                  : "Group related questions with the same section title."}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={addWorksheetField}
-              className="inline-flex items-center gap-1 text-xs font-bold text-slate-700"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add field
-            </button>
-          </div>
-          <div className="mt-4 space-y-3">
-            {activity.type === "card_collection" ? (
-              <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-2">
-                <Field label="Card title field">
-                  <select
-                    value={activity.itemTitleFieldId || ""}
-                    onChange={(event) =>
-                      onChange({ itemTitleFieldId: event.target.value })
-                    }
-                    className={inputClass}
-                  >
-                    <option value="">Choose a field</option>
-                    {(activity.worksheetFields || []).map((field) => (
-                      <option key={field.id} value={field.id}>
-                        {field.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Minimum cards to finish">
-                  <input
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={activity.minItems || 1}
-                    onChange={(event) =>
-                      onChange({
-                        minItems: Math.max(
-                          1,
-                          Math.min(50, Number(event.target.value) || 1),
-                        ),
-                      })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-              </div>
-            ) : null}
-            {(activity.worksheetFields || []).map((field, fieldIndex) => (
-              <div
-                key={field.id}
-                className="rounded-xl border border-slate-200 bg-white p-4"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                    Field {fieldIndex + 1}
-                  </span>
+                Add
+              </Button>
+            }
+          />
+          <div className="space-y-2">
+            {activity.options.map((option) => (
+              <div key={option.id} className="flex items-center gap-2">
+                {activity.type === "quiz" ? (
                   <button
                     type="button"
-                    onClick={() =>
-                      onChange({
-                        worksheetFields: (
-                          activity.worksheetFields || []
-                        ).filter((candidate) => candidate.id !== field.id),
-                      })
-                    }
-                    className="p-1 text-slate-300 hover:text-red-600"
-                    aria-label={`Remove ${field.label}`}
+                    onClick={() => updateOption(option.id, { isCorrect: !option.isCorrect })}
+                    title="Mark as correct"
+                    aria-label="Mark as correct"
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors",
+                      option.isCorrect
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                        : "border-border text-stone-300 hover:text-stone-500",
+                    )}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Check className="h-4 w-4" strokeWidth={2} />
                   </button>
-                </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <Field label="Question">
-                    <input
-                      value={field.label}
-                      onChange={(event) =>
-                        updateWorksheetField(field.id, {
-                          label: event.target.value,
-                        })
-                      }
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="Field type">
-                    <select
-                      value={field.type}
-                      onChange={(event) =>
-                        updateWorksheetField(field.id, {
-                          type: event.target
-                            .value as LiveWorksheetField["type"],
-                        })
-                      }
-                      className={inputClass}
-                    >
-                      <option value="short_text">Short answer</option>
-                      <option value="long_text">Long answer</option>
-                      <option value="scale">Number scale</option>
-                      <option value="date">Date</option>
-                    </select>
-                  </Field>
-                  <Field label="Section title">
-                    <input
-                      value={field.section || ""}
-                      onChange={(event) =>
-                        updateWorksheetField(field.id, {
-                          section: event.target.value,
-                        })
-                      }
-                      placeholder="Optional group heading"
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="Help text">
-                    <input
-                      value={field.description || ""}
-                      onChange={(event) =>
-                        updateWorksheetField(field.id, {
-                          description: event.target.value,
-                        })
-                      }
-                      placeholder="Optional guidance"
-                      className={inputClass}
-                    />
-                  </Field>
-                  {field.type === "scale" ? (
-                    <>
-                      <Field label="Minimum">
-                        <input
-                          type="number"
-                          min={0}
-                          max={20}
-                          value={field.min ?? 1}
-                          onChange={(event) =>
-                            updateWorksheetField(field.id, {
-                              min: Number(event.target.value),
-                            })
-                          }
-                          className={inputClass}
-                        />
-                      </Field>
-                      <Field label="Maximum">
-                        <input
-                          type="number"
-                          min={1}
-                          max={20}
-                          value={field.max ?? 5}
-                          onChange={(event) =>
-                            updateWorksheetField(field.id, {
-                              max: Number(event.target.value),
-                            })
-                          }
-                          className={inputClass}
-                        />
-                      </Field>
-                    </>
-                  ) : null}
-                </div>
-                <div className="mt-3">
-                  <Toggle
-                    checked={field.required}
-                    onChange={(required) =>
-                      updateWorksheetField(field.id, { required })
-                    }
-                    label="Required to complete"
-                  />
-                </div>
+                ) : null}
+                <Input value={option.label} onChange={(event) => updateOption(option.id, { label: event.target.value })} />
+                <IconButton
+                  label="Remove option"
+                  icon={Trash2}
+                  size="sm"
+                  onClick={() => onChange({ options: activity.options.filter((item) => item.id !== option.id) })}
+                />
               </div>
             ))}
           </div>
-        </div>
-      ) : null}
-      {activity.type === "linked_scorecard" ? (
-        <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
-                Linked scoring criteria
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Learners score cards they captured in an earlier repeatable-card
-                activity.
-              </p>
-            </div>
-            <button
-              type="button"
+        </Card>
+        <Card className="divide-y divide-border py-2">
+          <SwitchRow
+            label="Shuffle for each learner"
+            checked={activity.randomizeOptions}
+            onChange={(randomizeOptions) => onChange({ randomizeOptions })}
+          />
+          <SwitchRow
+            label="Show results after closing"
+            checked={activity.showResults}
+            onChange={(showResults) => onChange({ showResults })}
+          />
+          {activity.type === "poll" ? (
+            <>
+              <SwitchRow
+                label="Allow a typed Other answer"
+                checked={Boolean(activity.allowOther)}
+                onChange={(allowOther) => onChange({ allowOther })}
+              />
+              <div className="flex items-center justify-between gap-4 py-3">
+                <span className="text-sm">Layout</span>
+                <Select
+                  className="w-auto"
+                  value={activity.responseStyle || "cards"}
+                  onChange={(event) =>
+                    onChange({ responseStyle: event.target.value === "scale" ? "scale" : "cards" })
+                  }
+                >
+                  <option value="cards">Choice cards</option>
+                  <option value="scale">Compact scale</option>
+                </Select>
+              </div>
+            </>
+          ) : null}
+        </Card>
+      </div>
+    );
+  }
+
+  if (activity.type === "prioritization") {
+    return (
+      <Card className="space-y-4">
+        <SectionTitle
+          title="Capture and shortlist"
+          info="Learners can add up to 50 entries, save progress, and revise their shortlist while the activity is open."
+        />
+        <FieldGrid>
+          <Field label="Entry prompt">
+            <Input
+              placeholder="Add a routine"
+              value={activity.entryLabel || ""}
+              onChange={(event) => onChange({ entryLabel: event.target.value })}
+            />
+          </Field>
+          <Field label="Selection prompt">
+            <Input
+              placeholder="Choose what to take forward"
+              value={activity.selectionPrompt || ""}
+              onChange={(event) => onChange({ selectionPrompt: event.target.value })}
+            />
+          </Field>
+          <Field label="Minimum entries">
+            <Input
+              type="number"
+              min={1}
+              max={50}
+              value={activity.minItems || 3}
+              onChange={(event) =>
+                onChange({ minItems: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })
+              }
+            />
+          </Field>
+          <Field label="Shortlist size">
+            <Input
+              type="number"
+              min={1}
+              max={10}
+              value={activity.maxSelections || 3}
+              onChange={(event) =>
+                onChange({ maxSelections: Math.max(1, Math.min(10, Number(event.target.value) || 1)) })
+              }
+            />
+          </Field>
+        </FieldGrid>
+      </Card>
+    );
+  }
+
+  if (activity.type === "worksheet" || activity.type === "card_collection") {
+    const fields = activity.worksheetFields || [];
+    return (
+      <div className="space-y-4">
+        {activity.type === "card_collection" ? (
+          <Card>
+            <FieldGrid>
+              <Field label="Card title field">
+                <Select
+                  value={activity.itemTitleFieldId || ""}
+                  onChange={(event) => onChange({ itemTitleFieldId: event.target.value })}
+                >
+                  <option value="">Choose a field</option>
+                  {fields.map((field) => (
+                    <option key={field.id} value={field.id}>
+                      {field.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Minimum cards">
+                <Input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={activity.minItems || 1}
+                  onChange={(event) =>
+                    onChange({ minItems: Math.max(1, Math.min(50, Number(event.target.value) || 1)) })
+                  }
+                />
+              </Field>
+            </FieldGrid>
+          </Card>
+        ) : null}
+        <SectionTitle
+          title={activity.type === "card_collection" ? "Fields on every card" : "Worksheet fields"}
+          info={
+            activity.type === "card_collection"
+              ? "Learners can create up to 50 cards with this structure."
+              : "Group related questions by giving them the same section title."
+          }
+          action={
+            <Button
+              size="sm"
+              icon={Plus}
               onClick={() =>
                 onChange({
-                  scoreCriteria: [
-                    ...(activity.scoreCriteria || []),
-                    {
-                      id: crypto.randomUUID(),
-                      label: "New criterion",
-                      min: 1,
-                      max: 5,
-                    },
+                  worksheetFields: [
+                    ...fields,
+                    { id: crypto.randomUUID(), label: "New question", type: "short_text", required: false },
                   ],
                 })
               }
-              className="inline-flex items-center gap-1 text-xs font-bold text-slate-700"
             >
-              <Plus className="h-3.5 w-3.5" /> Add criterion
-            </button>
-          </div>
-          <Field label="Source card activity">
-            <select
-              value={activity.sourceActivityId || ""}
-              onChange={(event) =>
-                onChange({ sourceActivityId: event.target.value })
+              Add field
+            </Button>
+          }
+        />
+        <div className="space-y-2">
+          {fields.map((field, fieldIndex) => (
+            <WorksheetFieldRow
+              key={field.id}
+              index={fieldIndex}
+              field={field}
+              onChange={(patch) => updateWorksheetField(field.id, patch)}
+              onRemove={() =>
+                onChange({ worksheetFields: fields.filter((candidate) => candidate.id !== field.id) })
               }
-              className={inputClass}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (activity.type === "linked_scorecard") {
+    const criteria = activity.scoreCriteria || [];
+    return (
+      <div className="space-y-4">
+        <Card>
+          <Field label="Cards to score" info="Learners score the cards they captured in an earlier repeatable-card activity.">
+            <Select
+              value={activity.sourceActivityId || ""}
+              onChange={(event) => onChange({ sourceActivityId: event.target.value })}
             >
               <option value="">Choose repeatable cards</option>
               {activities
-                .filter(
-                  (item) =>
-                    item.type === "card_collection" && item.id !== activity.id,
-                )
+                .filter((item) => item.type === "card_collection" && item.id !== activity.id)
                 .map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.title}
                   </option>
                 ))}
-            </select>
+            </Select>
           </Field>
-          <div className="mt-4 space-y-3">
-            {(activity.scoreCriteria || []).map((criterion, criterionIndex) => (
-              <div
-                key={criterion.id}
-                className="rounded-xl border border-slate-200 bg-white p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                    Criterion {criterionIndex + 1}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onChange({
-                        scoreCriteria: (activity.scoreCriteria || []).filter(
-                          (item) => item.id !== criterion.id,
-                        ),
-                      })
-                    }
-                    className="p-1 text-slate-300 hover:text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <Field label="Label">
-                    <input
-                      value={criterion.label}
-                      onChange={(event) =>
-                        onChange({
-                          scoreCriteria: (activity.scoreCriteria || []).map(
-                            (item) =>
-                              item.id === criterion.id
-                                ? { ...item, label: event.target.value }
-                                : item,
-                          ),
-                        })
-                      }
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="Help text">
-                    <input
-                      value={criterion.description || ""}
-                      onChange={(event) =>
-                        onChange({
-                          scoreCriteria: (activity.scoreCriteria || []).map(
-                            (item) =>
-                              item.id === criterion.id
-                                ? { ...item, description: event.target.value }
-                                : item,
-                          ),
-                        })
-                      }
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="Low-end label">
-                    <input
-                      value={criterion.lowLabel || ""}
-                      onChange={(event) =>
-                        onChange({
-                          scoreCriteria: (activity.scoreCriteria || []).map(
-                            (item) =>
-                              item.id === criterion.id
-                                ? { ...item, lowLabel: event.target.value }
-                                : item,
-                          ),
-                        })
-                      }
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="High-end label">
-                    <input
-                      value={criterion.highLabel || ""}
-                      onChange={(event) =>
-                        onChange({
-                          scoreCriteria: (activity.scoreCriteria || []).map(
-                            (item) =>
-                              item.id === criterion.id
-                                ? { ...item, highLabel: event.target.value }
-                                : item,
-                          ),
-                        })
-                      }
-                      className={inputClass}
-                    />
-                  </Field>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      <Field label="Private facilitator notes">
-        <textarea
-          rows={2}
-          value={activity.facilitatorNotes || ""}
-          onChange={(event) =>
-            onChange({ facilitatorNotes: event.target.value })
-          }
-          className={`${inputClass} resize-y`}
-        />
-      </Field>
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <Field label="Course material">
-          <select
-            value={activity.materialId || ""}
-            onChange={(event) =>
-              onChange({ materialId: event.target.value || undefined })
-            }
-            className={inputClass}
-          >
-            <option value="">No attached material</option>
-            {materials.map((material) => (
-              <option key={material.id} value={material.id}>
-                {material.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {activity.materialId ? (
-          <Field label="Start at slide">
-            <input
-              type="number"
-              min={1}
-              max={500}
-              value={activity.materialStartSlide || 1}
-              onChange={(event) =>
+        </Card>
+        <SectionTitle
+          title="Scoring criteria"
+          action={
+            <Button
+              size="sm"
+              icon={Plus}
+              onClick={() =>
                 onChange({
-                  materialStartSlide: Math.max(
-                    1,
-                    Number(event.target.value) || 1,
-                  ),
+                  scoreCriteria: [...criteria, { id: crypto.randomUUID(), label: "New criterion", min: 1, max: 5 }],
                 })
               }
-              className={inputClass}
-            />
-            <span className="mt-1.5 block text-[11px] leading-5 text-slate-400">
-              The deck resumes here when this activity is presented.
-            </span>
-          </Field>
-        ) : null}
-        <Field label="Lab workspace">
-          <select
-            value={activity.labWorkspaceId || ""}
-            onChange={(event) =>
-              onChange({
-                labWorkspaceId: event.target.value || undefined,
-                labEntryPath: undefined,
-              })
-            }
-            className={inputClass}
-          >
-            <option value="">No attached lab</option>
-            {labWorkspaces.map((workspace) => (
-              <option key={workspace.id} value={workspace.id}>
-                {workspace.title}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {selectedLabWorkspace ? (
-          <Field label="Open learners at">
-            <select
-              value={activity.labEntryPath || ""}
-              onChange={(event) =>
-                onChange({ labEntryPath: event.target.value || undefined })
-              }
-              className={inputClass}
             >
-              <option value="">Workspace home</option>
-              {labFolders.length ? (
-                <optgroup label="Folders">
-                  {labFolders.map((path) => (
-                    <option key={path} value={path}>
-                      {labPathLabel(path)}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-              {learnerLabFiles.length ? (
-                <optgroup label="Files">
-                  {learnerLabFiles.map((file) => (
-                    <option key={file.id} value={file.path}>
-                      {labPathLabel(file.path)}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-            </select>
-            <span className="mt-1.5 block text-[11px] leading-5 text-slate-400">
-              Learners land here when this activity is presented.
-            </span>
-          </Field>
-        ) : null}
-        <Field label="External resource link">
-          <input
-            type="url"
-            value={activity.resourceUrl || ""}
-            onChange={(event) => onChange({ resourceUrl: event.target.value })}
-            placeholder="https://…"
-            className={inputClass}
-          />
-        </Field>
-        {activity.type === "quiz" ? (
-          <Field label="Points">
-            <input
-              type="number"
-              min={0}
-              value={activity.points}
-              onChange={(event) =>
-                onChange({ points: Number(event.target.value) || 0 })
-              }
-              className={inputClass}
-            />
-          </Field>
-        ) : null}
-      </div>
-      {["poll", "quiz", "setup_check"].includes(activity.type) ? (
-        <div className="mt-5 rounded-xl border border-slate-200 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
-              Response options
-            </p>
-            <button
-              onClick={addOption}
-              className="inline-flex items-center gap-1 text-xs font-bold text-slate-700"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add option
-            </button>
-          </div>
-          <div className="mt-3 space-y-2">
-            {activity.options.map((option) => (
-              <div key={option.id} className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    activity.type === "quiz" &&
-                    updateOption(option.id, { isCorrect: !option.isCorrect })
-                  }
-                  className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border",
-                    option.isCorrect
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                      : "border-slate-200 text-slate-300",
-                  )}
-                  title={
-                    activity.type === "quiz" ? "Mark correct answer" : undefined
-                  }
-                >
-                  {activity.type === "quiz" ? (
-                    <Check className="h-4 w-4" />
-                  ) : (
-                    <MoreHorizontal className="h-4 w-4" />
-                  )}
-                </button>
-                <input
-                  value={option.label}
-                  onChange={(event) =>
-                    updateOption(option.id, { label: event.target.value })
-                  }
-                  className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              Add criterion
+            </Button>
+          }
+        />
+        <div className="space-y-2">
+          {criteria.map((criterion) => (
+            <Card key={criterion.id} className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Input value={criterion.label} onChange={(event) => updateCriterion(criterion.id, { label: event.target.value })} />
+                <IconButton
+                  label="Remove criterion"
+                  icon={Trash2}
+                  size="sm"
+                  onClick={() => onChange({ scoreCriteria: criteria.filter((item) => item.id !== criterion.id) })}
                 />
-                <button
-                  onClick={() =>
-                    onChange({
-                      options: activity.options.filter(
-                        (item) => item.id !== option.id,
-                      ),
-                    })
-                  }
-                  className="p-2 text-slate-300 hover:text-red-600"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
               </div>
-            ))}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-4">
-            <Toggle
-              checked={activity.randomizeOptions}
-              onChange={(value) => onChange({ randomizeOptions: value })}
-              label="Shuffle per learner"
-            />
-            <Toggle
-              checked={activity.showResults}
-              onChange={(value) => onChange({ showResults: value })}
-              label="Reveal results after close"
-            />
-            {activity.type === "poll" ? (
-              <Toggle
-                checked={Boolean(activity.allowOther)}
-                onChange={(value) => onChange({ allowOther: value })}
-                label="Allow typed Other"
-              />
-            ) : null}
-          </div>
-          {activity.type === "poll" ? (
-            <Field label="Response layout">
-              <select
-                value={activity.responseStyle || "cards"}
-                onChange={(event) =>
-                  onChange({
-                    responseStyle:
-                      event.target.value === "scale" ? "scale" : "cards",
-                  })
-                }
-                className={inputClass}
-              >
-                <option value="cards">Choice cards</option>
-                <option value="scale">Compact scale</option>
-              </select>
+              <FieldGrid columns={3}>
+                <Field label="Help text" optional>
+                  <Input
+                    value={criterion.description || ""}
+                    onChange={(event) => updateCriterion(criterion.id, { description: event.target.value })}
+                  />
+                </Field>
+                <Field label="Low label" optional>
+                  <Input
+                    value={criterion.lowLabel || ""}
+                    onChange={(event) => updateCriterion(criterion.id, { lowLabel: event.target.value })}
+                  />
+                </Field>
+                <Field label="High label" optional>
+                  <Input
+                    value={criterion.highLabel || ""}
+                    onChange={(event) => updateCriterion(criterion.id, { highLabel: event.target.value })}
+                  />
+                </Field>
+              </FieldGrid>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function WorksheetFieldRow({
+  index,
+  field,
+  onChange,
+  onRemove,
+}: {
+  index: number;
+  field: LiveWorksheetField;
+  onChange: (patch: Partial<LiveWorksheetField>) => void;
+  onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const typeLabels: Record<LiveWorksheetField["type"], string> = {
+    short_text: "Short answer",
+    long_text: "Long answer",
+    scale: "Number scale",
+    date: "Date",
+  };
+  return (
+    <div className="rounded-xl border border-border bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left"
+      >
+        <IndexChip value={index + 1} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm">{field.label || "Untitled field"}</span>
+          <span className="block text-xs text-muted-foreground">
+            {typeLabels[field.type]}
+            {field.section ? ` · ${field.section}` : ""}
+            {field.required ? " · required" : ""}
+          </span>
+        </span>
+        <ChevronRight
+          className={cn("h-4 w-4 text-stone-300 transition-transform", open && "rotate-90")}
+          strokeWidth={1.75}
+        />
+      </button>
+      {open ? (
+        <div className="space-y-4 border-t border-border px-4 py-4">
+          <FieldGrid>
+            <Field label="Question">
+              <Input value={field.label} onChange={(event) => onChange({ label: event.target.value })} />
             </Field>
-          ) : null}
+            <Field label="Answer type">
+              <Select
+                value={field.type}
+                onChange={(event) => onChange({ type: event.target.value as LiveWorksheetField["type"] })}
+              >
+                {Object.entries(typeLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Section" optional>
+              <Input
+                placeholder="Group heading"
+                value={field.section || ""}
+                onChange={(event) => onChange({ section: event.target.value })}
+              />
+            </Field>
+            <Field label="Help text" optional>
+              <Input value={field.description || ""} onChange={(event) => onChange({ description: event.target.value })} />
+            </Field>
+            {field.type === "scale" ? (
+              <>
+                <Field label="Minimum">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={20}
+                    value={field.min ?? 1}
+                    onChange={(event) => onChange({ min: Number(event.target.value) })}
+                  />
+                </Field>
+                <Field label="Maximum">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={field.max ?? 5}
+                    onChange={(event) => onChange({ max: Number(event.target.value) })}
+                  />
+                </Field>
+              </>
+            ) : null}
+          </FieldGrid>
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={field.required} onChange={(required) => onChange({ required })} label="Required" />
+              Required
+            </label>
+            <Button size="sm" variant="ghost" icon={Trash2} onClick={onRemove}>
+              Remove
+            </Button>
+          </div>
         </div>
       ) : null}
-      <div className="mt-5 flex flex-wrap gap-4">
-        <Toggle
-          checked={activity.required}
-          onChange={(value) => onChange({ required: value })}
-          label="Required activity"
-        />
-      </div>
-    </section>
+    </div>
   );
 }
 
@@ -2232,46 +1681,41 @@ function LiveResults({
   participants: number;
 }) {
   const rate = participants ? Math.round((responses / participants) * 100) : 0;
+  const hasStructured =
+    Boolean(results?.prioritizations?.length) ||
+    Boolean(results?.worksheets?.length) ||
+    Boolean(results?.cardCollections?.length) ||
+    Boolean(results?.scorecards?.length);
   return (
-    <div className="p-6 sm:p-8">
+    <div className="p-6">
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-bold text-slate-950">Live responses</p>
-          <p className="mt-1 text-xs text-slate-400">
-            {responses} of {participants} · {rate}% responded
-          </p>
-        </div>
-        <BarChart3 className="h-5 w-5 text-slate-300" />
+        <p className="text-sm font-medium">
+          {responses} of {participants} responded
+        </p>
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <BarChart3 className="h-3.5 w-3.5" strokeWidth={1.75} /> {rate}%
+        </span>
       </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-        <div
-          className="h-full rounded-full bg-[#71E0E7] transition-all"
-          style={{ width: `${rate}%` }}
-        />
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-teal-400 transition-all" style={{ width: `${rate}%` }} />
       </div>
+
       {activity.options.length ? (
-        <div className="mt-6 space-y-3">
+        <div className="mt-5 space-y-3">
           {activity.options.map((option) => {
-            const count =
-              results?.options?.find((item) => item.id === option.id)?.count ||
-              0;
+            const count = results?.options?.find((item) => item.id === option.id)?.count || 0;
             const width = responses ? Math.round((count / responses) * 100) : 0;
             return (
               <div key={option.id}>
-                <div className="flex justify-between gap-3 text-xs">
-                  <span className="font-medium text-slate-700">
-                    {option.label}
-                  </span>
-                  <span className="text-slate-400">
+                <div className="flex justify-between gap-3 text-sm">
+                  <span className="text-stone-700">{option.label}</span>
+                  <span className="text-xs text-muted-foreground">
                     {count} · {width}%
                   </span>
                 </div>
-                <div className="mt-1.5 h-7 overflow-hidden rounded-md bg-slate-100">
+                <div className="mt-1 h-6 overflow-hidden rounded-md bg-muted">
                   <div
-                    className={cn(
-                      "h-full rounded-md transition-all",
-                      option.isCorrect ? "bg-[#B8F56D]" : "bg-slate-300",
-                    )}
+                    className={cn("h-full rounded-md transition-all", option.isCorrect ? "bg-emerald-300" : "bg-stone-300")}
                     style={{ width: `${width}%` }}
                   />
                 </div>
@@ -2280,174 +1724,101 @@ function LiveResults({
           })}
         </div>
       ) : null}
+
       {results?.textResponses?.length ? (
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
           {results.textResponses.slice(-20).map((response) => (
-            <div key={response.id} className="rounded-xl bg-slate-50 p-3">
-              <p className="text-sm leading-6 text-slate-700">
-                {response.value}
-              </p>
+            <div key={response.id} className="rounded-lg bg-page px-3 py-2.5">
+              <p className="text-sm leading-6 text-stone-700">{response.value}</p>
               {response.participantName ? (
-                <p className="mt-1 text-[10px] font-bold uppercase text-slate-400">
-                  {response.participantName}
-                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{response.participantName}</p>
               ) : null}
             </div>
           ))}
         </div>
-      ) : !activity.options.length &&
-        !results?.prioritizations?.length &&
-        !results?.worksheets?.length &&
-        !results?.cardCollections?.length &&
-        !results?.scorecards?.length ? (
-        <div className="mt-6 rounded-xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
+      ) : !activity.options.length && !hasStructured ? (
+        <p className="mt-5 rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
           Responses will appear here.
-        </div>
+        </p>
       ) : null}
-      {results?.prioritizations?.length ? (
-        <div className="mt-5 space-y-3">
-          {results.prioritizations.map((response) => (
-            <div
+
+      {hasStructured ? (
+        <div className="mt-5 space-y-2">
+          {results?.prioritizations?.map((response) => (
+            <ResponseDetails
               key={response.id}
-              className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+              name={response.participantName}
+              status={response.finalized ? "Shortlist ready" : "In progress"}
             >
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-bold text-slate-700">
-                  {response.participantName || "Learner response"}
-                </p>
-                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  {response.finalized ? "Shortlist ready" : "In progress"}
-                </span>
+              <div className="flex flex-wrap gap-1.5">
+                {response.selectedItems.map((item) => (
+                  <Badge key={item} tone="success">
+                    {item}
+                  </Badge>
+                ))}
               </div>
-              {response.selectedItems.length ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {response.selectedItems.map((item) => (
-                    <span
-                      key={item}
-                      className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800"
-                    >
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              <p className="mt-3 text-xs leading-5 text-slate-500">
-                {response.items.length} captured
-              </p>
-            </div>
+              <p className="mt-2 text-xs text-muted-foreground">{response.items.length} captured</p>
+            </ResponseDetails>
           ))}
-        </div>
-      ) : null}
-      {results?.worksheets?.length ? (
-        <div className="mt-5 space-y-3">
-          {results.worksheets.map((response) => (
-            <details
+          {results?.worksheets?.map((response) => (
+            <ResponseDetails
               key={response.id}
-              className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+              name={response.participantName}
+              status={`${response.finalized ? "Completed" : "In progress"} · ${response.values.length} fields`}
             >
-              <summary className="cursor-pointer list-none text-xs font-bold text-slate-700">
-                <span>{response.participantName || "Learner response"}</span>
-                <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">
-                  {response.finalized ? "Completed" : "In progress"} ·{" "}
-                  {response.values.length} fields
-                </span>
-              </summary>
-              <dl className="mt-4 space-y-3">
+              <dl className="space-y-3">
                 {response.values.map((answer) => (
                   <div key={answer.fieldId}>
-                    <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                      {answer.label}
-                    </dt>
-                    <dd className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                      {answer.value}
-                    </dd>
+                    <dt className="text-xs text-muted-foreground">{answer.label}</dt>
+                    <dd className="mt-0.5 whitespace-pre-wrap text-sm leading-6 text-stone-700">{answer.value}</dd>
                   </div>
                 ))}
               </dl>
-            </details>
+            </ResponseDetails>
           ))}
-        </div>
-      ) : null}
-      {results?.cardCollections?.length ? (
-        <div className="mt-5 space-y-3">
-          {results.cardCollections.map((response) => (
-            <details
+          {results?.cardCollections?.map((response) => (
+            <ResponseDetails
               key={response.id}
-              className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+              name={response.participantName}
+              status={`${response.finalized ? "Completed" : "In progress"} · ${response.items.length} cards`}
             >
-              <summary className="cursor-pointer list-none text-xs font-bold text-slate-700">
-                {response.participantName || "Learner response"}
-                <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">
-                  {response.finalized ? "Completed" : "In progress"} ·{" "}
-                  {response.items.length} cards
-                </span>
-              </summary>
-              <div className="mt-4 space-y-3">
+              <div className="space-y-2">
                 {response.items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-xl border border-slate-200 bg-white p-4"
-                  >
-                    <p className="text-sm font-bold text-slate-800">
-                      {item.title}
-                    </p>
-                    <dl className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div key={item.id} className="rounded-lg border border-border bg-white p-3">
+                    <p className="text-sm font-medium">{item.title}</p>
+                    <dl className="mt-2 grid gap-2 md:grid-cols-2">
                       {item.values.map((answer) => (
                         <div key={answer.fieldId}>
-                          <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                            {answer.label}
-                          </dt>
-                          <dd className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-700">
-                            {answer.value}
-                          </dd>
+                          <dt className="text-xs text-muted-foreground">{answer.label}</dt>
+                          <dd className="whitespace-pre-wrap text-xs leading-5 text-stone-700">{answer.value}</dd>
                         </div>
                       ))}
                     </dl>
                   </div>
                 ))}
               </div>
-            </details>
+            </ResponseDetails>
           ))}
-        </div>
-      ) : null}
-      {results?.scorecards?.length ? (
-        <div className="mt-5 space-y-3">
-          {results.scorecards.map((response) => (
-            <div
+          {results?.scorecards?.map((response) => (
+            <ResponseDetails
               key={response.id}
-              className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+              name={response.participantName}
+              status={response.finalized ? "Confirmed" : "In progress"}
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold text-slate-700">
-                    {response.participantName || "Learner response"}
-                  </p>
-                  <p className="mt-1 text-sm font-bold text-slate-950">
-                    {response.selectedTitle || "Selection in progress"}
-                  </p>
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  {response.finalized ? "Confirmed" : "In progress"}
-                </span>
-              </div>
+              <p className="text-sm font-medium">{response.selectedTitle || "Selection in progress"}</p>
               {response.selectionReason ? (
-                <p className="mt-3 text-xs leading-5 text-slate-600">
-                  {response.selectionReason}
-                </p>
+                <p className="mt-1 text-xs leading-5 text-stone-600">{response.selectionReason}</p>
               ) : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {response.items
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {[...response.items]
                   .sort((a, b) => b.total - a.total)
                   .map((item) => (
-                    <span
-                      key={item.sourceItemId}
-                      className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600"
-                    >
+                    <Badge key={item.sourceItemId}>
                       {item.title} · {item.total}
-                    </span>
+                    </Badge>
                   ))}
               </div>
-            </div>
+            </ResponseDetails>
           ))}
         </div>
       ) : null}
@@ -2455,90 +1826,72 @@ function LiveResults({
   );
 }
 
-function IconButton({
-  label,
-  onClick,
-  icon: Icon,
-  danger,
+function ResponseDetails({
+  name,
+  status,
+  children,
 }: {
-  label: string;
-  onClick: () => void;
-  icon: typeof ArrowUp;
-  danger?: boolean;
+  name?: string;
+  status: string;
+  children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        "rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50",
-        danger && "hover:border-red-200 hover:bg-red-50 hover:text-red-600",
-      )}
-    >
-      <Icon className="h-4 w-4" />
-    </button>
+    <details className="group rounded-lg border border-border bg-page">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5">
+        <span className="min-w-0 flex-1 truncate text-sm">{name || "Learner"}</span>
+        <span className="text-xs text-muted-foreground">{status}</span>
+        <ChevronRight className="h-4 w-4 text-stone-300 transition-transform group-open:rotate-90" strokeWidth={1.75} />
+      </summary>
+      <div className="border-t border-border px-3 py-3">{children}</div>
+    </details>
   );
 }
-function SessionStatus({ status }: { status: LiveSessionRecord["status"] }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest",
-        status === "live"
-          ? "bg-red-50 text-red-700"
-          : status === "lobby"
-            ? "bg-cyan-50 text-cyan-700"
-            : status === "ended"
-              ? "bg-slate-100 text-slate-500"
-              : "bg-amber-50 text-amber-700",
-      )}
-    >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          status === "live" ? "animate-pulse bg-red-500" : "bg-current",
-        )}
-      />
-      {status}
-    </span>
-  );
-}
-function CopyButton({
-  label,
-  value,
+
+function ShareLink({
+  href,
   icon: Icon,
+  label,
+  external,
 }: {
-  label: string;
-  value: string;
+  href: string;
   icon: typeof Link2;
+  label: string;
+  external?: boolean;
 }) {
+  return (
+    <a
+      href={href}
+      target={external ? "_blank" : undefined}
+      rel={external ? "noreferrer" : undefined}
+      download={external ? undefined : true}
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-stone-700 transition-colors hover:bg-muted"
+    >
+      <Icon className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
+      {label}
+    </a>
+  );
+}
+
+function CopyButton({ label, value, icon: Icon }: { label: string; value: string; icon: typeof Link2 }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
+      type="button"
       onClick={async () => {
         await navigator.clipboard.writeText(value);
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1500);
       }}
-      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50"
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-stone-700 transition-colors hover:bg-muted"
     >
-      <Icon className="h-4 w-4" />
+      <Icon className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
       <span className="flex-1">{copied ? "Copied" : label}</span>
-      {copied ? <Check className="h-4 w-4 text-emerald-500" /> : null}
+      {copied ? <Check className="h-4 w-4 text-emerald-600" strokeWidth={2} /> : null}
     </button>
   );
 }
-function ShareQrButton({
-  qrUrl,
-  joinUrl,
-  title,
-}: {
-  qrUrl: string;
-  joinUrl: string;
-  title: string;
-}) {
+
+function ShareQrButton({ qrUrl, joinUrl, title }: { qrUrl: string; joinUrl: string; title: string }) {
   const [status, setStatus] = useState<"idle" | "sharing" | "copied">("idle");
   async function share() {
     if (status === "sharing") return;
@@ -2547,21 +1900,10 @@ function ShareQrButton({
       if (navigator.share) {
         const response = await fetch(qrUrl);
         const blob = response.ok ? await response.blob() : null;
-        const file = blob
-          ? new File([blob], "live-session-qr.png", { type: "image/png" })
-          : null;
+        const file = blob ? new File([blob], "live-session-qr.png", { type: "image/png" }) : null;
         if (file && navigator.canShare?.({ files: [file] }))
-          await navigator.share({
-            title,
-            text: "Scan this QR code to join the live session.",
-            files: [file],
-          });
-        else
-          await navigator.share({
-            title,
-            text: "Join the live session",
-            url: joinUrl,
-          });
+          await navigator.share({ title, text: "Scan this QR code to join the live session.", files: [file] });
+        else await navigator.share({ title, text: "Join the live session", url: joinUrl });
         setStatus("idle");
         return;
       }
@@ -2580,52 +1922,46 @@ function ShareQrButton({
     <button
       type="button"
       onClick={share}
-      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-left text-sm font-bold text-slate-700 hover:bg-slate-50"
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-stone-700 transition-colors hover:bg-muted"
     >
-      <Share2 className="h-4 w-4" />
+      <Share2 className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
       <span className="flex-1">
-        {status === "sharing"
-          ? "Preparing QR code…"
-          : status === "copied"
-            ? "Join link copied"
-            : "Share QR code"}
+        {status === "sharing" ? "Preparing QR code" : status === "copied" ? "Join link copied" : "Share QR code"}
       </span>
-      {status === "sharing" ? (
-        <LoaderCircle className="h-4 w-4 animate-spin text-slate-400" />
-      ) : status === "copied" ? (
-        <Check className="h-4 w-4 text-emerald-500" />
-      ) : null}
+      {status === "sharing" ? <LoaderCircle className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+      {status === "copied" ? <Check className="h-4 w-4 text-emerald-600" strokeWidth={2} /> : null}
     </button>
   );
 }
+
 function ShareRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-slate-400">{label}</dt>
-      <dd className="text-right font-bold text-slate-700">{value}</dd>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="text-right">{value}</dd>
     </div>
   );
 }
+
 function activityLabel(type: LiveActivityType) {
   return activityChoices.find((choice) => choice.type === type)?.label || type;
 }
+
 function labPathLabel(path: string) {
   return path
     .split("/")
-    .map((segment) =>
-      segment
-        .replace(/\.[^.]+$/, "")
-        .replace(/^\d+_/, "")
-        .replaceAll("_", " "),
-    )
+    .map((segment) => segment.replace(/\.[^.]+$/, "").replace(/^\d+_/, "").replaceAll("_", " "))
     .join(" › ");
 }
+
 function formatCode(code: string) {
   return `${code.slice(0, 3)} ${code.slice(3)}`;
 }
+
 function toDateTimeLocal(value?: string) {
   if (!value) return "";
   const date = new Date(value);
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
 }
+

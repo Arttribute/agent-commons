@@ -71,7 +71,7 @@ export function AssignmentSubmissions({
 
   return (
     <section className="mt-8 rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="mb-1 text-lg font-bold text-slate-900">
+      <h2 className="mb-1 text-lg font-semibold text-slate-900">
         {visibleAssignments.some((assignment) => assignment.kind === "follow_up")
           ? "Assignments & check-ins"
           : "Assignments"}
@@ -139,11 +139,11 @@ function AssignmentCard({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           {assignment.kind === "follow_up" && (
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">
+            <p className="mb-1 text-[10px] font-medium text-emerald-700">
               Continuity check-in
             </p>
           )}
-          <h3 className="font-bold text-slate-900">{assignment.title}</h3>
+          <h3 className="font-semibold text-slate-900">{assignment.title}</h3>
         </div>
         <span className="text-xs text-slate-500">
           {assignment.dueAt
@@ -158,7 +158,7 @@ function AssignmentCard({
       </p>
       {submission && (
         <div className="mb-4 rounded-lg border border-slate-200 bg-white p-3 text-sm">
-          <p className="font-bold text-slate-700">Status: {submission.status}</p>
+          <p className="font-semibold text-slate-700">Status: {submission.status}</p>
           {submission.score !== undefined && (
             <p className="text-slate-600">Score: {submission.score}</p>
           )}
@@ -183,7 +183,7 @@ function AssignmentCard({
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button
           disabled={saving}
-          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
           {saving ? "Submitting..." : submission ? "Update submission" : "Submit"}
         </button>

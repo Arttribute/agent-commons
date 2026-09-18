@@ -70,7 +70,7 @@ export function BottomGuide({
           ) : (
             <Coins className="h-3.5 w-3.5 shrink-0 text-amber-500" />
           )}
-          <span className="min-w-0 truncate text-xs font-bold text-slate-500">
+          <span className="min-w-0 truncate text-xs font-semibold text-slate-500">
             {statusLabel}
           </span>
           {creditReward ? (
@@ -123,7 +123,7 @@ export function BottomGuide({
             <button
               type="button"
               onClick={onPreviousStep}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Back
@@ -134,7 +134,7 @@ export function BottomGuide({
             <button
               type="button"
               onClick={onNextStep}
-              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700"
+              className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700"
             >
               {isLast ? "Review" : "Next"}
             </button>
@@ -146,7 +146,7 @@ export function BottomGuide({
               type="button"
               onClick={onCreate}
               disabled={!canCreate || creating}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               {creating ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -164,7 +164,7 @@ export function BottomGuide({
               type="button"
               onClick={onSync}
               disabled={!canSync || syncing}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {syncing ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -179,7 +179,7 @@ export function BottomGuide({
               type="button"
               onClick={onFinish}
               disabled={!canFinish || finishing}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
               {finishing ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

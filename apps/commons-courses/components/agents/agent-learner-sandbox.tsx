@@ -1586,7 +1586,7 @@ function GuideTour({
       <div className="pointer-events-none fixed inset-x-3 bottom-[82px] z-50">
         <div className="pointer-events-auto rounded-xl border border-slate-200 bg-white/95 p-3 text-slate-950 shadow-xl backdrop-blur">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            <span className="text-[10px] font-medium text-slate-400">
               {guideIndex + 1} / {guideLength}
             </span>
             <button
@@ -1598,7 +1598,7 @@ function GuideTour({
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-          <p className="mt-1.5 text-sm font-bold leading-snug">{step.title}</p>
+          <p className="mt-1.5 text-sm font-semibold leading-snug">{step.title}</p>
           <p className="mt-1 text-xs leading-relaxed text-slate-500">
             {step.body}
           </p>
@@ -1607,14 +1607,14 @@ function GuideTour({
               type="button"
               onClick={onPrevious}
               disabled={guideIndex === 0}
-              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-35"
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-35"
             >
               Back
             </button>
             <button
               type="button"
               onClick={isLast ? onDismiss : onNext}
-              className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white"
+              className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white"
             >
               {isLast ? "Done" : "Next"}
             </button>
@@ -1631,7 +1631,7 @@ function GuideTour({
         style={{ ...style, width: dialogW }}
       >
         <div className="flex items-center justify-between px-3 pt-2.5 pb-0">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          <span className="text-[10px] font-medium text-slate-400">
             {guideIndex + 1} / {guideLength}
           </span>
           <button
@@ -1644,7 +1644,7 @@ function GuideTour({
           </button>
         </div>
         <div className="px-3 pb-0 pt-1.5">
-          <p className="text-sm font-bold leading-snug">{step.title}</p>
+          <p className="text-sm font-semibold leading-snug">{step.title}</p>
           <p className="mt-1 text-xs leading-relaxed text-slate-500">
             {step.body}
           </p>
@@ -1654,14 +1654,14 @@ function GuideTour({
             type="button"
             onClick={onPrevious}
             disabled={guideIndex === 0}
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-35"
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-35"
           >
             Back
           </button>
           <button
             type="button"
             onClick={isLast ? onDismiss : onNext}
-            className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white"
+            className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white"
           >
             {isLast ? "Done" : "Next"}
           </button>

@@ -1,21 +1,12 @@
 import { CourseEditor } from "@/components/educator/course-editor";
+import { CourseSectionHeader } from "@/components/educator/course-section-header";
 
-export default async function EditCoursePage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-
   return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-sm font-bold uppercase tracking-[0.16em] text-slate-400">
-          Course setup
-        </p>
-        <h2 className="mt-2 text-3xl font-bold text-slate-950">Course info</h2>
-      </div>
+    <>
+      <CourseSectionHeader section="details" />
       <CourseEditor slug={slug} section="info" />
-    </div>
+    </>
   );
 }

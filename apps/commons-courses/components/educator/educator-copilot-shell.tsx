@@ -29,6 +29,10 @@ import {
   X,
 } from "lucide-react";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
+import {
+  COPILOT_LAUNCH_EVENT,
+  type CopilotLaunchDetail,
+} from "@/components/educator/copilot-launcher";
 import { cn } from "@/lib/utils";
 import type {
   EducatorCopilotAction,
@@ -188,6 +192,23 @@ export function EducatorCopilotShell() {
     loadProfile();
   }, []);
 
+  // The console home hands messages to the panel through a window event.
+  const launchRef = useRef(sendMessage);
+  useEffect(() => {
+    launchRef.current = sendMessage;
+  });
+  useEffect(() => {
+    const onLaunch = (event: Event) => {
+      const detail = (event as CustomEvent<CopilotLaunchDetail>).detail;
+      if (!detail) return;
+      setOpen(true);
+      setPanel("chat");
+      void launchRef.current(null, detail.message, { files: detail.files, fresh: true });
+    };
+    window.addEventListener(COPILOT_LAUNCH_EVENT, onLaunch);
+    return () => window.removeEventListener(COPILOT_LAUNCH_EVENT, onLaunch);
+  }, []);
+
   useEffect(() => {
     setActiveSession((current) =>
       current ? { ...current, currentPath: pathname || current.currentPath } : current
@@ -278,10 +299,15 @@ export function EducatorCopilotShell() {
     }).catch(() => {});
   }
 
-  async function sendMessage(event: FormEvent, presetText?: string) {
-    event.preventDefault();
+  async function sendMessage(
+    event: FormEvent | null,
+    presetText?: string,
+    options: { files?: File[]; fresh?: boolean } = {}
+  ) {
+    event?.preventDefault();
     const content = (presetText ?? input).trim();
-    const selectedFiles = files;
+    const selectedFiles = options.files ?? files;
+    const baseSession = options.fresh ? null : activeSession;
     if ((!content && selectedFiles.length === 0) || loading) return;
 
     const optimisticUser: EducatorCopilotMessage = {
@@ -305,7 +331,7 @@ export function EducatorCopilotShell() {
       createdAt: new Date().toISOString(),
       actions: [],
     };
-    const nextSession: SessionDetail = activeSession || {
+    const nextSession: SessionDetail = baseSession || {
       id: "",
       title: "New copilot session",
       actionMode,
@@ -327,7 +353,7 @@ export function EducatorCopilotShell() {
 
     try {
       const formData = new FormData();
-      if (activeSession?.id) formData.append("sessionId", activeSession.id);
+      if (baseSession?.id) formData.append("sessionId", baseSession.id);
       formData.append("message", content);
       formData.append("pageContext", JSON.stringify(collectPageContext()));
       for (const file of selectedFiles) formData.append("files", file, file.name);
@@ -484,7 +510,7 @@ export function EducatorCopilotShell() {
         }}
         className={cn(
           "fixed bottom-5 right-5 z-40 rounded-full border border-slate-200 bg-white p-1 shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl",
-          open && "hidden"
+          (open || pathname === "/educator") && "hidden"
         )}
       >
         <CopilotAvatar size="large" />
@@ -1633,6 +1659,7 @@ function inferPage(path: string) {
   if (path === "/educator/copilot") return "educator.copilot.materials";
   if (path === "/educator/settings") return "educator.settings";
   if (path === "/educator/skills") return "educator.skills";
+  if (path === "/educator/courses") return "educator.courses";
   const courseMatch = path.match(/\/educator\/courses\/([^/]+)(?:\/([^/]+))?/);
   if (!courseMatch) return "educator";
   return courseMatch[2]

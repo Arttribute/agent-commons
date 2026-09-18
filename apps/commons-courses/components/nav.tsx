@@ -1,32 +1,36 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   FlaskConical,
+  GraduationCap,
   LayoutDashboard,
   LogOut,
   Menu,
   Settings,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MenuItem, Popover } from "@/components/ui/popover";
+
+const links = [
+  { href: "/courses", label: "Courses" },
+  { href: "/skills", label: "Skills" },
+];
 
 export function Nav() {
   const { data: session } = useSession();
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const profileRef = useRef<HTMLDivElement>(null);
-  const educatorLabel = "Educator console";
   const userName = session?.user?.name || session?.user?.email || "Account";
   const userInitial = userName.slice(0, 1).toUpperCase();
-  const authCallback =
-    pathname === "/" || pathname.startsWith("/auth/") ? "/dashboard" : pathname;
+  const authCallback = pathname === "/" || pathname.startsWith("/auth/") ? "/dashboard" : pathname;
   const signInHref = `/auth/signin?callbackUrl=${encodeURIComponent(authCallback)}`;
   const signUpHref = `/auth/signup?callbackUrl=${encodeURIComponent(authCallback)}`;
 
@@ -36,145 +40,97 @@ export function Nav() {
     return () => window.removeEventListener("scroll", handler);
   }, []);
 
-  useEffect(() => {
-    if (!profileOpen) return;
-    const handler = (event: MouseEvent) => {
-      if (!profileRef.current?.contains(event.target as Node)) {
-        setProfileOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [profileOpen]);
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
+  const avatar = session?.user?.image ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={session.user.image} alt="" className="h-full w-full object-cover" />
+  ) : (
+    userInitial
+  );
 
   return (
     <nav
       className={cn(
-        "fixed top-0 inset-x-0 z-50 border-b border-slate-200 transition-all duration-300",
-        scrolled
-          ? "bg-white/95 backdrop-blur shadow-sm"
-          : "bg-white"
+        "fixed inset-x-0 top-0 z-50 border-b transition-colors duration-200",
+        scrolled ? "border-border bg-white/90 backdrop-blur" : "border-transparent bg-white",
       )}
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5">
-          <div
-            className="h-7 w-7 rounded-md flex items-center justify-center bg-slate-950"
-          >
-            <FlaskConical className="h-3.5 w-3.5 text-white" />
+        <div className="flex items-center gap-8">
+          <Link href="/" className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-stone-900">
+              <FlaskConical className="h-3.5 w-3.5 text-white" strokeWidth={1.75} />
+            </span>
+            <span className="text-sm font-medium tracking-tight text-foreground">CommonLab</span>
+          </Link>
+          <div className="hidden items-center gap-1 md:flex">
+            {links.map((link) => (
+              <NavLink key={link.href} href={link.href} active={isActive(link.href)}>
+                {link.label}
+              </NavLink>
+            ))}
           </div>
-          <span className="text-sm font-bold text-slate-900 tracking-tight">
-            CommonLab
-          </span>
-        </Link>
-
-        {/* Desktop links */}
-        <div className="hidden md:flex items-center gap-7">
-          <Link
-            href="/courses"
-            className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            Courses
-          </Link>
-          <Link
-            href="/skills"
-            className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            Skills
-          </Link>
-          <Link
-            href="/builders"
-            className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            Builders
-          </Link>
-          <Link
-            href="/educator"
-            className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            {educatorLabel}
-          </Link>
-          {session && (
-            <Link
-              href="/dashboard"
-              className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
-            >
-              Dashboard
-            </Link>
-          )}
         </div>
 
-        {/* Auth buttons */}
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden items-center gap-2 md:flex">
+          <NavLink href="/educator" active={isActive("/educator")}>
+            Teach
+          </NavLink>
           {session ? (
-            <div ref={profileRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setProfileOpen((open) => !open)}
-                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-950 text-sm font-bold text-white transition-colors hover:border-slate-300"
-                aria-label="Open profile menu"
-                aria-expanded={profileOpen}
-              >
-                {session.user?.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={session.user.image}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  userInitial
-                )}
-              </button>
-              {profileOpen ? (
-                <div className="absolute right-0 mt-3 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-                  <div className="border-b border-slate-100 px-4 py-3">
-                    <p className="truncate text-sm font-bold text-slate-900">
-                      {userName}
-                    </p>
+            <Popover
+              align="end"
+              className="w-60 p-1.5"
+              trigger={({ open, toggle }) => (
+                <button
+                  type="button"
+                  onClick={toggle}
+                  aria-label="Open account menu"
+                  aria-expanded={open}
+                  className="ml-2 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-stone-900 text-xs font-medium text-white ring-offset-2 transition hover:ring-2 hover:ring-border"
+                >
+                  {avatar}
+                </button>
+              )}
+            >
+              {({ close }) => (
+                <div>
+                  <div className="px-2.5 py-2">
+                    <p className="truncate text-sm">{userName}</p>
                     {session.user?.email ? (
-                      <p className="truncate text-xs text-slate-500">
-                        {session.user.email}
-                      </p>
+                      <p className="truncate text-xs text-muted-foreground">{session.user.email}</p>
                     ) : null}
                   </div>
-                  <ProfileMenuLink href="/dashboard" onClick={() => setProfileOpen(false)}>
-                    <LayoutDashboard className="h-4 w-4" />
-                    Dashboard
-                  </ProfileMenuLink>
-                  <ProfileMenuLink href="/account" onClick={() => setProfileOpen(false)}>
-                    <Settings className="h-4 w-4" />
-                    Account settings
-                  </ProfileMenuLink>
-                  <ProfileMenuLink
-                    href="/account#learning-profile"
-                    onClick={() => setProfileOpen(false)}
-                  >
-                    <FlaskConical className="h-4 w-4" />
-                    Learning preferences
-                  </ProfileMenuLink>
-                  <button
-                    onClick={() => signOut()}
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    Sign out
-                  </button>
+                  <div className="border-t border-border pt-1">
+                    <MenuLink href="/dashboard" icon={LayoutDashboard} onClick={close}>
+                      My learning
+                    </MenuLink>
+                    <MenuLink href="/educator" icon={GraduationCap} onClick={close}>
+                      Educator console
+                    </MenuLink>
+                    <MenuLink href="/account" icon={Settings} onClick={close}>
+                      Account
+                    </MenuLink>
+                    <MenuLink href="/account#learning-profile" icon={SlidersHorizontal} onClick={close}>
+                      Learning preferences
+                    </MenuLink>
+                  </div>
+                  <div className="mt-1 border-t border-border pt-1">
+                    <MenuItem icon={LogOut} onClick={() => signOut()}>
+                      Sign out
+                    </MenuItem>
+                  </div>
                 </div>
-              ) : null}
-            </div>
+              )}
+            </Popover>
           ) : (
             <>
-              <Link
-                href={signInHref}
-                className="text-sm text-slate-600 hover:text-slate-900 transition-colors"
-              >
+              <NavLink href={signInHref} active={false}>
                 Sign in
-              </Link>
+              </NavLink>
               <Link
                 href={signUpHref}
-                className="rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+                className="ml-1 rounded-lg bg-stone-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800"
               >
                 Start learning
               </Link>
@@ -182,123 +138,53 @@ export function Nav() {
           )}
         </div>
 
-        {/* Mobile toggle */}
         <button
-          className="md:hidden p-2 rounded-lg hover:bg-slate-100 transition-colors"
+          className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
           onClick={() => setMobileOpen(!mobileOpen)}
           aria-label="Toggle menu"
         >
-          {mobileOpen ? (
-            <X className="h-5 w-5" />
-          ) : (
-            <Menu className="h-5 w-5" />
-          )}
+          {mobileOpen ? <X className="h-5 w-5" strokeWidth={1.75} /> : <Menu className="h-5 w-5" strokeWidth={1.75} />}
         </button>
       </div>
 
-      {/* Mobile menu */}
       {mobileOpen && (
-        <div className="md:hidden bg-white border-b border-slate-200 px-4 py-4 sm:px-6 flex flex-col gap-4">
-          <Link
-            href="/courses"
-            className="text-sm text-slate-700"
-            onClick={() => setMobileOpen(false)}
-          >
-            Courses
-          </Link>
-          <Link
-            href="/skills"
-            className="text-sm text-slate-700"
-            onClick={() => setMobileOpen(false)}
-          >
-            Skills
-          </Link>
-          <Link
-            href="/builders"
-            className="text-sm text-slate-700"
-            onClick={() => setMobileOpen(false)}
-          >
-            Builders
-          </Link>
-          <Link
-            href="/educator"
-            className="text-sm text-slate-700"
-            onClick={() => setMobileOpen(false)}
-          >
-            {educatorLabel}
-          </Link>
-          {session && (
-            <Link
-              href="/dashboard"
-              className="text-sm text-slate-700"
-              onClick={() => setMobileOpen(false)}
-            >
-              Dashboard
-            </Link>
-          )}
+        <div className="flex flex-col gap-1 border-b border-border bg-white px-4 pb-4 md:hidden">
+          {[...links, { href: "/educator", label: "Teach" }].map((link) => (
+            <MobileLink key={link.href} href={link.href} onClick={() => setMobileOpen(false)}>
+              {link.label}
+            </MobileLink>
+          ))}
           {session ? (
             <>
-              <div className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
-                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-slate-950 text-sm font-bold text-white">
-                  {session.user?.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={session.user.image}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    userInitial
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-slate-900">
-                    {userName}
-                  </p>
+              <div className="my-2 flex items-center gap-3 border-t border-border pt-3">
+                <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-stone-900 text-xs font-medium text-white">
+                  {avatar}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm">{userName}</span>
                   {session.user?.email ? (
-                    <p className="truncate text-xs text-slate-500">
-                      {session.user.email}
-                    </p>
+                    <span className="block truncate text-xs text-muted-foreground">{session.user.email}</span>
                   ) : null}
-                </div>
+                </span>
               </div>
-              <Link
-                href="/account"
-                className="text-sm text-slate-700"
-                onClick={() => setMobileOpen(false)}
-              >
+              <MobileLink href="/dashboard" onClick={() => setMobileOpen(false)}>
+                My learning
+              </MobileLink>
+              <MobileLink href="/account" onClick={() => setMobileOpen(false)}>
                 Account
-              </Link>
-              <Link
-                href="/account#learning-profile"
-                className="text-sm text-slate-700"
-                onClick={() => setMobileOpen(false)}
-              >
-                Learning preferences
-              </Link>
-              <button
-                onClick={() => signOut()}
-                className="text-sm text-slate-700 text-left"
-              >
+              </MobileLink>
+              <button onClick={() => signOut()} className="rounded-md px-2 py-2 text-left text-sm text-stone-700">
                 Sign out
               </button>
             </>
           ) : (
             <>
-              <Link
-                href={signInHref}
-                className="text-sm text-slate-700"
-                onClick={() => setMobileOpen(false)}
-              >
+              <MobileLink href={signInHref} onClick={() => setMobileOpen(false)}>
                 Sign in
-              </Link>
-              <Link
-                href={signUpHref}
-                className="text-sm font-bold text-slate-900"
-                onClick={() => setMobileOpen(false)}
-              >
+              </MobileLink>
+              <MobileLink href={signUpHref} onClick={() => setMobileOpen(false)}>
                 Start learning
-              </Link>
+              </MobileLink>
             </>
           )}
         </div>
@@ -307,12 +193,36 @@ export function Nav() {
   );
 }
 
-function ProfileMenuLink({
+function NavLink({ href, active, children }: { href: string; active: boolean; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "rounded-md px-3 py-1.5 text-sm transition-colors",
+        active ? "bg-accent text-foreground" : "text-stone-600 hover:text-foreground",
+      )}
+    >
+      {children}
+    </Link>
+  );
+}
+
+function MobileLink({ href, onClick, children }: { href: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <Link href={href} onClick={onClick} className="rounded-md px-2 py-2 text-sm text-stone-700 hover:bg-muted">
+      {children}
+    </Link>
+  );
+}
+
+function MenuLink({
   href,
+  icon: Icon,
   onClick,
   children,
 }: {
   href: string;
+  icon: typeof Settings;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -320,8 +230,9 @@ function ProfileMenuLink({
     <Link
       href={href}
       onClick={onClick}
-      className="flex items-center gap-3 px-4 py-3 text-sm text-slate-700 transition-colors hover:bg-slate-50"
+      className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-muted"
     >
+      <Icon className="h-4 w-4 opacity-70" strokeWidth={1.75} />
       {children}
     </Link>
   );

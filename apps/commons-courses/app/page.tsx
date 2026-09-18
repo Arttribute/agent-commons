@@ -4,22 +4,15 @@ import {
   Award,
   BookOpen,
   Boxes,
-  CheckCircle,
   Clock,
   Eye,
-  FlaskConical,
-  GraduationCap,
   Layers,
   Play,
-  Rocket,
-  ShieldCheck,
-  Sparkles,
-  Terminal,
-  Users,
   Wifi,
 } from "lucide-react";
 import { Nav } from "@/components/nav";
 import { SandboxDemo } from "@/components/landing/sandbox-demo";
+import { SiteFooter } from "@/components/site-footer";
 import { chipStyles } from "@/lib/brand";
 import {
   getLiveScheduleSummary,
@@ -141,14 +134,6 @@ function formatCoursePrice(
   return `$${course.price}`;
 }
 
-function Eyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
-      {children}
-    </p>
-  );
-}
-
 function Highlight({
   children,
   index = 0,
@@ -179,7 +164,7 @@ function PrimaryLink({
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+      className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
     >
       {children}
     </Link>
@@ -196,7 +181,7 @@ function SecondaryLink({
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50"
+      className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-800 shadow-card transition-colors hover:bg-slate-50"
     >
       {children}
     </Link>
@@ -208,7 +193,7 @@ function CourseCard({ course }: { course: CourseData }) {
   return (
     <Link
       href={`/courses/${course.slug}`}
-      className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg"
+      className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-card transition-all hover:border-slate-300 hover:shadow-floating"
     >
       <div className="mb-4 flex items-center justify-between gap-3">
         <CourseTypeBadge type={course.courseType} />
@@ -216,7 +201,7 @@ function CourseCard({ course }: { course: CourseData }) {
           {formatCoursePrice(course)}
         </span>
       </div>
-      <h3 className="text-base font-semibold text-slate-950">{course.title}</h3>
+      <h3 className="text-base font-medium text-slate-950">{course.title}</h3>
       <p className="mt-2 line-clamp-2 text-[15px] leading-6 text-slate-700">
         {course.tagline}
       </p>
@@ -259,7 +244,7 @@ function SkillPackCard({
   return (
     <Link
       href={`/skills/${pack.skillSlug}`}
-      className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg"
+      className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-card transition-all hover:border-slate-300 hover:shadow-floating"
     >
       {pack.coverUrl ? (
         <div className="border-b border-slate-100 bg-white p-2">
@@ -284,10 +269,8 @@ function SkillPackCard({
       <div className="flex flex-1 flex-col p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-xs font-bold uppercase tracking-widest text-slate-500">
-              {pack.courseTitle}
-            </p>
-            <h3 className="mt-1.5 text-base font-semibold text-slate-950">
+            <p className="truncate text-xs text-slate-500">{pack.courseTitle}</p>
+            <h3 className="mt-1 text-base font-medium text-slate-950">
               {pack.title}
             </h3>
           </div>
@@ -303,40 +286,11 @@ function SkillPackCard({
           {stripRichTextHtml(pack.learnerPromise || pack.subtitle || "")}
         </p>
         <div className="flex-1" />
-        <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-slate-950">
+        <span className="mt-4 inline-flex items-center gap-1.5 text-sm text-slate-700">
           Start the path <ArrowRight className="h-4 w-4" />
         </span>
       </div>
     </Link>
-  );
-}
-
-function Footer() {
-  return (
-    <footer className="border-t border-slate-200 bg-white">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-slate-600 sm:flex-row sm:px-6 lg:px-8">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-950">
-            <FlaskConical className="h-3 w-3 text-white" />
-          </div>
-          <span>© 2026 CommonLab</span>
-        </div>
-        <div className="flex gap-6">
-          <Link href="/courses" className="hover:text-slate-950">
-            Courses
-          </Link>
-          <Link href="/skills" className="hover:text-slate-950">
-            Skills
-          </Link>
-          <Link href="/privacy" className="hover:text-slate-950">
-            Privacy
-          </Link>
-          <Link href="/terms" className="hover:text-slate-950">
-            Terms
-          </Link>
-        </div>
-      </div>
-    </footer>
   );
 }
 
@@ -350,271 +304,55 @@ export default async function HomePage() {
     <div className="min-h-screen bg-white text-slate-900">
       <Nav />
 
-      {/* Hero — the core offer, nothing else */}
       <section className="border-b border-slate-200 bg-white pt-28">
         <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">
-              <FlaskConical className="h-3.5 w-3.5" />
-              CommonLab — the AI agent learning workspace
-            </p>
-            <h1 className="mt-6 text-4xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-5xl lg:text-[3.4rem]">
+            <h1 className="text-4xl font-medium leading-tight tracking-tight text-slate-950 sm:text-5xl lg:text-[3.4rem]">
               A <Highlight index={2}>controlled workspace</Highlight> for every
               learner.
             </h1>
-            <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-slate-700">
-              Bring your curriculum — CommonLab provides the guided sandbox
-              where learners build, run, observe, and debug real AI agents,
-              safely and step by step.
+            <p className="mx-auto mt-5 max-w-xl text-lg leading-8 text-slate-600">
+              Learners build, run and debug real AI agents in a guided sandbox.
+              You bring the curriculum.
             </p>
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
               <PrimaryLink href="/auth/signup">
                 Start learning <ArrowRight className="h-4 w-4" />
               </PrimaryLink>
-              <SecondaryLink href="/educator">
-                Teach with CommonLab
-              </SecondaryLink>
-            </div>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-600">
-              {["Guided steps", "Permissioned tools", "Observable runs"].map(
-                (item) => (
-                  <span key={item} className="flex items-center gap-1.5">
-                    <CheckCircle className="h-4 w-4 text-slate-900" />
-                    {item}
-                  </span>
-                ),
-              )}
+              <SecondaryLink href="/educator">Teach with CommonLab</SecondaryLink>
             </div>
           </div>
-
-          {/* The guided sandbox, shown — not described */}
           <div className="mx-auto mt-14 max-w-4xl">
-            <p className="mb-3 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
-              Take a look — the guided sandbox
-            </p>
             <SandboxDemo />
           </div>
         </div>
       </section>
 
-      {/* The practice layer */}
-      <section
-        id="practice"
-        className="border-b border-slate-200 bg-slate-50 py-16 sm:py-20"
-      >
+      <section id="practice" className="border-b border-slate-200 bg-slate-50 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl">
-            <Eyebrow>Guided sandbox workflow</Eyebrow>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              Learners practice in a{" "}
-              <Highlight index={0}>controlled environment</Highlight> before
-              touching real tools.
-            </h2>
-            <p className="mt-4 text-[17px] leading-8 text-slate-700">
-              Each learner gets an isolated workspace with only the tools their
-              educator allows. They build an agent from a lesson template, run
-              it against sample data, and review every step it took.
-            </p>
-          </div>
-
+          <h2 className="max-w-2xl text-3xl font-medium tracking-tight text-slate-950">
+            Practice in a <Highlight index={0}>safe environment</Highlight> before touching real tools.
+          </h2>
           <div className="mt-10 grid gap-4 sm:grid-cols-3">
             {[
-              [
-                "01",
-                "Build",
-                "Create an agent from a lesson template with guided steps.",
-              ],
-              [
-                "02",
-                "Run",
-                "Test it live with permitted tools and sample data.",
-              ],
-              [
-                "03",
-                "Review",
-                "Inspect logs, tool calls, and outputs — then iterate.",
-              ],
-            ].map(([num, title, body], index) => (
-              <div
-                key={num}
-                className="rounded-xl border border-slate-200 bg-white p-5"
-              >
-                <span
-                  className={`inline-flex rounded-md border px-2 py-1 text-xs font-black ${chipStyles[index]}`}
-                >
-                  {num}
-                </span>
-                <h3 className="mt-4 text-[15px] font-semibold text-slate-950">
-                  {title}
-                </h3>
-                <p className="mt-2 text-[15px] leading-6 text-slate-700">
-                  {body}
-                </p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {[
-              {
-                icon: Boxes,
-                title: "Isolated workspaces",
-                desc: "Separate practice environments for every learner and cohort.",
-              },
-              {
-                icon: Terminal,
-                title: "Observable runs",
-                desc: "Every task, log, tool call, and output can be replayed and reviewed.",
-              },
-              {
-                icon: ShieldCheck,
-                title: "Teaching guardrails",
-                desc: "Limit tools, reset practice spaces, and review attempts.",
-              },
-              {
-                icon: Users,
-                title: "Multi-agent practice",
-                desc: "Teach coordination, delegation, and collaboration patterns.",
-              },
-            ].map(({ icon: Icon, title, desc }) => (
-              <div
-                key={title}
-                className="rounded-xl border border-slate-200 bg-white p-5"
-              >
-                <Icon className="h-5 w-5 text-slate-900" />
-                <h3 className="mt-4 text-[15px] font-semibold text-slate-950">
-                  {title}
-                </h3>
-                <p className="mt-2 text-[15px] leading-6 text-slate-700">
-                  {desc}
-                </p>
+              { icon: Boxes, title: "Build", body: "Create an agent from a lesson template, one guided step at a time." },
+              { icon: Play, title: "Run", body: "Test it with the tools and sample data the educator allows." },
+              { icon: Eye, title: "Review", body: "Inspect every log, tool call and output, then improve it." },
+            ].map(({ icon: Icon, title, body }) => (
+              <div key={title} className="rounded-xl border border-slate-200 bg-white p-5">
+                <Icon className="h-5 w-5 text-slate-500" strokeWidth={1.75} />
+                <h3 className="mt-4 text-[15px] font-medium text-slate-950">{title}</h3>
+                <p className="mt-1.5 text-[15px] leading-6 text-slate-600">{body}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Educators */}
-      <section
-        id="educators"
-        className="border-b border-slate-200 bg-white py-16 sm:py-20"
-      >
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-[380px_1fr] lg:px-8">
-          <div>
-            <Eyebrow>For educators</Eyebrow>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              Bring your curriculum. CommonLab provides the{" "}
-              <Highlight index={3}>learning workspace</Highlight>.
-            </h2>
-            <p className="mt-4 text-[17px] leading-8 text-slate-700">
-              You focus on what to teach. CommonLab handles the environments,
-              the guardrails, and the guided practice around it.
-            </p>
-            <Link
-              href="/educator"
-              className="mt-6 inline-flex items-center justify-center gap-2 rounded-md bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
-            >
-              Open educator console <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            {[
-              "Publish public or private courses",
-              "Author guided sandbox activities with step-by-step walkthroughs",
-              "Run 4 to 6 week cohorts or self-paced programs",
-              "Attach daily skill badge challenges to course concepts",
-              "Track enrolment, progress, and completion",
-              "Create templates for agents, tools, and workflows",
-            ].map((item) => (
-              <div
-                key={item}
-                className="flex items-start gap-3 rounded-lg border border-slate-200 p-4"
-              >
-                <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-900" />
-                <p className="text-[15px] leading-6 text-slate-800">{item}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* The full path — courses, skills, quests (after the core offer) */}
-      <section className="border-b border-slate-200 bg-white py-16 sm:py-20">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl">
-            <Eyebrow>Around the workspace</Eyebrow>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              A clear path from concepts to{" "}
-              <Highlight index={1}>badges</Highlight> to shipped work.
-            </h2>
-          </div>
-          <div className="mt-10 grid gap-4 md:grid-cols-3">
-            {[
-              {
-                icon: GraduationCap,
-                title: "Structured courses",
-                desc: "Self-paced lessons, live cohorts, projects, and assessments — all built around sandbox practice.",
-                href: "/courses",
-                cta: "Browse courses",
-              },
-              {
-                icon: Award,
-                title: "Daily skill badges",
-                desc: "Short daily challenges learners can finish, streak, and proudly collect.",
-                href: "/skills",
-                cta: "Explore skills",
-              },
-              {
-                icon: Rocket,
-                title: "Builder quests",
-                desc: "Turn learning into prototypes, hackathons, build nights, demos, and startup pathways.",
-                href: "/builders",
-                cta: "See quests",
-              },
-            ].map(({ icon: Icon, title, desc, href, cta }, index) => (
-              <Link
-                key={title}
-                href={href}
-                className="group flex flex-col rounded-xl border border-slate-200 bg-white p-6 transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg"
-              >
-                <div
-                  className={`inline-flex h-10 w-10 items-center justify-center rounded-md border ${chipStyles[index]}`}
-                >
-                  <Icon className="h-5 w-5" />
-                </div>
-                <h3 className="mt-5 text-base font-semibold text-slate-950">
-                  {title}
-                </h3>
-                <p className="mt-2 text-[15px] leading-6 text-slate-700">
-                  {desc}
-                </p>
-                <div className="flex-1" />
-                <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-bold text-slate-950">
-                  {cta}
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Featured courses */}
       {courses.length > 0 && (
-        <section className="border-b border-slate-200 bg-slate-50 py-16 sm:py-20">
+        <section className="border-b border-slate-200 bg-white py-16 sm:py-20">
           <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <Eyebrow>Featured courses</Eyebrow>
-                <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-                  Start with a <Highlight index={4}>structured path</Highlight>.
-                </h2>
-              </div>
-              <SecondaryLink href="/courses">
-                Browse all courses <ArrowRight className="h-4 w-4" />
-              </SecondaryLink>
-            </div>
+            <SectionHeading title="Featured courses" href="/courses" cta="All courses" />
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {courses.map((course) => (
                 <CourseCard key={course.slug} course={course} />
@@ -624,22 +362,10 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* Featured skill paths */}
       {skillPacks.length > 0 && (
-        <section className="border-b border-slate-200 bg-white py-16 sm:py-20">
+        <section className="border-b border-slate-200 bg-slate-50 py-16 sm:py-20">
           <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <Eyebrow>Skill paths</Eyebrow>
-                <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-                  Earn AI fluency one{" "}
-                  <Highlight index={0}>daily badge</Highlight> at a time.
-                </h2>
-              </div>
-              <SecondaryLink href="/skills">
-                View all skills <ArrowRight className="h-4 w-4" />
-              </SecondaryLink>
-            </div>
+            <SectionHeading title="Daily skill paths" href="/skills" cta="All skills" />
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {skillPacks.map((pack, index) => (
                 <SkillPackCard key={pack.skillSlug} pack={pack} index={index} />
@@ -649,31 +375,38 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* Final CTA */}
       <section className="bg-white py-16 sm:py-20">
-        <div className="mx-auto max-w-6xl px-4 text-center sm:px-6 lg:px-8">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">
-            <Sparkles className="h-3.5 w-3.5" />
-            Get started
-          </span>
-          <h2 className="mx-auto mt-5 max-w-2xl text-3xl font-semibold tracking-tight text-slate-950">
-            Give your learners a <Highlight index={2}>safe place</Highlight> to
-            master AI agents.
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-6 px-4 text-center sm:px-6 lg:px-8">
+          <h2 className="max-w-2xl text-3xl font-medium tracking-tight text-slate-950">
+            Teach AI agents with <Highlight index={3}>confidence</Highlight>.
           </h2>
-          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-            <PrimaryLink href="/auth/signup">
-              Create free account <ArrowRight className="h-4 w-4" />
-            </PrimaryLink>
-            <SecondaryLink href="/educator">Teach with CommonLab</SecondaryLink>
-          </div>
-          <p className="mt-6 flex items-center justify-center gap-1.5 text-sm text-slate-500">
-            <Eye className="h-4 w-4" />
-            Every run stays observable, replayable, and reviewable.
+          <p className="max-w-lg text-[15px] leading-7 text-slate-600">
+            Courses, live sessions, skill badges and sandboxes in one console, with a copilot that helps you build them.
           </p>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <PrimaryLink href="/educator">
+              Open the educator console <ArrowRight className="h-4 w-4" />
+            </PrimaryLink>
+            <SecondaryLink href="/courses">Browse courses</SecondaryLink>
+          </div>
         </div>
       </section>
 
-      <Footer />
+      <SiteFooter />
+    </div>
+  );
+}
+
+function SectionHeading({ title, href, cta }: { title: string; href: string; cta: string }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-4">
+      <h2 className="text-2xl font-medium tracking-tight text-slate-950">{title}</h2>
+      <Link
+        href={href}
+        className="inline-flex items-center gap-1.5 text-sm text-slate-600 transition-colors hover:text-slate-950"
+      >
+        {cta} <ArrowRight className="h-4 w-4" />
+      </Link>
     </div>
   );
 }

@@ -1049,10 +1049,15 @@ async function toolListCourses(ctx: CopilotToolContext) {
         pendingReviews: m.pendingReviews || 0,
         updatedAt: course.updatedAt,
         editHrefs: {
-          dashboard: `/educator/courses/${course.slug}`,
+          overview: `/educator/courses/${course.slug}`,
+          details: `/educator/courses/${course.slug}/edit`,
           content: `/educator/courses/${course.slug}/content`,
+          liveSessions: `/educator/courses/${course.slug}/live`,
+          coursework: `/educator/courses/${course.slug}/assignments`,
+          checkIns: `/educator/courses/${course.slug}/assignments?tab=check-ins`,
           skills: `/educator/courses/${course.slug}/skills`,
-          students: `/educator/courses/${course.slug}/students`,
+          learners: `/educator/courses/${course.slug}/students`,
+          sales: `/educator/courses/${course.slug}/access`,
           analytics: `/educator/courses/${course.slug}/analytics`,
         },
       };

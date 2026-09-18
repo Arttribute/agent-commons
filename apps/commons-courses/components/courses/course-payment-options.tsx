@@ -30,7 +30,7 @@ export function CoursePaymentOptions({
     <>
       {!isFree && (
         <label className="mb-3 block">
-          <span className="text-xs font-bold text-slate-600">
+          <span className="text-xs font-semibold text-slate-600">
             Promo, scholarship, or pass code
           </span>
           <input
