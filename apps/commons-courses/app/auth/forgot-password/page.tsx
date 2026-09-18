@@ -31,11 +31,11 @@ export default function ForgotPasswordPage() {
           <div className="flex h-7 w-7 items-center justify-center rounded bg-slate-950">
             <FlaskConical className="h-3.5 w-3.5 text-white" />
           </div>
-          <span className="text-sm font-bold tracking-tight text-slate-900">
+          <span className="text-sm font-semibold tracking-tight text-slate-900">
             CommonLab
           </span>
         </Link>
-        <h1 className="mb-1 text-center text-2xl font-bold text-slate-900">
+        <h1 className="mb-1 text-center text-2xl font-semibold text-slate-900">
           Reset your password
         </h1>
         <p className="mb-8 text-center text-sm text-slate-500">
@@ -57,7 +57,7 @@ export default function ForgotPasswordPage() {
             />
             <button
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Send reset link
@@ -65,7 +65,7 @@ export default function ForgotPasswordPage() {
           </form>
         )}
         <p className="mt-6 text-center text-sm text-slate-500">
-          <Link href="/auth/signin" className="font-bold text-slate-900">
+          <Link href="/auth/signin" className="font-semibold text-slate-900">
             Back to sign in
           </Link>
         </p>

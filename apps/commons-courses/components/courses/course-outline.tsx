@@ -61,7 +61,7 @@ export function CourseOutline({
             className="w-full min-w-0 flex items-center justify-between px-5 py-4 bg-white hover:bg-slate-50 transition-colors text-left"
           >
             <div className="flex min-w-0 items-center gap-3">
-              <span className="text-xs font-bold tabular-nums w-6 flex-shrink-0 text-slate-900">
+              <span className="text-xs font-semibold tabular-nums w-6 flex-shrink-0 text-slate-900">
                 {String(i + 1).padStart(2, "0")}
               </span>
               <div className="min-w-0">

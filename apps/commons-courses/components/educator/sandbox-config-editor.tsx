@@ -1,19 +1,23 @@
 "use client";
 
+import { useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import type {
   AgentSandboxCapability,
   AgentSandboxConfig,
   AgentSandboxStepTarget,
 } from "@/types/skills";
+import { Button } from "@/components/ui/button";
+import { Field, FieldGrid, Input, Select, SwitchRow, Textarea } from "@/components/ui/field";
+import { Card, Disclosure, EmptyState, SectionTitle } from "@/components/ui/surface";
+import { Segmented } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import { createSandboxConfig } from "./sandbox-defaults";
 
-type SandboxSkillTemplate = NonNullable<
-  AgentSandboxConfig["skillTemplates"]
->[number];
-type SandboxToolTemplate = NonNullable<
-  AgentSandboxConfig["toolTemplates"]
->[number];
+type SandboxSkillTemplate = NonNullable<AgentSandboxConfig["skillTemplates"]>[number];
+type SandboxToolTemplate = NonNullable<AgentSandboxConfig["toolTemplates"]>[number];
 type SandboxTemplate = SandboxSkillTemplate | SandboxToolTemplate;
+type Update = (patch: Partial<AgentSandboxConfig>) => void;
 
 const sandboxCapabilities: AgentSandboxCapability[] = [
   "identity",
@@ -45,6 +49,21 @@ const sandboxTargets: AgentSandboxStepTarget[] = [
   "publish",
 ];
 
+const SECTIONS = [
+  { value: "setup", label: "Setup" },
+  { value: "screens", label: "Screens" },
+  { value: "capabilities", label: "Capabilities" },
+  { value: "agent", label: "Starter agent" },
+  { value: "templates", label: "Templates" },
+  { value: "review", label: "Review" },
+  { value: "guide", label: "Guide" },
+] as const;
+type Section = (typeof SECTIONS)[number]["value"];
+
+/**
+ * Agent learner sandbox settings for one skill challenge. Each concern has
+ * its own small view so the educator edits one thing at a time.
+ */
 export function SandboxConfigEditor({
   value,
   onChange,
@@ -54,278 +73,237 @@ export function SandboxConfigEditor({
 }) {
   const sandbox = value || createSandboxConfig();
   const enabled = Boolean(value?.enabled);
-  const update = (patch: Partial<AgentSandboxConfig>) =>
-    onChange({ ...sandbox, enabled: true, ...patch });
+  const [section, setSection] = useState<Section>("setup");
+  const update: Update = (patch) => onChange({ ...sandbox, enabled: true, ...patch });
 
   return (
-    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-black text-slate-950">
-            Agent learner sandbox
-          </p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Choose the minimal Agent Commons surface learners can use for this
-            challenge.
-          </p>
-        </div>
-        <Toggle
-          label="Enable"
+    <div className="space-y-4">
+      <Card className="py-2">
+        <SwitchRow
+          label="Agent learner sandbox"
+          info="Gives learners a minimal Agent Commons workspace for this challenge. Credit rewards follow the central CommonLab campaign."
           checked={enabled}
           onChange={(checked) => onChange(checked ? sandbox : undefined)}
         />
-      </div>
+      </Card>
 
       {enabled ? (
-        <div className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-3">
-            <Field
-              label="Sandbox title"
-              value={sandbox.title || ""}
-              onChange={(title) => update({ title })}
-            />
-            <label>
-              <span className="text-sm font-bold text-slate-700">Mode</span>
-              <select
-                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={sandbox.mode}
-                onChange={(event) =>
-                  update({
-                    mode: event.target.value as AgentSandboxConfig["mode"],
-                  })
-                }
-              >
-                <option value="simple">Simple</option>
-                <option value="builder">Builder</option>
-                <option value="full">Full</option>
-              </select>
-            </label>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-              Credit rewards are controlled by the central CommonLab campaign,
-              including amount, limits, and expiry.
+        <>
+          <div className="overflow-x-auto">
+            <Segmented size="sm" items={[...SECTIONS]} value={section} onChange={setSection} />
+          </div>
+
+          {section === "setup" ? (
+            <Card className="space-y-4">
+              <FieldGrid>
+                <Field label="Sandbox title">
+                  <Input value={sandbox.title || ""} onChange={(event) => update({ title: event.target.value })} />
+                </Field>
+                <Field
+                  label="Mode"
+                  info="Simple shows chat only. Builder adds configuration panels. Full exposes every enabled capability."
+                >
+                  <Select
+                    value={sandbox.mode}
+                    onChange={(event) =>
+                      update({ mode: event.target.value as AgentSandboxConfig["mode"] })
+                    }
+                  >
+                    <option value="simple">Simple</option>
+                    <option value="builder">Builder</option>
+                    <option value="full">Full</option>
+                  </Select>
+                </Field>
+              </FieldGrid>
+              <Field label="Brief" info="The task learners complete in the sandbox.">
+                <Textarea rows={3} value={sandbox.brief || ""} onChange={(event) => update({ brief: event.target.value })} />
+              </Field>
+            </Card>
+          ) : null}
+
+          {section === "screens" ? (
+            <div className="space-y-4">
+              <IntroEditor sandbox={sandbox} update={update} />
+              <CompletionEditor sandbox={sandbox} update={update} />
             </div>
-          </div>
-          <TextArea
-            label="Brief"
-            value={sandbox.brief || ""}
-            onChange={(brief) => update({ brief })}
-          />
+          ) : null}
 
-          <SandboxIntroEditor sandbox={sandbox} update={update} />
-          <SandboxCompletionEditor sandbox={sandbox} update={update} />
+          {section === "capabilities" ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card>
+                <SectionTitle title="Visible to learners" />
+                <CheckboxGrid
+                  items={sandboxCapabilities}
+                  selected={sandbox.capabilities || []}
+                  onChange={(capabilities) => update({ capabilities })}
+                />
+              </Card>
+              <Card>
+                <SectionTitle title="Required to complete" />
+                <CheckboxGrid
+                  items={sandboxCapabilities.filter((item) => item !== "credits")}
+                  selected={sandbox.requiredCapabilities || []}
+                  onChange={(requiredCapabilities) => update({ requiredCapabilities })}
+                />
+              </Card>
+            </div>
+          ) : null}
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <CheckboxList
-              label="Visible capabilities"
-              items={sandboxCapabilities}
-              selected={sandbox.capabilities || []}
-              onChange={(capabilities) => update({ capabilities })}
-            />
-            <CheckboxList
-              label="Required to complete"
-              items={sandboxCapabilities.filter((item) => item !== "credits")}
-              selected={sandbox.requiredCapabilities || []}
-              onChange={(requiredCapabilities) =>
-                update({ requiredCapabilities })
-              }
-            />
-          </div>
+          {section === "agent" ? (
+            <Card className="space-y-4">
+              <FieldGrid>
+                <Field label="Agent name">
+                  <Input
+                    value={sandbox.starterAgent?.name || ""}
+                    onChange={(event) =>
+                      update({ starterAgent: { ...sandbox.starterAgent, name: event.target.value } })
+                    }
+                  />
+                </Field>
+                <Field label="Role">
+                  <Input
+                    value={sandbox.starterAgent?.persona || ""}
+                    onChange={(event) =>
+                      update({ starterAgent: { ...sandbox.starterAgent, persona: event.target.value } })
+                    }
+                  />
+                </Field>
+              </FieldGrid>
+              <Field label="System prompt">
+                <Textarea
+                  rows={6}
+                  value={sandbox.starterAgent?.systemPrompt || ""}
+                  onChange={(event) =>
+                    update({
+                      starterAgent: { ...sandbox.starterAgent, systemPrompt: event.target.value },
+                    })
+                  }
+                />
+              </Field>
+            </Card>
+          ) : null}
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <TextArea
-              label="Starter system prompt"
-              value={sandbox.starterAgent?.systemPrompt || ""}
-              onChange={(systemPrompt) =>
-                update({
-                  starterAgent: {
-                    ...sandbox.starterAgent,
-                    systemPrompt,
-                  },
-                })
-              }
-            />
-            <div className="grid gap-3">
-              <Field
-                label="Starter agent name"
-                value={sandbox.starterAgent?.name || ""}
-                onChange={(name) =>
-                  update({ starterAgent: { ...sandbox.starterAgent, name } })
+          {section === "templates" ? (
+            <div className="space-y-4">
+              <TemplateList
+                title="Skill templates"
+                kind="skill"
+                rows={sandbox.skillTemplates || []}
+                onChange={(skillTemplates) =>
+                  update({ skillTemplates: skillTemplates as SandboxSkillTemplate[] })
                 }
               />
-              <Field
-                label="Starter role"
-                value={sandbox.starterAgent?.persona || ""}
-                onChange={(persona) =>
-                  update({ starterAgent: { ...sandbox.starterAgent, persona } })
+              <TemplateList
+                title="Tool and connector templates"
+                kind="tool"
+                rows={sandbox.toolTemplates || []}
+                onChange={(toolTemplates) =>
+                  update({ toolTemplates: toolTemplates as SandboxToolTemplate[] })
                 }
               />
             </div>
-          </div>
+          ) : null}
 
-          <TemplateList
-            title="Skill templates"
-            kind="skill"
-            rows={sandbox.skillTemplates || []}
-            onChange={(skillTemplates) =>
-              update({
-                skillTemplates: skillTemplates as SandboxSkillTemplate[],
-              })
-            }
-          />
-          <TemplateList
-            title="Tool and connector templates"
-            kind="tool"
-            rows={sandbox.toolTemplates || []}
-            onChange={(toolTemplates) =>
-              update({ toolTemplates: toolTemplates as SandboxToolTemplate[] })
-            }
-          />
-          <ReviewConfigEditor
-            value={sandbox.review}
-            onChange={(review) => update({ review })}
-          />
-          <GuideStepEditor
-            steps={sandbox.guideSteps || []}
-            onChange={(guideSteps) => update({ guideSteps })}
-          />
-        </div>
+          {section === "review" ? (
+            <ReviewEditor value={sandbox.review} onChange={(review) => update({ review })} />
+          ) : null}
+
+          {section === "guide" ? (
+            <GuideStepEditor
+              steps={sandbox.guideSteps || []}
+              onChange={(guideSteps) => update({ guideSteps })}
+            />
+          ) : null}
+        </>
       ) : null}
     </div>
   );
 }
 
-function SandboxIntroEditor({
-  sandbox,
-  update,
-}: {
-  sandbox: AgentSandboxConfig;
-  update: (patch: Partial<AgentSandboxConfig>) => void;
-}) {
+function IntroEditor({ sandbox, update }: { sandbox: AgentSandboxConfig; update: Update }) {
+  const intro = sandbox.intro;
+  const setIntro = (patch: Partial<NonNullable<AgentSandboxConfig["intro"]>>) =>
+    update({ intro: { ...intro, enabled: true, ...patch } });
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-black text-slate-950">
-            Learner intro screen
-          </p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Explain the task before learners enter the live sandbox.
-          </p>
+    <Card className="space-y-4">
+      <SwitchRow
+        label="Intro screen"
+        info="Explains the task before learners enter the sandbox."
+        checked={Boolean(intro?.enabled)}
+        onChange={(enabled) => update({ intro: { ...intro, enabled } })}
+      />
+      <FieldGrid>
+        <Field label="Title">
+          <Input value={intro?.title || ""} onChange={(event) => setIntro({ title: event.target.value })} />
+        </Field>
+        <Field label="Start button">
+          <Input value={intro?.startLabel || ""} onChange={(event) => setIntro({ startLabel: event.target.value })} />
+        </Field>
+      </FieldGrid>
+      <Field label="Body">
+        <Textarea rows={3} value={intro?.body || ""} onChange={(event) => setIntro({ body: event.target.value })} />
+      </Field>
+      <Field label="Expectations" info="One per line.">
+        <Textarea
+          rows={3}
+          value={(intro?.expectations || []).join("\n")}
+          onChange={(event) =>
+            setIntro({
+              expectations: event.target.value
+                .split("\n")
+                .map((item) => item.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </Field>
+      <Disclosure title="Info panel" summary={intro?.infoTitle || "Optional"}>
+        <div className="space-y-4">
+          <Field label="Info title">
+            <Input value={intro?.infoTitle || ""} onChange={(event) => setIntro({ infoTitle: event.target.value })} />
+          </Field>
+          <Field label="Info body">
+            <Textarea rows={3} value={intro?.infoBody || ""} onChange={(event) => setIntro({ infoBody: event.target.value })} />
+          </Field>
         </div>
-        <Toggle
-          label="Show intro"
-          checked={Boolean(sandbox.intro?.enabled)}
-          onChange={(enabled) =>
-            update({ intro: { ...sandbox.intro, enabled } })
-          }
-        />
-      </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field
-          label="Intro title"
-          value={sandbox.intro?.title || ""}
-          onChange={(title) =>
-            update({ intro: { ...sandbox.intro, title, enabled: true } })
-          }
-        />
-        <Field
-          label="Start button"
-          value={sandbox.intro?.startLabel || ""}
-          onChange={(startLabel) =>
-            update({ intro: { ...sandbox.intro, startLabel, enabled: true } })
-          }
-        />
-      </div>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <TextArea
-          label="Intro body"
-          value={sandbox.intro?.body || ""}
-          onChange={(body) =>
-            update({ intro: { ...sandbox.intro, body, enabled: true } })
-          }
-        />
-        <TextArea
-          label="Expectations, one per line"
-          value={(sandbox.intro?.expectations || []).join("\n")}
-          onChange={(value) =>
-            update({
-              intro: {
-                ...sandbox.intro,
-                enabled: true,
-                expectations: value
-                  .split("\n")
-                  .map((item) => item.trim())
-                  .filter(Boolean),
-              },
-            })
-          }
-        />
-      </div>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <Field
-          label="Info title"
-          value={sandbox.intro?.infoTitle || ""}
-          onChange={(infoTitle) =>
-            update({ intro: { ...sandbox.intro, infoTitle, enabled: true } })
-          }
-        />
-        <TextArea
-          label="Info body"
-          value={sandbox.intro?.infoBody || ""}
-          onChange={(infoBody) =>
-            update({ intro: { ...sandbox.intro, infoBody, enabled: true } })
-          }
-        />
-      </div>
-    </div>
+      </Disclosure>
+    </Card>
   );
 }
 
-function SandboxCompletionEditor({
-  sandbox,
-  update,
-}: {
-  sandbox: AgentSandboxConfig;
-  update: (patch: Partial<AgentSandboxConfig>) => void;
-}) {
+function CompletionEditor({ sandbox, update }: { sandbox: AgentSandboxConfig; update: Update }) {
+  const completion = sandbox.completion;
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <p className="mb-3 text-sm font-black text-slate-950">Completion state</p>
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field
-          label="Completion title"
-          value={sandbox.completion?.title || ""}
-          onChange={(title) =>
-            update({ completion: { ...sandbox.completion, title } })
-          }
+    <Card className="space-y-4">
+      <SectionTitle title="Completion screen" />
+      <FieldGrid>
+        <Field label="Title">
+          <Input
+            value={completion?.title || ""}
+            onChange={(event) => update({ completion: { ...completion, title: event.target.value } })}
+          />
+        </Field>
+        <Field label="Continue button">
+          <Input
+            value={completion?.primaryActionLabel || ""}
+            onChange={(event) =>
+              update({ completion: { ...completion, primaryActionLabel: event.target.value } })
+            }
+          />
+        </Field>
+      </FieldGrid>
+      <Field label="Body">
+        <Textarea
+          rows={3}
+          value={completion?.body || ""}
+          onChange={(event) => update({ completion: { ...completion, body: event.target.value } })}
         />
-        <Field
-          label="Continue button"
-          value={sandbox.completion?.primaryActionLabel || ""}
-          onChange={(primaryActionLabel) =>
-            update({
-              completion: {
-                ...sandbox.completion,
-                primaryActionLabel,
-              },
-            })
-          }
-        />
-      </div>
-      <div className="mt-3">
-        <TextArea
-          label="Completion body"
-          value={sandbox.completion?.body || ""}
-          onChange={(body) =>
-            update({ completion: { ...sandbox.completion, body } })
-          }
-        />
-      </div>
-    </div>
+      </Field>
+    </Card>
   );
 }
 
-function ReviewConfigEditor({
+function ReviewEditor({
   value,
   onChange,
 }: {
@@ -339,82 +317,70 @@ function ReviewConfigEditor({
     rubric: "",
     model: "",
   };
-
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-black text-slate-950">AI reviewer</p>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Give learners quiz-like feedback on prompts or skills before they
-            create the agent.
-          </p>
-        </div>
-        <Toggle
-          label="Enable"
-          checked={Boolean(review.enabled)}
-          onChange={(enabled) => onChange({ ...review, enabled })}
-        />
-      </div>
+    <Card className="space-y-4">
+      <SwitchRow
+        label="AI reviewer"
+        info="Gives learners quiz-like feedback on prompts or skills before they create the agent."
+        checked={Boolean(review.enabled)}
+        onChange={(enabled) => onChange({ ...review, enabled })}
+      />
       {review.enabled ? (
-        <div className="grid gap-3 md:grid-cols-2">
-          <CheckboxList
-            label="Review targets"
-            items={["system_prompt", "skills"]}
-            selected={review.targets || []}
-            onChange={(targets) => onChange({ ...review, targets })}
-          />
-          <div className="grid gap-3">
-            <Field
-              label="Passing score"
-              type="number"
-              value={String(review.minScore || 70)}
-              onChange={(minScore) =>
-                onChange({ ...review, minScore: Number(minScore) || 70 })
-              }
-            />
-            <Field
-              label="Review model"
-              value={review.model || ""}
-              onChange={(model) => onChange({ ...review, model })}
+        <>
+          <div>
+            <p className="mb-1.5 text-sm font-medium">Review targets</p>
+            <CheckboxGrid
+              items={["system_prompt", "skills"]}
+              selected={review.targets || []}
+              onChange={(targets) => onChange({ ...review, targets })}
             />
           </div>
-          <div className="md:col-span-2">
-            <TextArea
-              label="Rubric"
-              value={review.rubric || ""}
-              onChange={(rubric) => onChange({ ...review, rubric })}
-            />
-          </div>
-        </div>
+          <FieldGrid>
+            <Field label="Passing score">
+              <Input
+                type="number"
+                value={String(review.minScore || 70)}
+                onChange={(event) => onChange({ ...review, minScore: Number(event.target.value) || 70 })}
+              />
+            </Field>
+            <Field label="Review model" optional>
+              <Input value={review.model || ""} onChange={(event) => onChange({ ...review, model: event.target.value })} />
+            </Field>
+          </FieldGrid>
+          <Field label="Rubric">
+            <Textarea rows={4} value={review.rubric || ""} onChange={(event) => onChange({ ...review, rubric: event.target.value })} />
+          </Field>
+        </>
       ) : null}
-    </div>
+    </Card>
   );
 }
 
-function CheckboxList<T extends string>({
-  label,
+function CheckboxGrid<T extends string>({
   items,
   selected,
   onChange,
 }: {
-  label: string;
   items: T[];
   selected: T[];
   onChange: (items: T[]) => void;
 }) {
   return (
-    <div>
-      <p className="mb-2 text-sm font-bold text-slate-700">{label}</p>
-      <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3">
-        {items.map((item) => (
+    <div className="grid grid-cols-2 gap-1">
+      {items.map((item) => {
+        const checked = selected.includes(item);
+        return (
           <label
             key={item}
-            className="flex items-center gap-2 text-xs font-bold text-slate-600"
+            className={cn(
+              "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm capitalize transition-colors hover:bg-muted",
+              checked ? "text-foreground" : "text-muted-foreground",
+            )}
           >
             <input
               type="checkbox"
-              checked={selected.includes(item)}
+              className="h-4 w-4 accent-stone-900"
+              checked={checked}
               onChange={(event) =>
                 onChange(
                   event.target.checked
@@ -425,8 +391,8 @@ function CheckboxList<T extends string>({
             />
             {item.replace(/_/g, " ")}
           </label>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
@@ -442,114 +408,103 @@ function TemplateList({
   rows: SandboxTemplate[];
   onChange: (rows: SandboxTemplate[]) => void;
 }) {
+  function setRow(index: number, row: SandboxTemplate) {
+    const next = [...rows];
+    next[index] = row;
+    onChange(next);
+  }
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-sm font-black text-slate-950">{title}</p>
-        <button
-          type="button"
-          onClick={() =>
-            onChange([
-              ...rows,
-              kind === "skill"
-                ? {
-                    id: `skill-${rows.length + 1}`,
-                    name: "New skill",
-                    instructions: "",
-                  }
-                : {
-                    id: `tool-${rows.length + 1}`,
-                    name: "New tool",
-                    description: "",
-                    connectorKind: "custom",
-                    simulated: true,
-                  },
-            ])
-          }
-          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold hover:bg-slate-50"
-        >
-          Add
-        </button>
-      </div>
-      <div className="space-y-3">
-        {rows.map((row, index) => (
-          <div
-            key={row.id || index}
-            className="grid gap-2 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_1fr_auto]"
+    <div>
+      <SectionTitle
+        title={title}
+        action={
+          <Button
+            size="sm"
+            icon={Plus}
+            onClick={() =>
+              onChange([
+                ...rows,
+                kind === "skill"
+                  ? { id: `skill-${rows.length + 1}`, name: "New skill", instructions: "" }
+                  : {
+                      id: `tool-${rows.length + 1}`,
+                      name: "New tool",
+                      description: "",
+                      connectorKind: "custom",
+                      simulated: true,
+                    },
+              ])
+            }
           >
-            <Field
-              label="Name"
-              value={row.name || ""}
-              onChange={(name) => {
-                const next = [...rows];
-                next[index] = { ...row, name };
-                onChange(next);
-              }}
-            />
-            {kind === "tool" ? (
-              <label>
-                <span className="text-sm font-bold text-slate-700">
-                  Connector
-                </span>
-                <select
-                  className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            Add
+          </Button>
+        }
+      />
+      <div className="space-y-2">
+        {rows.map((row, index) => (
+          <Disclosure key={row.id || index} title={row.name || "Untitled"} defaultOpen={!row.name}>
+            <div className="space-y-4">
+              <FieldGrid>
+                <Field label="Name">
+                  <Input value={row.name || ""} onChange={(event) => setRow(index, { ...row, name: event.target.value })} />
+                </Field>
+                {kind === "tool" ? (
+                  <Field label="Connector">
+                    <Select
+                      value={"connectorKind" in row ? row.connectorKind || "custom" : "custom"}
+                      onChange={(event) =>
+                        setRow(index, {
+                          ...row,
+                          connectorKind: event.target.value as SandboxToolTemplate["connectorKind"],
+                        })
+                      }
+                    >
+                      <option value="custom">Custom</option>
+                      <option value="google_calendar">Google Calendar</option>
+                      <option value="gmail">Gmail</option>
+                      <option value="google_drive">Google Drive</option>
+                      <option value="google_sheets">Google Sheets</option>
+                      <option value="github">GitHub</option>
+                    </Select>
+                  </Field>
+                ) : null}
+              </FieldGrid>
+              <Field label={kind === "skill" ? "Instructions" : "Description"}>
+                <Textarea
+                  rows={3}
                   value={
-                    "connectorKind" in row
-                      ? row.connectorKind || "custom"
-                      : "custom"
-                  }
-                  onChange={(event) => {
-                    const next = [...rows];
-                    next[index] = {
-                      ...row,
-                      connectorKind: event.target
-                        .value as SandboxToolTemplate["connectorKind"],
-                    };
-                    onChange(next);
-                  }}
-                >
-                  <option value="custom">Custom</option>
-                  <option value="google_calendar">Google Calendar</option>
-                  <option value="gmail">Gmail</option>
-                  <option value="google_drive">Google Drive</option>
-                  <option value="google_sheets">Google Sheets</option>
-                  <option value="github">GitHub</option>
-                </select>
-              </label>
-            ) : null}
-            <button
-              type="button"
-              onClick={() =>
-                onChange(rows.filter((_, rowIndex) => rowIndex !== index))
-              }
-              className="self-end rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-white"
-            >
-              Remove
-            </button>
-            <div className="md:col-span-3">
-              <TextArea
-                label={kind === "skill" ? "Instructions" : "Description"}
-                value={
-                  kind === "skill"
-                    ? "instructions" in row
-                      ? row.instructions || ""
-                      : ""
-                    : "description" in row
-                      ? row.description || ""
-                      : ""
-                }
-                onChange={(value) => {
-                  const next = [...rows];
-                  next[index] =
                     kind === "skill"
-                      ? { ...row, instructions: value }
-                      : { ...row, description: value };
-                  onChange(next);
-                }}
-              />
+                      ? "instructions" in row
+                        ? row.instructions || ""
+                        : ""
+                      : "description" in row
+                        ? row.description || ""
+                        : ""
+                  }
+                  onChange={(event) =>
+                    setRow(
+                      index,
+                      kind === "skill"
+                        ? { ...row, instructions: event.target.value }
+                        : { ...row, description: event.target.value },
+                    )
+                  }
+                />
+              </Field>
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={Trash2}
+                  onClick={() => onChange(rows.filter((_, rowIndex) => rowIndex !== index))}
+                >
+                  Remove
+                </Button>
+              </div>
             </div>
-          </div>
+          </Disclosure>
         ))}
+        {!rows.length ? <EmptyState title={`No ${title.toLowerCase()}`} className="py-8" /> : null}
       </div>
     </div>
   );
@@ -562,189 +517,96 @@ function GuideStepEditor({
   steps: AgentSandboxConfig["guideSteps"];
   onChange: (steps: AgentSandboxConfig["guideSteps"]) => void;
 }) {
+  function setStep(index: number, patch: Partial<AgentSandboxConfig["guideSteps"][number]>) {
+    const next = [...steps];
+    next[index] = { ...next[index], ...patch };
+    onChange(next);
+  }
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-sm font-black text-slate-950">Guided highlights</p>
-        <button
-          type="button"
-          onClick={() =>
-            onChange([
-              ...steps,
-              {
-                id: `step-${steps.length + 1}`,
-                target: "identity",
-                title: "New step",
-                body: "",
-              },
-            ])
-          }
-          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold hover:bg-slate-50"
-        >
-          Add step
-        </button>
-      </div>
-      <div className="space-y-3">
-        {steps.map((step, index) => (
-          <div
-            key={step.id || index}
-            className="grid gap-2 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_1fr_1fr_auto]"
+    <div>
+      <SectionTitle
+        title="Guided highlights"
+        info="Short tour steps that point learners at parts of the sandbox."
+        action={
+          <Button
+            size="sm"
+            icon={Plus}
+            onClick={() =>
+              onChange([
+                ...steps,
+                { id: `step-${steps.length + 1}`, target: "identity", title: "New step", body: "" },
+              ])
+            }
           >
-            <Field
-              label="Title"
-              value={step.title}
-              onChange={(title) => {
-                const next = [...steps];
-                next[index] = { ...step, title };
-                onChange(next);
-              }}
-            />
-            <label>
-              <span className="text-sm font-bold text-slate-700">Target</span>
-              <select
-                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={step.target}
-                onChange={(event) => {
-                  const next = [...steps];
-                  next[index] = {
-                    ...step,
-                    target: event.target.value as AgentSandboxStepTarget,
-                  };
-                  onChange(next);
-                }}
-              >
-                {sandboxTargets.map((target) => (
-                  <option key={target} value={target}>
-                    {target.replace(/_/g, " ")}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span className="text-sm font-bold text-slate-700">
-                Dialog side
-              </span>
-              <select
-                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={step.placement || "auto"}
-                onChange={(event) => {
-                  const next = [...steps];
-                  next[index] = {
-                    ...step,
-                    placement: event.target.value as NonNullable<
-                      typeof step.placement
-                    >,
-                  };
-                  onChange(next);
-                }}
-              >
-                {["auto", "top", "right", "bottom", "left"].map((placement) => (
-                  <option key={placement} value={placement}>
-                    {placement}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={() =>
-                onChange(steps.filter((_, stepIndex) => stepIndex !== index))
-              }
-              className="self-end rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-white"
-            >
-              Remove
-            </button>
-            <div className="md:col-span-4">
-              <TextArea
-                label="Instruction"
-                value={step.body}
-                onChange={(body) => {
-                  const next = [...steps];
-                  next[index] = { ...step, body };
-                  onChange(next);
-                }}
-              />
+            Add step
+          </Button>
+        }
+      />
+      <div className="space-y-2">
+        {steps.map((step, index) => (
+          <Disclosure
+            key={step.id || index}
+            title={`${index + 1}. ${step.title || "Untitled step"}`}
+            summary={step.target.replace(/_/g, " ")}
+          >
+            <div className="space-y-4">
+              <FieldGrid columns={3}>
+                <Field label="Title">
+                  <Input value={step.title} onChange={(event) => setStep(index, { title: event.target.value })} />
+                </Field>
+                <Field label="Target">
+                  <Select
+                    value={step.target}
+                    onChange={(event) => setStep(index, { target: event.target.value as AgentSandboxStepTarget })}
+                  >
+                    {sandboxTargets.map((target) => (
+                      <option key={target} value={target}>
+                        {target.replace(/_/g, " ")}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Dialog side">
+                  <Select
+                    value={step.placement || "auto"}
+                    onChange={(event) =>
+                      setStep(index, {
+                        placement: event.target.value as NonNullable<typeof step.placement>,
+                      })
+                    }
+                  >
+                    {["auto", "top", "right", "bottom", "left"].map((placement) => (
+                      <option key={placement} value={placement}>
+                        {placement}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </FieldGrid>
+              <Field label="Instruction">
+                <Textarea rows={2} value={step.body} onChange={(event) => setStep(index, { body: event.target.value })} />
+              </Field>
+              <Field label="Custom selector" optional info="A CSS selector or [data-sandbox-target] value.">
+                <Input
+                  value={step.targetSelector || ""}
+                  onChange={(event) => setStep(index, { targetSelector: event.target.value })}
+                />
+              </Field>
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={Trash2}
+                  onClick={() => onChange(steps.filter((_, stepIndex) => stepIndex !== index))}
+                >
+                  Remove step
+                </Button>
+              </div>
             </div>
-            <div className="md:col-span-4">
-              <Field
-                label="Optional CSS selector or [data-sandbox-target]"
-                value={step.targetSelector || ""}
-                onChange={(targetSelector) => {
-                  const next = [...steps];
-                  next[index] = { ...step, targetSelector };
-                  onChange(next);
-                }}
-              />
-            </div>
-          </div>
+          </Disclosure>
         ))}
+        {!steps.length ? <EmptyState title="No guide steps" className="py-8" /> : null}
       </div>
     </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-bold text-slate-700">{label}</span>
-      <input
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-      />
-    </label>
-  );
-}
-
-function TextArea({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-bold text-slate-700">{label}</span>
-      <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-2 min-h-24 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-      />
-    </label>
-  );
-}
-
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="flex min-h-12 items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">
-      <span>{label}</span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-    </label>
   );
 }

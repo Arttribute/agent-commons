@@ -23,7 +23,7 @@ export function SandboxIntro({
   return (
     <section className="flex h-full min-h-0 w-full flex-col bg-white">
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-black uppercase tracking-widest text-slate-500">
+        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-500">
           <Info className="h-3.5 w-3.5" />
           {intro?.eyebrow || "Practice sandbox"}
         </div>
@@ -38,7 +38,7 @@ export function SandboxIntro({
 
         {intro?.infoBody ? (
           <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-            <p className="font-black text-slate-950">
+            <p className="font-semibold text-slate-950">
               {intro.infoTitle || "What is this sandbox?"}
             </p>
             <p className="mt-1">{intro.infoBody}</p>
@@ -63,7 +63,7 @@ export function SandboxIntro({
         <button
           type="button"
           onClick={onStart}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-black text-white sm:w-fit"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white sm:w-fit"
         >
           {intro?.startLabel || "Proceed to sandbox"}
           <ArrowRight className="h-4 w-4" />
@@ -103,7 +103,7 @@ export function SandboxCompletion({
             <button
               type="button"
               onClick={onContinue}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-black text-white"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white"
             >
               {completion?.primaryActionLabel || "Continue"}
               <ArrowRight className="h-3.5 w-3.5" />

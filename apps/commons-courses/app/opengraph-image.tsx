@@ -66,7 +66,7 @@ export default function Image() {
           >
             <span>Courses</span>
             <span>Skill badges</span>
-            <span>Builder quests</span>
+            <span>Live sessions</span>
             <span>Educator tools</span>
           </div>
         </div>

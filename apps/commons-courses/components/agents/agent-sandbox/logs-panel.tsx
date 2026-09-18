@@ -29,7 +29,7 @@ export function LogsPanel({
     >
       {showHeader ? (
         <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <p className="text-sm font-black">Logs</p>
+          <p className="text-sm font-semibold">Logs</p>
           {onClose ? (
             <button
               type="button"
@@ -144,7 +144,7 @@ function LogStat({
         <span className="block text-lg font-medium text-slate-950">
           {value}
         </span>
-        <span className="block text-[10px] uppercase tracking-wide text-slate-500">
+        <span className="block text-[10px] text-slate-500">
           {label}
         </span>
       </span>

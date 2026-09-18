@@ -1,20 +1,17 @@
 import { redirect } from "next/navigation";
+import { GraduationCap } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { requireEducatorCourse } from "@/lib/educator-auth";
 import Enrollment from "@/models/Enrollment";
-import { ScrollableListFrame } from "@/components/educator/scrollable-list-frame";
+import { CourseSectionHeader } from "@/components/educator/course-section-header";
+import { Badge, EmptyState, List, ListRow } from "@/components/ui/surface";
 
-export default async function CourseStudentsPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+export default async function CourseLearnersPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await auth();
   if (!session?.user?.id) {
     redirect(`/auth/signin?callbackUrl=/educator/courses/${slug}/students`);
   }
-
   const result = await requireEducatorCourse(slug);
   if (result.error) redirect("/educator");
 
@@ -22,48 +19,54 @@ export default async function CourseStudentsPage({
     .populate("userId", "name email")
     .sort({ enrolledAt: -1 })
     .lean();
-  return (
-    <div className="space-y-6">
-      <div>
-        <p className="text-sm font-bold uppercase tracking-[0.16em] text-slate-400">
-          Learners
-        </p>
-        <h2 className="mt-2 text-3xl font-bold text-slate-950">Students</h2>
-        <p className="mt-2 text-sm text-slate-500">
-          Enrollment, progress, payment state, and access level.
-        </p>
-      </div>
 
-      <ScrollableListFrame title="Enrolled students" count={enrollments.length}>
-        <div className="min-w-[720px]">
-          <div className="sticky top-0 grid grid-cols-[1.3fr_0.7fr_0.7fr_0.7fr] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">
-            <span>Student</span>
-            <span>Progress</span>
-            <span>Payment</span>
-            <span>Access</span>
-          </div>
+  return (
+    <div>
+      <CourseSectionHeader
+        section="learners"
+        meta={`${enrollments.length} enrolled`}
+      />
+      {enrollments.length ? (
+        <List>
           {enrollments.map((enrollment) => {
             const user = enrollment.userId as unknown as { name?: string; email?: string };
+            const name = user?.name || user?.email || "Learner";
             return (
-              <div
+              <ListRow
                 key={String(enrollment._id)}
-                className="grid grid-cols-[1.3fr_0.7fr_0.7fr_0.7fr] gap-3 border-t border-slate-100 px-4 py-3 text-sm"
-              >
-                <div>
-                  <p className="font-bold text-slate-900">{user?.name || "Learner"}</p>
-                  <p className="text-xs text-slate-500">{user?.email}</p>
-                </div>
-                <span>{enrollment.progress}%</span>
-                <span>{enrollment.paymentStatus}</span>
-                <span>{enrollment.accessLevel}</span>
-              </div>
+                leading={
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-sm font-medium text-stone-600">
+                    {name.slice(0, 1).toUpperCase()}
+                  </span>
+                }
+                title={name}
+                meta={user?.name ? user.email : undefined}
+                trailing={
+                  <>
+                    <span className="flex items-center gap-2">
+                      <span className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-muted sm:block">
+                        <span
+                          className="block h-full rounded-full bg-stone-800"
+                          style={{ width: `${Math.min(100, enrollment.progress || 0)}%` }}
+                        />
+                      </span>
+                      <span className="w-9 text-right text-xs tabular-nums text-muted-foreground">
+                        {enrollment.progress || 0}%
+                      </span>
+                    </span>
+                    <Badge tone={enrollment.paymentStatus === "paid" || enrollment.paymentStatus === "free" ? "success" : "neutral"}>
+                      {String(enrollment.paymentStatus || "unknown").replace(/_/g, " ")}
+                    </Badge>
+                    <Badge>{String(enrollment.accessLevel || "full").replace(/_/g, " ")}</Badge>
+                  </>
+                }
+              />
             );
           })}
-          {enrollments.length === 0 && (
-            <p className="p-6 text-sm text-slate-500">No students enrolled yet.</p>
-          )}
-        </div>
-      </ScrollableListFrame>
+        </List>
+      ) : (
+        <EmptyState icon={GraduationCap} title="No learners yet" description="Enrolled learners will appear here." />
+      )}
     </div>
   );
 }

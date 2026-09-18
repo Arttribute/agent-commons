@@ -196,7 +196,7 @@ export default function LearnPage({ params }: Props) {
       <div className="min-h-screen bg-white">
         <Nav />
         <div className="pt-32 px-6 text-center">
-          <h2 className="text-lg font-bold text-slate-900 mb-2">
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">
             Course not found
           </h2>
           <Link
@@ -273,7 +273,7 @@ export default function LearnPage({ params }: Props) {
         <Nav />
         <div className="pt-32 flex flex-col items-center justify-center text-center px-6">
           <Lock className="h-10 w-10 text-slate-300 mb-4" />
-          <h2 className="text-lg font-bold text-slate-900 mb-2">
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">
             This course has not started yet
           </h2>
           <p className="text-sm text-slate-500 mb-6 max-w-sm">
@@ -282,7 +282,7 @@ export default function LearnPage({ params }: Props) {
           </p>
           <Link
             href={`/courses/${slug}`}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             Back to course
           </Link>
@@ -298,13 +298,13 @@ export default function LearnPage({ params }: Props) {
         <Nav />
         <div className="pt-32 flex flex-col items-center justify-center text-center px-6">
           <Lock className="h-10 w-10 text-slate-300 mb-4" />
-          <h2 className="text-lg font-bold text-slate-900 mb-2">Enrol to access this lesson</h2>
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">Enrol to access this lesson</h2>
           <p className="text-sm text-slate-500 mb-6 max-w-xs">
             This lesson is part of a paid course. Enrol to unlock all content.
           </p>
           <Link
             href={`/courses/${slug}`}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             View course
           </Link>
@@ -319,7 +319,7 @@ export default function LearnPage({ params }: Props) {
         <Nav />
         <div className="pt-32 flex flex-col items-center justify-center text-center px-6">
           <Lock className="h-10 w-10 text-slate-300 mb-4" />
-          <h2 className="text-lg font-bold text-slate-900 mb-2">
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">
             Your next installment is overdue
           </h2>
           <p className="text-sm text-slate-500 mb-6 max-w-xs">
@@ -329,7 +329,7 @@ export default function LearnPage({ params }: Props) {
           </p>
           <Link
             href={`/api/payments/checkout?courseSlug=${slug}&plan=installment${nextPaymentProvider}`}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             Make next payment
           </Link>
@@ -344,7 +344,7 @@ export default function LearnPage({ params }: Props) {
         <Nav />
         <div className="pt-32 flex flex-col items-center justify-center text-center px-6">
           <Lock className="h-10 w-10 text-slate-300 mb-4" />
-          <h2 className="text-lg font-bold text-slate-900 mb-2">
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">
             This module unlocks with your next payment
           </h2>
           <p className="text-sm text-slate-500 mb-6 max-w-xs">
@@ -354,7 +354,7 @@ export default function LearnPage({ params }: Props) {
           </p>
           <Link
             href={`/api/payments/checkout?courseSlug=${slug}&plan=installment${nextPaymentProvider}`}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:opacity-90 transition-opacity"
           >
             Make next payment
           </Link>
@@ -368,7 +368,7 @@ export default function LearnPage({ params }: Props) {
       <div className="min-h-screen bg-white">
         <Nav />
         <div className="pt-32 px-6 text-center">
-          <h2 className="text-lg font-bold text-slate-900 mb-2">
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">
             Lesson not found
           </h2>
           <Link
@@ -437,11 +437,11 @@ export default function LearnPage({ params }: Props) {
             <div>
               <Link
                 href={`/courses/${slug}`}
-                className="text-[10px] tracking-widest uppercase text-slate-400 hover:text-slate-700 transition-colors"
+                className="text-[10px] text-slate-400 hover:text-slate-700 transition-colors"
               >
                 ← Course
               </Link>
-              <h2 className="text-sm font-bold text-slate-900 mt-0.5 leading-snug line-clamp-2">
+              <h2 className="text-sm font-semibold text-slate-900 mt-0.5 leading-snug line-clamp-2">
                 {course.title}
               </h2>
             </div>
@@ -471,7 +471,7 @@ export default function LearnPage({ params }: Props) {
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-2">
             {course.modules.map((mod, mi) => (
               <div key={mi} className="mb-1">
-                <div className="px-4 py-2 text-[10px] font-bold tracking-widest uppercase text-slate-400">
+                <div className="px-4 py-2 text-[10px] font-medium text-slate-400">
                   Module {mi + 1} · {mod.title}
                 </div>
                 {mod.lessons.map((les, li) => {
@@ -530,14 +530,14 @@ export default function LearnPage({ params }: Props) {
               <Menu className="h-4 w-4" />
             </button>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] text-slate-400 uppercase tracking-widest truncate">
+              <p className="text-[10px] text-slate-400 truncate">
                 Module {moduleIdx + 1} · Lesson {lessonIdx + 1}
               </p>
-              <h1 className="text-sm font-bold text-slate-900 truncate">
+              <h1 className="text-sm font-semibold text-slate-900 truncate">
                 {currentLesson?.title}
               </h1>
             </div>
-            <Link href={`/courses/${slug}/materials`} className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"><Presentation className="h-3.5 w-3.5" /><span className="hidden sm:inline">Materials</span></Link>
+            <Link href={`/courses/${slug}/materials`} className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"><Presentation className="h-3.5 w-3.5" /><span className="hidden sm:inline">Materials</span></Link>
             <span className="text-xs text-slate-400 flex-shrink-0">{currentLesson?.duration}</span>
           </div>
 
@@ -546,10 +546,10 @@ export default function LearnPage({ params }: Props) {
             <div className="max-w-3xl mx-auto px-6 py-10">
               {/* Module / lesson header */}
               <div className="mb-8">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
+                <p className="text-xs font-semibold text-slate-400 mb-2">
                   {currentModule?.title}
                 </p>
-                <h2 className="text-2xl font-bold text-slate-900 leading-tight">
+                <h2 className="text-2xl font-semibold text-slate-900 leading-tight">
                   {currentLesson?.title}
                 </h2>
                 {currentLesson?.duration && (
@@ -577,7 +577,7 @@ export default function LearnPage({ params }: Props) {
                     contentTitle={currentLesson.title}
                     source={currentLesson.description}
                   />
-                  <h3 className="text-base font-bold text-slate-900 mb-3">
+                  <h3 className="text-base font-semibold text-slate-900 mb-3">
                     Educator&apos;s lesson
                   </h3>
                   <RichTextRenderer value={currentLesson.description} />
@@ -592,7 +592,7 @@ export default function LearnPage({ params }: Props) {
               {lessonIdx === currentModule?.lessons.length - 1 &&
                 currentModule.assignment && (
                   <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50 p-5">
-                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">
+                    <p className="text-xs font-medium text-slate-500 mb-2">
                       Module Assignment
                     </p>
                     <RichTextRenderer value={currentModule.assignment} />
@@ -612,7 +612,7 @@ export default function LearnPage({ params }: Props) {
                   onClick={markComplete}
                   disabled={isCompleted || marking || enrolled === false}
                   className={cn(
-                    "flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold transition-all",
+                    "flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold transition-all",
                     isCompleted
                       ? "bg-green-100 text-green-700 cursor-default"
                       : "bg-slate-900 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed",
@@ -641,7 +641,7 @@ export default function LearnPage({ params }: Props) {
                   {nextLesson && (
                     <button
                       onClick={() => navigate(nextLesson.mi, nextLesson.li)}
-                      className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-slate-900 text-white text-sm font-bold hover:opacity-90 transition-opacity"
+                      className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:opacity-90 transition-opacity"
                     >
                       Next <ChevronRight className="h-4 w-4" />
                     </button>
@@ -649,7 +649,7 @@ export default function LearnPage({ params }: Props) {
                   {!nextLesson && (
                     <Link
                       href="/dashboard"
-                      className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-green-600 text-white text-sm font-bold hover:opacity-90 transition-opacity"
+                      className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-green-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity"
                     >
                       Finish course <CheckCircle className="h-4 w-4" />
                     </Link>

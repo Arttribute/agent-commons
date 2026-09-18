@@ -472,7 +472,7 @@ export function ToolsPanel({
             </div>
 
             <div className="mt-8 rounded-md border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              <p className="text-xs font-medium text-slate-500">
                 Connection
               </p>
               {isGoogleTool(activeTool) ? (
@@ -560,7 +560,7 @@ export function TasksPanel({
                     <CalendarClock className="h-4 w-4" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-bold text-slate-900">
+                    <span className="block text-sm font-semibold text-slate-900">
                       {task.title}
                     </span>
                     <span className="mt-0.5 block text-xs font-semibold text-slate-500">
@@ -818,7 +818,7 @@ export function ComputerPanel({
 
       <div className="grid min-h-[520px] md:grid-cols-[230px_minmax(0,1fr)]">
         <aside className="border-b border-slate-800 bg-slate-900/80 md:border-b-0 md:border-r">
-          <p className="px-3 py-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+          <p className="px-3 py-3 text-[10px] font-semibold text-slate-500">
             Explorer
           </p>
           <div className="px-2 pb-3">
@@ -855,7 +855,7 @@ export function ComputerPanel({
             </pre>
           </div>
           <div className="border-t border-slate-800 bg-black/30 p-4">
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            <p className="mb-2 text-[10px] font-semibold text-slate-500">
               Terminal
             </p>
             <div className="flex items-center gap-2 font-mono text-sm">
@@ -917,7 +917,7 @@ function StudioPanel({
 function MemoryStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-b border-slate-200 px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+      <p className="text-[11px] font-medium text-slate-500">
         {label}
       </p>
       <p className="mt-1 text-xl font-medium text-slate-950">{value}</p>
@@ -940,7 +940,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-bold text-slate-600">{label}</span>
+      <span className="text-xs font-semibold text-slate-600">{label}</span>
       <input
         data-sandbox-target={target}
         value={value}
@@ -986,7 +986,7 @@ function ComponentRow({
   return (
     <div className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50 p-2">
       <span
-        className={cn("rounded px-2 py-1 text-[11px] font-black", toneClass)}
+        className={cn("rounded px-2 py-1 text-[11px] font-semibold", toneClass)}
       >
         {label}
       </span>
@@ -998,7 +998,7 @@ function ComponentRow({
 }
 
 function memoryBadgeClass(type: AgentSandboxMemoryTemplate["type"]) {
-  const base = "rounded px-2 py-1 text-[11px] font-black";
+  const base = "rounded px-2 py-1 text-[11px] font-semibold";
   if (type === "working") return `${base} bg-pink-100 text-pink-800`;
   if (type === "semantic") return `${base} bg-cyan-100 text-cyan-800`;
   if (type === "episodic") return `${base} bg-lime-100 text-lime-800`;
@@ -1171,7 +1171,7 @@ function ReviewBox({
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-bold text-slate-500">AI review</p>
+          <p className="text-xs font-semibold text-slate-500">AI review</p>
           <p className="mt-0.5 text-sm font-semibold text-slate-950">
             {result
               ? `${result.score}/100 - ${result.passed ? "Ready" : "Revise"}`
@@ -1182,7 +1182,7 @@ function ReviewBox({
           type="button"
           onClick={onReview}
           disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
           {loading ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1197,13 +1197,13 @@ function ReviewBox({
           <p>{result.summary}</p>
           {result.strengths.length ? (
             <p>
-              <span className="font-bold text-green-700">Strengths:</span>{" "}
+              <span className="font-semibold text-green-700">Strengths:</span>{" "}
               {result.strengths.join(" ")}
             </p>
           ) : null}
           {result.improvements.length ? (
             <p>
-              <span className="font-bold text-amber-700">Improve:</span>{" "}
+              <span className="font-semibold text-amber-700">Improve:</span>{" "}
               {result.improvements.join(" ")}
             </p>
           ) : null}

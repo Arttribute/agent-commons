@@ -66,7 +66,7 @@ export function EnrollmentAwareActions({
 
   if (state.loading) {
     return (
-      <div className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-slate-100 text-slate-400 text-sm font-bold">
+      <div className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg bg-slate-100 text-slate-400 text-sm font-semibold">
         <Loader2 className="h-4 w-4 animate-spin" />
         Checking enrolment…
       </div>
@@ -78,7 +78,7 @@ export function EnrollmentAwareActions({
   return (
     <div className="space-y-3">
       <div className="rounded-lg border border-green-200 bg-green-50 p-3">
-        <p className="flex items-center gap-2 text-sm font-bold text-green-900">
+        <p className="flex items-center gap-2 text-sm font-semibold text-green-900">
           <CheckCircle className="h-4 w-4" />
           You&apos;re enrolled
         </p>
@@ -97,7 +97,7 @@ export function EnrollmentAwareActions({
         href={state.hasStarted ? `/courses/${courseSlug}/learn` : `/courses/${courseSlug}`}
         aria-disabled={!state.hasStarted}
         className={cn(
-          "w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-bold transition-opacity hover:opacity-90",
+          "w-full flex items-center justify-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition-opacity hover:opacity-90",
           !state.hasStarted
             ? "bg-slate-100 text-slate-500"
             : state.progress > 0

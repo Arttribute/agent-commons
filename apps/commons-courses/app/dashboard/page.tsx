@@ -34,10 +34,10 @@ export default async function DashboardPage() {
       <div className="pt-24 pb-16 max-w-5xl mx-auto px-6 lg:px-12">
         {/* Header */}
         <div className="mb-12">
-          <p className="text-xs tracking-[0.2em] uppercase text-slate-400 mb-3">
+          <p className="text-xs text-slate-400 mb-3">
             Dashboard
           </p>
-          <h1 className="text-3xl font-bold text-slate-900">
+          <h1 className="text-3xl font-semibold text-slate-900">
             Welcome back,{" "}
             {session.user?.name?.split(" ")[0] || session.user?.email}.
           </h1>
@@ -49,7 +49,7 @@ export default async function DashboardPage() {
         {enrollments.length === 0 ? (
           <div className="text-center py-20 border border-dashed border-slate-200 rounded-xl">
             <BookOpen className="h-8 w-8 text-slate-300 mx-auto mb-4" />
-            <h3 className="text-sm font-bold text-slate-700 mb-2">
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">
               No courses yet
             </h3>
             <p className="text-sm text-slate-400 mb-6">
@@ -57,7 +57,7 @@ export default async function DashboardPage() {
             </p>
             <Link
               href="/courses"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-white text-sm font-bold hover:opacity-90 transition-opacity"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-white text-sm font-semibold hover:opacity-90 transition-opacity"
               style={{ backgroundColor: "#0a0a0a" }}
             >
               Browse courses <ArrowRight className="h-3.5 w-3.5" />
@@ -78,14 +78,14 @@ export default async function DashboardPage() {
                   <div className="h-1 bg-slate-900" />
                   <div className="p-6 flex flex-col flex-1">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-300 text-slate-600 bg-slate-50">
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border border-slate-300 text-slate-600 bg-slate-50">
                         Enrolled
                       </span>
                       <span className="text-xs text-slate-400">
                         {enrollment.progress}% complete
                       </span>
                     </div>
-                    <h3 className="text-sm font-bold text-slate-900 mb-1.5 flex-1">
+                    <h3 className="text-sm font-semibold text-slate-900 mb-1.5 flex-1">
                       {course.title}
                     </h3>
                     <p className="text-xs text-slate-400 mb-4">{course.tagline}</p>
@@ -105,7 +105,7 @@ export default async function DashboardPage() {
                         {course.duration}
                       </span>
                       <span
-                        className="font-bold text-slate-900 group-hover:underline"
+                        className="font-semibold text-slate-900 group-hover:underline"
                       >
                         Continue →
                       </span>
@@ -122,7 +122,7 @@ export default async function DashboardPage() {
           <p className="text-sm text-slate-500">Looking for more courses?</p>
           <Link
             href="/courses"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
           >
             Browse all courses <ArrowRight className="h-3.5 w-3.5" />
           </Link>

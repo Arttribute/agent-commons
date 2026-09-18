@@ -73,7 +73,7 @@ export function SignUpClient({
 
   return (
     <>
-      <h1 className="mb-1 text-center text-2xl font-bold text-slate-900">Create your account</h1>
+      <h1 className="mb-1 text-center text-2xl font-semibold text-slate-900">Create your account</h1>
       <p className="mb-8 text-center text-sm text-slate-500">
         Start your first skill streak and lab workspace.
       </p>
@@ -84,7 +84,7 @@ export function SignUpClient({
         type="button"
         onClick={() => void continueWithGoogle()}
         disabled={googleStarting}
-        className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+        className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
       >
         <GoogleLogo /> {googleStarting ? "Opening Google…" : "Continue with Google"}
       </button> : <a
@@ -102,7 +102,7 @@ export function SignUpClient({
       </a>}
       <div className="mb-4 flex items-center gap-3">
         <span className="h-px flex-1 bg-slate-200" />
-        <span className="text-xs font-bold uppercase text-slate-400">or</span>
+        <span className="text-xs font-medium text-slate-400">or</span>
         <span className="h-px flex-1 bg-slate-200" />
       </div>
       <form method="post" action={`${identityUrl}/native/sign-up/email`} className="space-y-4">
@@ -114,7 +114,7 @@ export function SignUpClient({
         <Input label="Password" name="password" type="password" minLength={8} autoComplete="new-password" />
         <button
           disabled={!oauthQuery}
-          className="w-full rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-bold text-white disabled:cursor-wait disabled:bg-slate-300"
+          className="w-full rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-wait disabled:bg-slate-300"
         >
           {preparing ? "Preparing..." : "Create account"}
         </button>
@@ -122,7 +122,7 @@ export function SignUpClient({
       <p className="mt-6 text-center text-sm text-slate-500">
         Already have an account?{" "}
         <Link
-          className="font-bold text-slate-900"
+          className="font-semibold text-slate-900"
           href={`/auth/signin${oauthQuery ? `?oauth_query=${encodeURIComponent(oauthQuery)}&` : "?"}callbackUrl=${encodeURIComponent(callbackUrl)}`}
         >
           Sign in
@@ -135,7 +135,7 @@ export function SignUpClient({
 function Input(props: React.InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   const { label, ...input } = props;
   return (
-    <label className="block text-xs font-bold uppercase tracking-wide text-slate-700">
+    <label className="block text-xs font-medium text-slate-700">
       {label}
       <input {...input} required className="mt-1.5 w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-slate-300" />
     </label>

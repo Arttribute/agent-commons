@@ -61,7 +61,7 @@ export function ColorPicker({
 
   return (
     <div className="relative">
-      <span className="text-sm font-bold text-slate-700">{label}</span>
+      <span className="text-sm font-semibold text-slate-700">{label}</span>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -81,7 +81,7 @@ export function ColorPicker({
         <div className="absolute left-0 right-0 z-30 mt-2 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
           {recentColors.length > 0 ? (
             <>
-              <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+              <p className="mb-2 text-[11px] font-medium text-slate-400">
                 Recent
               </p>
               <SwatchGrid colors={recentColors} value={normalizedValue} onChoose={choose} />
@@ -89,7 +89,7 @@ export function ColorPicker({
             </>
           ) : null}
 
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+          <p className="mb-2 text-[11px] font-medium text-slate-400">
             Solid colors
           </p>
           <SwatchGrid colors={defaultColors} value={normalizedValue} onChoose={choose} />
@@ -115,7 +115,7 @@ export function ColorPicker({
                 }
               }}
               placeholder="#B8F56D"
-              className="h-10 rounded-lg border border-slate-200 px-3 text-sm font-semibold uppercase outline-none focus:border-slate-400"
+              className="h-10 rounded-lg border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-slate-400"
             />
           </div>
         </div>

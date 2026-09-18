@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import { notFound } from "next/navigation";
 import { Nav } from "@/components/nav";
+import { SiteFooter } from "@/components/site-footer";
+import { CourseDetailTabs } from "@/components/courses/course-detail-tabs";
 import { CourseOutline } from "@/components/courses/course-outline";
 import { CoursePaymentOptions } from "@/components/courses/course-payment-options";
 import { EnrolledBanner } from "@/components/courses/enrolled-banner";
@@ -25,19 +27,11 @@ import type { ExperienceDocument } from "@/types/experience";
 import {
   ArrowRight,
   ArrowLeft,
-  Award,
   Clock,
   BookOpen,
   Users,
   CheckCircle,
-  FlaskConical,
   Wifi,
-  Target,
-  Workflow,
-  Layers,
-  MessageSquare,
-  FileText,
-  Zap,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -480,7 +474,7 @@ export default async function CoursePage({ params, searchParams }: Props) {
           <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-16">
             <Link
               href="/courses"
-              className="mb-8 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-950"
+              className="mb-8 inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-950"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> All courses
             </Link>
@@ -498,36 +492,19 @@ export default async function CoursePage({ params, searchParams }: Props) {
 
             <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-14 xl:grid-cols-[minmax(0,1fr)_370px] xl:gap-20">
               <section className="min-w-0">
-                <div className="mb-6 flex flex-wrap items-center gap-2">
-                  <span className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-bold capitalize text-slate-700">
-                    {course.level}
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-md bg-lime-200 px-2 py-1 text-xs font-bold text-slate-900">
-                    <Wifi className="h-3 w-3" />
-                    {course.courseType === "live"
-                      ? "Live programme"
-                      : "Self-paced"}
-                  </span>
-                  {startStatus.label ? (
-                    <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700">
-                      Starts {startStatus.label}
-                    </span>
-                  ) : null}
-                </div>
-
-                <p className="mb-4 text-xs font-bold uppercase tracking-[0.16em] text-lime-700">
-                  {presentation.eyebrow}
-                </p>
-                <h1 className="mb-5 max-w-4xl break-words text-4xl font-semibold leading-[1.08] text-slate-950 sm:text-5xl lg:text-[3.5rem]">
+                {startStatus.label ? (
+                  <p className="mb-6 text-sm text-slate-500">Starts {startStatus.label}</p>
+                ) : null}
+                <p className="mb-3 text-sm text-slate-500">{presentation.eyebrow}</p>
+                <h1 className="mb-5 max-w-4xl break-words text-4xl font-medium leading-[1.08] tracking-tight text-slate-950 sm:text-5xl">
                   {course.title}
                 </h1>
                 <p className="mb-6 max-w-3xl break-words text-lg leading-8 text-slate-700 sm:text-xl">
                   {presentation.heroSubtitle || course.tagline}
                 </p>
                 {presentation.signal ? (
-                  <div className="mb-8 flex max-w-3xl items-start gap-3 border-l-2 border-lime-500 pl-4">
-                    <CheckCircle className="mt-1 h-4 w-4 flex-shrink-0 text-lime-600" />
-                    <p className="text-sm font-bold leading-6 text-slate-950 sm:text-base">
+                  <div className="mb-8 flex max-w-3xl items-start gap-3 border-l-2 border-slate-300 pl-4">
+                    <p className="text-sm leading-6 text-slate-800 sm:text-base">
                       {presentation.signal}
                     </p>
                   </div>
@@ -557,8 +534,8 @@ export default async function CoursePage({ params, searchParams }: Props) {
 
                 {course.courseType === "live" && (
                   <div className="mt-6 max-w-3xl border-t border-slate-200 pt-5">
-                    <p className="flex items-center gap-2 text-sm font-bold text-slate-950">
-                      <Wifi className="h-4 w-4" />
+                    <p className="flex items-center gap-2 text-sm font-medium text-slate-950">
+                      <Wifi className="h-4 w-4" strokeWidth={1.75} />
                       Live class schedule
                     </p>
                     <p className="mt-2 text-sm leading-6 text-slate-700">
@@ -592,142 +569,96 @@ export default async function CoursePage({ params, searchParams }: Props) {
           </div>
         </section>
 
-        <nav
-          aria-label="Course sections"
-          className="sticky top-16 z-30 border-b border-slate-200 bg-white/95 backdrop-blur"
-        >
-          <div className="mx-auto flex max-w-7xl items-center gap-7 overflow-x-auto px-4 sm:px-6 lg:px-8">
-            {[
-              ["#overview", "Overview"],
-              ["#outcomes", "Outcomes"],
-              ...(presentation.projectExamples?.length
-                ? [["#projects", "What you will build"]]
-                : []),
-              ...(experiences.length ? [["#experiences", "Experiences"]] : []),
-              ["#curriculum", "Curriculum"],
-            ].map(([href, label]) => (
-              <a
-                key={href}
-                href={href}
-                className="flex h-14 shrink-0 items-center border-b-2 border-transparent text-sm font-semibold text-slate-600 transition-colors hover:border-lime-500 hover:text-slate-950"
-              >
-                {label}
-              </a>
-            ))}
-            <a
-              href="#enroll"
-              className="ml-auto hidden h-9 shrink-0 items-center gap-1.5 rounded-md bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 sm:flex"
-            >
-              Enroll <ArrowRight className="h-4 w-4" />
-            </a>
-          </div>
-        </nav>
-
-        <CoursePresentationSections
-          course={course}
-          presentation={presentation}
-          isAiQuickWins={isAiQuickWins}
+        <CourseDetailTabs
+          sections={[
+            {
+              id: "overview",
+              label: "Overview",
+              content: <OverviewPanel course={course} presentation={presentation} isAiQuickWins={isAiQuickWins} />,
+            },
+            {
+              id: "outcomes",
+              label: "Outcomes",
+              content: <OutcomesPanel presentation={presentation} />,
+            },
+            ...(presentation.projectExamples?.length
+              ? [{ id: "projects", label: "What you will build", content: <ProjectsPanel projects={presentation.projectExamples} /> }]
+              : []),
+            {
+              id: "curriculum",
+              label: "Curriculum",
+              content: (
+                <SectionFrame
+                  title="Course outline"
+                  meta={[
+                    `${course.modulesCount} modules`,
+                    `${course.lessonsCount} lessons`,
+                    totalMinutes > 0 ? `about ${totalMinutes} min` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                >
+                  <CourseOutline modules={outlineModules} enrolled={isEnrolled} />
+                </SectionFrame>
+              ),
+            },
+            ...(experiences.length
+              ? [
+                  {
+                    id: "experiences",
+                    label: "Experiences",
+                    content: (
+                      <CourseExperienceGallery
+                        courseSlug={course.slug}
+                        courseIsFree={course.isFree}
+                        isEnrolled={isEnrolled}
+                        experiences={experiences}
+                      />
+                    ),
+                  },
+                ]
+              : []),
+            ...(skillChallenges.length
+              ? [
+                  {
+                    id: "skills",
+                    label: "Skill badges",
+                    content: (
+                      <SectionFrame
+                        title="Daily skill badges"
+                        meta="Short challenges that turn practice into earned skills."
+                        action={
+                          <Link
+                            href={`/skills/${course.slug}`}
+                            className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-950"
+                          >
+                            Open skill path <ArrowRight className="h-4 w-4" />
+                          </Link>
+                        }
+                      >
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          {skillChallenges.slice(0, 6).map((challenge, index) => (
+                            <div key={challenge.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-xs font-medium text-slate-600">
+                                {index + 1}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-sm">
+                                {challenge.shortTitle || challenge.title}
+                              </span>
+                              <span className="text-xs text-slate-500">{challenge.points ?? 0} pts</span>
+                            </div>
+                          ))}
+                        </div>
+                      </SectionFrame>
+                    ),
+                  },
+                ]
+              : []),
+          ]}
         />
-
-        {skillChallenges.length > 0 ? (
-          <section className="border-y border-amber-200 bg-amber-50/60">
-            <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-              <div className="grid gap-8 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] lg:items-start">
-                <div>
-                  <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-lg bg-amber-200">
-                    <Award className="h-5 w-5 text-amber-800" />
-                  </div>
-                  <h2 className="text-2xl font-semibold text-slate-950">
-                    Daily skill badges
-                  </h2>
-                  <p className="mt-3 max-w-lg text-[15px] leading-7 text-slate-700">
-                    Complete focused challenges one at a time and turn practical
-                    work into visible, earned skills.
-                  </p>
-                  <Link
-                    href={`/skills/${course.slug}`}
-                    className="mt-6 inline-flex items-center justify-center gap-2 rounded-md bg-slate-950 px-4 py-2.5 text-sm font-bold text-white"
-                  >
-                    Open skill path <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </div>
-                <div className="grid gap-px overflow-hidden rounded-lg border border-amber-200 bg-amber-200 sm:grid-cols-2">
-                  {skillChallenges.slice(0, 6).map((challenge) => (
-                    <div key={challenge.id} className="bg-white p-4">
-                      <p className="text-sm font-bold text-slate-900">
-                        {challenge.shortTitle || challenge.title}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold text-amber-700">
-                        {challenge.points ?? 0} pts
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        <CourseExperienceGallery
-          courseSlug={course.slug}
-          courseIsFree={course.isFree}
-          isEnrolled={isEnrolled}
-          experiences={experiences}
-        />
-
-        <section id="curriculum" className="scroll-mt-32 bg-white">
-          <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
-            <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-              <div>
-                <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-lime-700">
-                  Curriculum
-                </p>
-                <h2 className="text-3xl font-semibold text-slate-950">
-                  Course outline
-                </h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-                <span>{course.modulesCount} modules</span>
-                <span aria-hidden="true">·</span>
-                <span>{course.lessonsCount} lessons</span>
-                {totalMinutes > 0 ? (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span>~{totalMinutes} min total</span>
-                  </>
-                ) : null}
-              </div>
-            </div>
-            <CourseOutline modules={outlineModules} enrolled={isEnrolled} />
-          </div>
-        </section>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 text-sm text-slate-600 sm:flex-row sm:px-6 lg:px-8">
-          <div className="flex items-center gap-2.5">
-            <div className="h-5 w-5 rounded bg-slate-950 flex items-center justify-center">
-              <FlaskConical className="h-3 w-3 text-white" />
-            </div>
-            <span>© 2026 CommonLab</span>
-          </div>
-          <div className="flex gap-6">
-            <Link
-              href="/courses"
-              className="hover:text-slate-700 transition-colors"
-            >
-              Courses
-            </Link>
-            <Link
-              href="/terms"
-              className="hover:text-slate-700 transition-colors"
-            >
-              Terms
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
@@ -745,10 +676,8 @@ function HeroFact({
     <div className="flex min-w-0 items-center gap-3 bg-white px-4 py-3.5">
       <Icon className="h-4 w-4 flex-shrink-0 text-slate-500" />
       <div className="min-w-0">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
-          {label}
-        </p>
-        <p className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+        <p className="text-xs text-slate-500">{label}</p>
+        <p className="mt-0.5 truncate text-sm font-medium text-slate-900">
           {value}
         </p>
       </div>
@@ -756,7 +685,34 @@ function HeroFact({
   );
 }
 
-function CoursePresentationSections({
+function SectionFrame({
+  title,
+  meta,
+  action,
+  children,
+}: {
+  title: string;
+  meta?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="bg-white">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-medium tracking-tight text-slate-950">{title}</h2>
+            {meta ? <p className="mt-1.5 text-sm text-slate-500">{meta}</p> : null}
+          </div>
+          {action}
+        </div>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function OverviewPanel({
   course,
   presentation,
   isAiQuickWins,
@@ -766,195 +722,91 @@ function CoursePresentationSections({
   isAiQuickWins: boolean;
 }) {
   return (
-    <div>
-      <section id="overview" className="scroll-mt-32 bg-white">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:px-8 lg:py-20">
-          <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.16em] text-lime-700">
-              Course promise
-            </p>
-            <h2 className="max-w-xl text-3xl font-semibold leading-tight text-slate-950 lg:text-4xl">
-              {presentation.overviewTitle}
-            </h2>
-          </div>
-          <div className="max-w-3xl space-y-5 text-base leading-8 text-slate-700">
-            {presentation.overview.map((paragraph) => (
-              <p key={paragraph}>{paragraph}</p>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section
-        id="outcomes"
-        className="scroll-mt-32 border-y border-slate-200 bg-slate-50"
-      >
-        <div className="mx-auto grid max-w-7xl px-4 sm:px-6 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] lg:px-8">
-          <div className="border-b border-slate-200 py-14 lg:border-b-0 lg:border-r lg:py-16 lg:pr-12">
-            <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-lg bg-lime-300 text-slate-950">
-              <Target className="h-5 w-5" />
+    <SectionFrame title={presentation.overviewTitle}>
+      <div className="max-w-3xl space-y-5 text-base leading-8 text-slate-700">
+        {presentation.overview.map((paragraph) => (
+          <p key={paragraph}>{paragraph}</p>
+        ))}
+        {presentation.gains?.length ? (
+          <div className="border-t border-slate-200 pt-6">
+            <h3 className="mb-3 text-base font-medium text-slate-950">
+              {presentation.gainTitle || "What participants gain"}
+            </h3>
+            <div className="space-y-4">
+              {presentation.gains.map((gain) => (
+                <p key={gain}>{gain}</p>
+              ))}
             </div>
-            <h2 className="text-2xl font-semibold text-slate-950">
-              {presentation.audienceTitle}
-            </h2>
+          </div>
+        ) : null}
+        {!isAiQuickWins && course.longDescription ? (
+          <div className="border-t border-slate-200 pt-6">
+            <RichTextRenderer value={course.longDescription} className="break-words text-slate-700" />
+          </div>
+        ) : null}
+      </div>
+    </SectionFrame>
+  );
+}
+
+function OutcomesPanel({ presentation }: { presentation: CoursePresentation }) {
+  return (
+    <SectionFrame title={presentation.learningTitle}>
+      <div className="grid gap-10 lg:grid-cols-2">
+        <div className="grid content-start gap-x-8 gap-y-3">
+          {presentation.learning.map((item, index) => (
+            <div key={item} className="flex items-start gap-4 border-t border-slate-200 pt-3">
+              <span className="w-6 shrink-0 text-xs tabular-nums text-slate-400">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <span className="text-sm leading-6 text-slate-700">{item}</span>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-8">
+          <div>
+            <h3 className="mb-3 text-base font-medium text-slate-950">{presentation.audienceTitle}</h3>
             {presentation.audienceIntro ? (
-              <p className="mt-4 max-w-xl text-[15px] leading-7 text-slate-600">
-                {presentation.audienceIntro}
-              </p>
+              <p className="mb-3 text-sm leading-6 text-slate-600">{presentation.audienceIntro}</p>
             ) : null}
-            <div className="mt-7 space-y-3">
+            <ul className="space-y-2">
               {presentation.audience.map((item) => (
-                <div key={item} className="flex items-start gap-3">
-                  <CheckCircle className="mt-1 h-4 w-4 flex-shrink-0 text-lime-600" />
-                  <span className="text-sm font-medium leading-6 text-slate-800">
-                    {item}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="py-14 lg:py-16 lg:pl-12">
-            <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
-              <Workflow className="h-5 w-5" />
-            </div>
-            <h2 className="text-2xl font-semibold text-slate-950">
-              {presentation.learningTitle}
-            </h2>
-            <div className="mt-8 grid gap-x-10 gap-y-5 md:grid-cols-2">
-              {presentation.learning.map((item, index) => (
-                <div
-                  key={item}
-                  className="flex items-start gap-4 border-t border-slate-200 pt-4"
-                >
-                  <span className="w-6 flex-shrink-0 text-xs font-bold tabular-nums text-lime-700">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <span className="text-sm leading-6 text-slate-700">
-                    {item}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] lg:px-8 lg:py-16">
-          <div>
-            <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-800">
-              <Layers className="h-5 w-5" />
-            </div>
-            <h2 className="text-2xl font-semibold text-slate-950">
-              {presentation.outputTitle}
-            </h2>
-          </div>
-          <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
-            {presentation.outputs.map((item) => (
-              <div key={item} className="flex items-start gap-3">
-                <CheckCircle className="mt-1 h-4 w-4 flex-shrink-0 text-lime-600" />
-                <span className="text-[15px] leading-7 text-slate-700">
+                <li key={item} className="flex items-start gap-2.5 text-sm leading-6 text-slate-700">
+                  <CheckCircle className="mt-1 h-4 w-4 shrink-0 text-slate-400" strokeWidth={1.75} />
                   {item}
-                </span>
-              </div>
-            ))}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3 className="mb-3 text-base font-medium text-slate-950">{presentation.outputTitle}</h3>
+            <ul className="space-y-2">
+              {presentation.outputs.map((item) => (
+                <li key={item} className="flex items-start gap-2.5 text-sm leading-6 text-slate-700">
+                  <CheckCircle className="mt-1 h-4 w-4 shrink-0 text-slate-400" strokeWidth={1.75} />
+                  {item}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
-      </section>
+      </div>
+    </SectionFrame>
+  );
+}
 
-      {presentation.projectExamples?.length ? (
-        <section id="projects" className="scroll-mt-32 bg-slate-950 text-white">
-          <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
-            <div className="grid gap-10 lg:grid-cols-[minmax(0,0.65fr)_minmax(0,1.35fr)]">
-              <div>
-                <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-lg bg-lime-300 text-slate-950">
-                  <Zap className="h-5 w-5" />
-                </div>
-                <p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-lime-300">
-                  Practical from day one
-                </p>
-                <h2 className="text-3xl font-semibold text-white">
-                  What you will build
-                </h2>
-                <p className="mt-4 max-w-lg text-[15px] leading-7 text-slate-300">
-                  Each participant should leave with at least one practical
-                  AI-powered system they can continue using.
-                </p>
-              </div>
-              <div className="grid gap-x-8 gap-y-1 sm:grid-cols-2">
-                {presentation.projectExamples.map((project, index) => (
-                  <div
-                    key={project}
-                    className="flex items-start gap-4 border-t border-slate-700 py-4"
-                  >
-                    <span className="text-xs font-bold tabular-nums text-lime-300">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <p className="text-sm font-semibold leading-6 text-slate-100">
-                      {project}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
+function ProjectsPanel({ projects }: { projects: string[] }) {
+  return (
+    <SectionFrame title="What you will build" meta="Leave with at least one practical system you can keep using.">
+      <div className="grid gap-x-8 sm:grid-cols-2">
+        {projects.map((project, index) => (
+          <div key={project} className="flex items-start gap-4 border-t border-slate-200 py-4">
+            <span className="text-xs tabular-nums text-slate-400">{String(index + 1).padStart(2, "0")}</span>
+            <p className="text-sm leading-6 text-slate-800">{project}</p>
           </div>
-        </section>
-      ) : null}
-
-      {presentation.gains?.length ? (
-        <section className="border-b border-slate-200 bg-white">
-          <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[minmax(0,0.65fr)_minmax(0,1.35fr)] lg:px-8 lg:py-20">
-            <div className="flex items-start gap-4">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-slate-200">
-                <MessageSquare className="h-5 w-5 text-slate-700" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-lime-700">
-                  Outcome
-                </p>
-                <h2 className="mt-3 text-2xl font-semibold text-slate-950">
-                  {presentation.gainTitle || "What participants gain"}
-                </h2>
-              </div>
-            </div>
-            <div className="space-y-5 text-base leading-8 text-slate-700">
-              {presentation.gains.map((gain, index) =>
-                index === presentation.gains!.length - 1 ? (
-                  <blockquote
-                    key={gain}
-                    className="border-l-2 border-lime-500 pl-5 text-xl font-semibold leading-8 text-slate-950"
-                  >
-                    {gain}
-                  </blockquote>
-                ) : (
-                  <p key={gain}>{gain}</p>
-                ),
-              )}
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {!isAiQuickWins && course.longDescription ? (
-        <section className="border-b border-slate-200 bg-white">
-          <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[minmax(0,0.65fr)_minmax(0,1.35fr)] lg:px-8">
-            <div className="flex items-start gap-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200">
-                <FileText className="h-5 w-5 text-slate-700" />
-              </div>
-              <h2 className="pt-1.5 text-2xl font-semibold text-slate-950">
-                About this course
-              </h2>
-            </div>
-            <RichTextRenderer
-              value={course.longDescription}
-              className="max-w-3xl break-words text-slate-700"
-            />
-          </div>
-        </section>
-      ) : null}
-    </div>
+        ))}
+      </div>
+    </SectionFrame>
   );
 }
 
@@ -998,8 +850,7 @@ function PurchaseCard({
   );
 
   return (
-    <div className="w-full min-w-0 max-w-sm overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_18px_50px_-28px_rgba(15,23,42,0.45)] lg:max-w-none">
-      <div className="h-1 bg-lime-400" />
+    <div className="w-full min-w-0 max-w-sm overflow-hidden rounded-xl border border-slate-200 bg-white shadow-floating lg:max-w-none">
       <div className="p-5 sm:p-6">
         <EnrollmentAwareActions
           courseSlug={course.slug}
@@ -1008,10 +859,7 @@ function PurchaseCard({
           hasStarted={hasStarted}
           startDateLabel={startDateLabel}
         >
-          <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-            Enrollment
-          </p>
-          <div className="mb-1 text-3xl font-bold text-slate-950">
+          <div className="mb-1 text-3xl font-medium tracking-tight text-slate-950">
             {formatCoursePrice(course)}
           </div>
           {!course.isFree && (
@@ -1020,7 +868,7 @@ function PurchaseCard({
             </p>
           )}
           {startDateLabel && (
-            <p className="mb-5 rounded-lg border border-lime-200 bg-lime-50 p-3 text-xs font-semibold leading-5 text-slate-800">
+            <p className="mb-5 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-700">
               Course content opens on {startDateLabel}. You can reserve your
               place now.
             </p>
@@ -1053,7 +901,7 @@ function PurchaseCard({
           )}
 
           {!course.isFree && earlyDiscount?.deadline && (
-            <p className="mt-2 rounded-lg bg-lime-50 p-3 text-xs leading-5 text-slate-700">
+            <p className="mt-2 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-700">
               Pay before {formatDate(earlyDiscount.deadline)} for an automatic{" "}
               {formatDiscount(earlyDiscount, course.currency)} early payment
               discount.

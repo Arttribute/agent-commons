@@ -75,7 +75,7 @@ const steps: DemoStep[] = [
 function FieldRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+      <p className="text-[11px] font-medium text-slate-400">
         {label}
       </p>
       <div className="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900">
@@ -98,7 +98,7 @@ function IdentityPanel() {
           <Bot className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-sm font-black text-slate-950">Research Scout</p>
+          <p className="text-sm font-semibold text-slate-950">Research Scout</p>
           <p className="text-xs text-slate-500">Lesson 4 · Agent basics</p>
         </div>
       </div>
@@ -108,7 +108,7 @@ function IdentityPanel() {
         value="Finds and summarizes sources for a topic brief"
       />
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+        <p className="text-[11px] font-medium text-slate-400">
           Personality
         </p>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -116,7 +116,7 @@ function IdentityPanel() {
             <span
               key={trait}
               className={cn(
-                "rounded-md border px-2 py-0.5 text-xs font-bold",
+                "rounded-md border px-2 py-0.5 text-xs font-semibold",
                 chipStyles[i % chipStyles.length]
               )}
             >
@@ -132,7 +132,7 @@ function IdentityPanel() {
 function PromptPanel() {
   return (
     <div className="animate-rise p-4 sm:p-5">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+      <p className="text-[11px] font-medium text-slate-400">
         System prompt
       </p>
       <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-sm leading-6 text-slate-800">
@@ -158,7 +158,7 @@ function ToolsPanel() {
   ];
   return (
     <div className="animate-rise space-y-2 p-4 sm:p-5">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+      <p className="text-[11px] font-medium text-slate-400">
         Permitted tools
       </p>
       {tools.map(({ icon: Icon, name, note, on }) => (
@@ -175,7 +175,7 @@ function ToolsPanel() {
           <div className="min-w-0 flex-1">
             <p
               className={cn(
-                "truncate text-sm font-bold",
+                "truncate text-sm font-semibold",
                 on ? "text-slate-950" : "text-slate-400"
               )}
             >
@@ -207,7 +207,7 @@ function ChatPanel() {
           </p>
         </div>
         <div
-          className="animate-rise inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-600"
+          className="animate-rise inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600"
           style={{ animationDelay: "0.35s" }}
         >
           <Globe className="h-3 w-3" /> web_search · 3 results
@@ -245,7 +245,7 @@ function LogsPanel() {
   ];
   return (
     <div className="animate-rise p-4 sm:p-5">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+      <p className="text-[11px] font-medium text-slate-400">
         Run history
       </p>
       <div className="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
@@ -279,13 +279,13 @@ function DonePanel() {
         >
           <Award className="h-6 w-6" />
         </div>
-        <h4 className="mt-3 text-base font-black text-slate-950">
+        <h4 className="mt-3 text-base font-semibold text-slate-950">
           Sandbox complete
         </h4>
         <p className="mt-1 text-sm leading-6 text-slate-600">
           Agent created, tested, and reviewed.
         </p>
-        <p className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-950">
+        <p className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-950">
           <Coins className="h-3.5 w-3.5 text-amber-500" /> +50 credits · badge
           day 3 of 5
         </p>
@@ -325,10 +325,10 @@ export function SandboxDemo() {
           <span className="h-2.5 w-2.5 rounded-full bg-[#FFE177]" />
           <span className="h-2.5 w-2.5 rounded-full bg-[#B8F56D]" />
         </div>
-        <p className="min-w-0 flex-1 truncate text-center text-xs font-bold text-slate-500">
+        <p className="min-w-0 flex-1 truncate text-center text-xs font-semibold text-slate-500">
           CommonLab · Guided sandbox
         </p>
-        <span className="hidden rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800 sm:block">
+        <span className="hidden rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 sm:block">
           Safe practice
         </span>
       </div>
@@ -370,14 +370,14 @@ export function SandboxDemo() {
             <div className="flex items-start gap-3">
               <span
                 className={cn(
-                  "mt-0.5 inline-flex shrink-0 rounded-md border px-2 py-0.5 text-xs font-black tabular-nums",
+                  "mt-0.5 inline-flex shrink-0 rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums",
                   chipStyles[step % chipStyles.length]
                 )}
               >
                 {step + 1}/{steps.length}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-black text-slate-950">
+                <p className="truncate text-sm font-semibold text-slate-950">
                   {active.title}
                 </p>
                 <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-slate-600 sm:line-clamp-none">
@@ -396,7 +396,7 @@ export function SandboxDemo() {
                 <button
                   type="button"
                   onClick={() => goTo(step + 1)}
-                  className="inline-flex items-center gap-1 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-slate-800"
+                  className="inline-flex items-center gap-1 rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800"
                 >
                   {isLast ? (
                     <>

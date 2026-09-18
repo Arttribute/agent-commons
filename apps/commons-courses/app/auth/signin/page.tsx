@@ -49,7 +49,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <span className="flex h-7 w-7 items-center justify-center rounded bg-slate-950">
             <FlaskConical className="h-3.5 w-3.5 text-white" />
           </span>
-          <span className="text-sm font-bold tracking-tight text-slate-900">CommonLab</span>
+          <span className="text-sm font-semibold tracking-tight text-slate-900">CommonLab</span>
         </Link>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           {children}

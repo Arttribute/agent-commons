@@ -115,7 +115,7 @@ export function CourseAgentDrawer({
         }
         onClick={() => setOpen(true)}
         className={cn(
-          "fixed right-0 top-1/2 z-40 flex -translate-y-1/2 items-center gap-2 rounded-l-lg border border-r-0 border-slate-200 bg-white px-2.5 py-3 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-50",
+          "fixed right-0 top-1/2 z-40 flex -translate-y-1/2 items-center gap-2 rounded-l-lg border border-r-0 border-slate-200 bg-white px-2.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50",
           open && "translate-x-full"
         )}
       >
@@ -142,12 +142,12 @@ export function CourseAgentDrawer({
             <header className="border-b border-slate-100 p-4">
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                  <p className="text-[10px] font-medium text-slate-400">
                     {role === "learner"
                       ? "Your learning copilot"
                       : "Course agent"}
                   </p>
-                  <h2 className="mt-1 text-base font-bold text-slate-950">
+                  <h2 className="mt-1 text-base font-semibold text-slate-950">
                     {role === "learner" ? "Learn with guidance" : activeAgent.name}
                   </h2>
                   {role === "learner" ? (
@@ -298,7 +298,7 @@ function Starter({
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+      className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
     >
       <Icon className="h-4 w-4 text-slate-400" />
       {label}

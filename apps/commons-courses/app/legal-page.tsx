@@ -16,10 +16,10 @@ export function LegalPage({
 
       <main className="mx-auto max-w-3xl px-6 pb-24 pt-28 lg:px-8">
         <div className="mb-12">
-          <p className="mb-3 text-xs uppercase tracking-[0.2em] text-slate-400">
+          <p className="mb-3 text-xs text-slate-400">
             Legal
           </p>
-          <h1 className="mb-3 text-4xl font-bold text-slate-900">
+          <h1 className="mb-3 text-4xl font-semibold text-slate-900">
             {document.title}
           </h1>
           <p className="max-w-2xl text-sm leading-6 text-slate-500">
@@ -39,7 +39,7 @@ export function LegalPage({
         <div className="mt-12 space-y-10">
           {document.sections.map((section) => (
             <section key={section.title}>
-              <h2 className="mb-3 text-base font-bold text-slate-900">
+              <h2 className="mb-3 text-base font-semibold text-slate-900">
                 {section.title}
               </h2>
               <div className="space-y-3 text-sm leading-relaxed text-slate-600">

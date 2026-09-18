@@ -4,8 +4,37 @@
   --font-sans: var(--font-space-grotesk);
   --font-mono: var(--font-space-grotesk);
 
-  --color-brand: #111827;
-  --color-brand-hover: #374151;
+  --color-brand: #1c1917;
+  --color-brand-hover: #44403c;
+
+  /* Shared Agent Commons surface tokens. The page canvas sits between
+     stone-50 and the white used on cards; borders, muted fills and text
+     follow the same warm stone scale as the commons app. */
+  --color-page: #fcfcfb;
+  --color-foreground: #1c1917;
+  --color-muted: #f5f5f4;
+  --color-muted-foreground: #78716c;
+  --color-accent: #f1f0ee;
+  --color-border: #e7e5e4;
+  --color-highlight: #99f6e4;
+
+  /* Soft elevation scale: floating (popovers, drawers) > card. */
+  --shadow-card: 0 2px 8px -2px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.04);
+  --shadow-floating: 0 8px 24px -8px rgba(28, 25, 23, 0.12), 0 2px 6px -2px rgba(28, 25, 23, 0.05);
+
+  /* Legacy surfaces were written against slate. Map slate onto the stone
+     scale so every page shares the commons app's warm neutral palette. */
+  --color-slate-50: oklch(98.5% 0.001 106.423);
+  --color-slate-100: oklch(97% 0.001 106.424);
+  --color-slate-200: oklch(92.3% 0.003 48.717);
+  --color-slate-300: oklch(86.9% 0.005 56.366);
+  --color-slate-400: oklch(70.9% 0.01 56.259);
+  --color-slate-500: oklch(55.3% 0.013 58.071);
+  --color-slate-600: oklch(44.4% 0.011 73.639);
+  --color-slate-700: oklch(37.4% 0.01 67.558);
+  --color-slate-800: oklch(26.8% 0.007 34.298);
+  --color-slate-900: oklch(21.6% 0.006 56.043);
+  --color-slate-950: oklch(14.7% 0.004 49.25);
 
   /* RetroGrid animation */
   --animate-grid: grid 15s linear infinite;
@@ -130,7 +159,7 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #020617;
+  --foreground: #1c1917;
 }
 
 body {
@@ -151,29 +180,27 @@ body {
 }
 
 ::selection {
-  background: #d9f99d;
-  color: #0a0a0a;
+  background: #ccfbf1;
+  color: #1c1917;
 }
 
 .studio-label {
   margin-bottom: 0.4rem;
   display: block;
-  font-size: 0.625rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #78716c;
 }
 
 .studio-input {
   display: block;
   width: 100%;
-  border-radius: 0.75rem;
-  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  border: 1px solid #e7e5e4;
   background: #ffffff;
-  padding: 0.625rem 0.75rem;
-  font-size: 0.75rem;
-  color: #0f172a;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  color: #1c1917;
   outline: none;
   transition:
     border-color 120ms ease,
@@ -181,9 +208,60 @@ body {
 }
 
 .studio-input:focus {
-  border-color: #64748b;
-  box-shadow: 0 0 0 3px rgb(100 116 139 / 0.1);
+  border-color: #a8a29e;
+  box-shadow: 0 0 0 3px rgb(120 113 108 / 0.1);
 }
+
+/* Shared form control look used by the educator console. */
+.ui-control {
+  display: block;
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.4rem;
+  color: var(--color-foreground);
+  outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ui-control::placeholder {
+  color: #a8a29e;
+}
+
+.ui-control:focus {
+  border-color: #a8a29e;
+  box-shadow: 0 0 0 3px rgb(120 113 108 / 0.1);
+}
+
+.ui-control:disabled {
+  cursor: not-allowed;
+  background: var(--color-muted);
+  color: var(--color-muted-foreground);
+}
+
+@keyframes ui-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes ui-slide-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes ui-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.ui-fade-in { animation: ui-fade-in 140ms ease-out both; }
+.ui-slide-in { animation: ui-slide-in 180ms ease-out both; }
+.ui-pop-in { animation: ui-pop-in 120ms ease-out both; }
 
 @media (prefers-reduced-motion: reduce) {
   *,

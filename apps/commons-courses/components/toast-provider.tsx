@@ -92,7 +92,7 @@ function ToastItem({
         )}
       />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-slate-950">{toast.title}</p>
+        <p className="text-sm font-semibold text-slate-950">{toast.title}</p>
         {toast.description && (
           <p className="mt-0.5 text-sm leading-5 text-slate-500">{toast.description}</p>
         )}

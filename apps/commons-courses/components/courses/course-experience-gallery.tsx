@@ -39,7 +39,7 @@ export function CourseExperienceGallery({
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
         <div className="mb-9 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
           <div>
-            <p className="mb-3 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-lime-300">
+            <p className="mb-3 inline-flex items-center gap-2 text-xs font-medium text-lime-300">
               <Sparkles className="h-3.5 w-3.5" />
               Interactive learning
             </p>
@@ -51,7 +51,7 @@ export function CourseExperienceGallery({
               course ideas through guided learning quests.
             </p>
           </div>
-          <span className="text-xs font-bold uppercase tracking-[0.14em] text-white/40">
+          <span className="text-xs font-medium text-white/40">
             {experiences.length}{" "}
             {experiences.length === 1 ? "experience" : "experiences"}
           </span>
@@ -83,7 +83,7 @@ export function CourseExperienceGallery({
                     >
                       <Gamepad2 className="h-5 w-5" />
                     </span>
-                    <h3 className="mt-6 text-xl font-bold">
+                    <h3 className="mt-6 text-xl font-semibold">
                       {experience.title}
                     </h3>
                     <p className="mt-2 line-clamp-2 max-w-xl text-sm leading-6 text-white/55">
@@ -99,7 +99,7 @@ export function CourseExperienceGallery({
                     </span>
                     <span>{experience.sceneCount} scenes</span>
                     {experience.isFreePreview && !courseIsFree ? (
-                      <span className="rounded-full bg-lime-300 px-2.5 py-1 font-black uppercase tracking-[0.1em] text-slate-950">
+                      <span className="rounded-full bg-lime-300 px-2.5 py-1 font-medium tracking-[0.1em] text-slate-950">
                         Free preview
                       </span>
                     ) : null}
@@ -110,7 +110,7 @@ export function CourseExperienceGallery({
                         ? `/courses/${courseSlug}/experiences/${experience.id}`
                         : "#enroll"
                     }
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-lime-300"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-lime-300"
                   >
                     {accessible ? (
                       <>

@@ -387,7 +387,7 @@ export function CourseMaterialViewer({
         )}
       >
         <div className="w-full max-w-5xl">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">
+          <p className="text-xs font-medium text-cyan-300">
             Slide {slide + 1} of {Math.max(slides.length, 1)}
           </p>
           <div className="mt-7 whitespace-pre-wrap text-2xl font-semibold leading-relaxed sm:text-4xl sm:leading-snug">
@@ -419,7 +419,7 @@ export function CourseMaterialViewer({
         <FileText className="h-4 w-4 text-slate-400" />
         <p
           className={cn(
-            "min-w-0 flex-1 truncate text-sm font-bold",
+            "min-w-0 flex-1 truncate text-sm font-semibold",
             full || presenter ? "text-white" : "text-slate-800",
           )}
         >
@@ -446,7 +446,7 @@ export function CourseMaterialViewer({
         {material.kind === "presentation" && !presenter && syncMode !== "off" ? (
           <button
             onClick={openPresenterWindow}
-            className="inline-flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100"
+            className="inline-flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100"
             title="Open presenter window for an extended display"
           >
             <PictureInPicture2 className="h-4 w-4" />
@@ -464,7 +464,7 @@ export function CourseMaterialViewer({
         ) : null}
         <button
           onClick={() => void toggleFullscreen()}
-          className="inline-flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100"
+          className="inline-flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100"
           title={full ? "Exit full screen (F)" : "Present full screen (F)"}
         >
           {full ? <X className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
@@ -525,7 +525,7 @@ export function CourseMaterialViewer({
                 return next;
               })
             }
-            className="inline-flex items-center gap-2 text-xs font-bold disabled:opacity-30"
+            className="inline-flex items-center gap-2 text-xs font-semibold disabled:opacity-30"
           >
             <ChevronLeft className="h-4 w-4" /> Previous
           </button>
@@ -541,14 +541,14 @@ export function CourseMaterialViewer({
                 return next;
               })
             }
-            className="inline-flex items-center gap-2 text-xs font-bold disabled:opacity-30"
+            className="inline-flex items-center gap-2 text-xs font-semibold disabled:opacity-30"
           >
             Next <ChevronRight className="h-4 w-4" />
           </button>
         </div>
       ) : null}
       {presenterNotice && !presenter ? (
-        <div className="absolute bottom-16 left-1/2 z-30 max-w-lg -translate-x-1/2 rounded-xl bg-slate-950/90 px-4 py-3 text-center text-xs font-bold text-white shadow-2xl">
+        <div className="absolute bottom-16 left-1/2 z-30 max-w-lg -translate-x-1/2 rounded-xl bg-slate-950/90 px-4 py-3 text-center text-xs font-semibold text-white shadow-2xl">
           <MonitorUp className="mr-2 inline h-4 w-4" />
           {presenterNotice}
           <button

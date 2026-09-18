@@ -54,30 +54,30 @@ export default function AccountPage() {
     <div className="min-h-screen bg-white">
       <Nav />
       <main className="mx-auto max-w-3xl px-4 pb-16 pt-24 sm:px-6 lg:px-8">
-        <Link href="/dashboard" className="text-sm font-bold text-slate-500">
+        <Link href="/dashboard" className="text-sm font-semibold text-slate-500">
           Back to dashboard
         </Link>
-        <h1 className="mb-8 mt-4 text-3xl font-bold text-slate-950">
+        <h1 className="mb-8 mt-4 text-3xl font-semibold text-slate-950">
           Account
         </h1>
 
         <section className="mb-6 rounded-xl border border-slate-200 p-5">
-          <h2 className="text-lg font-bold text-slate-900">Profile</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Profile</h2>
           <div className="mt-4 grid gap-3 text-sm text-slate-600">
             <p>
-              <span className="font-bold text-slate-900">Name:</span>{" "}
+              <span className="font-semibold text-slate-900">Name:</span>{" "}
               {user?.name || "Loading..."}
             </p>
             <p>
-              <span className="font-bold text-slate-900">Email:</span>{" "}
+              <span className="font-semibold text-slate-900">Email:</span>{" "}
               {user?.email || "Loading..."}
             </p>
             <p>
-              <span className="font-bold text-slate-900">Email status:</span>{" "}
+              <span className="font-semibold text-slate-900">Email status:</span>{" "}
               {user?.emailVerifiedAt ? "Verified" : "Not verified"}
             </p>
             <p>
-              <span className="font-bold text-slate-900">Sign-in:</span>{" "}
+              <span className="font-semibold text-slate-900">Sign-in:</span>{" "}
               {user?.authProvider === "google" ? "Google" : "Email and password"}
             </p>
           </div>
@@ -89,7 +89,7 @@ export default function AccountPage() {
         >
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">
+              <h2 className="text-lg font-semibold text-slate-900">
                 Learning preferences
               </h2>
               <p className="mt-1 max-w-xl text-sm leading-6 text-slate-500">
@@ -102,7 +102,7 @@ export default function AccountPage() {
         </section>
 
         <section className="rounded-xl border border-slate-200 p-5">
-          <h2 className="text-lg font-bold text-slate-900">Password</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Password</h2>
           <p className="mt-1 text-sm text-slate-500">
             {user?.hasPassword
               ? "Change your password."
@@ -132,7 +132,7 @@ export default function AccountPage() {
             {message && <p className="text-sm text-lime-700">{message}</p>}
             <button
               disabled={saving}
-              className="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+              className="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
             >
               {saving ? "Saving..." : "Save password"}
             </button>

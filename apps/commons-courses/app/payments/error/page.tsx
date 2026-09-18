@@ -88,19 +88,19 @@ export default async function PaymentErrorPage({ searchParams }: Props) {
           <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-lg bg-amber-100 text-amber-800">
             <AlertTriangle className="h-5 w-5" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-950">{title}</h1>
+          <h1 className="text-2xl font-semibold text-slate-950">{title}</h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">{detail}</p>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <Link
               href={courseHref}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-bold text-white hover:opacity-90"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
             >
               Try again <CreditCard className="h-4 w-4" />
             </Link>
             <Link
               href="/courses"
-              className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
               Browse courses
             </Link>

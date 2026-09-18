@@ -1,6 +1,4 @@
 import { redirect } from "next/navigation";
-import { Nav } from "@/components/nav";
-import { CourseDashboardShell } from "@/components/educator/course-dashboard-shell";
 import { requireEducatorCourse } from "@/lib/educator-auth";
 
 export default async function EducatorCourseLayout({
@@ -14,16 +12,5 @@ export default async function EducatorCourseLayout({
   const result = await requireEducatorCourse(slug);
   if (result.error) redirect("/educator");
 
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <Nav />
-      <CourseDashboardShell
-        slug={slug}
-        title={result.course.title}
-        published={result.course.published}
-      >
-        {children}
-      </CourseDashboardShell>
-    </div>
-  );
+  return <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>;
 }

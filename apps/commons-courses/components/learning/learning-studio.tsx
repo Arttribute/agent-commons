@@ -148,7 +148,7 @@ export function LearningStudio({
     >
       <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center">
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+          <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
             <Sparkles className="h-3.5 w-3.5" />
             Learn this your way
           </p>
@@ -178,7 +178,7 @@ export function LearningStudio({
             type="button"
             onClick={toggleAudio}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors",
               speaking
                 ? "bg-sky-50 text-sky-700"
                 : "text-slate-500 hover:bg-slate-50 hover:text-slate-900",
@@ -202,7 +202,7 @@ export function LearningStudio({
           {authenticated === false ? (
             <Link
               href={signInHref}
-              className="shrink-0 px-2 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-950"
+              className="shrink-0 px-2 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-950"
             >
               Sign in to personalize
             </Link>
@@ -210,7 +210,7 @@ export function LearningStudio({
             <button
               type="button"
               onClick={() => setProfileOpen(true)}
-              className="shrink-0 px-2 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-950"
+              className="shrink-0 px-2 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-950"
             >
               Preferences
             </button>
@@ -221,7 +221,7 @@ export function LearningStudio({
       {view !== "original" && authenticated === false ? (
         <div className="px-5 py-6 text-center">
           <Sparkles className="mx-auto h-5 w-5 text-slate-400" />
-          <h3 className="mt-2 text-sm font-bold text-slate-900">
+          <h3 className="mt-2 text-sm font-semibold text-slate-900">
             Save learning views to your profile
           </h3>
           <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">
@@ -230,7 +230,7 @@ export function LearningStudio({
           </p>
           <Link
             href={signInHref}
-            className="mt-4 inline-flex rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-bold text-white"
+            className="mt-4 inline-flex rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"
           >
             Sign in to continue
           </Link>
@@ -242,7 +242,7 @@ export function LearningStudio({
       !profile?.personalizationEnabled ? (
         <div className="px-5 py-6 text-center">
           <SlidersHorizontal className="mx-auto h-5 w-5 text-slate-400" />
-          <h3 className="mt-2 text-sm font-bold text-slate-900">
+          <h3 className="mt-2 text-sm font-semibold text-slate-900">
             Add just enough context to make examples familiar
           </h3>
           <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">
@@ -252,7 +252,7 @@ export function LearningStudio({
           <button
             type="button"
             onClick={() => setProfileOpen(true)}
-            className="mt-4 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-bold text-white"
+            className="mt-4 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"
           >
             {profile?.onboardingCompleted
               ? "Turn on personalization"
@@ -280,17 +280,17 @@ export function LearningStudio({
         <div className="p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700">
+              <p className="text-[10px] font-medium text-sky-700">
                 Personalized learning aid
               </p>
-              <h3 className="mt-1 text-base font-bold text-slate-950">
+              <h3 className="mt-1 text-base font-semibold text-slate-950">
                 {context.title}
               </h3>
             </div>
             <button
               type="button"
               onClick={() => setProfileOpen(true)}
-              className="text-xs font-bold text-slate-500 hover:text-slate-900"
+              className="text-xs font-semibold text-slate-500 hover:text-slate-900"
             >
               Adjust
             </button>
@@ -313,7 +313,7 @@ export function LearningStudio({
               type="button"
               onClick={markHelpful}
               className={cn(
-                "inline-flex shrink-0 items-center gap-1.5 text-xs font-bold",
+                "inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold",
                 helpful ? "text-green-700" : "text-slate-500 hover:text-slate-900",
               )}
             >
@@ -354,7 +354,7 @@ function ViewButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors",
+        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors",
         active
           ? "bg-slate-950 text-white"
           : "text-slate-500 hover:bg-slate-50 hover:text-slate-900",
@@ -369,7 +369,7 @@ function ViewButton({
 function LearningNote({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-slate-200 p-3">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+      <p className="text-[10px] font-medium text-slate-400">
         {label}
       </p>
       <p className="mt-1.5 text-sm leading-6 text-slate-700">{value}</p>
@@ -389,10 +389,10 @@ function MindMapView({
   return (
     <div className="overflow-x-auto p-5">
       <div className="min-w-[720px]">
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-700">
+        <p className="text-[10px] font-medium text-violet-700">
           Generated from the educator’s lesson
         </p>
-        <div className="mt-4 rounded-xl bg-slate-950 px-4 py-3 text-center text-sm font-bold text-white">
+        <div className="mt-4 rounded-xl bg-slate-950 px-4 py-3 text-center text-sm font-semibold text-white">
           {node.label}
           {node.detail ? (
             <span className="mt-1 block text-xs font-normal leading-5 text-white/60">
@@ -420,7 +420,7 @@ function MindMapView({
             <div key={child.id} className="relative pt-5">
               <div className="absolute left-1/2 top-0 h-5 w-px bg-slate-300" />
               <div className="h-full rounded-xl border border-slate-200 bg-white p-3 text-center">
-                <p className="text-xs font-bold text-slate-900">{child.label}</p>
+                <p className="text-xs font-semibold text-slate-900">{child.label}</p>
                 {child.detail ? (
                   <p className="mt-1 text-[11px] leading-5 text-slate-500">
                     {child.detail}
@@ -450,7 +450,7 @@ function MindMapView({
             type="button"
             onClick={onHelpful}
             className={cn(
-              "inline-flex items-center gap-1.5 text-xs font-bold",
+              "inline-flex items-center gap-1.5 text-xs font-semibold",
               helpful ? "text-green-700" : "text-slate-500 hover:text-slate-900",
             )}
           >

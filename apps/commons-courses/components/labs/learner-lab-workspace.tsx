@@ -310,7 +310,7 @@ function FolderSidebar({
         )}
       >
         <div className="flex items-center justify-between px-2 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-400">
+          <p className="text-[10px] font-semibold text-stone-400">
             Folders
           </p>
           <button
@@ -880,7 +880,7 @@ function ToolbarButton({
 }
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-400">
+    <p className="mb-3 text-[10px] font-semibold text-stone-400">
       {children}
     </p>
   );

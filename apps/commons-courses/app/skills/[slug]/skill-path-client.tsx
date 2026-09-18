@@ -189,7 +189,7 @@ export default function SkillPathClient({
           </h1>
           <Link
             href="/skills"
-            className="mt-4 inline-flex text-sm font-bold text-slate-700"
+            className="mt-4 inline-flex text-sm font-semibold text-slate-700"
           >
             Back to skills
           </Link>
@@ -327,7 +327,7 @@ export default function SkillPathClient({
             <div className="mx-auto flex max-w-6xl items-center gap-3">
               <Link
                 href="/skills"
-                className="hidden items-center gap-1.5 text-sm font-bold text-slate-500 hover:text-slate-900 sm:inline-flex"
+                className="hidden items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900 sm:inline-flex"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Skills
@@ -341,7 +341,7 @@ export default function SkillPathClient({
                 <Route className="h-4 w-4" />
               </button>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-bold uppercase tracking-widest text-slate-500">
+                <p className="truncate text-xs font-medium text-slate-500">
                   {pack.title}
                 </p>
                 <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
@@ -406,7 +406,7 @@ export default function SkillPathClient({
               {!isSandboxChallenge ? (
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                    <p className="text-xs font-medium text-slate-500">
                       Day {challenge.day}
                     </p>
                     <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
@@ -414,7 +414,7 @@ export default function SkillPathClient({
                     </h1>
                   </div>
                   {completed ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-black">
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-semibold">
                       <BadgeCheck className="h-4 w-4" />
                       Done
                     </span>
@@ -524,7 +524,7 @@ export default function SkillPathClient({
           />
           <div className="absolute bottom-0 left-0 right-0 max-h-[78dvh] overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl">
             <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-black text-slate-950">Daily path</p>
+              <p className="text-sm font-semibold text-slate-950">Daily path</p>
               <button
                 type="button"
                 onClick={() => setDrawerOpen(false)}
@@ -615,7 +615,7 @@ function LessonView({
         {!authenticated ? (
           <Link
             href={signInHref}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white"
           >
             Sign in to save streak <ArrowRight className="h-4 w-4" />
           </Link>
@@ -623,7 +623,7 @@ function LessonView({
           <button
             type="button"
             onClick={onStartQuiz}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white"
           >
             I am ready for the quiz <ArrowRight className="h-4 w-4" />
           </button>
@@ -632,7 +632,7 @@ function LessonView({
             type="button"
             onClick={onComplete}
             disabled={saving}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40"
           >
             {saving ? "Saving..." : "Complete lesson"}{" "}
             <ArrowRight className="h-4 w-4" />
@@ -698,13 +698,13 @@ function QuizView({
   return (
     <div className="flex flex-1 flex-col rounded-xl border border-slate-200 bg-white p-4">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
+        <p className="text-xs font-medium text-slate-500">
           Question {questionIndex + 1} of {challenge.questions.length}
         </p>
         <button
           type="button"
           onClick={onBackToLesson}
-          className="text-xs font-bold text-slate-500 hover:text-slate-950"
+          className="text-xs font-semibold text-slate-500 hover:text-slate-950"
         >
           Back to lesson
         </button>
@@ -760,7 +760,7 @@ function QuizView({
           type="button"
           onClick={onPrevious}
           disabled={questionIndex === 0}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-40"
         >
           <ChevronLeft className="h-4 w-4" />
           Back
@@ -770,7 +770,7 @@ function QuizView({
             type="button"
             onClick={onNext}
             disabled={selectedAnswer === undefined || saving}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40"
           >
             {saving ? "Saving..." : isLast ? "Finish" : "Next"}
             <ArrowRight className="h-4 w-4" />
@@ -778,7 +778,7 @@ function QuizView({
         ) : (
           <Link
             href={signInHref}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white"
           >
             Sign in
             <ArrowRight className="h-4 w-4" />
@@ -843,14 +843,14 @@ function DoneView({
           <button
             type="button"
             onClick={() => onNext(nextChallenge.id)}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white sm:w-fit"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white sm:w-fit"
           >
             Continue to next day <ArrowRight className="h-4 w-4" />
           </button>
         ) : (
           <Link
             href="/skills"
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-bold text-white sm:w-fit"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white sm:w-fit"
           >
             Back to skills <ArrowRight className="h-4 w-4" />
           </Link>
@@ -889,7 +889,7 @@ function DailyPath({
 }) {
   return (
     <div>
-      <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-500">
+      <p className="mb-3 text-xs font-medium text-slate-500">
         Daily path
       </p>
       <div className="space-y-2">
@@ -912,7 +912,7 @@ function DailyPath({
               )}
             >
               <span
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-black text-slate-950"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold text-slate-950"
                 style={{ backgroundColor: challenge.accentColor || "#B8F56D" }}
               >
                 {completed ? (
@@ -922,7 +922,7 @@ function DailyPath({
                 )}
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-sm font-bold">
+                <span className="block truncate text-sm font-semibold">
                   {challenge.shortTitle || challenge.title}
                 </span>
                 <span
@@ -965,7 +965,7 @@ function Pill({
   color: string;
 }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-black text-slate-800">
+    <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-800">
       <Icon className={`h-3.5 w-3.5 ${color}`} />
       {label}
     </span>

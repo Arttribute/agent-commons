@@ -1,13 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, Download, LoaderCircle, Trash2, Upload } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Archive, ArrowLeft, Download, Plus, Trash2, Upload } from "lucide-react";
 import { LearnerLabWorkspace } from "@/components/labs/learner-lab-workspace";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { Drawer } from "@/components/ui/drawer";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { Badge, EmptyState, List, ListRow } from "@/components/ui/surface";
 import type { LabWorkspaceRecord } from "@/types/lab-workspace";
 
 export function LabWorkspaceLibrary({ slug }: { slug: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const selected = searchParams.get("lab") || "";
   const [workspaces, setWorkspaces] = useState<LabWorkspaceRecord[]>([]);
-  const [selected, setSelected] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState("");
   const [title, setTitle] = useState("");
@@ -15,15 +25,20 @@ export function LabWorkspaceLibrary({ slug }: { slug: string }) {
   const [instructions, setInstructions] = useState("");
   const [visibility, setVisibility] = useState<"course" | "live">("course");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const select = useCallback(
+    (id: string) => router.replace(id ? `${pathname}?lab=${id}` : pathname, { scroll: false }),
+    [pathname, router],
+  );
+
   const load = useCallback(async () => {
-    const response = await fetch(
-      `/api/educator/courses/${slug}/lab-workspaces`,
-      { cache: "no-store" },
-    );
+    const response = await fetch(`/api/educator/courses/${slug}/lab-workspaces`, { cache: "no-store" });
     const body = await response.json().catch(() => ({}));
     if (response.ok) setWorkspaces(body.workspaces || []);
     else setNotice(body.error || "Could not load labs.");
+    setLoading(false);
   }, [slug]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
@@ -31,7 +46,7 @@ export function LabWorkspaceLibrary({ slug }: { slug: string }) {
 
   async function upload(file?: File) {
     if (!file || !title.trim()) {
-      setNotice("Add a title and choose a ZIP lab pack.");
+      setNotice("Add a title, then choose a ZIP lab pack.");
       return;
     }
     setUploading(true);
@@ -42,155 +57,133 @@ export function LabWorkspaceLibrary({ slug }: { slug: string }) {
     form.append("description", description);
     form.append("instructions", instructions);
     form.append("visibility", visibility);
-    const response = await fetch(
-      `/api/educator/courses/${slug}/lab-workspaces`,
-      { method: "POST", body: form },
-    );
+    const response = await fetch(`/api/educator/courses/${slug}/lab-workspaces`, { method: "POST", body: form });
     const body = await response.json().catch(() => ({}));
     if (response.ok) {
       setWorkspaces((current) => [body.workspace, ...current]);
-      setSelected(body.workspace.id);
       setTitle("");
       setDescription("");
       setInstructions("");
-      setNotice(
-        `Lab ready: ${body.workspace.learnerFileCount} learner files; ${body.workspace.facilitatorFileCount} facilitator-only files protected.`,
-      );
+      setCreating(false);
+      select(body.workspace.id);
     } else setNotice(body.error || "Could not create the lab workspace.");
     setUploading(false);
     if (inputRef.current) inputRef.current.value = "";
   }
+
   async function remove(id: string) {
-    if (!window.confirm("Delete this lab workspace and its stored files?"))
-      return;
-    const response = await fetch(`/api/educator/lab-workspaces/${id}`, {
-      method: "DELETE",
-    });
+    if (!window.confirm("Delete this lab workspace and its stored files?")) return;
+    const response = await fetch(`/api/educator/lab-workspaces/${id}`, { method: "DELETE" });
     if (!response.ok) return;
     setWorkspaces((current) => current.filter((item) => item.id !== id));
-    if (selected === id) setSelected("");
+    if (selected === id) select("");
+  }
+
+  const current = workspaces.find((item) => item.id === selected);
+
+  if (selected) {
+    return (
+      <div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => select("")}
+            className="inline-flex min-w-0 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+            <span className="truncate">{current?.title || "All labs"}</span>
+          </button>
+          {current ? (
+            <div className="flex items-center gap-2">
+              {current.facilitatorPackDownloadUrl ? (
+                <ButtonLink size="sm" href={current.facilitatorPackDownloadUrl} icon={Download} external>
+                  Facilitator pack
+                </ButtonLink>
+              ) : null}
+              <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void remove(current.id)}>
+                Delete
+              </Button>
+            </div>
+          ) : null}
+        </div>
+        <LearnerLabWorkspace workspaceId={selected} compact />
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-5">
-      <header>
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
-          Learner practice
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {loading ? "Loading" : `${workspaces.length} lab${workspaces.length === 1 ? "" : "s"}`}
         </p>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
-          Lab workspaces
-        </h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Upload a structured ZIP once. Learners receive a safe workspace and
-          learner-only download pack; facilitator files stay private.
-        </p>
-      </header>
-      <section className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 lg:grid-cols-2">
-        <input
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Lab title"
-          className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
-        />
-        <select
-          value={visibility}
-          onChange={(event) =>
-            setVisibility(event.target.value as "course" | "live")
-          }
-          className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold"
-        >
-          <option value="course">All enrolled learners</option>
-          <option value="live">Live attendees only</option>
-        </select>
-        <input
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          placeholder="Short learner-facing description"
-          className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm lg:col-span-2"
-        />
-        <textarea
-          value={instructions}
-          onChange={(event) => setInstructions(event.target.value)}
-          placeholder="Lab brief and setup instructions"
-          rows={3}
-          className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm lg:col-span-2"
-        />
-        <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white lg:col-span-2">
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".zip,application/zip"
-            className="sr-only"
-            disabled={uploading}
-            onChange={(event) => void upload(event.target.files?.[0])}
-          />
-          {uploading ? (
-            <LoaderCircle className="h-4 w-4 animate-spin" />
-          ) : (
-            <Upload className="h-4 w-4" />
-          )}
-          Choose ZIP and create workspace
-        </label>
-      </section>
-      {notice ? (
-        <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
-          {notice}
-        </div>
-      ) : null}
-      <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
-        <section className="rounded-2xl border border-slate-200 bg-white p-3">
-          {workspaces.map((item) => (
-            <div
-              key={item.id}
-              className={`group mb-1 flex items-center rounded-xl ${selected === item.id ? "bg-slate-950 text-white" : "hover:bg-slate-50"}`}
-            >
-              <button
-                onClick={() => setSelected(item.id)}
-                className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left"
-              >
-                <Archive className="h-4 w-4 shrink-0" />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-bold">
-                    {item.title}
-                  </span>
-                  <span className="text-[10px] uppercase tracking-wide text-slate-400">
-                    {item.learnerFileCount} learner files ·{" "}
-                    {item.facilitatorFileCount} private
-                  </span>
-                </span>
-              </button>
-              <a
-                href={item.facilitatorPackDownloadUrl}
-                title="Download full facilitator pack"
-                className="p-2 opacity-0 group-hover:opacity-100"
-              >
-                <Download className="h-4 w-4" />
-              </a>
-              <button
-                onClick={() => void remove(item.id)}
-                title="Delete lab"
-                className="mr-2 p-2 text-slate-400 opacity-0 hover:text-red-500 group-hover:opacity-100"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-          {!workspaces.length ? (
-            <div className="p-10 text-center text-sm text-slate-400">
-              No lab workspaces yet.
-            </div>
-          ) : null}
-        </section>
-        <section>
-          {selected ? (
-            <LearnerLabWorkspace workspaceId={selected} compact />
-          ) : (
-            <div className="flex min-h-80 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-sm text-slate-400">
-              Select a lab to preview the learner workspace.
-            </div>
-          )}
-        </section>
+        <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+          New lab
+        </Button>
       </div>
+
+      {workspaces.length ? (
+        <List>
+          {workspaces.map((item) => (
+            <ListRow
+              key={item.id}
+              onClick={() => select(item.id)}
+              leading={
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <Archive className="h-4 w-4" strokeWidth={1.75} />
+                </span>
+              }
+              title={item.title}
+              meta={`${item.learnerFileCount} learner files · ${item.facilitatorFileCount} private`}
+              trailing={<Badge>{item.visibility === "live" ? "Live attendees" : "All learners"}</Badge>}
+            />
+          ))}
+        </List>
+      ) : !loading ? (
+        <EmptyState
+          icon={Archive}
+          title="No labs yet"
+          description="Upload a structured ZIP. Learners get a safe workspace and facilitator files stay private."
+          action={
+            <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+              New lab
+            </Button>
+          }
+        />
+      ) : null}
+
+      <Drawer open={creating} onClose={() => setCreating(false)} title="New lab workspace">
+        <div className="space-y-5">
+          <Field label="Title">
+            <Input value={title} onChange={(event) => setTitle(event.target.value)} />
+          </Field>
+          <Field label="Who can open it">
+            <Select value={visibility} onChange={(event) => setVisibility(event.target.value as "course" | "live")}>
+              <option value="course">All enrolled learners</option>
+              <option value="live">Live attendees only</option>
+            </Select>
+          </Field>
+          <Field label="Short description" optional>
+            <Input value={description} onChange={(event) => setDescription(event.target.value)} />
+          </Field>
+          <Field label="Brief and setup" optional>
+            <Textarea rows={4} value={instructions} onChange={(event) => setInstructions(event.target.value)} />
+          </Field>
+          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-page px-6 py-8 text-center transition-colors hover:bg-muted">
+            <Upload className="h-5 w-5 text-muted-foreground" strokeWidth={1.75} />
+            <span className="text-sm font-medium">{uploading ? "Creating workspace" : "Choose ZIP and create"}</span>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".zip,application/zip"
+              className="sr-only"
+              disabled={uploading}
+              onChange={(event) => void upload(event.target.files?.[0])}
+            />
+          </label>
+          {notice ? <p className="text-sm text-red-600">{notice}</p> : null}
+        </div>
+      </Drawer>
     </div>
   );
 }

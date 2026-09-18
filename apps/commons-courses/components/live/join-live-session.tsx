@@ -32,17 +32,17 @@ export function JoinLiveSession() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-5 py-12 text-white">
       <div className="w-full max-w-md">
-        <Link href="/" className="mb-10 flex items-center justify-center gap-2.5 text-sm font-bold">
+        <Link href="/" className="mb-10 flex items-center justify-center gap-2.5 text-sm font-semibold">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-slate-950"><FlaskConical className="h-4 w-4" /></span>
           CommonLab
         </Link>
         <section className="rounded-3xl bg-white p-6 text-slate-950 shadow-2xl sm:p-8">
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#71E0E7]/25"><Radio className="h-5 w-5" /></span>
-          <p className="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Live learning</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight">Join your session</h1>
+          <p className="mt-6 text-xs font-medium text-slate-400">Live learning</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Join your session</h1>
           <p className="mt-3 text-sm leading-6 text-slate-500">Enter the six-digit code on the facilitator’s screen. You’ll go straight to the right room.</p>
           <form onSubmit={submit} className="mt-7">
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Session code
+            <label className="block text-xs font-medium text-slate-600">Session code
               <input
                 autoFocus
                 inputMode="numeric"
@@ -51,11 +51,11 @@ export function JoinLiveSession() {
                 value={formatInput(code)}
                 onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="123 456"
-                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-4 text-center text-3xl font-bold tracking-[0.16em] outline-none focus:border-slate-500"
+                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-4 text-center text-3xl font-semibold tracking-[0.16em] outline-none focus:border-slate-500"
               />
             </label>
             {notice ? <p className="mt-3 text-sm text-red-600">{notice}</p> : null}
-            <button disabled={code.length !== 6 || loading} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3.5 text-sm font-bold text-white disabled:opacity-40">
+            <button disabled={code.length !== 6 || loading} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3.5 text-sm font-semibold text-white disabled:opacity-40">
               {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
               Continue
             </button>

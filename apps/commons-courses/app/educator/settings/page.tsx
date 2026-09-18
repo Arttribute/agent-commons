@@ -3,7 +3,11 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Nav } from "@/components/nav";
+import { ConsolePage } from "@/components/educator/console-page";
+import { Field, FieldGrid, Input, Select, Textarea } from "@/components/ui/field";
+import { Card, Disclosure, PageHeader } from "@/components/ui/surface";
+import { SaveBar } from "@/components/ui/save-bar";
+import { Segmented } from "@/components/ui/tabs";
 
 type Profile = {
   displayName?: string;
@@ -20,16 +24,27 @@ export default function EducatorSettingsPage() {
   const router = useRouter();
   const { update } = useSession();
   const [profile, setProfile] = useState<Profile>({ settlementMode: "platform_rails" });
+  const [saved, setSaved] = useState("");
+  const [isNew, setIsNew] = useState(false);
+  const [view, setView] = useState<"profile" | "payouts">("profile");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/educator/profile")
       .then((res) => res.json())
       .then((data) => {
-        if (data.profile) setProfile(data.profile);
+        if (data.profile) {
+          setProfile(data.profile);
+          setSaved(JSON.stringify(data.profile));
+        } else {
+          setIsNew(true);
+        }
       })
       .catch(() => {});
   }, []);
+
+  const patch = (value: Partial<Profile>) => setProfile((current) => ({ ...current, ...value }));
+  const dirty = JSON.stringify(profile) !== saved;
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -41,116 +56,100 @@ export default function EducatorSettingsPage() {
     });
     setSaving(false);
     if (res.ok) {
+      setSaved(JSON.stringify(profile));
       await update({ user: { role: "educator" } });
-      router.push("/educator");
+      if (isNew) router.push("/educator");
     }
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      <Nav />
-      <main className="mx-auto max-w-3xl px-4 pb-16 pt-24 sm:px-6 lg:px-8">
-        <p className="mb-2 text-xs uppercase tracking-[0.2em] text-slate-400">
-          Educator settings
-        </p>
-        <h1 className="mb-8 text-3xl font-bold text-slate-950">
-          Profile and payout setup
-        </h1>
-
-        <form onSubmit={onSubmit} className="space-y-5">
-          <Field
-            label="Display name"
-            value={profile.displayName || ""}
-            onChange={(value) => setProfile({ ...profile, displayName: value })}
-            required
-          />
-          <Field
-            label="Organization"
-            value={profile.organization || ""}
-            onChange={(value) => setProfile({ ...profile, organization: value })}
-          />
-          <label className="block">
-            <span className="text-sm font-bold text-slate-700">Bio</span>
-            <textarea
-              value={profile.bio || ""}
-              onChange={(event) => setProfile({ ...profile, bio: event.target.value })}
-              className="mt-2 min-h-28 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-            />
-          </label>
-          <div className="grid gap-4 md:grid-cols-2">
+    <ConsolePage width="narrow">
+      <PageHeader title={isNew ? "Set up your educator profile" : "Settings"} />
+      <form onSubmit={onSubmit} className="space-y-5">
+        <Segmented
+          items={[
+            { value: "profile", label: "Profile" },
+            { value: "payouts", label: "Payouts" },
+          ]}
+          value={view}
+          onChange={setView}
+        />
+        {view === "profile" ? (
+          <Card className="space-y-4">
+            <FieldGrid>
+              <Field label="Display name">
+                <Input
+                  required
+                  value={profile.displayName || ""}
+                  onChange={(event) => patch({ displayName: event.target.value })}
+                />
+              </Field>
+              <Field label="Organization" optional>
+                <Input
+                  value={profile.organization || ""}
+                  onChange={(event) => patch({ organization: event.target.value })}
+                />
+              </Field>
+            </FieldGrid>
+            <Field label="Bio" optional>
+              <Textarea rows={4} value={profile.bio || ""} onChange={(event) => patch({ bio: event.target.value })} />
+            </Field>
+          </Card>
+        ) : (
+          <Card className="space-y-4">
+            <FieldGrid>
+              <Field label="Payout email">
+                <Input
+                  value={profile.payoutEmail || ""}
+                  onChange={(event) => patch({ payoutEmail: event.target.value })}
+                />
+              </Field>
+              <Field label="Payout phone" optional>
+                <Input
+                  value={profile.payoutPhone || ""}
+                  onChange={(event) => patch({ payoutPhone: event.target.value })}
+                />
+              </Field>
+            </FieldGrid>
             <Field
-              label="Payout email"
-              value={profile.payoutEmail || ""}
-              onChange={(value) => setProfile({ ...profile, payoutEmail: value })}
-            />
-            <Field
-              label="Payout phone"
-              value={profile.payoutPhone || ""}
-              onChange={(value) => setProfile({ ...profile, payoutPhone: value })}
-            />
-          </div>
-          <label className="block">
-            <span className="text-sm font-bold text-slate-700">Settlement mode</span>
-            <select
-              value={profile.settlementMode || "platform_rails"}
-              onChange={(event) =>
-                setProfile({
-                  ...profile,
-                  settlementMode: event.target.value as Profile["settlementMode"],
-                })
-              }
-              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              label="Settlement"
+              info="Agent Commons rails collect payments and pay you out. Direct rails send payments to your own Paystack or Stripe account."
             >
-              <option value="platform_rails">Agent Commons payment rails</option>
-              <option value="educator_direct">Educator direct payment rails</option>
-            </select>
-          </label>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field
-              label="Paystack subaccount code"
-              value={profile.paystackSubaccountCode || ""}
-              onChange={(value) =>
-                setProfile({ ...profile, paystackSubaccountCode: value })
+              <Select
+                value={profile.settlementMode || "platform_rails"}
+                onChange={(event) => patch({ settlementMode: event.target.value as Profile["settlementMode"] })}
+              >
+                <option value="platform_rails">Agent Commons payment rails</option>
+                <option value="educator_direct">My own payment accounts</option>
+              </Select>
+            </Field>
+            <Disclosure
+              title="Payment accounts"
+              summary={
+                [profile.paystackSubaccountCode ? "Paystack" : null, profile.stripeAccountId ? "Stripe" : null]
+                  .filter(Boolean)
+                  .join(" · ") || "Paystack subaccount and Stripe connected account"
               }
-            />
-            <Field
-              label="Stripe connected account"
-              value={profile.stripeAccountId || ""}
-              onChange={(value) => setProfile({ ...profile, stripeAccountId: value })}
-            />
-          </div>
-          <button
-            disabled={saving}
-            className="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save settings"}
-          </button>
-        </form>
-      </main>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  required,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  required?: boolean;
-}) {
-  return (
-    <label className="block">
-      <span className="text-sm font-bold text-slate-700">{label}</span>
-      <input
-        value={value}
-        required={required}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-      />
-    </label>
+            >
+              <FieldGrid>
+                <Field label="Paystack subaccount code" optional>
+                  <Input
+                    value={profile.paystackSubaccountCode || ""}
+                    onChange={(event) => patch({ paystackSubaccountCode: event.target.value })}
+                  />
+                </Field>
+                <Field label="Stripe connected account" optional>
+                  <Input
+                    value={profile.stripeAccountId || ""}
+                    onChange={(event) => patch({ stripeAccountId: event.target.value })}
+                  />
+                </Field>
+              </FieldGrid>
+            </Disclosure>
+          </Card>
+        )}
+        <SaveBar type="submit" dirty={dirty || isNew} saving={saving} label={isNew ? "Continue" : "Save changes"} />
+      </form>
+    </ConsolePage>
   );
 }
