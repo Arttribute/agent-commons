@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { PageTitle } from "@/components/layout/page-header";
-import { CreditsMenu } from "@/components/billing/credits-menu";
 import { CommonsAppsBar } from "@/components/plugins/apps-bar";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
@@ -299,7 +298,6 @@ export default function LibraryPage() {
                   }}
                 />
                 <CommonsAppsBar />
-                <CreditsMenu />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button

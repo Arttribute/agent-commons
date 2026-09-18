@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { PageTitle } from "@/components/layout/page-header";
-import { CreditsMenu } from "@/components/billing/credits-menu";
 import { CommonsAppsBar } from "@/components/plugins/apps-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -971,7 +970,6 @@ export function KnowledgeSpacesView() {
                 )}
               </div>
               <CommonsAppsBar />
-              <CreditsMenu />
               {canManage && (
                 <Button
                   variant="outline"
