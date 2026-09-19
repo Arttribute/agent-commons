@@ -125,10 +125,11 @@ export function createPlatformRouter(
 
     const [summary, daily, recent] = await Promise.all([
       database.query(
-        `select count(*) filter (where created_at >= now() - interval '7 days')::int as "requests",
-                count(*) filter (where created_at >= now() - interval '7 days' and status_code >= 400)::int as "errors",
-                coalesce((avg(duration_ms) filter (where created_at >= now() - interval '7 days'))::int, 0) as "averageLatencyMs"
-         from commons_api_usage_event where project_id = $1`,
+        `select count(*)::int as "requests",
+                count(*) filter (where status_code >= 400)::int as "errors",
+                coalesce(avg(duration_ms)::int, 0) as "averageLatencyMs"
+         from commons_api_usage_event
+         where project_id = $1 and created_at >= now() - interval '7 days'`,
         [projectId],
       ),
       database.query(
