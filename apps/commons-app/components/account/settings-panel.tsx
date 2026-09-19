@@ -25,6 +25,7 @@ import {
   Plug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 import { UsageSection } from "@/components/account/usage-section";
 import { BillingPanel } from "@/components/billing/billing-panel";
 import { DeveloperApiKeysSection } from "@/components/account/developer-api-keys-section";
@@ -62,6 +63,7 @@ const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
 
 // ─── Profile Section ──────────────────────────────────────────────────────────
 function ProfileSection({ walletAddress }: { walletAddress: string }) {
+  const { authState } = useAuth();
   return (
     <div className="space-y-6 max-w-lg">
       <div>
@@ -71,6 +73,14 @@ function ProfileSection({ walletAddress }: { walletAddress: string }) {
         </p>
       </div>
       <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Name</Label>
+          <p className="rounded-md bg-muted px-3 py-2 text-sm">{authState.username || "Not available"}</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Email</Label>
+          <p className="rounded-md bg-muted px-3 py-2 text-sm break-all">{authState.email || "Not available"}</p>
+        </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Commons account ID</Label>
           <div className="flex items-center gap-2">

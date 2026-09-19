@@ -6,7 +6,7 @@ import Image from "next/image";
 import {
   Activity, ArrowLeft, ArrowRight, BookOpen, Bot, Check, ChevronDown,
   CircleAlert, Code2, Copy, ExternalLink, KeyRound, Loader2, Plus,
-  RefreshCw, Terminal, Zap,
+  RefreshCw, Terminal, UserRound, Zap,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useAgents } from "@/hooks/use-agents";
@@ -85,6 +85,7 @@ export default function DevelopersPage() {
   const [projectId, setProjectId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
@@ -95,10 +96,16 @@ export default function DevelopersPage() {
   const loadProjects = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setSessionExpired(false);
     try {
       const response = await fetch("/api/api-keys", { cache: "no-store" });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(message(body, "Could not load developer projects."));
+      if (!response.ok) {
+        if (response.status === 401) setSessionExpired(true);
+        throw new Error(response.status === 401
+          ? "Your session has expired. Sign in again to manage developer resources."
+          : message(body, "Could not load developer projects."));
+      }
       const next = Array.isArray(body.projects) ? body.projects as Project[] : [];
       setProjects(next);
       setKeys(Array.isArray(body.data) ? body.data : []);
@@ -119,7 +126,12 @@ export default function DevelopersPage() {
     fetch(`/api/developers/usage?projectId=${encodeURIComponent(projectId)}`, { cache: "no-store" })
       .then(async (response) => {
         const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(message(body, "Could not load API usage."));
+        if (!response.ok) {
+          if (response.status === 401 && active) setSessionExpired(true);
+          throw new Error(response.status === 401
+            ? "Your session has expired. Sign in again to view API usage."
+            : message(body, "Could not load API usage."));
+        }
         if (active) setUsage(body.data ?? null);
       })
       .catch((cause) => { if (active) { setUsage(null); setUsageError(cause.message); } })
@@ -165,6 +177,7 @@ export default function DevelopersPage() {
           </nav>
         </div>
         <div className="mt-auto space-y-1 border-t border-stone-100 p-4">
+          <Link href="/settings" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-100"><UserRound className="h-4 w-4" />Account settings</Link>
           <a href="https://docs.agentcommons.io/docs/api" target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-100"><BookOpen className="h-4 w-4" />API reference <ExternalLink className="ml-auto h-3 w-3" /></a>
           <Link href="/studio/agents" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-stone-600 hover:bg-stone-100"><ArrowLeft className="h-4 w-4" />Back to Studio</Link>
         </div>
@@ -176,23 +189,26 @@ export default function DevelopersPage() {
             <Link href="/studio/agents" className="md:hidden" aria-label="Back to Studio"><ArrowLeft className="h-5 w-5" /></Link>
             <div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-400">Developer console</p><p className="text-sm font-medium">{tabs.find((item) => item.id === tab)?.label}</p></div>
           </div>
-          {tab !== "keys" && projects.length > 0 && <div className="relative">
-            <select aria-label="Project" value={projectId} onChange={(event) => setProjectId(event.target.value)} className="max-w-[230px] appearance-none rounded-lg border border-stone-200 bg-white py-2 pl-3 pr-8 text-xs font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-stone-300">
-              {projects.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.environment}</option>)}
-            </select><ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-stone-500" />
-          </div>}
+          <div className="flex items-center gap-3">
+            {tab !== "keys" && projects.length > 0 && <div className="relative">
+              <select aria-label="Project" value={projectId} onChange={(event) => setProjectId(event.target.value)} className="max-w-[230px] appearance-none rounded-lg border border-stone-200 bg-white py-2 pl-3 pr-8 text-xs font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-stone-300">
+                {projects.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.environment}</option>)}
+              </select><ChevronDown className="pointer-events-none absolute right-2.5 top-2.5 h-3.5 w-3.5 text-stone-500" />
+            </div>}
+            <Link href="/settings" className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50"><UserRound className="h-4 w-4" />Account</Link>
+          </div>
         </header>
         <nav aria-label="Developer console mobile" className="flex gap-1 overflow-x-auto border-b border-stone-200 bg-white px-4 py-2 md:hidden">
           {tabs.map(({ id, label }) => <button key={id} onClick={() => setTab(id)} className={cn("whitespace-nowrap rounded-lg px-3 py-2 text-xs", tab === id ? "bg-stone-900 text-white" : "text-stone-600")}>{label}</button>)}
         </nav>
         <div className="mx-auto max-w-[1120px] px-5 py-9 sm:px-9 sm:py-12">
-          {error && <div role="alert" className="mb-6 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><CircleAlert className="h-4 w-4" />{error}<button onClick={() => void loadProjects()} className="ml-auto underline">Retry</button></div>}
+          {error && <div role="alert" className="mb-6 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><CircleAlert className="h-4 w-4 shrink-0" /><span className="flex-1">{error}</span>{sessionExpired ? <a href="/api/auth/native/start?direct=1&callbackUrl=%2Fdevelopers" className="shrink-0 font-medium underline">Sign in again</a> : <button onClick={() => void loadProjects()} className="shrink-0 font-medium underline">Retry</button>}</div>}
           {tab === "overview" && <>
             <div className="flex flex-wrap items-end justify-between gap-5">
               <div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">Your development workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Build with Commons.</h1><p className="mt-3 max-w-xl text-sm leading-6 text-stone-600">Manage the agents, credentials, and API traffic behind your applications.</p></div>
               <button onClick={() => setTab("quickstart")} className="inline-flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-700">Start building <ArrowRight className="h-4 w-4" /></button>
             </div>
-            {!loading && !project && <div className="mt-9 rounded-2xl border border-dashed border-stone-300 bg-white p-8"><h2 className="text-lg font-semibold">Create your first project</h2><p className="mt-2 text-sm text-stone-600">A project gives your integration its own credentials and usage history.</p><button onClick={() => setTab("keys")} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2 text-sm text-white"><Plus className="h-4 w-4" />Create project</button></div>}
+            {!loading && !error && !project && <div className="mt-9 rounded-2xl border border-dashed border-stone-300 bg-white p-8"><h2 className="text-lg font-semibold">Create your first project</h2><p className="mt-2 text-sm text-stone-600">A project gives your integration its own credentials and usage history.</p><button onClick={() => setTab("keys")} className="mt-5 inline-flex items-center gap-2 rounded-lg bg-stone-900 px-4 py-2 text-sm text-white"><Plus className="h-4 w-4" />Create project</button></div>}
             {project && <>
               <div className="mt-9 grid gap-3 sm:grid-cols-3">
                 <Metric label="API requests · 7 days" value={usageLoading ? "…" : (usage?.summary.requests ?? 0).toLocaleString()} note="Calls made with project credentials" tint="bg-[#e8f1ef]" />
@@ -214,10 +230,10 @@ export default function DevelopersPage() {
             </div>}
           </>}
 
-          {tab === "keys" && <><SectionTitle eyebrow="Credentials" title="API keys & projects" description="Create separate projects for development, staging, and production. Keys are shown once and can be revoked at any time." /><div className="mt-8 rounded-2xl border border-stone-200 bg-white p-5 sm:p-7"><DeveloperApiKeysSection workspaceId={authState.workspaceId} onChanged={() => void loadProjects()} /></div><div className="mt-5 rounded-xl border border-stone-200 bg-white p-4 text-xs leading-5 text-stone-600">Keep API keys in server side environment variables. Choose only the scopes your integration needs. Project credentials grant access to workspace resources; projects do not create separate agent inventories.</div></>}
+          {tab === "keys" && <><SectionTitle eyebrow="Credentials" title="API keys & projects" description="Create separate projects for development, staging, and production. Keys are shown once and can be revoked at any time." />{!sessionExpired && <div className="mt-8 rounded-2xl border border-stone-200 bg-white p-5 sm:p-7"><DeveloperApiKeysSection workspaceId={authState.workspaceId} onChanged={() => void loadProjects()} /></div>}<div className="mt-5 rounded-xl border border-stone-200 bg-white p-4 text-xs leading-5 text-stone-600">Keep API keys in server side environment variables. Choose only the scopes your integration needs. Project credentials grant access to workspace resources; projects do not create separate agent inventories.</div></>}
 
           {tab === "usage" && <><SectionTitle eyebrow="Observability" title="API usage" description="Request telemetry for your selected project. Events can take a moment to appear after an API call." action={<button onClick={() => setUsageRefresh((value) => value + 1)} className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs hover:bg-stone-50"><RefreshCw className="h-3.5 w-3.5" />Refresh</button>} />
-            {!project ? <Empty title="Select a project" text="Create a developer project to see its API traffic." action="Manage projects" onClick={() => setTab("keys")} /> : usageError ? <div role="alert" className="mt-7 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{usageError}</div> : usageLoading ? <Loader2 className="mt-10 h-5 w-5 animate-spin" /> : <><div className="mt-8 grid gap-3 sm:grid-cols-3"><Metric label="Requests · 7 days" value={(usage?.summary.requests ?? 0).toLocaleString()} note="All response codes" tint="bg-[#e8f1ef]" /><Metric label="Errors · 7 days" value={(usage?.summary.errors ?? 0).toLocaleString()} note="HTTP 4xx and 5xx" tint="bg-[#f8eae8]" /><Metric label="Average latency" value={`${usage?.summary.averageLatencyMs ?? 0} ms`} note="Gateway to upstream response" tint="bg-[#f1edfa]" /></div><div className="mt-6 rounded-2xl border border-stone-200 bg-white p-6"><h2 className="text-sm font-semibold">Daily requests</h2><UsageBars daily={daily} max={maxRequests} /></div><div className="mt-6 overflow-hidden rounded-2xl border border-stone-200 bg-white"><div className="border-b border-stone-100 px-5 py-4 text-sm font-semibold">Recent requests</div>{!usage?.recent.length ? <p className="p-6 text-sm text-stone-500">No requests for this project yet.</p> : <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-stone-50 text-stone-500"><tr><th className="px-5 py-3 font-medium">Request</th><th className="px-5 py-3 font-medium">Status</th><th className="px-5 py-3 font-medium">Latency</th><th className="px-5 py-3 font-medium">Time</th></tr></thead><tbody>{usage.recent.map((event) => <tr key={event.requestId} className="border-t border-stone-100"><td className="max-w-[400px] truncate px-5 py-3 font-mono"><span className="mr-2 font-semibold">{event.method}</span>{event.path}</td><td className={cn("px-5 py-3 font-medium", event.statusCode >= 400 ? "text-red-600" : "text-emerald-700")}>{event.statusCode}</td><td className="px-5 py-3">{event.durationMs} ms</td><td className="whitespace-nowrap px-5 py-3 text-stone-500">{date(event.createdAt)}</td></tr>)}</tbody></table></div>}</div></>}
+            {sessionExpired ? null : !project ? <Empty title="Select a project" text="Create a developer project to see its API traffic." action="Manage projects" onClick={() => setTab("keys")} /> : usageError ? <div role="alert" className="mt-7 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{usageError}</div> : usageLoading ? <Loader2 className="mt-10 h-5 w-5 animate-spin" /> : <><div className="mt-8 grid gap-3 sm:grid-cols-3"><Metric label="Requests · 7 days" value={(usage?.summary.requests ?? 0).toLocaleString()} note="All response codes" tint="bg-[#e8f1ef]" /><Metric label="Errors · 7 days" value={(usage?.summary.errors ?? 0).toLocaleString()} note="HTTP 4xx and 5xx" tint="bg-[#f8eae8]" /><Metric label="Average latency" value={`${usage?.summary.averageLatencyMs ?? 0} ms`} note="Gateway to upstream response" tint="bg-[#f1edfa]" /></div><div className="mt-6 rounded-2xl border border-stone-200 bg-white p-6"><h2 className="text-sm font-semibold">Daily requests</h2><UsageBars daily={daily} max={maxRequests} /></div><div className="mt-6 overflow-hidden rounded-2xl border border-stone-200 bg-white"><div className="border-b border-stone-100 px-5 py-4 text-sm font-semibold">Recent requests</div>{!usage?.recent.length ? <p className="p-6 text-sm text-stone-500">No requests for this project yet.</p> : <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-stone-50 text-stone-500"><tr><th className="px-5 py-3 font-medium">Request</th><th className="px-5 py-3 font-medium">Status</th><th className="px-5 py-3 font-medium">Latency</th><th className="px-5 py-3 font-medium">Time</th></tr></thead><tbody>{usage.recent.map((event) => <tr key={event.requestId} className="border-t border-stone-100"><td className="max-w-[400px] truncate px-5 py-3 font-mono"><span className="mr-2 font-semibold">{event.method}</span>{event.path}</td><td className={cn("px-5 py-3 font-medium", event.statusCode >= 400 ? "text-red-600" : "text-emerald-700")}>{event.statusCode}</td><td className="px-5 py-3">{event.durationMs} ms</td><td className="whitespace-nowrap px-5 py-3 text-stone-500">{date(event.createdAt)}</td></tr>)}</tbody></table></div>}</div></>}
           </>}
 
           {tab === "quickstart" && <><SectionTitle eyebrow="Integration" title="Your first API call" description="Use a project API key from a trusted server to call a workspace agent. The SDK uses the public Commons API by default." /><div className="mt-8 grid gap-8 lg:grid-cols-[1fr_280px]"><div className="space-y-6"><div><h2 className="mb-3 flex items-center gap-2 text-sm font-semibold"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-stone-900 text-[10px] text-white">1</span>Create a key</h2><p className="mb-3 text-xs leading-5 text-stone-600">Create a key with <code>agents:read</code> and <code>agents:run</code> scopes, then save it as <code>AGENT_COMMONS_API_KEY</code> on your server.</p><button onClick={() => setTab("keys")} className="text-xs font-semibold underline underline-offset-4">Manage API keys →</button></div><div><h2 className="mb-3 flex items-center gap-2 text-sm font-semibold"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-stone-900 text-[10px] text-white">2</span>Install the SDK</h2><CodeBlock code={installCode} title="terminal" /></div><div><h2 className="mb-3 flex items-center gap-2 text-sm font-semibold"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-stone-900 text-[10px] text-white">3</span>Run an agent</h2>{agents.length > 0 && <select aria-label="Agent for code example" value={agentId || agents[0].agentId} onChange={(event) => setAgentId(event.target.value)} className="mb-3 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs">{agents.map((agent) => <option key={agent.agentId} value={agent.agentId}>{agent.name}</option>)}</select>}<CodeBlock code={sdkCode} title="app.ts" /></div><div><h2 className="mb-3 flex items-center gap-2 text-sm font-semibold"><Terminal className="h-5 w-5" />Prefer HTTP?</h2><CodeBlock code={curlCode} title="terminal" /></div></div><aside className="h-fit rounded-2xl border border-stone-200 bg-white p-5"><p className="text-sm font-semibold">Connection details</p><dl className="mt-5 space-y-4 text-xs"><div><dt className="text-stone-500">API base URL</dt><dd className="mt-1 break-all font-mono">https://api.agentcommons.io</dd></div><div><dt className="text-stone-500">Authentication</dt><dd className="mt-1 font-mono">Bearer csk_...</dd></div><div><dt className="text-stone-500">Selected project</dt><dd className="mt-1 break-all font-mono">{project?.id ?? "Create a project"}</dd></div></dl><a href="https://docs.agentcommons.io/docs/sdk" target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-1 text-xs font-semibold hover:underline">SDK documentation <ExternalLink className="h-3 w-3" /></a></aside></div></>}
