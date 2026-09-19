@@ -14,8 +14,11 @@ async function authResponse(
   // server-to-server calls. The browser session endpoint must only return the
   // identity fields that the UI actually uses. Keep Auth.js's Set-Cookie headers
   // so refresh-token rotation continues to work.
-  const session = await response.clone().json().catch(() => null);
-  if (!session || typeof session !== "object") {
+  const session = await response.clone().json().catch(() => undefined);
+  // Auth.js returns JSON null for visitors without a session. Preserve that
+  // response (and its CSRF cookies) for SessionProvider's signed-out state.
+  if (session === null) return response;
+  if (!session || typeof session !== "object" || Array.isArray(session)) {
     return Response.json({ error: "Invalid session response" }, { status: 502 });
   }
   const { user, expires, authSessionVersion } = session as Record<string, unknown>;
