@@ -163,16 +163,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.id = String(token.identityUserId ?? token.sub ?? "");
       session.user.workspaceId = token.workspaceId as string | undefined;
       if (token.picture) session.user.image = String(token.picture);
-      // BFF routes need these values, but the browser does not. Keeping them
-      // non-enumerable prevents serialization from /api/auth/session and RSC.
-      Object.defineProperty(session, "accessToken", {
-        value: token.accessToken as string | undefined,
-        enumerable: false,
-      });
-      Object.defineProperty(session, "accessTokenError", {
-        value: token.accessTokenError as string | undefined,
-        enumerable: false,
-      });
+      // auth() receives a JSON-serialized session, so these must be enumerable
+      // for server-side API routes. The public /api/auth/session route removes
+      // them before its response reaches the browser.
+      session.accessToken = token.accessToken as string | undefined;
+      session.accessTokenError = token.accessTokenError as string | undefined;
       return session;
     },
   },

@@ -24,6 +24,7 @@ declare module "@privy-io/react-auth" {
 export interface AuthState {
   idToken?: string | null;
   username?: string;
+  email?: string;
   walletAddress?: string;
   profileImage?: string;
   userId?: string;
@@ -60,6 +61,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         session.user.name ||
         session.user.email ||
         session.user.id.slice(0, 12),
+      email: session.user.email || undefined,
       // Legacy UI calls this walletAddress, but it is the stable Commons user
       // principal. On-chain actions still require a connected wallet.
       walletAddress: session.user.id,
