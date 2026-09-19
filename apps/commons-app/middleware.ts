@@ -32,6 +32,7 @@ export const config = {
     "/wallets/:path*",
     "/logs/:path*",
     "/usage/:path*",
+    "/developers/:path*",
     "/library/:path*",
     "/brains/:path*",
     "/knowledge/:path*",

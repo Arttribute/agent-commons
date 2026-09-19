@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, Logs, Earth } from "lucide-react";
+import { MoreHorizontal, Logs, Earth, Code2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 const MORE_ITEMS = [
   { key: "logs", label: "Logs", icon: Logs, path: "/logs" },
   { key: "spaces", label: "Spaces", icon: Earth, path: "/spaces" },
+  { key: "developers", label: "Developers", icon: Code2, path: "/developers" },
 ];
 
 /**

@@ -111,6 +111,46 @@ export function createPlatformRouter(
     }
   });
 
+  router.get("/projects/:projectId/usage", async (c) => {
+    const user = await sessionUser(c.req.raw);
+    if (!user) return c.json({ error: "unauthorized" }, 401);
+    const projectId = c.req.param("projectId");
+    const membership = await database.query(
+      `select 1 from commons_project p
+       join commons_workspace_membership m on m.workspace_id = p.workspace_id
+       where p.id = $1 and m.user_id = $2 and m.status = 'active'`,
+      [projectId, user.id],
+    );
+    if (!membership.rows[0]) return c.json({ error: "forbidden" }, 403);
+
+    const [summary, daily, recent] = await Promise.all([
+      database.query(
+        `select count(*) filter (where created_at >= now() - interval '7 days')::int as "requests",
+                count(*) filter (where created_at >= now() - interval '7 days' and status_code >= 400)::int as "errors",
+                coalesce((avg(duration_ms) filter (where created_at >= now() - interval '7 days'))::int, 0) as "averageLatencyMs"
+         from commons_api_usage_event where project_id = $1`,
+        [projectId],
+      ),
+      database.query(
+        `select created_at::date as day,
+                count(*)::int as requests,
+                count(*) filter (where status_code >= 400)::int as errors
+         from commons_api_usage_event
+         where project_id = $1 and created_at >= now() - interval '7 days'
+         group by created_at::date order by created_at::date`,
+        [projectId],
+      ),
+      database.query(
+        `select request_id as "requestId", method, path, status_code as "statusCode",
+                duration_ms as "durationMs", created_at as "createdAt"
+         from commons_api_usage_event where project_id = $1
+         order by created_at desc limit 20`,
+        [projectId],
+      ),
+    ]);
+    return c.json({ data: { summary: summary.rows[0], daily: daily.rows, recent: recent.rows } });
+  });
+
   router.post("/projects/:projectId/api-keys", async (c) => {
     const user = await sessionUser(c.req.raw);
     if (!user) return c.json({ error: "unauthorized" }, 401);
