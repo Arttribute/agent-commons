@@ -22,8 +22,8 @@ pnpm add @agent-commons/sdk
 
 ## Get a developer API key
 
-Create a project-scoped key in **Agent Commons → Settings → Developer API
-keys**. Choose the project, scopes, and expiration, then copy the `csk_*` key
+Create a project-scoped key in the [Agent Commons Developer console](https://www.agentcommons.io/developers).
+Choose the project, scopes, and expiration, then copy the `csk_*` key
 when it is shown.
 
 Keep keys on the server. Do not embed them in browser bundles, mobile apps, or

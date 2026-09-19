@@ -78,15 +78,20 @@ function responseError(payload: unknown, fallback: string) {
 
 export function DeveloperApiKeysSection({
   workspaceId,
+  onChanged,
 }: {
   workspaceId?: string;
+  onChanged?: () => void;
 }) {
   const [projects, setProjects] = useState<DeveloperProject[]>([]);
   const [keys, setKeys] = useState<DeveloperApiKey[]>([]);
   const [availableScopes, setAvailableScopes] = useState<string[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [name, setName] = useState("");
-  const [selectedScopes, setSelectedScopes] = useState<string[]>([]);
+  const [selectedScopes, setSelectedScopes] = useState<string[]>([
+    "agents:read",
+    "agents:run",
+  ]);
   const [expiration, setExpiration] =
     useState<keyof typeof EXPIRATIONS>("never");
   const [newKey, setNewKey] = useState<CreatedDeveloperApiKey | null>(null);
@@ -140,7 +145,7 @@ export function DeveloperApiKeysSection({
   );
 
   async function createKey() {
-    if (!selectedProjectId || !name.trim()) return;
+    if (!selectedProjectId || !name.trim() || selectedScopes.length === 0) return;
     setWorking(true);
     setError(null);
     try {
@@ -150,7 +155,7 @@ export function DeveloperApiKeysSection({
         body: JSON.stringify({
           projectId: selectedProjectId,
           name: name.trim(),
-          scopes: selectedScopes.length ? selectedScopes : undefined,
+          scopes: selectedScopes,
           expiresAt: expirationDate(expiration),
         }),
       });
@@ -160,9 +165,10 @@ export function DeveloperApiKeysSection({
       }
       setNewKey(payload.data);
       setName("");
-      setSelectedScopes([]);
+      setSelectedScopes(["agents:read", "agents:run"]);
       setExpiration("never");
       await load();
+      onChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create API key.");
     } finally {
@@ -193,6 +199,7 @@ export function DeveloperApiKeysSection({
       setProjectName("");
       setShowProjectForm(false);
       await load();
+      onChanged?.();
       if (payload.data?.id) setSelectedProjectId(payload.data.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create project.");
@@ -221,6 +228,7 @@ export function DeveloperApiKeysSection({
         throw new Error(responseError(payload, "Could not revoke API key."));
       }
       await load();
+      onChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not revoke API key.");
     } finally {
@@ -374,7 +382,7 @@ export function DeveloperApiKeysSection({
               </Select>
               <Button
                 onClick={createKey}
-                disabled={working || !name.trim()}
+                disabled={working || !name.trim() || selectedScopes.length === 0}
               >
                 {working ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -407,7 +415,7 @@ export function DeveloperApiKeysSection({
               })}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              No scope selected means all currently supported project scopes.
+              Select at least one scope. Read and run are selected by default.
             </p>
           </div>
 

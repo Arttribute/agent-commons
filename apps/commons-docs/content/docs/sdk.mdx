@@ -29,6 +29,9 @@ const commons = new CommonsClient({
 | `initiator` | — | Sent as `x-initiator` to act for a user |
 | `fetch` | global `fetch` | Inject your own implementation |
 
+Create and manage project keys in the [Developer console](https://www.agentcommons.io/developers).
+Keep API keys in server-side environment variables.
+
 Every call resolves to `{ data }` unless noted, and throws `CommonsError` —
 carrying `status` and the parsed `body` — on a non-2xx response.
 

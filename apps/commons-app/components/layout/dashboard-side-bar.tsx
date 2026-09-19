@@ -74,6 +74,7 @@ export function DashboardSideBar({ username }: { username: string }) {
     if (pathname.startsWith("/knowledge")) return "knowledge";
     if (pathname.startsWith("/logs")) return "logs";
     if (pathname.startsWith("/spaces")) return "spaces";
+    if (pathname.startsWith("/developers")) return "developers";
     return "agents";
   }, [pathname]);
 

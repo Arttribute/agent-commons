@@ -186,6 +186,40 @@ assert(
   "project key secret was not returned",
 );
 
+const usagePath = `http://identity.test/api/platform/projects/${projects.data![0].id}/usage`;
+const anonymousUsage = await app.request(usagePath);
+assert(anonymousUsage.status === 401, "anonymous project usage was accessible");
+const foreignUsage = await app.request(
+  "http://identity.test/api/platform/projects/prj_not_mine/usage",
+  { headers: { Authorization: `Bearer ${platformAccessToken}` } },
+);
+assert(foreignUsage.status === 403, "foreign project usage was accessible");
+const ownUsage = await app.request(usagePath, {
+  headers: { Authorization: `Bearer ${platformAccessToken}` },
+});
+assert(ownUsage.ok, `project usage failed: ${ownUsage.status}`);
+const usageBody = (await ownUsage.json()) as {
+  data?: { summary?: { requests?: number }; recent?: unknown[] };
+};
+assert(usageBody.data?.summary?.requests === 0, "new project usage was not empty");
+assert(usageBody.data?.recent?.length === 0, "new project had request events");
+await database.query(
+  `insert into commons_api_usage_event
+   (request_id, project_id, service, method, path, status_code, duration_ms)
+   values ($1, $2, 'agent-commons', 'GET', '/v1/agents', 200, 34)`,
+  ["req_usage_e2e", projects.data![0].id],
+);
+const populatedUsage = await app.request(usagePath, {
+  headers: { Authorization: `Bearer ${platformAccessToken}` },
+});
+assert(populatedUsage.ok, `populated project usage failed: ${populatedUsage.status}`);
+const populatedBody = (await populatedUsage.json()) as {
+  data?: { summary?: { requests?: number }; daily?: unknown[]; recent?: unknown[] };
+};
+assert(populatedBody.data?.summary?.requests === 1, "project usage count is wrong");
+assert(populatedBody.data?.daily?.length === 1, "project usage daily series is wrong");
+assert(populatedBody.data?.recent?.length === 1, "project recent requests are wrong");
+
 const device = await app.request("http://identity.test/api/auth/device/code", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
