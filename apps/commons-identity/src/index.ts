@@ -33,6 +33,12 @@ const nativeApps = {
     defaultReturnTo:
       process.env.RETURN_TO_COMMON_OS ?? "https://os.agentcommons.io/auth",
   },
+  "common-business": {
+    name: "Common Business",
+    defaultReturnTo:
+      process.env.RETURN_TO_COMMON_BUSINESS ??
+      "https://common-business.vercel.app/sign-in",
+  },
 } as const;
 
 type NativeApp = keyof typeof nativeApps;
@@ -636,6 +642,8 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
           ? "Your learning account is ready. Pick up a course whenever you are ready."
           : appId === "common-os"
             ? "Your compute account is ready. Your fleets and imported agents stay attached to this identity."
+            : appId === "common-business"
+              ? "Your business workspace is ready. Inventory, sales, files, apps, and agents stay attached to this identity."
             : "Your agent workspace is ready. Your existing agents and sessions stay attached to this identity.",
       url:
         appId === "commonlabs"
@@ -644,6 +652,9 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
           : appId === "common-os"
             ? (process.env.DASHBOARD_URL_COMMON_OS ??
               "https://os.agentcommons.io/dashboard")
+            : appId === "common-business"
+              ? (process.env.DASHBOARD_URL_COMMON_BUSINESS ??
+                "https://common-business.vercel.app/dashboard")
             : (process.env.DASHBOARD_URL_AGENT_COMMONS ??
               "https://www.agentcommons.io/studio/agents"),
       template: appId === "commonlabs" ? "commonlab" : "default",

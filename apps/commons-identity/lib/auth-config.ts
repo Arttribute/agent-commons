@@ -78,6 +78,16 @@ export function appEmailBrand(app: string | null): IdentityEmailBrand {
         heading: "Welcome to CommonOS",
         body: "Verify your email to access your fleets and agent compute.",
       };
+    case "common-business":
+      return {
+        from:
+          process.env.COMMON_BUSINESS_ONBOARDING_FROM_EMAIL ??
+          "Common Business <onboarding@agentcommons.io>",
+        product: "Common Business",
+        subject: "Verify your Common Business account",
+        heading: "Welcome to Common Business",
+        body: "Verify your email to open your secure business workspace.",
+      };
     default:
       return {
         from:
