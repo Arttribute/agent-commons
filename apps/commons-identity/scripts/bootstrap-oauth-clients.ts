@@ -55,6 +55,19 @@ const clients: ClientInput[] = [
     clientUri: process.env.COMMON_OS_APP_URL ?? "http://localhost:3003",
   },
   {
+    key: "commonBusiness",
+    name: "Common Business",
+    redirectUris: [
+      process.env.COMMON_BUSINESS_OAUTH_REDIRECT_URI ??
+        "http://localhost:3004/api/auth/callback/commons",
+    ],
+    postLogoutRedirectUris: [
+      process.env.COMMON_BUSINESS_LOGOUT_REDIRECT_URI ??
+        "http://localhost:3004",
+    ],
+    clientUri: process.env.COMMON_BUSINESS_APP_URL ?? "http://localhost:3004",
+  },
+  {
     key: "coursesVerifier",
     name: "Commons Courses Verifier",
     redirectUris: ["https://invalid.local/service"],
