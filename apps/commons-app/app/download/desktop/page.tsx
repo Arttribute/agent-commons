@@ -10,7 +10,7 @@ const downloads = [
   { label: "macOS — Apple silicon", detail: "M1, M2, M3, M4, and newer", file: "Agent-Commons-mac-arm64.dmg" },
   { label: "macOS — Intel", detail: "Intel-based Macs", file: "Agent-Commons-mac-x64.dmg" },
   { label: "Windows", detail: "64-bit installer", file: "Agent-Commons-win-x64.exe" },
-  { label: "Linux", detail: "64-bit AppImage", file: "Agent-Commons-linux-x64.AppImage" },
+  { label: "Linux", detail: "64-bit AppImage", file: "Agent-Commons-linux-x86_64.AppImage" },
 ];
 
 export default function DesktopDownloadPage() {
