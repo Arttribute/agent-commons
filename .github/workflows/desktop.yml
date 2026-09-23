@@ -70,6 +70,7 @@ jobs:
         run: pnpm --filter commons-desktop exec electron-builder --mac --x64 --arm64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          MAC_ADHOC_SIGN: true
       - name: Package signed Windows release
         if: runner.os == 'Windows' && env.WINDOWS_SIGNING_ENABLED == 'true'
         run: pnpm --filter commons-desktop exec electron-builder --win --publish never
