@@ -38,6 +38,7 @@
   "build": {
     "appId": "io.agentcommons.desktop",
     "productName": "Agent Commons",
+    "afterPack": "scripts/after-pack.cjs",
     "directories": {
       "output": "release"
     },
