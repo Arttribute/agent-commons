@@ -321,7 +321,10 @@ export function commonsAuthOptions(database: unknown) {
       deviceAuthorization({
         verificationUri: "/device",
         validateClient: async (clientId) =>
-          clientId === (process.env.COMMONS_CLI_CLIENT_ID ?? "commons-cli"),
+          new Set([
+            process.env.COMMONS_CLI_CLIENT_ID ?? "commons-cli",
+            process.env.COMMONS_DESKTOP_CLIENT_ID ?? "commons-desktop",
+          ]).has(clientId),
       }),
     ],
   };

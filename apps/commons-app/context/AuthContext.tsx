@@ -85,6 +85,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // 2) Provide login, logout, and refresh
   const login = async () => {
     if (typeof window !== "undefined") {
+      if (window.agentCommonsDesktop) {
+        await window.agentCommonsDesktop.beginSignIn();
+        return;
+      }
       window.location.assign(
         `/api/auth/native/start?direct=1&callbackUrl=${encodeURIComponent(DEFAULT_AUTH_CALLBACK)}`,
       );

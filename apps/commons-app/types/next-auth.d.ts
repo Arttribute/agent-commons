@@ -14,6 +14,9 @@ declare module "next-auth" {
   interface User {
     identityUserId?: string;
     workspaceId?: string;
+    identitySessionToken?: string;
+    accessToken?: string;
+    accessTokenExpiresAt?: number;
   }
 }
 
@@ -24,6 +27,7 @@ declare module "next-auth/jwt" {
     workspaceId?: string;
     accessToken?: string;
     refreshToken?: string;
+    identitySessionToken?: string;
     accessTokenExpiresAt?: number;
     accessTokenError?: string;
   }
