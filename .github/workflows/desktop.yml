@@ -57,7 +57,10 @@ jobs:
       - run: pnpm --filter commons-desktop build
       - name: Smoke test desktop text input (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a pnpm --filter commons-desktop start
+        # GitHub's runner cannot set Electron's root-owned SUID sandbox helper.
+        # BrowserWindow sandboxing remains enabled in the app; this flag is
+        # limited to the disposable CI process under Xvfb.
+        run: xvfb-run -a pnpm --filter commons-desktop exec electron --no-sandbox .
         env:
           COMMONS_DESKTOP_START_MODE: private-local
           COMMONS_DESKTOP_SKIP_MODEL_PREP: 1
