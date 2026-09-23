@@ -13,7 +13,10 @@
     "release:patch": "./scripts/release-manual.sh",
     "release:minor": "./scripts/release-manual.sh minor",
     "release:major": "./scripts/release-manual.sh major",
-    "prepare": "husky"
+    "prepare": "husky",
+    "desktop:dev": "pnpm --filter commons-desktop dev",
+    "desktop:build": "pnpm --filter commons-desktop build",
+    "desktop:package": "pnpm --filter commons-desktop package"
   },
   "keywords": [],
   "author": "",

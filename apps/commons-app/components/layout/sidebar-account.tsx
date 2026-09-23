@@ -31,7 +31,12 @@ import {
   ChevronsUpDown,
   Sparkles,
   CircleArrowUp,
+  MonitorDown,
 } from "lucide-react";
+
+const DESKTOP_DOWNLOAD_URL =
+  process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL ??
+  "/download/desktop";
 
 export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
   const router = useRouter();
@@ -45,6 +50,11 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("profile");
+  const [desktopAvailable, setDesktopAvailable] = useState(false);
+
+  useEffect(() => {
+    setDesktopAvailable(Boolean(window.agentCommonsDesktop));
+  }, []);
 
   const { summary, plan, refresh: refreshCredits } = useCredits(isAuthenticated);
   const available = summary?.balance.available;
@@ -163,6 +173,28 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
               {label}
             </button>
           ))}
+          {desktopAvailable ? (
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                void window.agentCommonsDesktop?.openPrivateWorkspace();
+              }}
+              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-accent"
+            >
+              <MonitorDown className="h-4 w-4 text-muted-foreground" />
+              Private local workspace
+            </button>
+          ) : (
+            <a
+              href={DESKTOP_DOWNLOAD_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-accent"
+            >
+              <MonitorDown className="h-4 w-4 text-muted-foreground" />
+              Download desktop app
+            </a>
+          )}
           <div className="my-1 h-px bg-border" />
           <button
             onClick={() => {

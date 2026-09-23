@@ -36,6 +36,18 @@ function AccountMenu() {
               <DropdownMenuItem asChild>
                 <Link href="/settings/api-keys">API Keys</Link>
               </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a
+                  href={
+                    process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL ??
+                    "/download/desktop"
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Download desktop app
+                </a>
+              </DropdownMenuItem>
               <DropdownMenuItem>
                 <Link href="/" passHref target="_blank">
                   Report Issue
