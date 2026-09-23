@@ -52,25 +52,30 @@ jobs:
       - run: pnpm --filter @agent-commons/cli typecheck
       - run: pnpm --filter commons-desktop typecheck
       - run: pnpm --filter commons-desktop build
-      - name: Package macOS
-        if: runner.os == 'macOS'
+      - name: Package signed macOS release
+        if: runner.os == 'macOS' && secrets.MAC_CSC_LINK != ''
         run: pnpm --filter commons-desktop exec electron-builder --mac --x64 --arm64 --publish never
         env:
-          # Ship unsigned until the Apple Developer enrollment is active. When
-          # MAC_CSC_LINK is added, electron-builder signs and notarizes without
-          # another workflow change.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CSC_LINK != '' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: true
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      - name: Package Windows
-        if: runner.os == 'Windows'
+      - name: Package unsigned macOS release
+        if: runner.os == 'macOS' && secrets.MAC_CSC_LINK == ''
+        run: pnpm --filter commons-desktop exec electron-builder --mac --x64 --arm64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Package signed Windows release
+        if: runner.os == 'Windows' && secrets.WIN_CSC_LINK != ''
         run: pnpm --filter commons-desktop exec electron-builder --win --publish never
         env:
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - name: Package unsigned Windows release
+        if: runner.os == 'Windows' && secrets.WIN_CSC_LINK == ''
+        run: pnpm --filter commons-desktop exec electron-builder --win --publish never
       - name: Package Linux
         if: runner.os == 'Linux'
         run: pnpm --filter commons-desktop exec electron-builder --linux --publish never
