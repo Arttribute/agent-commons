@@ -609,8 +609,10 @@ async function openLocalApp(id: string) {
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      spellcheck: true,
     },
   });
+  installEditableContextMenu(appWindow.webContents);
   appWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
