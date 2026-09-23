@@ -48,6 +48,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @agent-commons/desktop-contract typecheck
+      - run: pnpm --filter @agent-commons/sdk build
       - run: pnpm --filter @agent-commons/cli typecheck
       - run: pnpm --filter commons-desktop typecheck
       - run: pnpm --filter commons-desktop build
