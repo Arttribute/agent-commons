@@ -20,8 +20,10 @@ button { cursor: pointer; }
 .private-brand { display: flex; height: 32px; align-items: center; gap: 9px; padding: 0 5px; font-size: 15px; font-weight: 650; letter-spacing: -.025em; }
 .private-mark { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--ac-border); border-radius: 50%; color: var(--ac-foreground); background: var(--ac-page); }
 .private-mark svg { width: 14px; height: 14px; stroke-width: 1.75; }
-.private-mode { display: flex; height: 32px; align-items: center; gap: 8px; margin: 12px 0 8px; padding: 0 8px; border-radius: 6px; color: #047857; background: #ecfdf5; font-size: 12px; font-weight: 500; }
+.private-mode { display: flex; width: 100%; height: 34px; align-items: center; gap: 8px; margin: 12px 0 8px; padding: 0 8px; border: 0; border-radius: 6px; color: #047857; background: #ecfdf5; font-size: 12px; font-weight: 500; text-align: left; }
 .private-mode svg { width: 15px; height: 15px; stroke-width: 1.75; }
+.private-mode i { position: relative; width: 28px; height: 16px; margin-left: auto; border-radius: 999px; background: #10b981; }
+.private-mode i::after { content: ""; position: absolute; top: 2px; right: 2px; width: 12px; height: 12px; border-radius: 50%; background: white; box-shadow: 0 1px 2px rgb(0 0 0 / 20%); }
 .network-dot { width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 3px rgb(16 185 129 / 10%); }
 .private-sidebar nav { display: grid; gap: 4px; }
 .private-sidebar nav button { display: flex; height: 36px; align-items: center; gap: 8px; width: 100%; padding: 0 8px; border: 0; border-radius: 6px; color: rgb(28 25 23 / 70%); background: transparent; text-align: left; font-size: 14px; font-weight: 400; transition: color 150ms, background 150ms; }
@@ -44,6 +46,13 @@ button { cursor: pointer; }
 .private-content { min-height: 0; flex: 1; overflow: auto; padding: 16px 24px 32px; }
 .error-banner { display: flex; justify-content: space-between; margin: 16px 30px 0; padding: 10px 14px; border: 1px solid #fecaca; border-radius: 9px; color: #991b1b; background: #fef2f2; font-size: 12px; }
 .error-banner button { border: 0; color: inherit; background: transparent; font-size: 18px; }
+.model-status { display: grid; gap: 7px; margin: 12px 24px 0; padding: 10px 13px; border: 1px solid #fde68a; border-radius: 9px; color: #78350f; background: #fffbeb; font-size: 11px; }
+.model-status > div { display: flex; align-items: center; gap: 8px; }
+.model-status small { margin-left: auto; }
+.model-status progress { width: 100%; height: 4px; border: 0; accent-color: #d97706; }
+.model-status button { justify-self: start; padding: 5px 9px; border: 1px solid #fecaca; border-radius: 6px; color: #991b1b; background: white; font-size: 11px; }
+.model-status.error { border-color: #fecaca; color: #991b1b; background: #fef2f2; }
+.model-spinner { width: 10px; height: 10px; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; }
 .stack { display: grid; gap: 16px; max-width: 1180px; margin: auto; }
 .section-actions { display: flex; justify-content: flex-end; }
 .section-actions button, .form-actions button, .entity-card button, .list-cards button, .composer button, .new-chat { min-height: 34px; padding: 7px 12px; border: 1px solid #1c1917; border-radius: 7px; color: white; background: #1c1917; font-size: 12px; font-weight: 500; transition: background 150ms, border-color 150ms; }
@@ -119,6 +128,11 @@ button.danger:hover { border-color: transparent; color: #991b1b; background: #fe
 .approval-kicker { color: #b45309; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
 .approval-card h2 { margin: 7px 0 4px; font-size: 20px; }.approval-card p { margin: 0 0 12px; color: #78716c; font-size: 12px; }.approval-card pre { max-height: 260px; overflow: auto; padding: 14px; border-radius: 9px; white-space: pre-wrap; color: #e7e5e4; background: #1c1917; font-size: 11px; line-height: 1.55; }
 .settings-layout { display: grid; max-width: 900px; gap: 20px; margin: auto; }
+.model-ready-row { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--ac-border); border-radius: 9px; background: var(--ac-page); }
+.model-ready-row .network-dot.error { background: #dc2626; box-shadow: 0 0 0 3px rgb(220 38 38 / 10%); }
+.model-ready-row div { display: grid; gap: 3px; }
+.model-ready-row strong { font-size: 12px; }
+.model-ready-row small { color: var(--ac-muted-foreground); font-size: 10px; }
 .privacy-card { display: flex; gap: 14px; padding: 18px; border: 1px solid #bbf7d0; border-radius: 13px; color: #14532d; background: #f0fdf4; }
 .privacy-card > span { display: grid; width: 30px; height: 30px; flex: none; place-items: center; border-radius: 50%; color: white; background: #16a34a; }.privacy-card h3 { margin: 0 0 5px; font-size: 13px; }.privacy-card p { margin: 0; color: #166534; font-size: 11px; line-height: 1.55; }
 .private-error { display: grid; min-height: 100vh; place-items: center; padding: 30px; color: #991b1b; }

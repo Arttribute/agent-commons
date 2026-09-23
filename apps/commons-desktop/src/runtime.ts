@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import type { WebContents } from "electron";
 import type {
   AgentInput,
@@ -21,7 +22,16 @@ import {
   type LocalToolsConfig,
 } from "../../../packages/agc-cli/src/local-tools";
 import { indexFolders, searchSpaces } from "./knowledge";
-import { LocalStore } from "./store";
+import { LocalModelManager } from "./local-model";
+import { DEFAULT_LOCAL_MODEL, LocalStore } from "./store";
+
+export type CloudAgentSnapshot = {
+  agentId: string;
+  name: string;
+  instructions?: string;
+  description?: string;
+  persona?: string;
+};
 
 type OllamaMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -111,11 +121,17 @@ export class PrivateLocalRuntime {
   private readonly approvals = new Map<string, PendingApproval>();
   private readonly appProcesses = new Map<string, string>();
   private readonly store: LocalStore;
+  private readonly localModel: LocalModelManager;
   private readonly scheduler: NodeJS.Timeout;
   private target?: WebContents;
 
   constructor(userDataDirectory: string) {
     this.store = new LocalStore(userDataDirectory);
+    this.localModel = new LocalModelManager(
+      join(userDataDirectory, "private-local", "local-ai"),
+      DEFAULT_LOCAL_MODEL,
+      (model) => this.emit({ type: "model", model }),
+    );
     this.scheduler = setInterval(() => void this.runDueTasks(), 30_000);
     this.scheduler.unref();
   }
@@ -126,6 +142,58 @@ export class PrivateLocalRuntime {
 
   state() {
     return this.store.get();
+  }
+
+  modelStatus() {
+    return this.localModel.currentStatus();
+  }
+
+  prepare() {
+    return this.localModel.prepare();
+  }
+
+  syncCloudAgents(agents: CloudAgentSnapshot[]) {
+    const snapshots = agents.filter((agent) => agent.agentId && agent.name?.trim());
+    if (!snapshots.length) return this.store.get();
+    const timestamp = now();
+    return this.change((state) => {
+      for (const snapshot of snapshots) {
+        const existing = state.agents.find(
+          (agent) => agent.cloudAgentId === snapshot.agentId || agent.id === snapshot.agentId,
+        );
+        const instructions =
+          snapshot.instructions?.trim() ||
+          snapshot.description?.trim() ||
+          snapshot.persona?.trim() ||
+          "You are a capable Agent Commons assistant. Protect user data and verify your work.";
+        if (existing) {
+          Object.assign(existing, {
+            cloudAgentId: snapshot.agentId,
+            source: "cloud" as const,
+            name: snapshot.name.trim(),
+            instructions,
+            model: "",
+            updatedAt: timestamp,
+          });
+        } else {
+          state.agents.push({
+            id: snapshot.agentId,
+            cloudAgentId: snapshot.agentId,
+            source: "cloud",
+            name: snapshot.name.trim(),
+            instructions,
+            model: "",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          });
+        }
+      }
+      const starterIsUsed =
+        state.conversations.some((item) => item.agentId === "commons-local") ||
+        state.tasks.some((item) => item.agentId === "commons-local") ||
+        state.workflows.some((item) => item.agentId === "commons-local");
+      if (!starterIsUsed) state.agents = state.agents.filter((agent) => agent.id !== "commons-local");
+    });
   }
 
   saveAgent(input: AgentInput) {
@@ -155,6 +223,9 @@ export class PrivateLocalRuntime {
   }
 
   deleteAgent(id: string) {
+    if (this.store.get().agents.length <= 1) {
+      throw new Error("Keep at least one agent so Chat, tasks, and workflows are always ready.");
+    }
     return this.change((state) => {
       state.agents = state.agents.filter((agent) => agent.id !== id);
       state.conversations = state.conversations.filter((conversation) => conversation.agentId !== id);
@@ -164,6 +235,7 @@ export class PrivateLocalRuntime {
   }
 
   async listModels() {
+    await this.localModel.prepare();
     const state = this.store.get();
     const response = await fetch(`${ensureLoopback(state.settings.ollamaUrl)}/api/tags`, {
       signal: AbortSignal.timeout(4_000),
@@ -182,10 +254,11 @@ export class PrivateLocalRuntime {
   }
 
   async sendMessage(input: ChatRequest): Promise<ChatResult> {
+    await this.localModel.prepare();
     const state = this.store.get();
     const agent = state.agents.find((candidate) => candidate.id === input.agentId);
     if (!agent) throw new Error("Choose a local agent first");
-    const model = agent.model || state.settings.defaultModel;
+    const model = state.settings.defaultModel;
     if (!model) throw new Error("Choose an installed local model in Settings or on the agent");
     if (!input.prompt.trim()) throw new Error("Message is empty");
 
@@ -383,6 +456,7 @@ export class PrivateLocalRuntime {
       this.approvals.delete(id);
     }
     stopLocalProcesses();
+    this.localModel.stop();
   }
 
   private async runDueTasks() {
@@ -427,7 +501,7 @@ export class PrivateLocalRuntime {
       const response = await fetch(`${endpoint}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages, tools, stream: false }),
+        body: JSON.stringify({ model: state.settings.defaultModel, messages, tools, stream: false }),
         signal: AbortSignal.timeout(10 * 60_000),
       });
       if (!response.ok) {
@@ -441,8 +515,11 @@ export class PrivateLocalRuntime {
       messages.push(message);
       const calls = message.tool_calls ?? [];
       if (!calls.length) {
-        const fallback = extractToolCall(message.content ?? "");
+        const fallback = extractDesktopToolCall(message.content ?? "");
         if (!fallback) return message.content?.trim() || "Done.";
+        if (!tools.some((tool) => tool.function.name === fallback.tool)) {
+          return message.content?.trim() || "The local model requested an unavailable tool.";
+        }
         const result = await this.executeTool(fallback.tool, fallback.args, workspace, conversationId, spaceIds);
         messages.push({ role: "tool", content: result });
         continue;
@@ -525,6 +602,33 @@ export class PrivateLocalRuntime {
   private emit(event: RuntimeEvent) {
     if (this.target && !this.target.isDestroyed()) this.target.send("local:event", event);
   }
+}
+
+function extractDesktopToolCall(text: string) {
+  const explicit = extractToolCall(text);
+  if (explicit) return explicit;
+  const block = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/i);
+  const candidate = block?.[1] ?? text.trim();
+  try {
+    const parsed = JSON.parse(candidate) as {
+      name?: unknown;
+      arguments?: unknown;
+      function?: { name?: unknown; arguments?: unknown };
+    };
+    const tool = typeof parsed.name === "string"
+      ? parsed.name
+      : typeof parsed.function?.name === "string"
+        ? parsed.function.name
+        : null;
+    const rawArgs = parsed.arguments ?? parsed.function?.arguments;
+    const args = typeof rawArgs === "string" ? JSON.parse(rawArgs) : rawArgs;
+    if (tool && args && typeof args === "object") {
+      return { tool, args: args as Record<string, unknown> };
+    }
+  } catch {
+    // Ordinary assistant text is not a tool call.
+  }
+  return null;
 }
 
 export function ensureLocalPreview(raw: string) {

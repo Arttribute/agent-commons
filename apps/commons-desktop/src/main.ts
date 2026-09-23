@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -97,19 +98,10 @@ async function selectStartupMode(): Promise<typeof activeMode> {
     const saved = JSON.parse(readFileSync(startupModePath(), "utf8")) as { mode?: string };
     if (saved.mode === "cloud" || saved.mode === "private-local") return saved.mode;
   } catch {
-    // First launch: ask before making any network request.
+    // A fresh desktop install follows the web experience. Private Local is a
+    // normal mode toggle after sign-in, not a separate onboarding path.
   }
-  const choice = await dialog.showMessageBox({
-    type: "question",
-    title: "Choose your Agent Commons workspace",
-    message: "How should Agent Commons Desktop start?",
-    detail: "Private Local makes no Commons Cloud connection. You can switch modes later from the Workspace menu.",
-    buttons: ["Private Local", "Commons Cloud"],
-    defaultId: 0,
-    cancelId: 0,
-    noLink: true,
-  });
-  const mode = choice.response === 1 ? "cloud" : "private-local";
+  const mode = "cloud" as const;
   rememberStartupMode(mode);
   return mode;
 }
@@ -126,6 +118,24 @@ function desktopInfo(mode: "cloud" | "private-local") {
     mode,
     capabilities: [...capabilities],
   };
+}
+
+function installEditableContextMenu(webContents: Electron.WebContents) {
+  webContents.on("context-menu", (_event, params) => {
+    if (!params.isEditable) return;
+    const flags = params.editFlags;
+    const menu = Menu.buildFromTemplate([
+      { role: "undo", enabled: flags.canUndo },
+      { role: "redo", enabled: flags.canRedo },
+      { type: "separator" },
+      { role: "cut", enabled: flags.canCut },
+      { role: "copy", enabled: flags.canCopy },
+      { role: "paste", enabled: flags.canPaste },
+      { type: "separator" },
+      { role: "selectAll", enabled: flags.canSelectAll },
+    ]);
+    menu.popup({ window: BrowserWindow.fromWebContents(webContents) ?? undefined });
+  });
 }
 
 function allowedCloudNavigation(raw: string) {
@@ -258,12 +268,49 @@ async function loadCloudEntry(cloudSession: Electron.Session) {
 }
 
 async function switchToLocal() {
+  if (activeMode === "cloud") await syncCloudAgentsToLocal();
   activeMode = "private-local";
   rememberStartupMode(activeMode);
   await createLocalWindow();
   const previous = cloudWindow;
   // Let the originating cloud IPC resolve before its renderer is closed.
   setTimeout(() => previous?.close(), 100);
+}
+
+async function syncCloudAgentsToLocal() {
+  try {
+    const cloudSession = session.fromPartition("persist:commons-cloud");
+    const response = await cloudSession.fetch(`${CLOUD_ORIGIN}/api/agents`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return;
+    const payload = (await response.json()) as { data?: unknown } | unknown[];
+    const rows = Array.isArray(payload)
+      ? payload
+      : Array.isArray((payload as { data?: unknown }).data)
+        ? (payload as { data: unknown[] }).data
+        : [];
+    runtime.syncCloudAgents(
+      rows.flatMap((row) => {
+        if (!row || typeof row !== "object") return [];
+        const value = row as Record<string, unknown>;
+        const agentId = String(value.agentId ?? value.agent_id ?? value.id ?? "");
+        const name = String(value.name ?? "");
+        if (!agentId || !name) return [];
+        return [{
+          agentId,
+          name,
+          instructions: typeof value.instructions === "string" ? value.instructions : undefined,
+          description: typeof value.description === "string" ? value.description : undefined,
+          persona: typeof value.persona === "string" ? value.persona : undefined,
+        }];
+      }),
+    );
+  } catch {
+    // Local mode always remains usable with its encrypted starter agent. A
+    // cloud sync is opportunistic and never makes local startup depend on it.
+  }
 }
 
 function switchToCloud() {
@@ -281,7 +328,7 @@ function installApplicationMenu() {
       label: "Workspace",
       submenu: [
         { label: "Commons Cloud", accelerator: "CmdOrCtrl+1", click: () => switchToCloud() },
-        { label: "Private Local", accelerator: "CmdOrCtrl+2", click: () => void switchToLocal() },
+        { label: "Keep everything local", accelerator: "CmdOrCtrl+2", click: () => void switchToLocal() },
       ],
     },
     { role: "editMenu" },
@@ -320,9 +367,11 @@ function createCloudWindow() {
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      spellcheck: true,
     },
   });
   cloudWindow.once("ready-to-show", () => cloudWindow?.show());
+  installEditableContextMenu(cloudWindow.webContents);
   cloudWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
@@ -373,10 +422,11 @@ async function createLocalWindow() {
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
-      spellcheck: false,
+      spellcheck: true,
     },
   });
   localWindow.once("ready-to-show", () => localWindow?.show());
+  installEditableContextMenu(localWindow.webContents);
   localWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   localWindow.webContents.on("will-navigate", (event) => event.preventDefault());
   localWindow.on("closed", () => {
@@ -386,7 +436,79 @@ async function createLocalWindow() {
   runtime.setTarget(localWindow.webContents);
   if (developmentUrl) await localWindow.loadURL(developmentUrl);
   else await localWindow.loadFile(join(__dirname, "..", "renderer-dist", "index.html"));
+  if (process.env.COMMONS_DESKTOP_TEXT_INPUT_SMOKE === "1") {
+    void runTextInputSmoke(localWindow);
+  } else if (process.env.COMMONS_DESKTOP_SKIP_MODEL_PREP !== "1") {
+    void runtime.prepare().catch(() => undefined);
+  }
   return localWindow;
+}
+
+async function runTextInputSmoke(window: BrowserWindow) {
+  try {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const available = await window.webContents.executeJavaScript(
+        `Boolean(document.querySelector('textarea[aria-label="Message your agent"]'))`,
+      );
+      if (available) break;
+      await delay(100);
+    }
+    window.show();
+    window.focus();
+    window.webContents.focus();
+    await delay(500);
+    await window.webContents.executeJavaScript(
+      `document.querySelector('textarea[aria-label="Message your agent"]')?.focus()`,
+    );
+    await delay(100);
+    for (const character of "Windows typing ") {
+      window.webContents.sendInputEvent({ type: "char", keyCode: character });
+    }
+    clipboard.writeText("and paste work");
+    window.webContents.paste();
+    await delay(250);
+    const compositionResult = await window.webContents.executeJavaScript(`(() => {
+      const input = document.querySelector('textarea[aria-label="Message your agent"]');
+      if (!(input instanceof HTMLTextAreaElement)) return { error: "composer missing" };
+      const beforeComposition = input.value;
+      input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "文" }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter", isComposing: true }));
+      input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "文" }));
+      const shiftEnterAllowed = input.dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "Enter",
+        shiftKey: true,
+      }));
+      return {
+        value: input.value,
+        focused: document.activeElement === input,
+        compositionPreserved: input.value === beforeComposition,
+        shiftEnterAllowed,
+      };
+    })()`);
+    await window.webContents.insertText("\n");
+    await delay(100);
+    const result = await window.webContents.executeJavaScript(`(() => {
+      const input = document.querySelector('textarea[aria-label="Message your agent"]');
+      return input instanceof HTMLTextAreaElement
+        ? { value: input.value, focused: document.activeElement === input }
+        : { error: "composer missing" };
+    })()`);
+    const expected = "Windows typing and paste work";
+    const passed =
+      compositionResult?.value === expected &&
+      compositionResult?.focused === true &&
+      compositionResult?.compositionPreserved === true &&
+      compositionResult?.shiftEnterAllowed === true &&
+      result?.value === `${expected}\n` &&
+      result?.focused === true;
+    console.log(`[desktop-text-input-smoke] ${JSON.stringify({ ...compositionResult, shiftEnterValue: result?.value, passed })}`);
+    app.exit(passed ? 0 : 1);
+  } catch (error) {
+    console.error("[desktop-text-input-smoke]", error);
+    app.exit(1);
+  }
 }
 
 function assertLocalSender(event: IpcMainInvokeEvent) {
@@ -428,6 +550,7 @@ function registerIpc() {
   });
 
   localHandler("local:get-state", () => runtime.state());
+  localHandler("local:get-model-status", () => runtime.modelStatus());
   localHandler("local:choose-workspace", async () => {
     const result = await dialog.showOpenDialog(localWindow!, { properties: ["openDirectory", "createDirectory"] });
     return result.canceled ? null : result.filePaths[0] ?? null;
@@ -486,8 +609,10 @@ async function openLocalApp(id: string) {
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      spellcheck: true,
     },
   });
+  installEditableContextMenu(appWindow.webContents);
   appWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };

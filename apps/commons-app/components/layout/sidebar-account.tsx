@@ -32,6 +32,7 @@ import {
   Sparkles,
   CircleArrowUp,
   MonitorDown,
+  ShieldCheck,
 } from "lucide-react";
 
 const DESKTOP_DOWNLOAD_URL =
@@ -181,8 +182,11 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
               }}
               className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-accent"
             >
-              <MonitorDown className="h-4 w-4 text-muted-foreground" />
-              Private local workspace
+              <ShieldCheck className="h-4 w-4 text-emerald-600" />
+              Keep everything local
+              <span className="ml-auto h-4 w-7 rounded-full bg-muted p-0.5" aria-hidden="true">
+                <span className="block h-3 w-3 rounded-full bg-muted-foreground/60" />
+              </span>
             </button>
           ) : (
             <a
