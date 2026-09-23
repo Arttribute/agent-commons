@@ -23,7 +23,7 @@ export default function DesktopDownloadPage() {
         Use the live Commons workspace, or switch to Private Local for on-device models, files, terminal commands, Git, Knowledge Spaces, workflows, and app previews.
       </p>
       <aside className="mt-8 rounded-xl border border-amber-300/70 bg-amber-50 p-4 text-sm leading-6 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-        <strong>Early release:</strong> these installers are currently unsigned while publisher enrollment is completed. macOS Gatekeeper or Windows SmartScreen may ask you to confirm the download before opening it.
+        <strong>Early release:</strong> these installers are currently unsigned while publisher enrollment is completed. On macOS, drag Agent Commons to Applications, Control-click it, and choose Open. If macOS still blocks it, use System Settings → Privacy &amp; Security → Open Anyway. If an older download says the app is damaged, delete that DMG and download it again. Windows SmartScreen may also ask you to confirm the download before opening it.
       </aside>
       <section className="mt-10 grid gap-3 sm:grid-cols-2">
         {downloads.map((download) => (
