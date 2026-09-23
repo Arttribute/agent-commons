@@ -6,6 +6,7 @@ const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(ch
 const bridge: LocalDesktopBridge = {
   getInfo: () => invoke("desktop:get-info", "private-local"),
   getState: () => invoke("local:get-state"),
+  getModelStatus: () => invoke("local:get-model-status"),
   chooseWorkspace: () => invoke("local:choose-workspace"),
   chooseKnowledgeFolders: () => invoke("local:choose-knowledge-folders"),
   chooseKnowledgeFiles: () => invoke("local:choose-knowledge-files"),

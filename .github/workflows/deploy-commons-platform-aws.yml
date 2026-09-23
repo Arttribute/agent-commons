@@ -95,7 +95,18 @@ jobs:
               --query 'builds[0].buildStatus' --output text)
             case "$status" in
               SUCCEEDED) exit 0 ;;
-              FAILED|FAULT|STOPPED|TIMED_OUT) exit 1 ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT)
+                aws codebuild batch-get-builds \
+                  --ids "${{ steps.build.outputs.id }}" \
+                  --query 'builds[0].{status:buildStatus,phases:phases[*].{phase:phaseType,status:phaseStatus,contexts:contexts},logs:logs.deepLink}' \
+                  --output json >&2
+                log_group=$(aws codebuild batch-get-builds --ids "${{ steps.build.outputs.id }}" --query 'builds[0].logs.groupName' --output text)
+                log_stream=$(aws codebuild batch-get-builds --ids "${{ steps.build.outputs.id }}" --query 'builds[0].logs.streamName' --output text)
+                if [[ -n "$log_group" && "$log_group" != "None" && -n "$log_stream" && "$log_stream" != "None" ]]; then
+                  aws logs get-log-events --log-group-name "$log_group" --log-stream-name "$log_stream" --limit 200 --query 'events[*].message' --output text >&2 || true
+                fi
+                exit 1
+                ;;
               *) sleep 15 ;;
             esac
           done

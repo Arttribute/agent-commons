@@ -55,6 +55,20 @@ jobs:
       - run: pnpm --filter @agent-commons/cli typecheck
       - run: pnpm --filter commons-desktop typecheck
       - run: pnpm --filter commons-desktop build
+      - name: Smoke test desktop text input (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm --filter commons-desktop start
+        env:
+          COMMONS_DESKTOP_START_MODE: private-local
+          COMMONS_DESKTOP_SKIP_MODEL_PREP: 1
+          COMMONS_DESKTOP_TEXT_INPUT_SMOKE: 1
+      - name: Smoke test desktop text input (macOS and Windows)
+        if: runner.os != 'Linux'
+        run: pnpm --filter commons-desktop start
+        env:
+          COMMONS_DESKTOP_START_MODE: private-local
+          COMMONS_DESKTOP_SKIP_MODEL_PREP: 1
+          COMMONS_DESKTOP_TEXT_INPUT_SMOKE: 1
       - name: Package signed macOS release
         if: runner.os == 'macOS' && env.MAC_SIGNING_ENABLED == 'true'
         run: pnpm --filter commons-desktop exec electron-builder --mac --x64 --arm64 --publish never

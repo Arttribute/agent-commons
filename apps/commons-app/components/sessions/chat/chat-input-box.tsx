@@ -147,6 +147,8 @@ export default function ChatInputBox({
   const activityArgsRef = useRef<Map<string, any>>(new Map());
   const progressActivityIdsRef = useRef<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
+  const restoreComposerFocusRef = useRef(false);
   const previewUrlsRef = useRef<Set<string>>(new Set());
   const [attachments, setAttachments] = useState<UploadedAttachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -489,6 +491,13 @@ export default function ChatInputBox({
   );
 
   useEffect(() => {
+    if (!isLoading && restoreComposerFocusRef.current) {
+      restoreComposerFocusRef.current = false;
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
     if (isLaunchMode || !agentId || !allowComputer) return;
     let cancelled = false;
     async function loadComputerConfig() {
@@ -554,6 +563,7 @@ export default function ChatInputBox({
 
     if (sendInFlightRef.current) return;
     sendInFlightRef.current = true;
+    restoreComposerFocusRef.current = true;
 
     const computerRequest =
       allowComputer && computerEnabled
@@ -928,12 +938,22 @@ export default function ChatInputBox({
       ) : (
         <>
           <ComposerTextArea
+            ref={composerInputRef}
+            aria-label="Message your agent"
+            autoCapitalize="sentences"
+            autoCorrect="on"
+            spellCheck
             placeholder={placeholder}
             className="text-sm w-full h-16 p-3 rounded-2xl resize-none focus:outline-none bg-transparent placeholder:text-muted-foreground/60"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing &&
+                e.nativeEvent.keyCode !== 229
+              ) {
                 e.preventDefault();
                 handleSend();
               }

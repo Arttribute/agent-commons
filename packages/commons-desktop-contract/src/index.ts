@@ -21,6 +21,8 @@ export type PermissionMode = "ask" | "read-only";
 
 export type LocalAgent = {
   id: string;
+  cloudAgentId?: string;
+  source?: "cloud" | "local";
   name: string;
   instructions: string;
   model: string;
@@ -104,6 +106,12 @@ export type LocalSettings = {
   permissionMode: PermissionMode;
 };
 
+export type LocalModelStatus = {
+  state: "checking" | "downloading-runtime" | "starting" | "downloading-model" | "ready" | "error";
+  label: string;
+  progress?: number;
+};
+
 export type LocalState = {
   version: 1;
   agents: LocalAgent[];
@@ -137,6 +145,7 @@ export type ApprovalRequest = {
 export type RuntimeEvent =
   | { type: "approval"; approval: ApprovalRequest }
   | { type: "activity"; label: string; detail?: string; status: "running" | "done" | "error" }
+  | { type: "model"; model: LocalModelStatus }
   | { type: "state"; state: LocalState };
 
 export type AgentInput = Pick<LocalAgent, "name" | "instructions" | "model"> & {
@@ -167,6 +176,7 @@ export interface CloudDesktopBridge {
 export interface LocalDesktopBridge {
   getInfo(): Promise<DesktopInfo>;
   getState(): Promise<LocalState>;
+  getModelStatus(): Promise<LocalModelStatus>;
   chooseWorkspace(): Promise<string | null>;
   chooseKnowledgeFolders(): Promise<string[]>;
   chooseKnowledgeFiles(): Promise<string[]>;

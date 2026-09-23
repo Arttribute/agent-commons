@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import {
   AppWindow,
   Bot,
@@ -19,6 +19,7 @@ import type {
   LocalAgent,
   LocalApp,
   LocalConversation,
+  LocalModelStatus,
   LocalState,
   RuntimeEvent,
 } from "@agent-commons/desktop-contract";
@@ -33,8 +34,10 @@ const emptyState: LocalState = {
   tasks: [],
   workflows: [],
   apps: [],
-  settings: { ollamaUrl: "http://127.0.0.1:11434", defaultModel: "", permissionMode: "ask" },
+  settings: { ollamaUrl: "http://127.0.0.1:11434", defaultModel: "qwen2.5-coder:0.5b", permissionMode: "ask" },
 };
+
+const initialModelStatus: LocalModelStatus = { state: "checking", label: "Checking local AI" };
 
 export function PrivateWorkspace() {
   const bridge = typeof window !== "undefined" ? window.agentCommonsLocal : undefined;
@@ -44,16 +47,23 @@ export function PrivateWorkspace() {
   const [busy, setBusy] = useState("");
   const [approval, setApproval] = useState<ApprovalRequest | null>(null);
   const [activity, setActivity] = useState<Array<{ label: string; detail?: string; status: string }>>([]);
+  const [modelStatus, setModelStatus] = useState<LocalModelStatus>(initialModelStatus);
 
   useEffect(() => {
     if (!bridge) {
       setError("Private Local mode must be opened from Agent Commons Desktop.");
       return;
     }
-    void bridge.getState().then(setState).catch(showError);
+    void Promise.all([bridge.getState(), bridge.getModelStatus()])
+      .then(([nextState, nextModelStatus]) => {
+        setState(nextState);
+        setModelStatus(nextModelStatus);
+      })
+      .catch(showError);
     return bridge.onEvent((event: RuntimeEvent) => {
       if (event.type === "state") setState(event.state);
       if (event.type === "approval") setApproval(event.approval);
+      if (event.type === "model") setModelStatus(event.model);
       if (event.type === "activity") {
         setActivity((current) => [event, ...current].slice(0, 12));
       }
@@ -88,7 +98,9 @@ export function PrivateWorkspace() {
           <span className="private-mark"><FlaskConical /></span>
           <span>Agent Commons</span>
         </div>
-        <div className="private-mode"><ShieldCheck /> <span>Private Local</span></div>
+        <button className="private-mode" role="switch" aria-checked="true" onClick={() => bridge.openCloud()}>
+          <ShieldCheck /> <span>Keep everything local</span><i />
+        </button>
         <nav>
           {(["chat", "agents", "knowledge", "tasks", "workflows", "apps", "settings"] as Tab[]).map((item) => {
             const Icon = icons[item];
@@ -100,8 +112,8 @@ export function PrivateWorkspace() {
           })}
         </nav>
         <div className="private-sidebar-foot">
-          <span className="network-dot" /> Local-only workspace
-          <button onClick={() => bridge.openCloud()}><Cloud /> Open cloud workspace</button>
+          <span className="network-dot" /> Everything stays on this computer
+          <button onClick={() => bridge.openCloud()}><Cloud /> Switch to cloud</button>
         </div>
       </aside>
 
@@ -114,14 +126,17 @@ export function PrivateWorkspace() {
           {busy && <span className="busy-pill"><i /> {busy}</span>}
         </header>
         {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
+        {modelStatus.state !== "ready" && (
+          <ModelStatusBanner status={modelStatus} retry={() => void action("Preparing local AI", () => bridge.listModels())} />
+        )}
         <div className="private-content">
-          {tab === "chat" && <ChatPanel state={state} bridge={bridge} action={action} activity={activity} />}
+          {tab === "chat" && <ChatPanel state={state} bridge={bridge} action={action} activity={activity} modelStatus={modelStatus} />}
           {tab === "agents" && <AgentsPanel state={state} bridge={bridge} action={action} />}
           {tab === "knowledge" && <KnowledgePanel state={state} bridge={bridge} action={action} />}
           {tab === "tasks" && <TasksPanel state={state} bridge={bridge} action={action} />}
           {tab === "workflows" && <WorkflowsPanel state={state} bridge={bridge} action={action} />}
           {tab === "apps" && <AppsPanel state={state} bridge={bridge} action={action} />}
-          {tab === "settings" && <SettingsPanel state={state} bridge={bridge} action={action} />}
+          {tab === "settings" && <SettingsPanel state={state} bridge={bridge} action={action} modelStatus={modelStatus} />}
         </div>
       </section>
 
@@ -146,7 +161,7 @@ export function PrivateWorkspace() {
 type Bridge = NonNullable<Window["agentCommonsLocal"]>;
 type Action = <T>(label: string, call: () => Promise<T>) => Promise<T | undefined>;
 
-function ChatPanel({ state, bridge, action, activity }: { state: LocalState; bridge: Bridge; action: Action; activity: Array<{ label: string; detail?: string; status: string }> }) {
+function ChatPanel({ state, bridge, action, activity, modelStatus }: { state: LocalState; bridge: Bridge; action: Action; activity: Array<{ label: string; detail?: string; status: string }>; modelStatus: LocalModelStatus }) {
   const [agentId, setAgentId] = useState(state.agents[0]?.id ?? "");
   const [conversationId, setConversationId] = useState("");
   const [workspace, setWorkspace] = useState("");
@@ -181,7 +196,7 @@ function ChatPanel({ state, bridge, action, activity }: { state: LocalState; bri
         <div className="chat-controls">
           <select value={agentId} onChange={(event) => { setAgentId(event.target.value); setConversationId(""); }}>
             <option value="">Choose an agent</option>
-            {state.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.model || state.settings.defaultModel || "no model"}</option>)}
+            {state.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
           </select>
           <button className="secondary workspace-button" onClick={async () => { const selected = await bridge.chooseWorkspace(); if (selected) setWorkspace(selected); }}>
             {workspace ? `📁 ${shortPath(workspace)}` : "Choose workspace folder"}
@@ -200,8 +215,8 @@ function ChatPanel({ state, bridge, action, activity }: { state: LocalState; bri
           {!conversation?.messages.length && (
             <div className="chat-empty">
               <span className="empty-orb">✦</span>
-              <h2>Work privately on this computer</h2>
-              <p>Choose a local agent, model, workspace, and optional Knowledge Spaces. Nothing in this conversation is sent to Commons Cloud.</p>
+              <h2>What would you like to work on?</h2>
+              <p>Your agents, tools, files, and Knowledge Spaces work the same way here. Nothing in this conversation is sent to Commons Cloud.</p>
             </div>
           )}
           {conversation?.messages.filter((message) => message.role !== "tool").map((message) => (
@@ -213,8 +228,8 @@ function ChatPanel({ state, bridge, action, activity }: { state: LocalState; bri
         </div>
         {!!activity.length && <details className="activity"><summary>Local activity</summary>{activity.map((item, index) => <div key={`${item.label}-${index}`}><b className={item.status}>{item.status === "running" ? "◌" : item.status === "done" ? "✓" : "!"}</b><span>{item.label}</span>{item.detail && <pre>{item.detail}</pre>}</div>)}</details>}
         <form className="composer" onSubmit={submit}>
-          <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={state.agents.length ? "Ask your local agent to build, edit, research, or run something…" : "Create a local agent first…"} disabled={!state.agents.length} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
-          <button disabled={!prompt.trim() || !agentId}>Send</button>
+          <textarea aria-label="Message your agent" autoCapitalize="sentences" autoCorrect="on" spellCheck value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={modelStatus.state === "ready" ? "Ask your agent to build, edit, research, or run something…" : `${modelStatus.label} — you can start typing`} disabled={!state.agents.length} onKeyDown={(event) => { if (modelStatus.state === "ready" && event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
+          <button disabled={!prompt.trim() || !agentId || modelStatus.state !== "ready"}>Send</button>
         </form>
       </section>
     </div>
@@ -224,12 +239,11 @@ function ChatPanel({ state, bridge, action, activity }: { state: LocalState; bri
 function AgentsPanel({ state, bridge, action }: { state: LocalState; bridge: Bridge; action: Action }) {
   const [editing, setEditing] = useState<LocalAgent | null>(null);
   const [name, setName] = useState("");
-  const [model, setModel] = useState("");
   const [instructions, setInstructions] = useState("");
-  function edit(agent?: LocalAgent) { setEditing(agent ?? null); setName(agent?.name ?? ""); setModel(agent?.model ?? state.settings.defaultModel); setInstructions(agent?.instructions ?? "You are a capable local assistant. Protect user data and verify your work."); }
-  async function save(event: FormEvent) { event.preventDefault(); const next = await action("Saving agent", () => bridge.saveAgent({ id: editing?.id, name, model, instructions })); if (next) { setStateFrom(next); edit(); } }
+  function edit(agent?: LocalAgent) { setEditing(agent ?? null); setName(agent?.name ?? ""); setInstructions(agent?.instructions ?? "You are a capable assistant. Protect user data and verify your work."); }
+  async function save(event: FormEvent) { event.preventDefault(); const next = await action("Saving agent", () => bridge.saveAgent({ id: editing?.id, name, model: "", instructions })); if (next) { setStateFrom(next); edit(); } }
   const [, setRefresh] = useState(0); const setStateFrom = (_next: LocalState) => setRefresh((value) => value + 1);
-  return <div className="stack"><div className="section-actions"><button onClick={() => edit()}>＋ Create local agent</button></div>{(name || editing) && <form className="editor-card" onSubmit={save}><Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} required /></Field><Field label="Local model"><input value={model} onChange={(e) => setModel(e.target.value)} placeholder={state.settings.defaultModel || "e.g. qwen2.5-coder:7b"} /></Field><Field label="Instructions"><textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} /></Field><div className="form-actions"><button type="button" className="secondary" onClick={() => { setName(""); setEditing(null); }}>Cancel</button><button>Save agent</button></div></form>}<div className="card-grid">{state.agents.map((agent) => <article className="entity-card" key={agent.id}><span className="entity-icon">✦</span><h3>{agent.name}</h3><p>{agent.instructions || "No custom instructions"}</p><small>{agent.model || state.settings.defaultModel || "Model not selected"}</small><div><button className="secondary" onClick={() => edit(agent)}>Edit</button><button className="danger" onClick={() => void action("Deleting", () => bridge.deleteAgent(agent.id))}>Delete</button></div></article>)}</div>{!state.agents.length && <Empty title="No local agents" text="Create an agent whose configuration and conversations stay on this computer." />}</div>;
+  return <div className="stack"><div className="section-actions"><button onClick={() => edit()}>＋ Create agent</button></div>{(name || editing) && <form className="editor-card" onSubmit={save}><Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} required /></Field><Field label="Instructions"><textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={6} /></Field><div className="form-actions"><button type="button" className="secondary" onClick={() => { setName(""); setEditing(null); }}>Cancel</button><button>Save agent</button></div></form>}<div className="card-grid">{state.agents.map((agent) => <article className="entity-card" key={agent.id}><span className="entity-icon">✦</span><h3>{agent.name}</h3><p>{agent.instructions || "No custom instructions"}</p><small>{agent.source === "cloud" ? "Available in cloud and local mode" : "Stored on this computer"}</small><div><button className="secondary" onClick={() => edit(agent)}>Edit</button><button className="danger" onClick={() => void action("Deleting", () => bridge.deleteAgent(agent.id))}>Delete</button></div></article>)}</div>{!state.agents.length && <Empty title="No agents" text="Create an agent whose configuration and conversations stay on this computer." />}</div>;
 }
 
 function KnowledgePanel({ state, bridge, action }: { state: LocalState; bridge: Bridge; action: Action }) {
@@ -274,11 +288,15 @@ function AppsPanel({ state, bridge, action }: { state: LocalState; bridge: Bridg
 
 function AppCard({ app, bridge, action }: { app: LocalApp; bridge: Bridge; action: Action }) { return <article className="entity-card"><span className="entity-icon">▣</span><span className={`status ${app.status}`}>{app.status}</span><h3>{app.name}</h3><p>{shortPath(app.directory)}</p><small>{app.command} {app.args.join(" ")} · {app.previewUrl}</small>{app.output && <details><summary>Process</summary><pre>{app.output}</pre></details>}<div>{app.status === "running" ? <button className="secondary" onClick={() => void action("Stopping app", () => bridge.stopApp(app.id))}>Stop</button> : <button onClick={() => void action("Starting app", () => bridge.startApp(app.id))}>Start</button>}<button className="secondary" onClick={() => void action("Opening preview", () => bridge.openApp(app.id))}>Preview</button><button className="danger" onClick={() => void action("Deleting", () => bridge.deleteApp(app.id))}>Delete</button></div></article>; }
 
-function SettingsPanel({ state, bridge, action }: { state: LocalState; bridge: Bridge; action: Action }) {
-  const [url, setUrl] = useState(state.settings.ollamaUrl); const [model, setModel] = useState(state.settings.defaultModel); const [permission, setPermission] = useState(state.settings.permissionMode); const [models, setModels] = useState<string[]>([]);
-  async function discover() { const result = await action("Discovering models", () => bridge.listModels()); if (result) { setModels(result); if (!model && result[0]) setModel(result[0]); } }
-  async function save(e: FormEvent) { e.preventDefault(); await action("Saving settings", () => bridge.updateSettings({ ollamaUrl: url, defaultModel: model, permissionMode: permission })); }
-  return <div className="settings-layout"><form className="editor-card" onSubmit={save}><h2>Local model server</h2><p className="muted">Only loopback addresses are accepted in Private Local mode.</p><Field label="Ollama-compatible URL"><div className="field-row"><input value={url} onChange={(e) => setUrl(e.target.value)} /><button type="button" className="secondary" onClick={() => void discover()}>Discover</button></div></Field><Field label="Default model">{models.length ? <select value={model} onChange={(e) => setModel(e.target.value)}><option value="">Choose a model</option>{models.map((item) => <option key={item}>{item}</option>)}</select> : <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="Install a model, then Discover" />}</Field><Field label="Local tool permissions"><select value={permission} onChange={(e) => setPermission(e.target.value as typeof permission)}><option value="ask">Ask before edits and commands</option><option value="read-only">Read only</option></select></Field><div className="form-actions"><button>Save settings</button></div></form><section className="privacy-card"><span>✓</span><div><h3>Private Local boundary</h3><p>The UI is bundled with the signed desktop app. Models are restricted to this computer, local state is protected through the OS credential store when available, and generated app previews receive no Agent Commons bridge.</p></div></section></div>;
+function SettingsPanel({ state, bridge, action, modelStatus }: { state: LocalState; bridge: Bridge; action: Action; modelStatus: LocalModelStatus }) {
+  const [permission, setPermission] = useState(state.settings.permissionMode);
+  async function save(e: FormEvent) { e.preventDefault(); await action("Saving settings", () => bridge.updateSettings({ permissionMode: permission })); }
+  return <div className="settings-layout"><section className="editor-card"><h2>Local AI</h2><p className="muted">Agent Commons installs and selects a private model automatically.</p><div className="model-ready-row"><span className={`network-dot ${modelStatus.state === "error" ? "error" : ""}`} /><div><strong>{modelStatus.label}</strong><small>{state.settings.defaultModel}</small></div></div>{modelStatus.state === "error" && <div className="form-actions"><button type="button" onClick={() => void action("Preparing local AI", () => bridge.listModels())}>Try again</button></div>}</section><form className="editor-card" onSubmit={save}><h2>Agent permissions</h2><Field label="File edits and terminal commands"><select value={permission} onChange={(e) => setPermission(e.target.value as typeof permission)}><option value="ask">Ask before edits and commands</option><option value="read-only">Read only</option></select></Field><div className="form-actions"><button>Save settings</button></div></form><section className="privacy-card"><span>✓</span><div><h3>Everything stays local</h3><p>Conversations, model inference, files, tools, knowledge, tasks, workflows, and app previews stay on this computer. Local state is protected through the OS credential store when available.</p></div></section></div>;
+}
+
+function ModelStatusBanner({ status, retry }: { status: LocalModelStatus; retry: () => void }) {
+  const percent = status.progress === undefined ? undefined : Math.round(status.progress * 100);
+  return <div className={`model-status ${status.state === "error" ? "error" : ""}`}><div><span className="model-spinner" /><strong>{status.label}</strong>{percent !== undefined && status.state !== "ready" && <small>{percent}%</small>}</div>{percent !== undefined && status.state !== "error" && <progress max={100} value={percent} />}{status.state === "error" && <button onClick={retry}>Try again</button>}</div>;
 }
 
 function AgentSelect({ agents, value, onChange }: { agents: LocalAgent[]; value: string; onChange: (value: string) => void }) { return <select value={value} onChange={(e) => onChange(e.target.value)} required><option value="">Choose agent</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select>; }
@@ -287,6 +305,6 @@ function Empty({ title, text }: { title: string; text: string }) { return <div c
 function shortPath(path: string) { const parts = path.split(/[\\/]/).filter(Boolean); return parts.length > 3 ? `…/${parts.slice(-3).join("/")}` : path; }
 function splitArgs(input: string) { return input.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((part) => part.replace(/^"|"$/g, "")) ?? []; }
 
-const labels: Record<Tab, string> = { chat: "Private chat", agents: "Local agents", knowledge: "Knowledge Spaces", tasks: "Tasks", workflows: "Workflows", apps: "Local apps", settings: "Private settings" };
-const descriptions: Record<Tab, string> = { chat: "Conversations and tools run on this computer.", agents: "Create agents backed by models on your machine.", knowledge: "Use desktop files and folders as living local context.", tasks: "Run saved instructions through local agents.", workflows: "Chain repeatable local agent steps.", apps: "Build, run, and preview apps without publishing them.", settings: "Control local models and permissions." };
+const labels: Record<Tab, string> = { chat: "Chat", agents: "Agents", knowledge: "Knowledge", tasks: "Scheduled tasks", workflows: "Workflows", apps: "Apps", settings: "Settings" };
+const descriptions: Record<Tab, string> = { chat: "Conversations and tools run on this computer.", agents: "The same agents, running privately on this computer.", knowledge: "Use desktop files and folders as living context.", tasks: "Run saved instructions through your agents.", workflows: "Chain repeatable agent steps.", apps: "Build, run, and preview apps without publishing them.", settings: "Privacy and agent permissions." };
 const icons: Record<Tab, LucideIcon> = { chat: MessageCircle, agents: Bot, knowledge: FolderSearch, tasks: BriefcaseBusiness, workflows: Workflow, apps: AppWindow, settings: Settings };
