@@ -220,6 +220,22 @@ assert(populatedBody.data?.summary?.requests === 1, "project usage count is wron
 assert(populatedBody.data?.daily?.length === 1, "project usage daily series is wrong");
 assert(populatedBody.data?.recent?.length === 1, "project recent requests are wrong");
 
+const desktopDevice = await app.request(
+  "http://identity.test/api/auth/device/code",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: "commons-desktop",
+      scope: "openid profile email",
+    }),
+  },
+);
+assert(
+  desktopDevice.ok,
+  `desktop device authorization failed: ${desktopDevice.status}`,
+);
+
 const device = await app.request("http://identity.test/api/auth/device/code", {
   method: "POST",
   headers: { "Content-Type": "application/json" },

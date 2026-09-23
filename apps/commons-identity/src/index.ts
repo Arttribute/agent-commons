@@ -459,13 +459,12 @@ app.get("/device", (c) => {
   return c.html(
     page(
       "Connect a device",
-      `<h1>Connect Commons CLI</h1><p>Enter the code displayed in your terminal.</p>
+      `<h1>Connect Agent Commons</h1><p>Enter the one-time code displayed by the app or command-line tool.</p>
        <form id="device-form"><label>Device code<input id="code" value="${escapeHtml(initialCode)}" autocomplete="one-time-code" required></label>
        <button>Continue</button></form><p id="message" class="error"></p>`,
       `
-      document.querySelector("#device-form").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const code = document.querySelector("#code").value.replaceAll("-", "").trim().toUpperCase();
+      async function claimDevice(code) {
+        code = code.replaceAll("-", "").trim().toUpperCase();
         const response = await fetch("/api/auth/device?user_code=" + encodeURIComponent(code), {credentials:"include"});
         if (response.status === 401) {
           location.href = "/sign-in?redirect=" + encodeURIComponent("/device?user_code=" + code);
@@ -477,7 +476,13 @@ app.get("/device", (c) => {
           return;
         }
         location.href = "/device/approve?user_code=" + encodeURIComponent(code);
-      });`,
+      }
+      document.querySelector("#device-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        await claimDevice(document.querySelector("#code").value);
+      });
+      const initialCode = document.querySelector("#code").value;
+      if (initialCode) void claimDevice(initialCode);`,
     ),
   );
 });
@@ -493,7 +498,7 @@ app.get("/device/approve", async (c) => {
   return c.html(
     page(
       "Approve device",
-      `<h1>Authorize Commons CLI</h1><p>Signed in as ${escapeHtml(session.user.email)}.</p>
+      `<h1>Authorize Agent Commons</h1><p>Signed in as ${escapeHtml(session.user.email)}.</p>
        <p>Code: <code>${escapeHtml(code)}</code></p>
        <div class="row"><button id="approve">Approve</button><button class="danger" id="deny">Deny</button></div>
        <p id="message"></p>`,
@@ -508,7 +513,7 @@ app.get("/device/approve", async (c) => {
         const message = document.querySelector("#message");
         if (!response.ok) { message.className="error"; message.textContent=data.message||data.error||"Request failed"; return; }
         message.className="success";
-        message.textContent=action==="approve" ? "Device approved. Return to your terminal." : "Device request denied.";
+        message.textContent=action==="approve" ? "Approved. Return to Agent Commons." : "Device request denied.";
       }
       document.querySelector("#approve").onclick=()=>decide("approve");
       document.querySelector("#deny").onclick=()=>decide("deny");`,

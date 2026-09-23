@@ -160,6 +160,7 @@ export type AppInput = Pick<LocalApp, "name" | "directory" | "command" | "args" 
 
 export interface CloudDesktopBridge {
   getInfo(): Promise<DesktopInfo>;
+  beginSignIn(): Promise<void>;
   openPrivateWorkspace(): Promise<void>;
 }
 

@@ -23,7 +23,22 @@ import { ensureLocalPreview, PrivateLocalRuntime } from "./runtime";
 
 const CLOUD_URL = process.env.COMMONS_DESKTOP_CLOUD_URL ?? "https://www.agentcommons.io";
 const CLOUD_ORIGIN = new URL(CLOUD_URL).origin;
-const AUTH_ORIGIN = process.env.COMMONS_DESKTOP_AUTH_ORIGIN ?? "https://auth.agentcommons.io";
+const AUTH_ORIGIN = (process.env.COMMONS_DESKTOP_AUTH_ORIGIN ?? "https://auth.agentcommons.io").replace(/\/$/, "");
+const DESKTOP_AUTH_CLIENT_ID = process.env.COMMONS_DESKTOP_AUTH_CLIENT_ID ?? "commons-desktop";
+const DESKTOP_AUTH_SCOPES = [
+  "openid",
+  "profile",
+  "email",
+  "offline_access",
+  "activity:read",
+  "agents:create",
+  "agents:read",
+  "agents:write",
+  "agents:run",
+  "compute:read",
+  "compute:write",
+  "usage:read",
+].join(" ");
 const capabilities = [
   "privateLocal.v1",
   "workspace.select",
@@ -38,6 +53,32 @@ let cloudWindow: BrowserWindow | null = null;
 let localWindow: BrowserWindow | null = null;
 let runtime: PrivateLocalRuntime;
 let activeMode: "cloud" | "private-local" = "private-local";
+let cloudAuthAttempt = 0;
+
+type DeviceCodeResponse = {
+  device_code?: string;
+  user_code?: string;
+  verification_uri?: string;
+  verification_uri_complete?: string;
+  expires_in?: number;
+  interval?: number;
+  error?: string;
+  error_description?: string;
+};
+
+type DeviceTokenResponse = {
+  access_token?: string;
+  error?: string;
+  error_description?: string;
+};
+
+async function responseJson<T>(response: Response): Promise<T> {
+  return response.json().catch(() => ({})) as Promise<T>;
+}
+
+function delay(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 function startupModePath() {
   return join(app.getPath("userData"), "startup-mode.json");
@@ -94,6 +135,126 @@ function allowedCloudNavigation(raw: string) {
   } catch {
     return false;
   }
+}
+
+function handleCloudNavigation(event: Electron.Event, url: string) {
+  try {
+    const destination = new URL(url);
+    if (
+      destination.origin === CLOUD_ORIGIN &&
+      (destination.pathname === "/login" ||
+        destination.pathname === "/api/auth/native/start")
+    ) {
+      event.preventDefault();
+      void beginCloudSignIn();
+      return;
+    }
+  } catch {
+    // Fall through to the normal navigation policy.
+  }
+  if (!allowedCloudNavigation(url)) {
+    event.preventDefault();
+    if (/^https?:/i.test(url)) void shell.openExternal(url);
+  }
+}
+
+async function showCloudAuthStatus(code: string, error?: string) {
+  if (!cloudWindow || cloudWindow.isDestroyed()) return;
+  const url = new URL("/desktop/auth", CLOUD_ORIGIN);
+  if (code) url.searchParams.set("code", code);
+  if (error) url.searchParams.set("error", error);
+  await cloudWindow.loadURL(url.toString());
+}
+
+async function beginCloudSignIn() {
+  const attempt = ++cloudAuthAttempt;
+  if (!cloudWindow || cloudWindow.isDestroyed()) return;
+  try {
+    const response = await fetch(`${AUTH_ORIGIN}/api/auth/device/code`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: DESKTOP_AUTH_CLIENT_ID,
+        scope: DESKTOP_AUTH_SCOPES,
+      }),
+    });
+    const device = await responseJson<DeviceCodeResponse>(response);
+    if (!response.ok || !device.device_code || !device.user_code) {
+      throw new Error(
+        device.error_description ??
+          device.error ??
+          `Could not start Commons sign-in (${response.status}).`,
+      );
+    }
+
+    const verificationUrl = new URL(
+      device.verification_uri_complete ??
+        `${device.verification_uri ?? `${AUTH_ORIGIN}/device`}?user_code=${encodeURIComponent(device.user_code)}`,
+      AUTH_ORIGIN,
+    );
+    if (verificationUrl.origin !== new URL(AUTH_ORIGIN).origin) {
+      throw new Error("Commons Identity returned an unexpected authorization URL.");
+    }
+    await showCloudAuthStatus(device.user_code);
+    if (attempt !== cloudAuthAttempt) return;
+    await shell.openExternal(verificationUrl.toString());
+
+    const deadline = Date.now() + (device.expires_in ?? 600) * 1000;
+    let intervalMs = Math.max(device.interval ?? 5, 1) * 1000;
+    while (Date.now() < deadline && attempt === cloudAuthAttempt) {
+      await delay(intervalMs);
+      const tokenResponse = await fetch(`${AUTH_ORIGIN}/api/auth/device/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+          device_code: device.device_code,
+          client_id: DESKTOP_AUTH_CLIENT_ID,
+        }),
+      });
+      const token = await responseJson<DeviceTokenResponse>(tokenResponse);
+      if (tokenResponse.ok && token.access_token) {
+        if (!cloudWindow || cloudWindow.isDestroyed() || attempt !== cloudAuthAttempt) return;
+        const complete = new URL("/desktop/auth/complete", CLOUD_ORIGIN);
+        complete.hash = new URLSearchParams({ token: token.access_token }).toString();
+        await cloudWindow.loadURL(complete.toString());
+        return;
+      }
+      if (token.error === "authorization_pending") continue;
+      if (token.error === "slow_down") {
+        intervalMs += 1_000;
+        continue;
+      }
+      throw new Error(
+        token.error_description ?? token.error ?? "Commons sign-in was not approved.",
+      );
+    }
+    if (attempt === cloudAuthAttempt) {
+      throw new Error("The sign-in request expired before it was approved.");
+    }
+  } catch (error) {
+    if (attempt !== cloudAuthAttempt) return;
+    await showCloudAuthStatus(
+      "",
+      error instanceof Error ? error.message : "Commons sign-in failed.",
+    );
+  }
+}
+
+async function loadCloudEntry(cloudSession: Electron.Session) {
+  try {
+    const response = await cloudSession.fetch(`${CLOUD_ORIGIN}/api/auth/session`, {
+      cache: "no-store",
+    });
+    const current = (await response.json()) as { user?: { id?: string } };
+    if (response.ok && current.user?.id) {
+      await cloudWindow?.loadURL(CLOUD_URL);
+      return;
+    }
+  } catch {
+    // The sign-in screen below reports identity or connectivity failures.
+  }
+  await beginCloudSignIn();
 }
 
 async function switchToLocal() {
@@ -166,14 +327,13 @@ function createCloudWindow() {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
-  cloudWindow.webContents.on("will-navigate", (event, url) => {
-    if (!allowedCloudNavigation(url)) {
-      event.preventDefault();
-      if (/^https?:/i.test(url)) void shell.openExternal(url);
-    }
+  cloudWindow.webContents.on("will-navigate", handleCloudNavigation);
+  cloudWindow.webContents.on("will-redirect", handleCloudNavigation);
+  cloudWindow.on("closed", () => {
+    cloudAuthAttempt += 1;
+    cloudWindow = null;
   });
-  cloudWindow.on("closed", () => { cloudWindow = null; });
-  void cloudWindow.loadURL(CLOUD_URL);
+  void loadCloudEntry(cloudSession);
   return cloudWindow;
 }
 
@@ -257,6 +417,10 @@ function registerIpc() {
   ipcMain.handle("desktop:open-private", (event) => {
     assertCloudSender(event);
     return switchToLocal().then(() => undefined);
+  });
+  ipcMain.handle("desktop:begin-sign-in", (event) => {
+    assertCloudSender(event);
+    return beginCloudSignIn();
   });
   ipcMain.handle("desktop:open-cloud", (event) => {
     assertLocalSender(event);
