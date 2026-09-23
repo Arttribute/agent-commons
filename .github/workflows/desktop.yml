@@ -32,6 +32,9 @@ permissions:
 
 jobs:
   build:
+    env:
+      MAC_SIGNING_ENABLED: ${{ secrets.MAC_CSC_LINK != '' }}
+      WINDOWS_SIGNING_ENABLED: ${{ secrets.WIN_CSC_LINK != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -53,7 +56,7 @@ jobs:
       - run: pnpm --filter commons-desktop typecheck
       - run: pnpm --filter commons-desktop build
       - name: Package signed macOS release
-        if: runner.os == 'macOS' && secrets.MAC_CSC_LINK != ''
+        if: runner.os == 'macOS' && env.MAC_SIGNING_ENABLED == 'true'
         run: pnpm --filter commons-desktop exec electron-builder --mac --x64 --arm64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: true
@@ -63,18 +66,18 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - name: Package unsigned macOS release
-        if: runner.os == 'macOS' && secrets.MAC_CSC_LINK == ''
+        if: runner.os == 'macOS' && env.MAC_SIGNING_ENABLED != 'true'
         run: pnpm --filter commons-desktop exec electron-builder --mac --x64 --arm64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - name: Package signed Windows release
-        if: runner.os == 'Windows' && secrets.WIN_CSC_LINK != ''
+        if: runner.os == 'Windows' && env.WINDOWS_SIGNING_ENABLED == 'true'
         run: pnpm --filter commons-desktop exec electron-builder --win --publish never
         env:
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
       - name: Package unsigned Windows release
-        if: runner.os == 'Windows' && secrets.WIN_CSC_LINK == ''
+        if: runner.os == 'Windows' && env.WINDOWS_SIGNING_ENABLED != 'true'
         run: pnpm --filter commons-desktop exec electron-builder --win --publish never
       - name: Package Linux
         if: runner.os == 'Linux'
