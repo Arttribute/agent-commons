@@ -1,6 +1,10 @@
 import Link from "next/link";
 
-const releaseRoot = "https://github.com/Arttribute/agent-commons/releases/latest/download";
+// Keep desktop downloads pinned to a desktop release. The repository also
+// publishes CLI and VS Code releases, so GitHub's repository-wide `latest`
+// redirect can point at a release that does not contain desktop installers.
+const desktopReleaseTag = "desktop-v0.1.2";
+const releaseRoot = `https://github.com/Arttribute/agent-commons/releases/download/${desktopReleaseTag}`;
 
 const downloads = [
   { label: "macOS — Apple silicon", detail: "M1, M2, M3, M4, and newer", file: "Agent-Commons-mac-arm64.dmg" },
@@ -32,7 +36,7 @@ export default function DesktopDownloadPage() {
       </section>
       <p className="mt-6 text-xs leading-5 text-muted-foreground">
         Private Local data stays on your computer. Local tools ask before editing files or running commands. Verify the download against the release checksums. See all builds and release notes on the{" "}
-        <a className="underline" href="https://github.com/Arttribute/agent-commons/releases/latest">latest release</a>.
+        <a className="underline" href={`https://github.com/Arttribute/agent-commons/releases/tag/${desktopReleaseTag}`}>desktop release</a>.
       </p>
     </main>
   );
