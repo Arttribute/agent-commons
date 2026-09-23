@@ -149,7 +149,7 @@ export interface LocalToolsConfig {
   agentName?: string;
   /** When true, all confirmation prompts are automatically approved. */
   autoApprove?: boolean;
-  /** Optional UI approval handler for embedded clients. */
+  /** Optional UI approval handler for embedded clients such as desktop and VS Code. */
   confirm?: (message: string, permissionKey: string) => Promise<boolean>;
   /** Abort foreground commands when an embedded session is stopped. */
   signal?: AbortSignal;
@@ -645,6 +645,10 @@ async function toolStartProcess(args: Record<string, any>, cfg: LocalToolsConfig
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
   });
+  if (cfg.signal) {
+    if (cfg.signal.aborted) child.kill('SIGTERM');
+    else cfg.signal.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
+  }
 
   const proc: ManagedProcess = {
     id,
@@ -756,11 +760,13 @@ async function toolListProcesses(_args: Record<string, any>, _cfg: LocalToolsCon
   return JSON.stringify(list);
 }
 
+/** Stop every process owned by this runtime, used when an embedded client exits. */
 export function stopLocalProcesses(): void {
   for (const proc of managedProcesses.values()) {
     if (proc.status === 'running') {
       proc.child.kill('SIGTERM');
       proc.status = 'killed';
+      proc.endedAt = new Date();
     }
   }
 }

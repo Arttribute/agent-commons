@@ -1,0 +1,115 @@
+name: Desktop
+
+on:
+  pull_request:
+    paths:
+      - apps/commons-desktop/**
+      - apps/commons-app/components/desktop/**
+      - apps/commons-app/components/layout/sidebar-account.tsx
+      - apps/commons-app/components/account/AccountMenu.tsx
+      - apps/commons-app/app/download/desktop/**
+      - packages/commons-desktop-contract/**
+      - packages/agc-cli/src/local-tools.ts
+      - pnpm-lock.yaml
+      - .github/workflows/desktop.yml
+  push:
+    branches: [main, staging]
+    tags: ["desktop-v*"]
+    paths:
+      - apps/commons-desktop/**
+      - apps/commons-app/components/desktop/**
+      - apps/commons-app/components/layout/sidebar-account.tsx
+      - apps/commons-app/components/account/AccountMenu.tsx
+      - apps/commons-app/app/download/desktop/**
+      - packages/commons-desktop-contract/**
+      - packages/agc-cli/src/local-tools.ts
+      - pnpm-lock.yaml
+      - .github/workflows/desktop.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @agent-commons/desktop-contract typecheck
+      - run: pnpm --filter @agent-commons/sdk build
+      - run: pnpm --filter @agent-commons/cli typecheck
+      - run: pnpm --filter commons-desktop typecheck
+      - run: pnpm --filter commons-desktop build
+      - name: Package macOS
+        if: runner.os == 'macOS'
+        run: pnpm --filter commons-desktop exec electron-builder --mac --x64 --arm64 --publish never
+        env:
+          # Ship unsigned until the Apple Developer enrollment is active. When
+          # MAC_CSC_LINK is added, electron-builder signs and notarizes without
+          # another workflow change.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CSC_LINK != '' }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        run: pnpm --filter commons-desktop exec electron-builder --win --publish never
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        run: pnpm --filter commons-desktop exec electron-builder --linux --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ runner.os }}
+          path: |
+            apps/commons-desktop/release/*.dmg
+            apps/commons-desktop/release/*.zip
+            apps/commons-desktop/release/*.exe
+            apps/commons-desktop/release/*.AppImage
+            apps/commons-desktop/release/*.yml
+            apps/commons-desktop/release/*.blockmap
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          body: |
+            ## Early desktop release
+
+            These installers are currently unsigned while publisher enrollment
+            is being completed. macOS Gatekeeper and Windows SmartScreen may
+            show a warning. Verify downloads against the SHA256SUMS file before
+            installing.
+
+            Private Local keeps conversations, files, tools, knowledge spaces,
+            workflows, and local-model traffic on the user's computer.
