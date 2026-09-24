@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LocalState } from "@agent-commons/desktop-contract";
 
@@ -11,7 +11,12 @@ export class LocalStorageLayout {
   constructor(userDataDirectory: string) {
     this.root = join(userDataDirectory, "private-local", "workspace");
     mkdirSync(this.root, { recursive: true, mode: 0o700 });
-    for (const section of SECTIONS) mkdirSync(join(this.root, section), { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") chmodSync(this.root, 0o700);
+    for (const section of SECTIONS) {
+      const directory = join(this.root, section);
+      mkdirSync(directory, { recursive: true, mode: 0o700 });
+      if (process.platform !== "win32") chmodSync(directory, 0o700);
+    }
     this.write("README.md", [
       "# Agent Commons Local workspace",
       "",

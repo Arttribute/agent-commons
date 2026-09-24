@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalStorageLayout } from "./local-storage-layout.ts";
@@ -25,5 +25,19 @@ test("local record cleanup preserves files people and agents placed in the works
     assert.equal(readFileSync(layout.path("skills", "personal.md"), "utf8"), "# Personal notes\n");
     assert.equal(readFileSync(layout.path("knowledge", "manual.json"), "utf8"), '{"mine":true}\n');
     assert.equal(readFileSync(layout.path("artifacts", "export.json"), "utf8"), '{"mine":true}\n');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("existing Local workspace directories are private", { skip: process.platform === "win32" }, () => {
+  const directory = mkdtempSync(join(tmpdir(), "commons-layout-permissions-"));
+  try {
+    const root = join(directory, "private-local", "workspace");
+    const apps = join(root, "apps");
+    mkdirSync(apps, { recursive: true });
+    chmodSync(root, 0o755);
+    chmodSync(apps, 0o755);
+    new LocalStorageLayout(directory);
+    assert.equal(statSync(root).mode & 0o777, 0o700);
+    assert.equal(statSync(apps).mode & 0o777, 0o700);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
