@@ -43,7 +43,7 @@ type PendingApproval = {
   timeout: NodeJS.Timeout;
 };
 
-const LOCAL_TOOLS = [
+export const LOCAL_TOOLS = [
   functionTool("cli_list_directory", "List files and folders inside the selected workspace.", {
     path: { type: "string", description: "Workspace-relative directory, default ." },
   }),

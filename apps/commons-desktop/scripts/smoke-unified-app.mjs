@@ -58,14 +58,16 @@ try {
         if (result?.local && result.bridge && result.cloudBridge && result.agents) {
           const provider = await evaluate(page.webSocketDebuggerUrl, `(async () => {
             const api = window.agentCommonsLocal.apiRequest;
-            const [knowledge, library, skills] = await Promise.all([
+            const [knowledge, library, skills, tools] = await Promise.all([
               api({ path: "/api/knowledge", method: "GET" }),
               api({ path: "/api/library", method: "GET" }),
               api({ path: "/api/skills", method: "GET" }),
+              api({ path: "/api/tools/catalog", method: "GET" }),
             ]);
-            return { knowledge: knowledge.status, library: library.status, skills: skills.status };
+            return { knowledge: knowledge.status, library: library.status, skills: skills.status,
+              tools: tools.status, commandTool: tools.body?.items?.some((item) => item.name === "cli_run_command") };
           })()`);
-          if (provider.knowledge !== 200 || provider.library !== 200 || provider.skills !== 200) {
+          if (provider.knowledge !== 200 || provider.library !== 200 || provider.skills !== 200 || provider.tools !== 200 || !provider.commandTool) {
             throw new Error(`Local data providers failed: ${JSON.stringify(provider)}`);
           }
           const identities = await evaluate(page.webSocketDebuggerUrl, `(async () => {

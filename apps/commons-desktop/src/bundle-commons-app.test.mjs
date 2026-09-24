@@ -22,3 +22,21 @@ test("packaged Commons links resolve after the Next staging tree is removed", { 
     assert.equal(readFileSync(join(target, "apps", "commons-app", "node_modules", "next", "package.json"), "utf8"), '{"name":"next"}');
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test("external pnpm package links are copied into the desktop bundle", { skip: process.platform === "win32" }, () => {
+  const directory = mkdtempSync(join(tmpdir(), "commons-bundle-external-"));
+  const source = join(directory, "standalone");
+  const target = join(directory, "package");
+  const external = join(directory, "pnpm-store", "next");
+  try {
+    mkdirSync(external, { recursive: true });
+    mkdirSync(join(source, "apps", "commons-app", "node_modules"), { recursive: true });
+    writeFileSync(join(external, "package.json"), '{"name":"next"}');
+    symlinkSync(external, join(source, "apps", "commons-app", "node_modules", "next"), "dir");
+    cpSync(source, target, { recursive: true });
+    relocateStandaloneLinks(source, target);
+    rmSync(source, { recursive: true, force: true });
+    rmSync(join(directory, "pnpm-store"), { recursive: true, force: true });
+    assert.equal(readFileSync(join(target, "apps", "commons-app", "node_modules", "next", "package.json"), "utf8"), '{"name":"next"}');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});

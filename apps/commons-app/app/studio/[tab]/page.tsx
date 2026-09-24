@@ -21,6 +21,7 @@ import { CreateButton, PageHeader } from "@/components/layout/page-header";
 import { useRouter } from "next/navigation";
 import { useAgents } from "@/hooks/use-agents";
 import { normalizePrincipalId } from "@/lib/principal-id";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import {
   CREATE_UI_PLUGIN_HASH,
   openUiPluginCreator,
@@ -32,6 +33,8 @@ const StudioPage: NextPage = () => {
   const pathname = usePathname();
   const router = useRouter();
   const { authState } = useAuth();
+  const { mode } = useWorkspaceMode();
+  const local = mode === "private-local";
   const userAddress = normalizePrincipalId(authState.walletAddress);
 
   const activeTab =
@@ -174,7 +177,9 @@ const StudioPage: NextPage = () => {
       case "tools":
         return {
           title: "Tools",
-          description: "Create and manage your tools and API integrations.",
+          description: local
+            ? "Review the tools available to agents on this computer."
+            : "Create and manage your tools and API integrations.",
         };
       case "tasks":
         return {
@@ -206,7 +211,7 @@ const StudioPage: NextPage = () => {
           description: "",
         };
     }
-  }, [activeTab]);
+  }, [activeTab, local]);
 
   const handleCreateClick = () => {
     if (activeTab === "workflows") {
@@ -228,11 +233,13 @@ const StudioPage: NextPage = () => {
     <div className="relative flex h-full min-w-0 flex-col bg-page">
       <PageHeader title={pageCopy.title} description={pageCopy.description}>
         <CommonsAppsBar />
-        <CreateButton
-          label={createLabel}
-          onClick={handleCreateClick}
-          href={activeTab === "apps" ? CREATE_UI_PLUGIN_HASH : undefined}
-        />
+        {!(activeTab === "tools" && local) && (
+          <CreateButton
+            label={createLabel}
+            onClick={handleCreateClick}
+            href={activeTab === "apps" ? CREATE_UI_PLUGIN_HASH : undefined}
+          />
+        )}
       </PageHeader>
 
       {isCustomize && <CustomizeTabs />}

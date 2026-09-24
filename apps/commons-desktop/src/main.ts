@@ -36,6 +36,7 @@ import { handleLocalTasksApi } from "./local-tasks-api";
 import { handleLocalSessionsApi } from "./local-sessions-api";
 import { handleLocalAgentsApi } from "./local-agents-api";
 import { handleLocalWorkflowsApi } from "./local-workflows-api";
+import { handleLocalToolsApi } from "./local-tools-api";
 
 const CLOUD_URL = process.env.COMMONS_DESKTOP_CLOUD_URL ?? "https://www.agentcommons.io";
 const CLOUD_ORIGIN = new URL(CLOUD_URL).origin;
@@ -575,6 +576,9 @@ function registerIpc() {
     }
     if (url.pathname === "/api/workflows" || url.pathname.startsWith("/api/workflows/")) {
       return handleLocalWorkflowsApi(runtime, url, method, body);
+    }
+    if (url.pathname === "/api/tools/catalog") {
+      return handleLocalToolsApi(runtime, url, method);
     }
     return { status: 404, body: { message: "This Local workspace operation is not available yet." } };
   });

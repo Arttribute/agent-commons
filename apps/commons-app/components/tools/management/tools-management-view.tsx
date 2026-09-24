@@ -56,6 +56,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 interface ToolsManagementViewProps {
   userAddress: string;
@@ -71,7 +73,7 @@ const FILTERS = [
 
 type FilterValue = (typeof FILTERS)[number]["value"];
 
-function filterOf(item: ToolCatalogItem): FilterValue | null {
+function filterOf(item: ToolCatalogItem, local: boolean): FilterValue | null {
   switch (item.category) {
     case "google_workspace":
     case "oauth":
@@ -80,6 +82,8 @@ function filterOf(item: ToolCatalogItem): FilterValue | null {
       return "mcp";
     case "custom":
       return "custom";
+    case "system":
+      return local ? "custom" : null;
     default:
       // Internal platform (system) tools only surface in the workflow editor;
       // agents & workflows live on their own pages.
@@ -398,7 +402,7 @@ function ToolDetailsDialog({
             ) : (
               <span />
             )}
-            {!isOauth && (
+            {!isOauth && item.sourceLabel !== "Private Local" && (
               <Button
                 size="sm"
                 variant={connected ? "outline" : "default"}
@@ -418,6 +422,8 @@ function ToolDetailsDialog({
 
 export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
   const router = useRouter();
+  const { mode } = useWorkspaceMode();
+  const local = mode === "private-local";
   const { toast } = useToast();
   const [items, setItems] = useState<ToolCatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -436,7 +442,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
   const loadCatalog = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/tools/catalog", { cache: "no-store" });
+      const response = await desktopApiFetch("/api/tools/catalog", { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to load catalog");
       setItems(data.items ?? []);
@@ -453,7 +459,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
 
   useEffect(() => {
     if (userAddress) loadCatalog();
-  }, [userAddress]);
+  }, [userAddress, local]);
 
   const grouped = useMemo(() => {
     const groups: Record<Exclude<FilterValue, "all">, ToolCatalogItem[]> = {
@@ -462,13 +468,13 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
       custom: [],
     };
     for (const item of items) {
-      const group = filterOf(item);
+      const group = filterOf(item, local);
       if (!group || group === "all") continue;
       if (!itemMatches(item, searchQuery)) continue;
       groups[group].push(item);
     }
     return groups;
-  }, [items, searchQuery]);
+  }, [items, searchQuery, local]);
 
   const visibleSections = (
     filter === "all"
@@ -577,7 +583,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
           <TabsList className="h-9">
             {FILTERS.map((entry) => (
               <TabsTrigger key={entry.value} value={entry.value} className="text-xs">
-                {entry.label}
+                {local && entry.value === "custom" ? "Local" : entry.label}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -600,11 +606,11 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
         <div className="rounded-xl border border-dashed border-border py-14 text-center">
           <p className="text-sm font-medium">No tools found</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {filter === "custom" && !searchQuery
+            {filter === "custom" && !searchQuery && !local
               ? "Create a custom tool to see it here."
               : "Try a broader search or a different filter."}
           </p>
-          {filter === "custom" && !searchQuery && (
+          {filter === "custom" && !searchQuery && !local && (
             <Button
               variant="outline"
               size="sm"
@@ -622,7 +628,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
             <section key={section}>
               {(filter === "all" || visibleSections.length > 1) && (
                 <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {sectionTitles[section]}
+                  {local && section === "custom" ? "Local tools" : sectionTitles[section]}
                 </p>
               )}
               <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
@@ -642,7 +648,7 @@ export function ToolsManagementView({ userAddress }: ToolsManagementViewProps) {
           ))}
 
           {/* Connected MCP servers are managed inline on the MCP view */}
-          {filter === "mcp" && (
+          {filter === "mcp" && !local && (
             <section className="border-t border-border/70 pt-6">
               <McpServersView ownerId={userAddress} ownerType="user" />
             </section>
