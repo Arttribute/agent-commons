@@ -100,6 +100,13 @@ jobs:
           if [ "$desktop_arch" = "arm64" ]; then desktop_dir="mac-arm64"; fi
           echo "Testing the $desktop_dir package on $desktop_arch"
           COMMONS_DESKTOP_SMOKE_EXECUTABLE="$PWD/apps/commons-desktop/release/$desktop_dir/Agent Commons.app/Contents/MacOS/Agent Commons" pnpm --filter commons-desktop smoke
+      - name: Smoke test packaged Windows desktop
+        if: runner.os == 'Windows'
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          $env:COMMONS_DESKTOP_SMOKE_EXECUTABLE = Join-Path (Get-Location).Path 'apps/commons-desktop/release/win-unpacked/Agent Commons.exe'
+          pnpm --filter commons-desktop smoke
       - uses: actions/upload-artifact@v4
         if: always()
         with:
