@@ -58,8 +58,6 @@ const capabilities = [
 ] as const;
 
 let desktopWindow: BrowserWindow | null = null;
-let cloudView: WebContentsView | null = null;
-let localView: WebContentsView | null = null;
 let visibleView: WebContentsView | null = null;
 let unifiedView: WebContentsView | null = null;
 let commonsServer: CommonsAppServer | null = null;
@@ -169,16 +167,16 @@ function installEditableContextMenu(webContents: Electron.WebContents) {
 }
 
 async function showCloudAuthStatus(code: string, error?: string) {
-  if (!cloudView || cloudView.webContents.isDestroyed()) return;
+  if (!unifiedView || unifiedView.webContents.isDestroyed()) return;
   const url = new URL("/desktop/auth", commonsServer?.origin ?? CLOUD_ORIGIN);
   if (code) url.searchParams.set("code", code);
   if (error) url.searchParams.set("error", error);
-  await cloudView.webContents.loadURL(url.toString());
+  await unifiedView.webContents.loadURL(url.toString());
 }
 
 async function beginCloudSignIn() {
   const attempt = ++cloudAuthAttempt;
-  if (!cloudView || cloudView.webContents.isDestroyed()) return;
+  if (!unifiedView || unifiedView.webContents.isDestroyed()) return;
   cloudAuthController?.abort();
   const controller = new AbortController();
   cloudAuthController = controller;
@@ -220,10 +218,10 @@ async function beginCloudSignIn() {
       });
       const token = await responseJson<DeviceTokenResponse>(tokenResponse);
       if (tokenResponse.ok && token.access_token) {
-        if (!cloudView || cloudView.webContents.isDestroyed() || attempt !== cloudAuthAttempt) return;
+        if (!unifiedView || unifiedView.webContents.isDestroyed() || attempt !== cloudAuthAttempt) return;
         const complete = new URL("/desktop/auth/complete", commonsServer?.origin ?? CLOUD_ORIGIN);
         complete.hash = new URLSearchParams({ token: token.access_token }).toString();
-        await cloudView.webContents.loadURL(complete.toString());
+        await unifiedView.webContents.loadURL(complete.toString());
         return;
       }
       if (token.error === "authorization_pending") continue;
@@ -248,7 +246,7 @@ async function loadCloudEntry(cloudSession: Electron.Session, path?: string) {
     });
     const current = (await response.json()) as { user?: { id?: string } };
     if (response.ok && current.user?.id) {
-      await cloudView?.webContents.loadURL(path ? new URL(path, appOrigin).toString() : appOrigin);
+      await unifiedView?.webContents.loadURL(path ? new URL(path, appOrigin).toString() : appOrigin);
       void syncCloudAgentsToLocal();
       return;
     }
@@ -414,10 +412,7 @@ function ensureDesktopWindow() {
   desktopWindow.on("resize", sizeViews);
   desktopWindow.on("closed", () => {
     runtime.setTarget(undefined);
-    cloudView?.webContents.close();
-    if (localView !== cloudView) localView?.webContents.close();
-    cloudView = null;
-    localView = null;
+    unifiedView?.webContents.close();
     unifiedView = null;
     visibleView = null;
     desktopWindow = null;
@@ -428,8 +423,7 @@ function ensureDesktopWindow() {
 function sizeViews() {
   if (!desktopWindow || desktopWindow.isDestroyed()) return;
   const { width, height } = desktopWindow.getContentBounds();
-  cloudView?.setBounds({ x: 0, y: 0, width, height });
-  localView?.setBounds({ x: 0, y: 0, width, height });
+  unifiedView?.setBounds({ x: 0, y: 0, width, height });
 }
 
 async function createUnifiedView(path?: string) {
@@ -477,8 +471,6 @@ async function createUnifiedView(path?: string) {
       spellcheck: true,
     },
   });
-  cloudView = unifiedView;
-  localView = unifiedView;
   runtime.setTarget(unifiedView.webContents);
   installEditableContextMenu(unifiedView.webContents);
   unifiedView.webContents.setWindowOpenHandler(({ url }) => {
@@ -515,7 +507,7 @@ function showView(view: WebContentsView) {
 }
 
 function assertLocalOrigin(event: IpcMainInvokeEvent) {
-  if (!localView || event.sender !== localView.webContents) throw new Error("Untrusted desktop caller");
+  if (!unifiedView || event.sender !== unifiedView.webContents) throw new Error("Untrusted desktop caller");
   if (new URL(event.senderFrame?.url ?? event.sender.getURL()).origin !== commonsServer?.origin) {
     throw new Error("Untrusted desktop origin");
   }
@@ -527,7 +519,7 @@ function assertLocalSender(event: IpcMainInvokeEvent) {
 }
 
 function assertCloudOrigin(event: IpcMainInvokeEvent) {
-  if (!cloudView || event.sender !== cloudView.webContents) throw new Error("Untrusted cloud caller");
+  if (!unifiedView || event.sender !== unifiedView.webContents) throw new Error("Untrusted cloud caller");
   const origin = new URL(event.senderFrame?.url ?? event.sender.getURL()).origin;
   if (origin !== commonsServer?.origin) throw new Error("Untrusted cloud origin");
 }
@@ -595,8 +587,9 @@ function registerIpc() {
   });
   const syncPreferences = (incoming: WorkspacePreferences, source: "cloud" | "private-local") => {
     const preferences = runtime.syncPreferences(incoming, source);
-    if (cloudView && !cloudView.webContents.isDestroyed()) cloudView.webContents.send("desktop:preferences-changed", cloudPreferences());
-    if (localView && !localView.webContents.isDestroyed()) localView.webContents.send("desktop:preferences-changed", preferences);
+    if (unifiedView && !unifiedView.webContents.isDestroyed()) {
+      unifiedView.webContents.send("desktop:preferences-changed", activeMode === "cloud" ? cloudPreferences() : preferences);
+    }
     return source === "cloud" ? cloudPreferences() : preferences;
   };
   ipcMain.handle("desktop:get-info", (event, mode: "cloud" | "private-local") => {
