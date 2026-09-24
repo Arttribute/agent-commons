@@ -15,4 +15,7 @@ test("missing or invalid Cloud settings cannot enable command access", () => {
     readFiles: true, writeFiles: false, runCommands: false,
   });
   assert.throws(() => assertCloudToolAllowed("unknown", { ...DEFAULT_CLOUD_ACCESS, runCommands: true }), /Unsupported/);
+  const restricted = { readFiles: false, writeFiles: false, runCommands: false };
+  assert.throws(() => assertCloudToolAllowed("read_file", restricted), /file reading is off/);
+  assert.throws(() => assertCloudToolAllowed("write_file", restricted), /file editing is off/);
 });

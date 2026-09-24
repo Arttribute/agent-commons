@@ -677,9 +677,22 @@ function registerIpc() {
     assertCloudSender(event);
     return cloudAccess;
   });
-  ipcMain.handle("cloud:update-access", (event, access: CloudAccess) => {
+  ipcMain.handle("cloud:update-access", async (event, access: CloudAccess) => {
     assertCloudSender(event);
-    cloudAccess = normalizeCloudAccess(access);
+    const next = normalizeCloudAccess(access);
+    const enabled = (Object.keys(next) as Array<keyof CloudAccess>).filter((key) => next[key] && !cloudAccess[key]);
+    if (enabled.length) {
+      const choice = await dialog.showMessageBox(desktopWindow!, {
+        type: "warning", title: "Allow Cloud access to this computer?",
+        message: enabled.includes("runCommands") ? "Enable full computer commands in Cloud mode?" : "Enable more Cloud file access?",
+        detail: enabled.includes("runCommands")
+          ? "Approved commands can reach any file and the network using your computer account, including Private Local data. Each command still asks for approval."
+          : "The selected folder's permitted file contents can be sent to Commons Cloud by agents. Private Local data remains outside the selected folder.",
+        buttons: ["Cancel", "Enable access"], defaultId: 0, cancelId: 0, noLink: true,
+      });
+      if (choice.response !== 1 || activeMode !== "cloud") return cloudAccess;
+    }
+    cloudAccess = next;
     for (const controller of cloudToolControllers) controller.abort();
     saveCloudAccess();
     return cloudAccess;

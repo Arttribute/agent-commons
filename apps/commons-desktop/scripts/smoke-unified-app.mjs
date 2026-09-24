@@ -108,8 +108,6 @@ try {
           if (restricted?.readFiles !== false || restricted?.writeFiles !== false || restricted?.runCommands !== false) {
             throw new Error(`Could not restrict Cloud desktop access: ${JSON.stringify(restricted)}`);
           }
-          await evaluate(cloudPage.webSocketDebuggerUrl,
-            "window.agentCommonsDesktop.updateAccess({readFiles:true,writeFiles:true,runCommands:false})");
           await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsDesktop.openPrivateWorkspace('/studio/agents')");
           const localAgain = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getInfo()");
           if (localAgain?.mode !== "private-local") throw new Error("Could not return to the Local workspace in the same renderer");
