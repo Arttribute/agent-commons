@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 export function relocateStandaloneLinks(sourceRoot, targetRoot) {
   const canonicalSourceRoot = realpathSync(sourceRoot);
   const externalCopies = new Map();
+  const copiedPnpmWrappers = new Set();
   const inside = (root, path) => {
     const subpath = relative(root, path);
     return subpath !== ".." && !subpath.startsWith(`..${sep}`) && !isAbsolute(subpath);
@@ -24,8 +25,26 @@ export function relocateStandaloneLinks(sourceRoot, targetRoot) {
         const canonicalSource = realpathSync(source);
         const kind = statSync(canonicalSource).isDirectory() ? "dir" : "file";
         if (!inside(canonicalSourceRoot, canonicalSource)) {
-          // Windows Next builds sometimes link directly to pnpm's workspace
-          // store instead of to the standalone staging tree.
+          // Windows Next builds sometimes link into the workspace pnpm store.
+          // Keep the package's node_modules wrapper: Next resolves sibling
+          // dependencies such as styled-jsx from that wrapper at runtime.
+          const marker = `${sep}node_modules${sep}.pnpm${sep}`;
+          const markerAt = canonicalSource.indexOf(marker);
+          if (markerAt >= 0) {
+            const pnpmRoot = canonicalSource.slice(0, markerAt + marker.length);
+            const packageKey = canonicalSource.slice(markerAt + marker.length).split(sep)[0];
+            const wrapperSource = join(pnpmRoot, packageKey, "node_modules");
+            const wrapperTarget = join(targetRoot, "node_modules", ".pnpm", packageKey, "node_modules");
+            const destination = join(wrapperTarget, relative(wrapperSource, canonicalSource));
+            if (!copiedPnpmWrappers.has(wrapperSource)) {
+              copiedPnpmWrappers.add(wrapperSource);
+              cpSync(wrapperSource, wrapperTarget, { recursive: true, force: true, verbatimSymlinks: true });
+              walk(wrapperTarget);
+            }
+            unlinkSync(path);
+            symlinkSync(relative(dirname(path), destination), path, kind);
+            continue;
+          }
           const previous = externalCopies.get(canonicalSource);
           unlinkSync(path);
           if (previous) {

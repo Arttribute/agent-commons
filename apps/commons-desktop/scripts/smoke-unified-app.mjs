@@ -59,7 +59,7 @@ try {
       const page = pages.find((item) => item.type === "page" && item.url.startsWith("http://localhost:"));
       if (page) {
         const result = await evaluate(page.webSocketDebuggerUrl,
-          "({path:location.pathname,local:document.cookie.includes('commons-desktop-mode=private-local'),bridge:!!window.agentCommonsLocal,cloudBridge:!!window.agentCommonsDesktop,agents:document.body.innerText.includes('Commons Copilot')})");
+          "({path:location.pathname,local:document.cookie.includes('commons-desktop-mode=private-local'),bridge:!!window.agentCommonsLocal,cloudBridge:!!window.agentCommonsDesktop,agents:document.body.textContent?.includes('Commons Copilot'),body:document.body.innerText.slice(0,600),text:document.body.textContent?.slice(0,600),readyState:document.readyState})");
         lastResult = result;
         if (result?.local && result.bridge && result.cloudBridge && result.agents) {
           const provider = await evaluate(page.webSocketDebuggerUrl, `(async () => {
