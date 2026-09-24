@@ -321,7 +321,7 @@ async function syncCloudAgentsToLocal() {
     })));
     if (!controller.signal.aborted) runtime.syncCloudAgents(agents);
   } catch {
-    // Local mode remains usable from its encrypted local state when offline.
+    // Local mode remains usable from its on-disk state when offline.
   } finally {
     if (cloudSyncController === controller) cloudSyncController = null;
   }

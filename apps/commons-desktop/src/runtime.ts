@@ -762,7 +762,7 @@ export class PrivateLocalRuntime {
       "For ordinary conversation, answer naturally. Never output JSON describing a tool call or invent a function name. Use only the provided structured tools when an action is needed. If no tool applies, respond in plain language.",
       AUTONOMOUS_EXECUTION_CONTRACT,
       localManifest,
-      `Agent Commons Local data is organized at ${this.layout.root}. Use local_list_data and local_read_data to inspect agents, conversations, knowledge, artifacts, apps, skills, tasks, workflows, and uploads. The encrypted state index is outside this workspace and must not be edited directly.`,
+      `Agent Commons Local data is organized at ${this.layout.root}. Use local_list_data and local_read_data to inspect agents, conversations, knowledge, artifacts, apps, skills, tasks, workflows, and uploads. The private state index is outside this workspace and must not be edited directly.`,
       skillsBlock,
       knowledge.length
         ? `Local Knowledge Space excerpts:\n${knowledge.map((entry) => `\n[${entry.space}] ${entry.path}\n${entry.excerpt}`).join("\n")}`
