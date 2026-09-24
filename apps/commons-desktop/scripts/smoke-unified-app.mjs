@@ -68,6 +68,20 @@ try {
           if (provider.knowledge !== 200 || provider.library !== 200 || provider.skills !== 200) {
             throw new Error(`Local data providers failed: ${JSON.stringify(provider)}`);
           }
+          const identities = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const bridge = window.agentCommonsLocal;
+            const agent = (await bridge.getState()).agents.find((item) => item.name === "Commons Copilot");
+            if (!agent) throw new Error("Commons Copilot is missing from Local agents");
+            const copilot = (await bridge.sendMessage({ agentId: agent.id, prompt: "What is your name?" })).response;
+            const state = await bridge.saveAgent({ name: "Research Agent", instructions: "Research carefully.", model: "" });
+            const researcher = state.agents.find((item) => item.name === "Research Agent");
+            if (!researcher) throw new Error("Could not create a Local agent");
+            const research = (await bridge.sendMessage({ agentId: researcher.id, prompt: "What is your name?" })).response;
+            return { copilot, research };
+          })()`);
+          if (identities?.copilot !== "My name is Commons Copilot." || identities?.research !== "My name is Research Agent.") {
+            throw new Error(`Local agent identity failed: ${JSON.stringify(identities)}`);
+          }
           console.log(`Unified Commons desktop loaded ${result.path} with Local agent and both mode bridges.`);
           ready = true;
           break;
