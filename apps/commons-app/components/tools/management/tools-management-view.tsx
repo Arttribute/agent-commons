@@ -85,8 +85,7 @@ function filterOf(item: ToolCatalogItem, local: boolean): FilterValue | null {
     case "system":
       return local ? "custom" : null;
     default:
-      // Internal platform (system) tools only surface in the workflow editor;
-      // agents & workflows live on their own pages.
+      // Agents and workflows live on their own pages.
       return null;
   }
 }

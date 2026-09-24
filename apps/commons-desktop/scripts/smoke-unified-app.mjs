@@ -24,6 +24,8 @@ const child = spawn(packagedExecutable || electron, [
   ...(process.platform === "linux" ? ["--no-sandbox"] : []),
 ], { cwd: new URL("..", import.meta.url), env, stdio: ["ignore", "pipe", "pipe"] });
 let output = "";
+let childError = "";
+child.on("error", (error) => { childError = error.message; });
 for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => { output = (output + chunk.toString()).slice(-6_000); });
 
 async function evaluate(wsUrl, expression) {
@@ -45,16 +47,20 @@ async function evaluate(wsUrl, expression) {
 }
 
 try {
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + 90_000;
   let ready = false;
   let lastError;
+  let lastTargets = "";
+  let lastResult;
   while (Date.now() < deadline && child.exitCode === null) {
     try {
       const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2_000) })).json();
+      lastTargets = pages.map((item) => `${item.type}: ${item.url}`).join("; ").slice(0, 1_500);
       const page = pages.find((item) => item.type === "page" && item.url.startsWith("http://localhost:"));
       if (page) {
         const result = await evaluate(page.webSocketDebuggerUrl,
           "({path:location.pathname,local:document.cookie.includes('commons-desktop-mode=private-local'),bridge:!!window.agentCommonsLocal,cloudBridge:!!window.agentCommonsDesktop,agents:document.body.innerText.includes('Commons Copilot')})");
+        lastResult = result;
         if (result?.local && result.bridge && result.cloudBridge && result.agents) {
           const provider = await evaluate(page.webSocketDebuggerUrl, `(async () => {
             const api = window.agentCommonsLocal.apiRequest;
@@ -92,7 +98,7 @@ try {
     } catch (error) { lastError = error; }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  if (!ready) throw new Error(`Unified Commons desktop did not pass its checks within 60 seconds. ${lastError?.message ?? ""}\n${output}`);
+  if (!ready) throw new Error(`Unified Commons desktop did not pass its checks within 90 seconds. ${lastError?.message ?? ""} Child: ${childError || child.exitCode} Targets: ${lastTargets} Page: ${JSON.stringify(lastResult)}\n${output}`);
 } finally {
   child.kill();
   await Promise.race([

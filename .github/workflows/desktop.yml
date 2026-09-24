@@ -95,7 +95,9 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           desktop_arch="$(node -p 'process.arch')"
-          COMMONS_DESKTOP_SMOKE_EXECUTABLE="$PWD/apps/commons-desktop/release/mac-$desktop_arch/Agent Commons.app/Contents/MacOS/Agent Commons" pnpm --filter commons-desktop smoke
+          desktop_dir="mac"
+          if [ "$desktop_arch" = "arm64" ]; then desktop_dir="mac-arm64"; fi
+          COMMONS_DESKTOP_SMOKE_EXECUTABLE="$PWD/apps/commons-desktop/release/$desktop_dir/Agent Commons.app/Contents/MacOS/Agent Commons" pnpm --filter commons-desktop smoke
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ runner.os }}

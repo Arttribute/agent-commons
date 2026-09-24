@@ -59,7 +59,7 @@ export async function startCommonsAppServer(
   const origin = `http://localhost:${port}`;
   const child: ChildProcess = spawn(electronExecutable, [entry], {
     cwd: appDirectory,
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
@@ -74,7 +74,13 @@ export async function startCommonsAppServer(
       NEXT_PUBLIC_NEST_API_BASE_URL: process.env.NEXT_PUBLIC_NEST_API_BASE_URL ?? "https://api.agentcommons.io",
     },
   });
-  const deadline = Date.now() + 15_000;
+  let serverOutput = "";
+  let spawnError = "";
+  child.on("error", (error) => { spawnError = error.message; });
+  for (const stream of [child.stdout, child.stderr]) stream?.on("data", (chunk) => {
+    serverOutput = (serverOutput + chunk.toString()).slice(-2_000);
+  });
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline && child.exitCode === null) {
     try {
       const response = await fetch(`${origin}/desktop/auth`, { signal: AbortSignal.timeout(1_000) });
@@ -88,5 +94,5 @@ export async function startCommonsAppServer(
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
   if (child.exitCode === null) child.kill();
-  throw new Error("The bundled Commons app could not start.");
+  throw new Error(`The bundled Commons app could not start.${spawnError ? ` ${spawnError}` : ""}${serverOutput ? `\n${serverOutput}` : ""}`);
 }

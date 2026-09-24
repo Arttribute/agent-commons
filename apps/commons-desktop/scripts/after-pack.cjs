@@ -3,7 +3,7 @@ const { cpSync, existsSync } = require("node:fs");
 const path = require("node:path");
 
 /**
- * Give unsigned macOS builds a complete ad-hoc seal.
+ * Restore the bundled Next dependencies, then seal unsigned macOS builds.
  *
  * Modern Electron binaries contain linker signatures. Shipping the bundle
  * without sealing its resources makes Gatekeeper report the app as damaged.
