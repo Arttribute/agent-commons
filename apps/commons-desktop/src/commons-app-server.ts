@@ -79,6 +79,7 @@ export async function startCommonsAppServer(
   child.on("error", (error) => { spawnError = error.message; });
   for (const stream of [child.stdout, child.stderr]) stream?.on("data", (chunk) => {
     serverOutput = (serverOutput + chunk.toString()).slice(-2_000);
+    if (process.env.COMMONS_DESKTOP_SMOKE_DEBUG === "1") process.stderr.write(`[commons-app] ${chunk.toString()}`);
   });
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline && child.exitCode === null) {

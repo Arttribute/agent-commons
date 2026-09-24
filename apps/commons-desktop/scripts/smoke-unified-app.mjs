@@ -14,7 +14,7 @@ const port = await new Promise((resolve, reject) => {
     server.close(() => resolve(address.port));
   });
 });
-const env = { ...process.env, COMMONS_DESKTOP_START_MODE: "private-local" };
+const env = { ...process.env, COMMONS_DESKTOP_START_MODE: "private-local", COMMONS_DESKTOP_SMOKE_DEBUG: "1" };
 delete env.ELECTRON_RUN_AS_NODE;
 const packagedExecutable = process.env.COMMONS_DESKTOP_SMOKE_EXECUTABLE;
 const child = spawn(packagedExecutable || electron, [
@@ -52,12 +52,14 @@ try {
   let lastError;
   let lastTargets = "";
   let lastResult;
+  let lastPage;
   while (Date.now() < deadline && child.exitCode === null) {
     try {
       const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2_000) })).json();
       lastTargets = pages.map((item) => `${item.type}: ${item.url}`).join("; ").slice(0, 1_500);
       const page = pages.find((item) => item.type === "page" && item.url.startsWith("http://localhost:"));
       if (page) {
+        lastPage = page;
         const result = await evaluate(page.webSocketDebuggerUrl,
           "({path:location.pathname,local:document.cookie.includes('commons-desktop-mode=private-local'),bridge:!!window.agentCommonsLocal,cloudBridge:!!window.agentCommonsDesktop,agents:document.body.textContent?.includes('Commons Copilot'),body:document.body.innerText.slice(0,600),text:document.body.textContent?.slice(0,600),readyState:document.readyState})");
         lastResult = result;
@@ -98,7 +100,14 @@ try {
     } catch (error) { lastError = error; }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  if (!ready) throw new Error(`Unified Commons desktop did not pass its checks within 90 seconds. ${lastError?.message ?? ""} Child: ${childError || child.exitCode} Targets: ${lastTargets} Page: ${JSON.stringify(lastResult)}\n${output}`);
+  let diagnostics;
+  if (!ready && lastPage) {
+    try {
+      diagnostics = await evaluate(lastPage.webSocketDebuggerUrl,
+        "({htmlLength:document.documentElement.outerHTML.length,htmlEnd:document.documentElement.outerHTML.slice(-1200),scripts:[...document.scripts].filter(s=>s.src).slice(0,12).map(s=>s.src),resources:performance.getEntriesByType('resource').slice(-20).map(r=>({name:r.name,duration:r.duration,size:r.transferSize})),errors:document.querySelectorAll('nextjs-portal').length})");
+    } catch (error) { diagnostics = error.message; }
+  }
+  if (!ready) throw new Error(`Unified Commons desktop did not pass its checks within 90 seconds. ${lastError?.message ?? ""} Child: ${childError || child.exitCode} Targets: ${lastTargets} Page: ${JSON.stringify(lastResult)} Diagnostics: ${JSON.stringify(diagnostics)}\n${output}`);
 } finally {
   child.kill();
   await Promise.race([

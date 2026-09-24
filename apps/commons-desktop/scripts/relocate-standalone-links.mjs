@@ -1,4 +1,4 @@
-import { cpSync, existsSync, lstatSync, readlinkSync, readdirSync, realpathSync, statSync, symlinkSync, unlinkSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, readlinkSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /** Rewrite Next's absolute staging links to links within the packaged copy. */
@@ -38,7 +38,10 @@ export function relocateStandaloneLinks(sourceRoot, targetRoot) {
             const destination = join(wrapperTarget, relative(wrapperSource, canonicalSource));
             if (!copiedPnpmWrappers.has(wrapperSource)) {
               copiedPnpmWrappers.add(wrapperSource);
-              cpSync(wrapperSource, wrapperTarget, { recursive: true, force: true, verbatimSymlinks: true });
+              // Replace Next's traced wrapper before copying. Windows cpSync
+              // otherwise descends through junctions already in the target.
+              rmSync(wrapperTarget, { recursive: true, force: true });
+              cpSync(wrapperSource, wrapperTarget, { recursive: true, verbatimSymlinks: true });
               walk(wrapperTarget);
             }
             unlinkSync(path);
