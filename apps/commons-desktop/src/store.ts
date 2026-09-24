@@ -50,14 +50,20 @@ export class LocalStore {
     if (existsSync(this.path)) {
       const bytes = readFileSync(this.path);
       let plaintext: string;
-      try {
-        plaintext = safeStorage.isEncryptionAvailable()
-          ? safeStorage.decryptString(bytes)
-          : bytes.toString("utf8");
-      } catch {
-        // Early installations could store plain JSON when system encryption
-        // was unavailable. Accept that format without overwriting encrypted data.
+      // Plain JSON has always been a supported fallback. Recognize it first
+      // so macOS does not consult Keychain just to open a permission-limited
+      // Local file. Packaged, ad-hoc signed apps can otherwise block forever
+      // in SecItemCopyMatching on a machine without an unlocked Keychain.
+      if (bytes.subarray(0, 1).toString("utf8") === "{") {
         plaintext = bytes.toString("utf8");
+      } else {
+        try {
+          plaintext = safeStorage.isEncryptionAvailable()
+            ? safeStorage.decryptString(bytes)
+            : bytes.toString("utf8");
+        } catch {
+          throw new Error("The Local workspace state could not be unlocked. Its files were left untouched; restore access to this computer's secure storage and reopen Desktop.");
+        }
       }
       let stored: LocalState;
       try { stored = JSON.parse(plaintext) as LocalState; }
@@ -105,7 +111,10 @@ export class LocalStore {
   private persist() {
     const temporary = `${this.path}.tmp`;
     const plaintext = `${JSON.stringify(this.state)}\n`;
-    const bytes = safeStorage.isEncryptionAvailable()
+    // The readable Local workspace already contains user data protected by
+    // owner-only permissions. On macOS, safeStorage may synchronously wait for
+    // Keychain authorization in packaged apps and freeze every IPC handler.
+    const bytes = process.platform !== "darwin" && safeStorage.isEncryptionAvailable()
       ? safeStorage.encryptString(plaintext)
       : Buffer.from(plaintext, "utf8");
     writeFileSync(temporary, bytes, { mode: 0o600 });

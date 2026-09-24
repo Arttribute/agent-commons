@@ -20,7 +20,7 @@ export class LocalStorageLayout {
     this.write("README.md", [
       "# Agent Commons Local workspace",
       "",
-      "Everything in this directory stays on this computer. The desktop app uses ../state.bin as its transactional index, protected by the operating system's secure storage when available.",
+      "Everything in this directory stays on this computer. The desktop app uses ../state.bin as its transactional index. The Local directory and files are restricted to your computer account; Windows and Linux also encrypt the index when operating system secure storage is available.",
       "Knowledge notes and artifact copies live here as normal files. The other folders contain readable records for local agents and people.",
       "Managed agent, conversation, app, task, workflow, and skill records are regenerated from state.bin. Edit them through Agent Commons; Knowledge notes can also be edited directly on disk and reindexed.",
       "Cloud mode cannot select this workspace for computer tools.",

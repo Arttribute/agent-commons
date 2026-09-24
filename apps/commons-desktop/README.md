@@ -18,8 +18,11 @@ Commons Cloud request. Account identity and shared display preferences can be
 shown in either mode; Local workspace records are not synced to Cloud.
 
 Private Local supports Ollama's `/api/chat` and `/api/tags` interfaces on a
-loopback address. State is encrypted with Electron `safeStorage` when the
-operating system provides it and otherwise uses user-only file permissions.
+loopback address. Local files and state use user-only file permissions. The
+state index uses Electron `safeStorage` on Windows and Linux when available;
+macOS uses file permissions because packaged apps can block on Keychain access.
+Existing encrypted macOS state is still read for migration when Keychain is
+available.
 
 ## Development
 
