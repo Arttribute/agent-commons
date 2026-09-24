@@ -894,10 +894,14 @@ export class PrivateLocalRuntime {
     }
     if (name === "cli_write_file" && workspace && result.startsWith("Written ") && typeof args.path === "string") {
       const path = safePath(workspace, args.path);
-      const id = randomUUID();
+      const readback = await runLocalTool({ tool: "read_file", args: { path: args.path } }, this.toolsConfig(workspace, conversationId));
+      result += `\n${readback.startsWith("Error:") ? "File readback failed" : "Verified file readback"}:\n${readback.slice(0, 16_000)}`;
+      const previous = this.store.get().conversations.find((entry) => entry.id === conversationId)?.artifacts?.find((artifact) => artifact.path === path);
+      const id = previous?.id ?? randomUUID();
       const size = statSync(path).size;
       const snapshot = this.layout.path("artifacts", `${id}-${basename(path)}`);
       if (size <= 20_000_000) copyFileSync(path, snapshot);
+      else if (existsSync(snapshot)) unlinkSync(snapshot);
       const item: LocalLibraryItem = {
         id, name: basename(path), path: size <= 20_000_000 ? snapshot : path,
         mimeType: mimeFor(path), source: "agent",
@@ -908,9 +912,13 @@ export class PrivateLocalRuntime {
         const conversation = draft.conversations.find((candidate) => candidate.id === conversationId);
         if (!conversation) return;
         const artifacts = conversation.artifacts ?? (conversation.artifacts = []);
-        if (!artifacts.some((artifact) => artifact.path === path)) {
+        const current = artifacts.find((artifact) => artifact.path === path);
+        if (!current) {
           artifacts.push({ id, name: basename(path), path, createdAt: now() });
           (draft.library ??= []).unshift(item);
+        } else {
+          const libraryItem = draft.library?.find((entry) => entry.id === current.id);
+          if (libraryItem) Object.assign(libraryItem, { path: item.path, mimeType: item.mimeType, updatedAt: now() });
         }
       });
     }
