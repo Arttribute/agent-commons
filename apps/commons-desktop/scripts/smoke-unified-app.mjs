@@ -30,7 +30,12 @@ for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => 
 
 async function evaluate(wsUrl, expression) {
   const socket = new WebSocket(wsUrl);
-  await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { socket.close(); reject(new Error("Desktop DevTools did not connect")); }, 5_000);
+    socket.onopen = () => { clearTimeout(timer); resolve(); };
+    socket.onerror = (error) => { clearTimeout(timer); reject(error); };
+    socket.onclose = () => { clearTimeout(timer); reject(new Error("Desktop DevTools closed before connecting")); };
+  });
   try {
     return await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("Desktop page did not respond")), 5_000);
