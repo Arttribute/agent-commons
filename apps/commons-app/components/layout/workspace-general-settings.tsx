@@ -17,16 +17,20 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
   useEffect(() => {
     if (!local || !window.agentCommonsLocal) return;
     const bridge = window.agentCommonsLocal;
-    const availableModels = bridge.listModels().then((items) => ({ items, unavailable: false }))
-      .catch(() => ({ items: [] as string[], unavailable: true }));
-    void Promise.all([bridge.getState(), bridge.getStorageRoot(), availableModels]).then(([state, root, available]) => {
+    let active = true;
+    void Promise.all([bridge.getState(), bridge.getStorageRoot()]).then(([state, root]) => {
+      if (!active) return;
       setLocalState(state);
       setStorageRoot(root);
-      setModels(available.items);
-      setModelServerUnavailable(available.unavailable);
       setOllamaUrl(state.settings.ollamaUrl);
-    }).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load Local settings"));
-    return bridge.onEvent((event) => { if (event.type === "state") setLocalState(event.state); });
+    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Could not load Local settings"); });
+    void bridge.listModels().then((items) => {
+      if (!active) return;
+      setModels(items);
+      setModelServerUnavailable(false);
+    }).catch(() => { if (active) setModelServerUnavailable(true); });
+    const off = bridge.onEvent((event) => { if (active && event.type === "state") setLocalState(event.state); });
+    return () => { active = false; off(); };
   }, [local]);
 
   const saveLocalSettings = async (patch: Partial<LocalState["settings"]>) => {

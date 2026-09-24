@@ -383,7 +383,7 @@ export class PrivateLocalRuntime {
     const state = this.store.get();
     const response = await fetch(`${ensureLoopback(url ?? state.settings.ollamaUrl)}/api/tags`, {
       redirect: "error",
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(5_000),
     });
     if (!response.ok) throw new Error(`Local model server returned ${response.status}`);
     const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string }> };
