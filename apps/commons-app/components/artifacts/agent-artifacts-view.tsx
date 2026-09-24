@@ -1,4 +1,6 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -59,7 +61,7 @@ export function AgentArtifactsView({ agentId }: { agentId: string }) {
       const params = new URLSearchParams({ agentId });
       if (query.trim()) params.set("query", query.trim());
       if (view !== "all") params.set("view", view);
-      const response = await fetch(`/api/library?${params}`, {
+      const response = await desktopApiFetch(`/api/library?${params}`, {
         cache: "no-store",
       });
       const payload = await response.json().catch(() => null);

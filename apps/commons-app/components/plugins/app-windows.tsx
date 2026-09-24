@@ -13,6 +13,7 @@ import { AppIcon } from "./app-icon";
 import { PluginFrame } from "./plugin-frame";
 import type { PluginRpcResize } from "./plugin-rpc";
 import { pluginHasSurface, type UiPlugin } from "./types";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 const HEADER_HEIGHT = 40;
 const MARGIN = 8;
@@ -39,6 +40,7 @@ type Gesture = {
  * and resized from the corner, and remember their geometry per app.
  */
 export function CommonsAppWindows() {
+  const { mode } = useWorkspaceMode();
   // Reads the shared store only; the apps bar loads apps, so pages without
   // one (such as signed-out pages) never fetch.
   const plugins = useCommonsAppsStore((state) => state.plugins);
@@ -71,6 +73,12 @@ export function CommonsAppWindows() {
             candidate.pluginId === pluginId && candidate.status === "active",
         );
         if (!plugin) return null;
+        if (mode === "private-local") {
+          try {
+            const url = new URL(plugin.entryUrl);
+            if (!(["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname) && ["http:", "https:"].includes(url.protocol))) return null;
+          } catch { return null; }
+        }
         return (
           <AppWindow
             key={`${plugin.pluginId}:${plugin.updatedAt}`}

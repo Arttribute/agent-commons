@@ -1,5 +1,7 @@
 "use client";
 
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 import { useEffect, useState } from "react";
 import { FolderInput, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,7 @@ import {
   supportsBrowserFolders,
 } from "./browser-folder";
 import type { KnowledgeSpace } from "./types";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 export function CreateSpaceDialog({
   open,
@@ -32,6 +35,8 @@ export function CreateSpaceDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: (space: KnowledgeSpace) => Promise<void> | void;
 }) {
+  const { mode: workspaceMode } = useWorkspaceMode();
+  const local = workspaceMode === "private-local";
   const [mode, setMode] = useState<"native" | "browser_filesystem">("native");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -53,15 +58,22 @@ export function CreateSpaceDialog({
     setError("");
     try {
       let folder: Awaited<ReturnType<typeof chooseMarkdownFolder>> | undefined;
-      if (mode === "browser_filesystem") folder = await chooseMarkdownFolder();
-      const response = await fetch("/api/knowledge", {
+      let localFolders: string[] = [];
+      if (mode === "browser_filesystem") {
+        if (local) {
+          localFolders = await window.agentCommonsLocal?.chooseKnowledgeFolders() ?? [];
+          if (!localFolders.length) return;
+        } else folder = await chooseMarkdownFolder();
+      }
+      const response = await desktopApiFetch("/api/knowledge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name.trim() || folder?.name || "New Knowledge Space",
+          name: name.trim() || folder?.name || localFolders[0]?.split(/[\\/]/).at(-1) || "New Knowledge Space",
           description: description.trim() || undefined,
           provider: mode,
           providerConfig: folder ? { folderName: folder.name } : undefined,
+          folders: localFolders,
           allAgents,
         }),
       });
@@ -72,7 +84,7 @@ export function CreateSpaceDialog({
       if (folder) {
         await rememberMarkdownFolder(space.spaceId, folder.handle);
         if (folder.documents.length || folder.folders.length) {
-          const imported = await fetch(
+          const imported = await desktopApiFetch(
             `/api/knowledge/${space.spaceId}/import`,
             {
               method: "POST",
@@ -104,7 +116,7 @@ export function CreateSpaceDialog({
   }
 
   const folderSupported =
-    typeof window === "undefined" || supportsBrowserFolders();
+    local || typeof window === "undefined" || supportsBrowserFolders();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

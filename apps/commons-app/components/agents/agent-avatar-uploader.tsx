@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { cn } from "@/lib/utils";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { localAgentToCommon } from "@/lib/local-agent-adapter";
 
 interface AgentAvatarUploaderProps {
   agentId: string;
@@ -30,6 +32,7 @@ export default function AgentAvatarUploader({
   disabled = false,
   onUploaded,
 }: AgentAvatarUploaderProps) {
+  const { mode } = useWorkspaceMode();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,8 +49,8 @@ export default function AgentAvatarUploader({
       setError("Please choose an image file.");
       return;
     }
-    if (file.size > MAX_BYTES) {
-      setError("Image must be smaller than 10 MB.");
+    if (file.size > (mode === "private-local" ? 1_000_000 : MAX_BYTES)) {
+      setError(mode === "private-local" ? "Local image must be smaller than 1 MB." : "Image must be smaller than 10 MB.");
       return;
     }
 
@@ -55,6 +58,31 @@ export default function AgentAvatarUploader({
     setPreview(URL.createObjectURL(file));
     setUploading(true);
     try {
+      if (mode === "private-local") {
+        if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) {
+          throw new Error("Choose a PNG, JPEG, WebP, or GIF image.");
+        }
+        const avatar = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(new Error("Could not read the image."));
+          reader.readAsDataURL(file);
+        });
+        const bridge = window.agentCommonsLocal;
+        const state = await bridge?.getState();
+        const agent = state?.agents.find((candidate) => candidate.id === agentId);
+        if (!bridge || !agent) throw new Error("Local agent not found.");
+        const updatedState = await bridge.saveAgent({
+          id: agent.id,
+          name: agent.name,
+          instructions: agent.instructions,
+          model: agent.model,
+          avatar,
+        });
+        const updatedAgent = updatedState.agents.find((candidate) => candidate.id === agentId);
+        onUploaded(avatar, updatedAgent ? localAgentToCommon(updatedAgent, updatedState) : undefined);
+        return;
+      }
       const formData = new FormData();
       formData.append("file", file);
       const res = await fetch(`/api/agents/${agentId}/avatar`, {

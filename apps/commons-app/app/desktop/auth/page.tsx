@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { WorkspaceModeSwitch } from "@/components/layout/workspace-mode-switch";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 export default function DesktopAuthPage() {
+  const { mode, setMode } = useWorkspaceMode();
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [retrying, setRetrying] = useState(false);
@@ -30,6 +33,7 @@ export default function DesktopAuthPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f5f3ee] px-6 text-stone-950 dark:bg-stone-950 dark:text-stone-50">
+      {desktopAvailable && <div className="absolute top-5 left-1/2 -translate-x-1/2"><WorkspaceModeSwitch mode={mode} onCloud={() => undefined} onLocal={() => void setMode("private-local")} /></div>}
       <section className="w-full max-w-lg rounded-3xl border border-stone-200 bg-white p-8 shadow-sm dark:border-stone-800 dark:bg-stone-900 sm:p-10">
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
           Agent Commons Desktop

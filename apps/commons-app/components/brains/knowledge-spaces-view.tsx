@@ -1,5 +1,7 @@
 "use client";
 
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -50,6 +52,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/context/AuthContext";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { useAgents } from "@/hooks/agents/use-agents";
 import { cn } from "@/lib/utils";
 import { normalizePrincipalId } from "@/lib/principal-id";
@@ -98,6 +101,8 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function KnowledgeSpacesView() {
   const { authState } = useAuth();
+  const { mode: workspaceMode } = useWorkspaceMode();
+  const local = workspaceMode === "private-local";
   const userAddress = normalizePrincipalId(authState.walletAddress);
   const { agents } = useAgents(userAddress);
   const [spaces, setSpaces] = useState<KnowledgeSpace[]>([]);
@@ -153,7 +158,7 @@ export function KnowledgeSpacesView() {
   canEditRef.current = canEdit;
 
   const loadSpaces = useCallback(async () => {
-    const response = await fetch("/api/knowledge", { cache: "no-store" });
+    const response = await desktopApiFetch("/api/knowledge", { cache: "no-store" });
     const payload = await readApiPayload(response);
     if (!response.ok)
       throw new Error(apiMessage(payload, "Could not load knowledge"));
@@ -185,7 +190,7 @@ export function KnowledgeSpacesView() {
     if (!nextSpaceId) return;
     setDocumentsLoading(true);
     try {
-      const response = await fetch(`/api/knowledge/${nextSpaceId}/documents`, {
+      const response = await desktopApiFetch(`/api/knowledge/${nextSpaceId}/documents`, {
         cache: "no-store",
       });
       const payload = await readApiPayload(response);
@@ -207,7 +212,7 @@ export function KnowledgeSpacesView() {
 
   const loadGraph = useCallback(async (nextSpaceId: string) => {
     if (!nextSpaceId) return;
-    const response = await fetch(`/api/knowledge/${nextSpaceId}/graph`, {
+    const response = await desktopApiFetch(`/api/knowledge/${nextSpaceId}/graph`, {
       cache: "no-store",
     });
     const payload = await readApiPayload(response);
@@ -216,7 +221,7 @@ export function KnowledgeSpacesView() {
 
   const loadFolders = useCallback(async (nextSpaceId: string) => {
     if (!nextSpaceId) return;
-    const response = await fetch(`/api/knowledge/${nextSpaceId}/folders`, {
+    const response = await desktopApiFetch(`/api/knowledge/${nextSpaceId}/folders`, {
       cache: "no-store",
     });
     const payload = await readApiPayload(response);
@@ -250,7 +255,7 @@ export function KnowledgeSpacesView() {
       return;
     }
     let cancelled = false;
-    fetch(`/api/knowledge/${spaceId}/documents/${documentId}`, {
+    desktopApiFetch(`/api/knowledge/${spaceId}/documents/${documentId}`, {
       cache: "no-store",
     })
       .then(async (response) => {
@@ -304,7 +309,7 @@ export function KnowledgeSpacesView() {
         setSaveState("saving");
         setError("");
         try {
-          const response = await fetch(
+          const response = await desktopApiFetch(
             `/api/knowledge/${currentSpace.spaceId}/documents/${currentDocument.documentId}`,
             {
               method: "PATCH",
@@ -411,7 +416,7 @@ export function KnowledgeSpacesView() {
       try {
         const params = new URLSearchParams({ query, limit: "8" });
         if (spaceId) params.set("spaceIds", spaceId);
-        const response = await fetch(`/api/knowledge/search?${params}`, {
+        const response = await desktopApiFetch(`/api/knowledge/search?${params}`, {
           cache: "no-store",
         });
         const payload = await readApiPayload(response);
@@ -438,7 +443,7 @@ export function KnowledgeSpacesView() {
     const content = `---\ntype: Note\ntitle: ${JSON.stringify(
       input.title,
     )}\nstatus: draft\n---\n\n# ${input.title}\n\n`;
-    const response = await fetch(
+    const response = await desktopApiFetch(
       `/api/knowledge/${activeSpace.spaceId}/documents`,
       {
         method: "POST",
@@ -499,7 +504,7 @@ export function KnowledgeSpacesView() {
         content: dirty ? draftRef.current.content : document.content,
       };
     }
-    const response = await fetch(
+    const response = await desktopApiFetch(
       `/api/knowledge/${target.spaceId}/documents/${target.documentId}`,
       { cache: "no-store" },
     );
@@ -511,7 +516,7 @@ export function KnowledgeSpacesView() {
 
   async function reloadOpenDocument(documentId: string) {
     if (!activeSpace) return;
-    const response = await fetch(
+    const response = await desktopApiFetch(
       `/api/knowledge/${activeSpace.spaceId}/documents/${documentId}`,
       { cache: "no-store" },
     );
@@ -562,7 +567,7 @@ export function KnowledgeSpacesView() {
           "file",
         );
       }
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/knowledge/${activeSpace.spaceId}/documents/${target.documentId}`,
         {
           method: "PATCH",
@@ -649,7 +654,7 @@ export function KnowledgeSpacesView() {
           throw new Error("Reconnect this folder before creating a folder.");
         }
       }
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/knowledge/${activeSpace.spaceId}/folders`,
         {
           method: "POST",
@@ -703,7 +708,7 @@ export function KnowledgeSpacesView() {
           "folder",
         );
       }
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/knowledge/${activeSpace.spaceId}/folders/${target.folderId}`,
         {
           method: "PATCH",
@@ -759,7 +764,7 @@ export function KnowledgeSpacesView() {
       return;
     setError("");
     try {
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/knowledge/${activeSpace.spaceId}/folders/${target.folderId}`,
         { method: "DELETE" },
       );
@@ -810,7 +815,7 @@ export function KnowledgeSpacesView() {
         return;
       }
       if (!sourceContent) {
-        const detail = await fetch(
+        const detail = await desktopApiFetch(
           `/api/knowledge/${activeSpace.spaceId}/documents/${target.documentId}`,
           { cache: "no-store" },
         );
@@ -822,7 +827,7 @@ export function KnowledgeSpacesView() {
         target.path,
       );
     }
-    const response = await fetch(
+    const response = await desktopApiFetch(
       `/api/knowledge/${activeSpace.spaceId}/documents/${target.documentId}`,
       { method: "DELETE" },
     );
@@ -851,6 +856,11 @@ export function KnowledgeSpacesView() {
     setError("");
     setNotice("");
     try {
+      if (local && window.agentCommonsLocal) {
+        await window.agentCommonsLocal.reindexKnowledgeSpace(activeSpace.spaceId);
+        setNotice("Local files refreshed.");
+        return;
+      }
       const selected =
         activeSpace.provider === "browser_filesystem"
           ? await reconnectMarkdownFolder(activeSpace.spaceId)
@@ -861,7 +871,7 @@ export function KnowledgeSpacesView() {
           new Set(current).add(activeSpace.spaceId),
         );
       }
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/knowledge/${activeSpace.spaceId}/import`,
         {
           method: "POST",
@@ -976,7 +986,7 @@ export function KnowledgeSpacesView() {
                   size="sm"
                   onClick={() => setAccessOpen(true)}
                 >
-                  <Share2 className="mr-1.5 h-4 w-4" /> Share
+                  <Share2 className="mr-1.5 h-4 w-4" /> {local ? "Agent access" : "Share"}
                 </Button>
               )}
               <Button size="sm" onClick={() => setCreateSpaceOpen(true)}>
@@ -1024,7 +1034,7 @@ export function KnowledgeSpacesView() {
                           {activeSpace
                             ? `${activeSpace.counts?.documents || 0} notes · ${
                                 activeSpace.provider === "native"
-                                  ? "Commons native"
+                                  ? local ? "Local files" : "Commons native"
                                   : "Connected folder"
                               }`
                             : "Select a space"}
@@ -1123,12 +1133,14 @@ export function KnowledgeSpacesView() {
                 >
                   {syncing ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : activeSpace?.provider === "browser_filesystem" ? (
+                  ) : local || activeSpace?.provider === "browser_filesystem" ? (
                     <FolderSync className="h-3.5 w-3.5" />
                   ) : (
                     <FolderInput className="h-3.5 w-3.5" />
                   )}
-                  {activeSpace?.provider === "browser_filesystem"
+                  {local
+                    ? "Refresh local files"
+                    : activeSpace?.provider === "browser_filesystem"
                     ? connectedFolderIds.has(activeSpace.spaceId)
                       ? "Sync connected folder"
                       : "Reconnect folder"

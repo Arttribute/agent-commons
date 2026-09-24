@@ -1,4 +1,6 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -128,8 +130,8 @@ export function CreateWorkflowDialog({
     (async () => {
       try {
         const [templatesRes, catalogRes] = await Promise.all([
-          fetch("/api/workflows/templates", { cache: "no-store" }),
-          fetch("/api/tools/catalog", { cache: "no-store" }),
+          desktopApiFetch("/api/workflows/templates", { cache: "no-store" }),
+          desktopApiFetch("/api/tools/catalog", { cache: "no-store" }),
         ]);
         const templatesJson = await templatesRes.json().catch(() => ({ templates: [] }));
         const catalogJson = await catalogRes.json().catch(() => ({ items: [] }));
@@ -172,7 +174,7 @@ export function CreateWorkflowDialog({
 
     setLoading(true);
     try {
-      const res = await fetch("/api/workflows", {
+      const res = await desktopApiFetch("/api/workflows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -209,7 +211,7 @@ export function CreateWorkflowDialog({
 
     setLoading(true);
     try {
-      const response = await fetch("/api/workflows/templates", {
+      const response = await desktopApiFetch("/api/workflows/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

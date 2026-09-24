@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { WorkflowExecution } from "@/types/workflow";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 import { WorkflowResult } from "@/components/workflows/result/workflow-result";
 import { AlertTriangle, CheckCircle2, Clock3, Copy, Loader2, RefreshCw, Search, XCircle } from "lucide-react";
 
@@ -94,7 +95,7 @@ export function WorkflowRunsPanel({ workflowId, refreshKey }: WorkflowRunsPanelP
   const loadRuns = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/workflows/${workflowId}/executions?limit=75`, { cache: "no-store" });
+      const res = await desktopApiFetch(`/api/workflows/${workflowId}/executions?limit=75`, { cache: "no-store" });
       const data = await res.json();
       const nextRuns = Array.isArray(data) ? data : data.data || [];
       setRuns(nextRuns);

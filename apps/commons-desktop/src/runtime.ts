@@ -1,52 +1,50 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { basename } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import type { WebContents } from "electron";
 import type {
   AgentInput,
   AppInput,
   ChatRequest,
   ChatResult,
+  DesktopAccount,
   LocalAgent,
   LocalApp,
+  LocalConversation,
+  LocalLibraryItem,
   LocalState,
   RuntimeEvent,
+  SkillInput,
   TaskInput,
   WorkflowInput,
+  WorkspacePreferences,
 } from "@agent-commons/desktop-contract";
+import { AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills } from "@agent-commons/agent-core";
 import {
   buildDirSnapshot,
   buildLocalToolsManifest,
   extractToolCall,
   runLocalTool,
+  safePath,
   stopLocalProcesses,
   type LocalToolsConfig,
 } from "../../../packages/agc-cli/src/local-tools";
 import { indexFolders, searchSpaces } from "./knowledge";
-import { LocalModelManager } from "./local-model";
-import { DEFAULT_LOCAL_MODEL, LocalStore } from "./store";
-
-export type CloudAgentSnapshot = {
-  agentId: string;
-  name: string;
-  instructions?: string;
-  description?: string;
-  persona?: string;
-};
-
-type OllamaMessage = {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string;
-  tool_calls?: Array<{
-    function: { name: string; arguments: Record<string, unknown> };
-  }>;
-};
+import { LocalStore } from "./store";
+import { LocalStorageLayout } from "./local-storage-layout";
+import { handleLocalKnowledgeApi } from "./local-knowledge-api";
+import { assistantIdentityAnswer, assistantIdentityRequestKind, assistantNameAnswer, looksLikeInventedToolCall, looksLikeModelIdentity, parseToolArguments } from "./local-response";
+import { readOllamaChatResponse, type OllamaMessage } from "./ollama-stream";
+import { mergeWorkspacePreferences } from "./workspace-preferences";
+import { compileLocalWorkflow } from "./local-workflow-plan.mjs";
 
 type PendingApproval = {
   resolve: (allow: boolean) => void;
   timeout: NodeJS.Timeout;
 };
 
-const LOCAL_TOOLS = [
+export const LOCAL_TOOLS = [
   functionTool("cli_list_directory", "List files and folders inside the selected workspace.", {
     path: { type: "string", description: "Workspace-relative directory, default ." },
   }),
@@ -86,6 +84,29 @@ const LOCAL_TOOLS = [
   functionTool("search_knowledge", "Search the user's selected local Knowledge Spaces.", {
     query: { type: "string" },
   }, ["query"]),
+  functionTool("invoke_skill", "Load the complete instructions for a locally saved skill by slug.", {
+    skillSlug: { type: "string" },
+  }, ["skillSlug"]),
+  functionTool("local_list_data", "List folders and records in the Agent Commons Local storage workspace. Paths are relative to that workspace.", {
+    path: { type: "string", description: "Local storage-relative folder; default ." },
+  }),
+  functionTool("local_read_data", "Read a text record, Knowledge note, or skill from the Agent Commons Local storage workspace.", {
+    path: { type: "string", description: "Local storage-relative file path" },
+  }, ["path"]),
+  functionTool("local_create_knowledge_space", "Create a Knowledge Space backed by a new folder in the Local storage workspace.", {
+    name: { type: "string" },
+  }, ["name"]),
+  functionTool("local_create_note", "Create a Markdown note inside an existing local Knowledge Space.", {
+    spaceId: { type: "string" }, path: { type: "string", description: "Space-relative .md path" }, content: { type: "string" },
+  }, ["spaceId", "path", "content"]),
+  functionTool("local_save_skill", "Save a reusable Markdown skill in the Local workspace. An existing slug is updated.", {
+    slug: { type: "string" }, name: { type: "string" }, description: { type: "string" }, instructions: { type: "string" },
+    triggers: { type: "array", items: { type: "string" } }, tags: { type: "array", items: { type: "string" } },
+  }, ["slug", "name", "instructions"]),
+  functionTool("local_register_app", "Register an app built in the selected workspace. Its preview URL must use localhost. The app then appears in Commons Apps.", {
+    name: { type: "string" }, directory: { type: "string", description: "Selected workspace-relative app folder" },
+    command: { type: "string" }, args: { type: "array", items: { type: "string" } }, previewUrl: { type: "string" },
+  }, ["name", "directory", "command", "previewUrl"]),
 ];
 
 function functionTool(
@@ -117,21 +138,37 @@ function ensureLoopback(raw: string) {
   return url.toString().replace(/\/$/, "");
 }
 
+function mimeFor(path: string) {
+  const extension = path.split(".").at(-1)?.toLowerCase();
+  return ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif",
+    svg: "image/svg+xml", pdf: "application/pdf", md: "text/markdown", txt: "text/plain", html: "text/html",
+    json: "application/json", csv: "text/csv", js: "text/javascript", ts: "text/plain", css: "text/css" } as Record<string, string>)[extension ?? ""] ?? "application/octet-stream";
+}
+
+const supportedToolNames = new Set(LOCAL_TOOLS.map((tool) => tool.function.name));
+
+type CloudAgentSnapshot = {
+  agentId: string;
+  name: string;
+  avatar?: string;
+  instructions?: string;
+  description?: string;
+  persona?: string;
+  isDefault?: boolean;
+};
+
 export class PrivateLocalRuntime {
   private readonly approvals = new Map<string, PendingApproval>();
   private readonly appProcesses = new Map<string, string>();
   private readonly store: LocalStore;
-  private readonly localModel: LocalModelManager;
+  private readonly layout: LocalStorageLayout;
   private readonly scheduler: NodeJS.Timeout;
   private target?: WebContents;
 
   constructor(userDataDirectory: string) {
     this.store = new LocalStore(userDataDirectory);
-    this.localModel = new LocalModelManager(
-      join(userDataDirectory, "private-local", "local-ai"),
-      DEFAULT_LOCAL_MODEL,
-      (model) => this.emit({ type: "model", model }),
-    );
+    this.layout = new LocalStorageLayout(userDataDirectory);
+    this.layout.sync(this.store.get());
     this.scheduler = setInterval(() => void this.runDueTasks(), 30_000);
     this.scheduler.unref();
   }
@@ -144,12 +181,45 @@ export class PrivateLocalRuntime {
     return this.store.get();
   }
 
-  modelStatus() {
-    return this.localModel.currentStatus();
+  storageRoot() {
+    return this.layout.root;
   }
 
-  prepare() {
-    return this.localModel.prepare();
+  importLibraryFiles(files: Array<{ name: string; mimeType: string; bytes: Uint8Array }>) {
+    if (!files.length) throw new Error("Choose a file to upload into the Local Library.");
+    const imported: LocalLibraryItem[] = [];
+    for (const file of files) {
+      if (!(file.bytes instanceof Uint8Array) || file.bytes.byteLength > 20_000_000) throw new Error("Local uploads are limited to 20 MB per file.");
+      const id = randomUUID();
+      const name = basename(String(file.name || "file")).replace(/[^a-zA-Z0-9._ -]/g, "_").slice(0, 180) || "file";
+      const path = this.layout.path("uploads", `${id}-${name}`);
+      writeFileSync(path, file.bytes, { flag: "wx", mode: 0o600 });
+      const timestamp = now();
+      imported.push({ id, name, path, mimeType: file.mimeType || mimeFor(name), source: "upload", createdAt: timestamp, updatedAt: timestamp });
+    }
+    this.change((state) => { (state.library ??= []).unshift(...imported); });
+    return imported;
+  }
+
+  updateLibraryItem(id: string, patch: { name?: string; isFavorite?: boolean }) {
+    return this.change((state) => {
+      const item = state.library?.find((entry) => entry.id === id);
+      if (!item) throw new Error("Local Library item not found");
+      if (patch.name !== undefined) item.name = patch.name.trim().slice(0, 180) || item.name;
+      if (patch.isFavorite !== undefined) item.isFavorite = patch.isFavorite;
+      item.updatedAt = now();
+    });
+  }
+
+  deleteLibraryItem(id: string) {
+    const item = this.store.get().library?.find((entry) => entry.id === id);
+    if (!item) throw new Error("Local Library item not found");
+    this.change((state) => {
+      state.library = (state.library ?? []).filter((entry) => entry.id !== id);
+      for (const conversation of state.conversations) conversation.artifacts = conversation.artifacts?.filter((artifact) => artifact.id !== id);
+    });
+    // Only delete copies owned by Commons. Project files remain in place.
+    if (item.path.startsWith(this.layout.root + "/") && existsSync(item.path)) unlinkSync(item.path);
   }
 
   syncCloudAgents(agents: CloudAgentSnapshot[]) {
@@ -161,16 +231,17 @@ export class PrivateLocalRuntime {
         const existing = state.agents.find(
           (agent) => agent.cloudAgentId === snapshot.agentId || agent.id === snapshot.agentId,
         );
-        const instructions =
-          snapshot.instructions?.trim() ||
-          snapshot.description?.trim() ||
-          snapshot.persona?.trim() ||
-          "You are a capable Agent Commons assistant. Protect user data and verify your work.";
+        const instructions = snapshot.instructions?.trim() || snapshot.description?.trim() ||
+          snapshot.persona?.trim() || "You are a capable Agent Commons assistant. Protect user data and verify your work.";
         if (existing) {
           Object.assign(existing, {
             cloudAgentId: snapshot.agentId,
             source: "cloud" as const,
             name: snapshot.name.trim(),
+            ...(snapshot.avatar ? { avatar: snapshot.avatar } : {}),
+            description: snapshot.description,
+            persona: snapshot.persona,
+            isDefault: snapshot.isDefault,
             instructions,
             model: "",
             updatedAt: timestamp,
@@ -181,6 +252,10 @@ export class PrivateLocalRuntime {
             cloudAgentId: snapshot.agentId,
             source: "cloud",
             name: snapshot.name.trim(),
+            avatar: snapshot.avatar,
+            description: snapshot.description,
+            persona: snapshot.persona,
+            isDefault: snapshot.isDefault,
             instructions,
             model: "",
             createdAt: timestamp,
@@ -188,23 +263,53 @@ export class PrivateLocalRuntime {
           });
         }
       }
-      const starterIsUsed =
-        state.conversations.some((item) => item.agentId === "commons-local") ||
+      state.agents.sort((left, right) => Number(Boolean(right.isDefault)) - Number(Boolean(left.isDefault)));
+      const starterIsUsed = state.conversations.some((item) => item.agentId === "commons-local") ||
         state.tasks.some((item) => item.agentId === "commons-local") ||
         state.workflows.some((item) => item.agentId === "commons-local");
       if (!starterIsUsed) state.agents = state.agents.filter((agent) => agent.id !== "commons-local");
     });
   }
 
+  syncAccount(account: DesktopAccount) {
+    if (!account || typeof account.userId !== "string" || typeof account.displayName !== "string") return;
+    this.change((state) => {
+      state.account = {
+        userId: account.userId.slice(0, 256),
+        displayName: account.displayName.slice(0, 256),
+        email: typeof account.email === "string" ? account.email.slice(0, 256) : undefined,
+      };
+    });
+  }
+
+  preferences() {
+    return this.store.get().preferences ?? {};
+  }
+
+  syncPreferences(incoming: WorkspacePreferences, source: "cloud" | "private-local") {
+    const merged = mergeWorkspacePreferences(this.preferences(), incoming, source);
+    return this.change((state) => {
+      state.preferences = merged;
+    }).preferences ?? {};
+  }
+
   saveAgent(input: AgentInput) {
     const timestamp = now();
     const name = input.name.trim();
     if (!name) throw new Error("Agent name is required");
+    if (input.avatar && input.avatar !== "/commons-copilot.png" && (!/^data:image\/(?:png|jpeg|webp|gif);base64,[a-z0-9+/=]+$/i.test(input.avatar) || input.avatar.length > 1_400_000)) {
+      throw new Error("Local agent images must be PNG, JPEG, WebP, or GIF and smaller than 1 MB.");
+    }
     return this.change((state) => {
       const existing = input.id ? state.agents.find((agent) => agent.id === input.id) : undefined;
       if (existing) {
         Object.assign(existing, {
           name,
+          ...(input.avatar !== undefined ? { avatar: input.avatar } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.persona !== undefined ? { persona: input.persona } : {}),
+          ...(input.copilotAccessMode !== undefined ? { copilotAccessMode: input.copilotAccessMode } : {}),
+          ...(input.copilotScopes !== undefined ? { copilotScopes: input.copilotScopes.filter((scope) => ["workflows", "agents", "tools", "skills", "tasks"].includes(scope)) } : {}),
           instructions: input.instructions.trim(),
           model: input.model.trim(),
           updatedAt: timestamp,
@@ -213,6 +318,11 @@ export class PrivateLocalRuntime {
         state.agents.push({
           id: randomUUID(),
           name,
+          avatar: input.avatar,
+          description: input.description,
+          persona: input.persona,
+          copilotAccessMode: input.copilotAccessMode,
+          copilotScopes: input.copilotScopes,
           instructions: input.instructions.trim(),
           model: input.model.trim(),
           createdAt: timestamp,
@@ -223,9 +333,6 @@ export class PrivateLocalRuntime {
   }
 
   deleteAgent(id: string) {
-    if (this.store.get().agents.length <= 1) {
-      throw new Error("Keep at least one agent so Chat, tasks, and workflows are always ready.");
-    }
     return this.change((state) => {
       state.agents = state.agents.filter((agent) => agent.id !== id);
       state.conversations = state.conversations.filter((conversation) => conversation.agentId !== id);
@@ -234,11 +341,50 @@ export class PrivateLocalRuntime {
     });
   }
 
-  async listModels() {
-    await this.localModel.prepare();
+  saveSkill(input: SkillInput) {
+    const slug = input.slug.trim().toLowerCase();
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Skill slug must use lowercase letters, numbers, and hyphens");
+    if (!input.name.trim() || !input.instructions.trim()) throw new Error("Skill name and instructions are required");
+    const timestamp = now();
+    return this.change((state) => {
+      const skills = state.skills ?? (state.skills = []);
+      if (skills.some((skill) => skill.slug === slug && skill.id !== input.id)) throw new Error("A local skill already uses that slug");
+      const existing = input.id ? skills.find((skill) => skill.id === input.id) : undefined;
+      const update = {
+        slug,
+        name: input.name.trim(),
+        description: input.description.trim(),
+        instructions: input.instructions.trim(),
+        triggers: input.triggers.map((trigger) => trigger.trim()).filter(Boolean),
+        tags: input.tags.map((tag) => tag.trim()).filter(Boolean),
+        ...(input.assignedAgentIds !== undefined ? { assignedAgentIds: input.assignedAgentIds.filter((id) => state.agents.some((agent) => agent.id === id)) } : {}),
+        updatedAt: timestamp,
+      };
+      if (existing) Object.assign(existing, update);
+      else skills.push({ id: randomUUID(), ...update, createdAt: timestamp });
+    });
+  }
+
+  deleteSkill(id: string) {
+    return this.change((state) => { state.skills = (state.skills ?? []).filter((skill) => skill.id !== id); });
+  }
+
+  setSkillAgentAvailability(skillId: string, agentId: string, enabled: boolean) {
+    return this.change((state) => {
+      const skill = state.skills?.find((entry) => entry.id === skillId);
+      if (!skill) throw new Error("Local skill not found");
+      if (!state.agents.some((agent) => agent.id === agentId)) throw new Error("Local agent not found");
+      const current = skill.assignedAgentIds ?? state.agents.map((agent) => agent.id);
+      skill.assignedAgentIds = enabled ? [...new Set([...current, agentId])] : current.filter((id) => id !== agentId);
+      skill.updatedAt = now();
+    });
+  }
+
+  async listModels(url?: string) {
     const state = this.store.get();
-    const response = await fetch(`${ensureLoopback(state.settings.ollamaUrl)}/api/tags`, {
-      signal: AbortSignal.timeout(4_000),
+    const response = await fetch(`${ensureLoopback(url ?? state.settings.ollamaUrl)}/api/tags`, {
+      redirect: "error",
+      signal: AbortSignal.timeout(5_000),
     });
     if (!response.ok) throw new Error(`Local model server returned ${response.status}`);
     const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string }> };
@@ -253,14 +399,41 @@ export class PrivateLocalRuntime {
     });
   }
 
+  createConversation(agentId: string, title: string) {
+    if (!this.store.get().agents.some((agent) => agent.id === agentId)) throw new Error("Local agent not found");
+    const timestamp = now();
+    const conversation: LocalConversation = {
+      id: randomUUID(), agentId, title: title.trim().slice(0, 160) || "New chat",
+      workspaceRoot: homedir(), messages: [], createdAt: timestamp, updatedAt: timestamp,
+    };
+    this.change((state) => state.conversations.unshift(conversation));
+    return conversation;
+  }
+
   async sendMessage(input: ChatRequest): Promise<ChatResult> {
-    await this.localModel.prepare();
     const state = this.store.get();
     const agent = state.agents.find((candidate) => candidate.id === input.agentId);
     if (!agent) throw new Error("Choose a local agent first");
-    const model = state.settings.defaultModel;
-    if (!model) throw new Error("Choose an installed local model in Settings or on the agent");
     if (!input.prompt.trim()) throw new Error("Message is empty");
+    const directNameRequest = assistantIdentityRequestKind(input.prompt) === "name";
+    const available: string[] = directNameRequest ? [] : await this.listModels().catch(() => []);
+    if (!available.length && !directNameRequest) throw new Error("No local model is available. Start Ollama and install a model, then try again.");
+    const explicitModel = agent.model?.trim();
+    const isCopilot = agent.id === "local-copilot" || agent.id === "commons-local" || agent.name === "Commons Copilot";
+    if (explicitModel && !available.includes(explicitModel) && !isCopilot && !directNameRequest) {
+      throw new Error(`The model ${explicitModel} is not installed on this computer. Choose an installed model in Private settings.`);
+    }
+    const selectedModel = explicitModel && available.includes(explicitModel)
+      ? explicitModel
+      : available.includes(state.settings.defaultModel) ? state.settings.defaultModel : available[0] ?? state.settings.defaultModel;
+    if (state.settings.defaultModel !== selectedModel || (isCopilot && agent.model !== selectedModel)) {
+      this.change((draft) => {
+        draft.settings.defaultModel = selectedModel;
+        const copilot = draft.agents.find((candidate) => candidate.id === agent.id);
+        if (copilot && isCopilot) copilot.model = selectedModel;
+      });
+    }
+    const runningAgent = { ...agent, model: selectedModel };
 
     const timestamp = now();
     let conversation = input.conversationId
@@ -271,7 +444,7 @@ export class PrivateLocalRuntime {
         id: randomUUID(),
         agentId: agent.id,
         title: input.prompt.trim().slice(0, 80),
-        workspaceRoot: input.workspaceRoot,
+        workspaceRoot: input.workspaceRoot || homedir(),
         messages: [],
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -281,25 +454,28 @@ export class PrivateLocalRuntime {
     const conversationId = conversation.id;
     this.change((draft) => {
       const current = draft.conversations.find((candidate) => candidate.id === conversationId)!;
-      current.workspaceRoot = input.workspaceRoot ?? current.workspaceRoot;
+      current.workspaceRoot = input.workspaceRoot ?? current.workspaceRoot ?? homedir();
       current.messages.push({ id: randomUUID(), role: "user", content: input.prompt.trim(), createdAt: timestamp });
       current.updatedAt = timestamp;
     });
 
+    if (input.interactive) this.emit({ type: "chat-start", conversationId });
     this.emit({ type: "activity", label: `${agent.name} is thinking`, status: "running" });
     try {
-      const response = await this.runAgent(agent, conversationId, input.spaceIds);
+      const response = await this.runAgent(runningAgent, conversationId, input.spaceIds, input.interactive);
       const finalState = this.change((draft) => {
         const current = draft.conversations.find((candidate) => candidate.id === conversationId)!;
         current.messages.push({ id: randomUUID(), role: "assistant", content: response, createdAt: now() });
         current.updatedAt = now();
       });
       this.emit({ type: "activity", label: `${agent.name} finished`, status: "done" });
+      if (input.interactive) this.emit({ type: "chat-end", conversationId });
       return {
         conversation: finalState.conversations.find((candidate) => candidate.id === conversationId)!,
         response,
       };
     } catch (error) {
+      if (input.interactive) this.emit({ type: "chat-end", conversationId });
       this.emit({
         type: "activity",
         label: `${agent.name} stopped`,
@@ -310,11 +486,31 @@ export class PrivateLocalRuntime {
     }
   }
 
-  async addKnowledgeSpace(name: string, folders: string[]) {
-    if (!name.trim() || !folders.length) throw new Error("A name and at least one folder are required");
-    const files = await indexFolders(folders);
+  deleteConversation(id: string) {
     return this.change((state) => {
-      state.spaces.push({ id: randomUUID(), name: name.trim(), folders, files, indexedAt: now() });
+      state.conversations = state.conversations.filter((conversation) => conversation.id !== id);
+    });
+  }
+
+  renameConversation(id: string, title: string) {
+    const name = title.trim().slice(0, 160);
+    if (!name) throw new Error("Conversation title is required");
+    return this.change((state) => {
+      const conversation = state.conversations.find((candidate) => candidate.id === id);
+      if (!conversation) throw new Error("Local conversation not found");
+      conversation.title = name;
+      conversation.updatedAt = now();
+    });
+  }
+
+  async addKnowledgeSpace(name: string, folders: string[]) {
+    if (!name.trim()) throw new Error("A name is required");
+    const id = randomUUID();
+    const sources = folders.length ? folders : [this.layout.path("knowledge", id)];
+    if (!folders.length) mkdirSync(sources[0], { recursive: true, mode: 0o700 });
+    const files = await indexFolders(sources);
+    return this.change((state) => {
+      state.spaces.push({ id, name: name.trim(), folders: sources, files, indexedAt: now(), autoGrantNewAgents: true, grants: [] });
     });
   }
 
@@ -335,6 +531,33 @@ export class PrivateLocalRuntime {
     });
   }
 
+  updateKnowledgeSpace(id: string, patch: { autoGrantNewAgents?: boolean }) {
+    return this.change((state) => {
+      const space = state.spaces.find((entry) => entry.id === id);
+      if (!space) throw new Error("Knowledge Space not found");
+      if (patch.autoGrantNewAgents !== undefined) space.autoGrantNewAgents = patch.autoGrantNewAgents;
+    });
+  }
+
+  saveKnowledgeGrant(spaceId: string, input: { subjectType: "agent" | "user" | "workspace"; subjectId: string; permission: "read" | "write" | "manage"; autoRetrieve: boolean }) {
+    return this.change((state) => {
+      const space = state.spaces.find((entry) => entry.id === spaceId);
+      if (!space) throw new Error("Knowledge Space not found");
+      const grants = space.grants ?? (space.grants = []);
+      const existing = grants.find((entry) => entry.subjectType === input.subjectType && entry.subjectId === input.subjectId);
+      if (existing) Object.assign(existing, input);
+      else grants.push({ id: randomUUID(), ...input });
+    });
+  }
+
+  removeKnowledgeGrant(spaceId: string, grantId: string) {
+    return this.change((state) => {
+      const space = state.spaces.find((entry) => entry.id === spaceId);
+      if (!space) throw new Error("Knowledge Space not found");
+      space.grants = (space.grants ?? []).filter((entry) => entry.id !== grantId);
+    });
+  }
+
   saveTask(input: TaskInput) {
     const timestamp = now();
     return this.change((state) => {
@@ -344,12 +567,22 @@ export class PrivateLocalRuntime {
     });
   }
 
+  cancelTask(id: string) {
+    return this.change((state) => {
+      const task = state.tasks.find((candidate) => candidate.id === id);
+      if (!task) throw new Error("Local task not found");
+      if (task.status === "running") throw new Error("This task is running and cannot be cancelled until its current step finishes.");
+      task.status = "cancelled";
+      task.updatedAt = now();
+    });
+  }
+
   async runTask(id: string) {
     const task = this.store.get().tasks.find((candidate) => candidate.id === id);
     if (!task) throw new Error("Task not found");
     this.change((state) => Object.assign(state.tasks.find((candidate) => candidate.id === id)!, { status: "running", updatedAt: now() }));
     try {
-      const result = await this.sendMessage({ agentId: task.agentId, prompt: task.prompt, workspaceRoot: task.workspaceRoot });
+      const result = await this.sendMessage({ agentId: task.agentId, conversationId: task.sessionId, prompt: task.prompt, workspaceRoot: task.workspaceRoot });
       return this.change((state) => Object.assign(state.tasks.find((candidate) => candidate.id === id)!, {
         status: "completed", result: result.response, updatedAt: now(),
       }));
@@ -367,7 +600,6 @@ export class PrivateLocalRuntime {
 
   saveWorkflow(input: WorkflowInput) {
     const timestamp = now();
-    if (!input.steps.length) throw new Error("Add at least one workflow step");
     return this.change((state) => {
       const existing = input.id ? state.workflows.find((workflow) => workflow.id === input.id) : undefined;
       if (existing) Object.assign(existing, input, { updatedAt: timestamp });
@@ -375,18 +607,49 @@ export class PrivateLocalRuntime {
     });
   }
 
-  async runWorkflow(id: string) {
+  async runWorkflow(id: string, inputData?: Record<string, unknown>) {
     const workflow = this.store.get().workflows.find((candidate) => candidate.id === id);
     if (!workflow) throw new Error("Workflow not found");
-    let context = "";
-    for (const [index, step] of workflow.steps.entries()) {
-      const prompt = context ? `${step}\n\nPrevious step result:\n${context}` : step;
-      this.emit({ type: "activity", label: `${workflow.name}: step ${index + 1}/${workflow.steps.length}`, status: "running" });
-      context = (await this.sendMessage({ agentId: workflow.agentId, prompt, workspaceRoot: workflow.workspaceRoot })).response;
+    const hasGraph = Array.isArray(workflow.definition?.nodes) && workflow.definition.nodes.length > 0;
+    const plan = hasGraph
+      ? compileLocalWorkflow(workflow.definition, workflow.agentId)
+      : workflow.steps.map((prompt, index) => ({ nodeId: `step-${index}`, agentId: workflow.agentId, prompt }));
+    if (!plan.length) throw new Error("Add an agent step before running this Local workflow.");
+    for (const step of plan) {
+      if (!this.store.get().agents.some((agent) => agent.id === step.agentId)) {
+        throw new Error(`The Local agent for workflow node ${step.nodeId} is unavailable.`);
+      }
     }
-    return this.change((state) => Object.assign(state.workflows.find((candidate) => candidate.id === id)!, {
-      lastResult: context, updatedAt: now(),
-    }));
+    const executionId = randomUUID();
+    this.change((state) => {
+      const current = state.workflows.find((candidate) => candidate.id === id)!;
+      current.lastRun = { executionId, status: "running", startedAt: now() };
+    });
+    let context = "";
+    const hasInput = inputData && Object.keys(inputData).length > 0;
+    try {
+      for (const [index, step] of plan.entries()) {
+        const prompt = context
+          ? `${step.prompt}\n\nPrevious step result:\n${context}`
+          : hasInput ? `${step.prompt}\n\nWorkflow input:\n${JSON.stringify(inputData)}` : step.prompt;
+        this.change((state) => { state.workflows.find((candidate) => candidate.id === id)!.lastRun!.currentNode = step.nodeId; });
+        this.emit({ type: "activity", label: `${workflow.name}: step ${index + 1}/${plan.length}`, status: "running" });
+        context = (await this.sendMessage({ agentId: step.agentId, prompt, workspaceRoot: workflow.workspaceRoot })).response;
+      }
+      return this.change((state) => {
+        const current = state.workflows.find((candidate) => candidate.id === id)!;
+        current.lastResult = context;
+        current.lastRun = { ...current.lastRun!, status: "completed", completedAt: now(), outputData: context, currentNode: undefined };
+        current.updatedAt = now();
+      });
+    } catch (error) {
+      this.change((state) => {
+        const current = state.workflows.find((candidate) => candidate.id === id)!;
+        current.lastRun = { ...current.lastRun!, status: "failed", completedAt: now(), errorMessage: error instanceof Error ? error.message : String(error), currentNode: undefined };
+        current.updatedAt = now();
+      });
+      throw error;
+    }
   }
 
   deleteWorkflow(id: string) {
@@ -448,15 +711,18 @@ export class PrivateLocalRuntime {
     pending.resolve(allow);
   }
 
-  close() {
-    clearInterval(this.scheduler);
+  cancelPendingApprovals() {
     for (const [id, pending] of this.approvals) {
       clearTimeout(pending.timeout);
       pending.resolve(false);
       this.approvals.delete(id);
     }
+  }
+
+  close() {
+    clearInterval(this.scheduler);
+    this.cancelPendingApprovals();
     stopLocalProcesses();
-    this.localModel.stop();
   }
 
   private async runDueTasks() {
@@ -472,60 +738,111 @@ export class PrivateLocalRuntime {
     }
   }
 
-  private async runAgent(agent: LocalAgent, conversationId: string, spaceIds?: string[]) {
+  private async runAgent(agent: LocalAgent, conversationId: string, spaceIds?: string[], interactive = false) {
     const state = this.store.get();
     const conversation = state.conversations.find((candidate) => candidate.id === conversationId)!;
     const lastUser = [...conversation.messages].reverse().find((message) => message.role === "user")?.content ?? "";
+    const identityRequest = assistantIdentityRequestKind(lastUser);
+    if (identityRequest === "name") return assistantNameAnswer(agent.name);
+    if (identityRequest === "about") return assistantIdentityAnswer(agent.name, agent.model || state.settings.defaultModel);
     const knowledge = searchSpaces(state.spaces, lastUser, spaceIds);
+    const skills = (state.skills ?? []).filter((skill) => skill.assignedAgentIds === undefined || skill.assignedAgentIds.includes(agent.id));
+    const skillsBlock = buildSkillPromptIndex(skills, findMatchingSkills(skills, lastUser));
     const workspace = conversation.workspaceRoot;
     const localManifest = workspace
       ? buildLocalToolsManifest(workspace, buildDirSnapshot(workspace, 2), [], false)
       : "No workspace folder is selected. Do not call cli_* filesystem or command tools.";
     const system = [
-      `You are ${agent.name}, a private local Agent Commons agent.`,
-      agent.instructions,
-      "All model inference and state are local. Be concise, use tools when useful, and report real tool results only.",
+      "You are an AI agent on the Agent Commons platform.",
+      buildAgentIdentityPrompt(agent),
+      agent.name === "Commons Copilot" ? "You are the user's native Commons Copilot and can work with local agents, skills, tasks, workflows, Knowledge Spaces, apps, and files." : "",
+      `Session ID: ${conversationId}`,
+      buildWorkspaceModeContext("private-local"),
+      `Your assistant identity in this conversation is ${agent.name}. If asked about yourself, answer as ${agent.name} and describe your local capabilities. The underlying model is ${agent.model || state.settings.defaultModel}; mention it as the model powering you, not as your assistant identity.`,
+      "For ordinary conversation, answer naturally. Never output JSON describing a tool call or invent a function name. Use only the provided structured tools when an action is needed. If no tool applies, respond in plain language.",
+      AUTONOMOUS_EXECUTION_CONTRACT,
       localManifest,
+      `Agent Commons Local data is organized at ${this.layout.root}. Use local_list_data and local_read_data to inspect agents, conversations, knowledge, artifacts, apps, skills, tasks, workflows, and uploads. The private state index is outside this workspace and must not be edited directly.`,
+      skillsBlock,
       knowledge.length
         ? `Local Knowledge Space excerpts:\n${knowledge.map((entry) => `\n[${entry.space}] ${entry.path}\n${entry.excerpt}`).join("\n")}`
         : "",
+      `Current runtime: Private Local. Inference model: ${agent.model || state.settings.defaultModel}. Say this explicitly if the user asks about the current mode or model.`,
     ].filter(Boolean).join("\n\n");
     const messages: OllamaMessage[] = [
       { role: "system", content: system },
-      ...conversation.messages.slice(-40).map((message) => ({ role: message.role, content: message.content }) as OllamaMessage),
+      ...conversation.messages.filter((message) => message.role !== "tool").slice(-40).map((message) => ({
+        role: message.role,
+        content: message.role === "assistant" && looksLikeModelIdentity(message.content)
+          ? assistantIdentityAnswer(agent.name, agent.model || state.settings.defaultModel)
+          : message.content,
+      }) as OllamaMessage),
     ];
     const endpoint = ensureLoopback(state.settings.ollamaUrl);
-    const tools = workspace ? LOCAL_TOOLS : LOCAL_TOOLS.filter((entry) => entry.function.name === "search_knowledge");
+    const tools = (workspace ? LOCAL_TOOLS : LOCAL_TOOLS.filter((entry) => ["search_knowledge", "invoke_skill", "local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill"].includes(entry.function.name)))
+      .filter((entry) => entry.function.name !== "invoke_skill" || skills.length > 0);
 
+    let repairAttempted = false;
+    let identityRepairAttempted = false;
     for (let turn = 0; turn < 16; turn += 1) {
       const response = await fetch(`${endpoint}/api/chat`, {
         method: "POST",
+        redirect: "error",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: state.settings.defaultModel, messages, tools, stream: false }),
+        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages, tools: repairAttempted ? [] : tools, stream: true, options: { temperature: 0.3 } }),
         signal: AbortSignal.timeout(10 * 60_000),
       });
-      if (!response.ok) {
-        const detail = await response.text().catch(() => "");
-        throw new Error(`Local model failed (${response.status}): ${detail.slice(0, 500)}`);
-      }
-      const payload = (await response.json()) as { message?: OllamaMessage; error?: string };
-      if (payload.error) throw new Error(payload.error);
-      const message = payload.message;
-      if (!message) throw new Error("Local model returned no message");
+      const message = await readOllamaChatResponse(response, interactive && !identityRequest ? (content) => {
+        const trimmed = content.trimStart();
+        if (trimmed && !trimmed.startsWith("{") && !trimmed.startsWith("```")) {
+          this.emit({ type: "chat-token", conversationId, content });
+        }
+      } : undefined);
       messages.push(message);
       const calls = message.tool_calls ?? [];
+      if (calls.length && interactive) this.emit({ type: "chat-token", conversationId, content: "" });
       if (!calls.length) {
-        const fallback = extractDesktopToolCall(message.content ?? "");
-        if (!fallback) return message.content?.trim() || "Done.";
-        if (!tools.some((tool) => tool.function.name === fallback.tool)) {
-          return message.content?.trim() || "The local model requested an unavailable tool.";
+        const fallback = extractToolCall(message.content ?? "");
+        if (!fallback) {
+          if ((identityRequest && (looksLikeModelIdentity(message.content ?? "") || !(message.content ?? "").toLowerCase().includes(agent.name.toLowerCase()))) ||
+              (looksLikeModelIdentity(message.content ?? "") && !/\b(?:model|llm|engine|provider)\b/i.test(lastUser))) {
+            if (identityRepairAttempted) {
+              return assistantIdentityAnswer(agent.name, agent.model || state.settings.defaultModel);
+            }
+            identityRepairAttempted = true;
+            messages.push({ role: "system", content: `You described the underlying model instead of your assistant identity. Answer the user's question as ${agent.name}. You are an Agent Commons assistant running in Private Local mode. You may mention the model as what powers you, but do not introduce yourself as the model.` });
+            continue;
+          }
+          if (looksLikeInventedToolCall(message.content ?? "")) {
+            if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
+            if (repairAttempted) throw new Error("The local model repeatedly returned an invented tool call. Try a stronger tool-capable model in Private settings.");
+            repairAttempted = true;
+            messages.push({ role: "system", content: "Your previous response was an invented function call. The user needs a natural language answer. Reply directly, without JSON or code fences." });
+            continue;
+          }
+          return message.content?.trim() || "Done.";
+        }
+        if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
+        if (!supportedToolNames.has(fallback.tool)) {
+          if (repairAttempted) throw new Error("The local model repeatedly called an unavailable tool. Try a stronger tool-capable model.");
+          repairAttempted = true;
+          messages.push({ role: "system", content: `The tool ${fallback.tool} does not exist. Reply to the user's request in plain language, or use a provided structured tool.` });
+          continue;
         }
         const result = await this.executeTool(fallback.tool, fallback.args, workspace, conversationId, spaceIds);
         messages.push({ role: "tool", content: result });
         continue;
       }
+      repairAttempted = false;
       for (const call of calls) {
-        const result = await this.executeTool(call.function.name, call.function.arguments ?? {}, workspace, conversationId, spaceIds);
+        if (!supportedToolNames.has(call.function.name)) {
+          messages.push({ role: "tool", content: `Error: ${call.function.name} is not an available tool.` });
+          continue;
+        }
+        const args = parseToolArguments(call.function.arguments);
+        const result = args
+          ? await this.executeTool(call.function.name, args, workspace, conversationId, spaceIds)
+          : "Error: tool arguments must be a JSON object.";
         messages.push({ role: "tool", content: result });
       }
     }
@@ -540,22 +857,136 @@ export class PrivateLocalRuntime {
     spaceIds?: string[],
   ) {
     const label = name.replace(/^cli_/, "");
-    this.emit({ type: "activity", label: label.replaceAll("_", " "), detail: JSON.stringify(args), status: "running" });
+    this.emit({ type: "activity", label: label.replaceAll("_", " "), detail: JSON.stringify(args), status: "running", conversationId, toolName: name, args });
     let result: string;
     if (name === "search_knowledge") {
       result = JSON.stringify(searchSpaces(this.store.get().spaces, String(args.query ?? ""), spaceIds));
+    } else if (name === "invoke_skill") {
+      const slug = String(args.skillSlug ?? "");
+      const skill = (this.store.get().skills ?? []).find((candidate) => candidate.slug === slug);
+      result = skill ? `# ${skill.name}\n\n${skill.instructions}` : `Error: local skill ${slug} was not found.`;
+    } else if (name === "local_list_data" || name === "local_read_data") {
+      result = await runLocalTool({
+        tool: name === "local_list_data" ? "list_directory" : "read_file",
+        args: { path: args.path ?? "." },
+      }, this.toolsConfig(this.layout.root, conversationId));
+    } else if (["local_create_knowledge_space", "local_create_note", "local_save_skill", "local_register_app"].includes(name)) {
+      if (this.store.get().settings.permissionMode === "read-only") result = "Error: Local workspace is read only.";
+      else if (!(await this.requestApproval(`${name.replaceAll("_", " ")}: ${JSON.stringify({ ...args, content: typeof args.content === "string" ? args.content.slice(0, 1_000) : undefined, instructions: typeof args.instructions === "string" ? args.instructions.slice(0, 1_000) : undefined })}`, name))) result = "User denied the Local workspace change.";
+      else {
+        try {
+          if (name === "local_create_knowledge_space") {
+            const state = await this.addKnowledgeSpace(String(args.name ?? ""), []);
+            const space = state.spaces.at(-1)!;
+            result = JSON.stringify({ spaceId: space.id, name: space.name, folder: space.folders[0] });
+          } else if (name === "local_create_note") {
+            const spaceId = String(args.spaceId ?? "");
+            const response = await handleLocalKnowledgeApi(this, new URL(`/api/knowledge/${encodeURIComponent(spaceId)}/documents`, "http://localhost"), "POST", { path: args.path, content: args.content });
+            result = response.status === 200 ? JSON.stringify(response.body) : `Error: ${JSON.stringify(response.body)}`;
+          } else if (name === "local_save_skill") {
+            const slug = String(args.slug ?? "");
+            const existing = this.store.get().skills?.find((skill) => skill.slug === slug);
+            const state = this.saveSkill({ id: existing?.id, slug, name: String(args.name ?? ""), description: String(args.description ?? ""), instructions: String(args.instructions ?? ""),
+              triggers: Array.isArray(args.triggers) ? args.triggers.map(String) : [], tags: Array.isArray(args.tags) ? args.tags.map(String) : [] });
+            const skill = state.skills?.find((entry) => entry.slug === slug);
+            result = JSON.stringify({ skillId: skill?.id, slug: skill?.slug, path: this.layout.path("skills", `${slug}.md`) });
+          } else {
+            if (!workspace) throw new Error("Select a workspace before registering an app.");
+            const directory = safePath(workspace, String(args.directory ?? "."));
+            if (!statSync(directory).isDirectory()) throw new Error("App directory does not exist.");
+            const state = this.saveApp({ name: String(args.name ?? ""), directory, command: String(args.command ?? ""), args: Array.isArray(args.args) ? args.args.map(String) : [], previewUrl: String(args.previewUrl ?? "") });
+            const app = state.apps[0];
+            result = JSON.stringify({ appId: app.id, name: app.name, directory: app.directory, status: app.status });
+          }
+        } catch (error) { result = `Error: ${error instanceof Error ? error.message : String(error)}`; }
+      }
     } else if (!workspace) {
       result = "Error: select a workspace before using local file or command tools.";
     } else {
       result = await runLocalTool({ tool: label, args }, this.toolsConfig(workspace, conversationId));
+    }
+    if (name === "cli_write_file" && workspace && result.startsWith("Written ") && typeof args.path === "string") {
+      const path = safePath(workspace, args.path);
+      const readback = await runLocalTool({ tool: "read_file", args: { path: args.path } }, this.toolsConfig(workspace, conversationId));
+      result += `\n${readback.startsWith("Error:") ? "File readback failed" : "Verified file readback"}:\n${readback.slice(0, 16_000)}`;
+      const previous = this.store.get().conversations.find((entry) => entry.id === conversationId)?.artifacts?.find((artifact) => artifact.path === path);
+      const id = previous?.id ?? randomUUID();
+      const size = statSync(path).size;
+      const snapshot = this.layout.path("artifacts", `${id}-${basename(path)}`);
+      if (size <= 20_000_000) copyFileSync(path, snapshot);
+      else if (existsSync(snapshot)) unlinkSync(snapshot);
+      const item: LocalLibraryItem = {
+        id, name: basename(path), path: size <= 20_000_000 ? snapshot : path,
+        mimeType: mimeFor(path), source: "agent",
+        agentId: this.store.get().conversations.find((entry) => entry.id === conversationId)?.agentId,
+        conversationId, createdAt: now(), updatedAt: now(),
+      };
+      this.change((draft) => {
+        const conversation = draft.conversations.find((candidate) => candidate.id === conversationId);
+        if (!conversation) return;
+        const artifacts = conversation.artifacts ?? (conversation.artifacts = []);
+        const current = artifacts.find((artifact) => artifact.path === path);
+        if (!current) {
+          artifacts.push({ id, name: basename(path), path, createdAt: now() });
+          (draft.library ??= []).unshift(item);
+        } else {
+          const libraryItem = draft.library?.find((entry) => entry.id === current.id);
+          if (libraryItem) Object.assign(libraryItem, { path: item.path, mimeType: item.mimeType, updatedAt: now() });
+        }
+      });
     }
     this.emit({
       type: "activity",
       label: label.replaceAll("_", " "),
       detail: result.slice(0, 16_000),
       status: result.startsWith("Error:") || result.startsWith("User denied") ? "error" : "done",
+      toolName: name,
+      args,
+      result: result.slice(0, 32_000),
+      conversationId,
+    });
+    this.change((draft) => {
+      const conversation = draft.conversations.find((candidate) => candidate.id === conversationId);
+      if (conversation) conversation.messages.push({
+        id: randomUUID(),
+        role: "tool",
+        content: result.slice(0, 32_000),
+        toolName: name,
+        toolArgs: {
+          ...args,
+          ...(typeof args.content === "string" ? { content: args.content.slice(0, 32_000) } : {}),
+        },
+        createdAt: now(),
+      });
     });
     return result;
+  }
+
+  getArtifactPath(conversationId: string, artifactId: string) {
+    const conversation = this.store.get().conversations.find((candidate) => candidate.id === conversationId);
+    const artifact = conversation?.artifacts?.find((candidate) => candidate.id === artifactId);
+    if (!conversation?.workspaceRoot || !artifact) throw new Error("Local artifact not found");
+    const path = safePath(conversation.workspaceRoot, artifact.path);
+    if (!existsSync(path)) throw new Error("Local artifact no longer exists");
+    return path;
+  }
+
+  setArtifactFavorite(conversationId: string, artifactId: string, favorite: boolean) {
+    return this.change((state) => {
+      const artifact = state.conversations.find((candidate) => candidate.id === conversationId)?.artifacts?.find((candidate) => candidate.id === artifactId);
+      if (!artifact) throw new Error("Local artifact not found");
+      artifact.isFavorite = favorite;
+      const item = state.library?.find((candidate) => candidate.id === artifactId);
+      if (item) item.isFavorite = favorite;
+    });
+  }
+
+  removeArtifactReference(conversationId: string, artifactId: string) {
+    return this.change((state) => {
+      const conversation = state.conversations.find((candidate) => candidate.id === conversationId);
+      if (!conversation?.artifacts?.some((candidate) => candidate.id === artifactId)) throw new Error("Local artifact not found");
+      conversation.artifacts = conversation.artifacts.filter((candidate) => candidate.id !== artifactId);
+    });
   }
 
   private toolsConfig(rootDir: string, sessionId = "desktop", signal?: AbortSignal): LocalToolsConfig {
@@ -595,6 +1026,7 @@ export class PrivateLocalRuntime {
 
   private change(mutator: (state: LocalState) => void) {
     const state = this.store.update(mutator);
+    this.layout.sync(state);
     this.emit({ type: "state", state });
     return state;
   }
@@ -602,33 +1034,6 @@ export class PrivateLocalRuntime {
   private emit(event: RuntimeEvent) {
     if (this.target && !this.target.isDestroyed()) this.target.send("local:event", event);
   }
-}
-
-function extractDesktopToolCall(text: string) {
-  const explicit = extractToolCall(text);
-  if (explicit) return explicit;
-  const block = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/i);
-  const candidate = block?.[1] ?? text.trim();
-  try {
-    const parsed = JSON.parse(candidate) as {
-      name?: unknown;
-      arguments?: unknown;
-      function?: { name?: unknown; arguments?: unknown };
-    };
-    const tool = typeof parsed.name === "string"
-      ? parsed.name
-      : typeof parsed.function?.name === "string"
-        ? parsed.function.name
-        : null;
-    const rawArgs = parsed.arguments ?? parsed.function?.arguments;
-    const args = typeof rawArgs === "string" ? JSON.parse(rawArgs) : rawArgs;
-    if (tool && args && typeof args === "object") {
-      return { tool, args: args as Record<string, unknown> };
-    }
-  } catch {
-    // Ordinary assistant text is not a tool call.
-  }
-  return null;
 }
 
 export function ensureLocalPreview(raw: string) {

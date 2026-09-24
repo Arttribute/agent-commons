@@ -1,4 +1,6 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -473,7 +475,7 @@ export function TaskManagementView({
   const handleExecute = useCallback(async (taskId: string) => {
     setActionLoading(taskId);
     try {
-      await fetch(`/api/tasks/${taskId}/execute`, { method: "POST" });
+      await desktopApiFetch(`/api/tasks/${taskId}/execute`, { method: "POST" });
       refresh();
     } finally {
       setActionLoading(null);
@@ -483,7 +485,7 @@ export function TaskManagementView({
   const handleCancel = useCallback(async (taskId: string) => {
     setActionLoading(taskId);
     try {
-      await fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
+      await desktopApiFetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
       refresh();
     } finally {
       setActionLoading(null);
@@ -494,7 +496,7 @@ export function TaskManagementView({
     if (!confirm("Delete this task?")) return;
     setActionLoading(taskId);
     try {
-      await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
+      await desktopApiFetch(`/api/tasks/${taskId}`, { method: "DELETE" });
       refresh();
     } finally {
       setActionLoading(null);

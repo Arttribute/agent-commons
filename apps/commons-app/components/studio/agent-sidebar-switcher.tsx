@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { Input } from "@/components/ui/input";
@@ -27,9 +26,7 @@ export type SwitcherAgent = {
  * - default (sidebar): a full identity block with the agent's model line.
  * - `compact`: a small inline pill, for embedding next to other controls.
  *
- * By default selecting an agent navigates to its studio page. Pass `onSelect`
- * to use it as a controlled picker (e.g. choosing which agent to start a
- * session with) — then no navigation happens.
+ * The parent owns navigation so the picker works in Cloud and Local.
  */
 export function AgentSidebarSwitcher({
   current,
@@ -41,10 +38,9 @@ export function AgentSidebarSwitcher({
   current: SwitcherAgent;
   items: SwitcherAgent[];
   compact?: boolean;
-  onSelect?: (id: string) => void;
+  onSelect: (id: string) => void;
   placeholder?: string;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -61,11 +57,7 @@ export function AgentSidebarSwitcher({
   const openAgent = (id: string) => {
     setOpen(false);
     if (id === current.id) return;
-    if (onSelect) {
-      onSelect(id);
-      return;
-    }
-    router.push(`/studio/agents/${id}`);
+    onSelect(id);
   };
 
   return (

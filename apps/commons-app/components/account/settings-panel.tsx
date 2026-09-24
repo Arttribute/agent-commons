@@ -29,8 +29,11 @@ import { useAuth } from "@/context/AuthContext";
 import { UsageSection } from "@/components/account/usage-section";
 import { BillingPanel } from "@/components/billing/billing-panel";
 import { DeveloperApiKeysSection } from "@/components/account/developer-api-keys-section";
+import { WorkspaceGeneralSettings } from "@/components/layout/workspace-general-settings";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 export const SETTINGS_SECTIONS = [
+  "general",
   "profile",
   "models",
   "storage",
@@ -42,6 +45,7 @@ export const SETTINGS_SECTIONS = [
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 const SECTION_LABELS: Record<SettingsSection, string> = {
+  general: "General",
   profile: "Profile",
   models: "Model Defaults",
   storage: "Artifact Storage",
@@ -52,6 +56,7 @@ const SECTION_LABELS: Record<SettingsSection, string> = {
 };
 
 const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
+  general: Globe2,
   profile: User,
   models: Cpu,
   storage: HardDrive,
@@ -62,14 +67,14 @@ const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
 };
 
 // ─── Profile Section ──────────────────────────────────────────────────────────
-function ProfileSection({ walletAddress }: { walletAddress: string }) {
+function ProfileSection({ walletAddress, local }: { walletAddress: string; local: boolean }) {
   const { authState } = useAuth();
   return (
     <div className="space-y-6 max-w-lg">
       <div>
         <h2 className="text-base font-semibold">Profile</h2>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Your account identity on Agent Commons
+          {local ? "The account identity available on this computer" : "Your account identity on Agent Commons"}
         </p>
       </div>
       <div className="space-y-4">
@@ -82,18 +87,17 @@ function ProfileSection({ walletAddress }: { walletAddress: string }) {
           <p className="rounded-md bg-muted px-3 py-2 text-sm break-all">{authState.email || "Not available"}</p>
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">Commons account ID</Label>
+          <Label className="text-xs">{local ? "Account or Local workspace ID" : "Commons account ID"}</Label>
           <div className="flex items-center gap-2">
             <code className="flex-1 rounded-md bg-muted px-3 py-2 text-xs font-mono break-all">
               {walletAddress || "Not connected"}
             </code>
           </div>
-          <p className="text-xs text-muted-foreground">
-            This is your stable Commons account ID. It is shared across Agent
-            Commons products.
-          </p>
+          <p className="text-xs text-muted-foreground">{local
+            ? "Your Local workspace can use account details cached on this computer. Local chats and files stay in this workspace."
+            : "This is your stable Commons account ID. It is shared across Agent Commons products."}</p>
         </div>
-        <div className="pt-2">
+        {!local && <div className="pt-2">
           <p className="text-xs text-muted-foreground">
             To use the CLI with this account, run{" "}
             <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] font-mono">
@@ -102,7 +106,7 @@ function ProfileSection({ walletAddress }: { walletAddress: string }) {
             and approve the one-time browser sign-in. API keys are reserved for
             SDKs, servers, CI, and automation.
           </p>
-        </div>
+        </div>}
       </div>
     </div>
   );
@@ -645,7 +649,11 @@ export function SettingsPanel({
   initialSection?: SettingsSection;
   className?: string;
 }) {
+  const { mode } = useWorkspaceMode();
   const [section, setSection] = useState<SettingsSection>(initialSection);
+  const local = mode === "private-local";
+  const visibleSections: readonly SettingsSection[] = local ? ["general", "profile"] : SETTINGS_SECTIONS;
+  const activeSection = visibleSections.includes(section) ? section : "general";
 
   return (
     <div className={cn("flex min-h-0", className)}>
@@ -655,9 +663,9 @@ export function SettingsPanel({
           Account
         </p>
         <nav className="space-y-0.5">
-          {SETTINGS_SECTIONS.map((s) => {
+          {visibleSections.map((s) => {
             const Icon = SECTION_ICONS[s];
-            const active = section === s;
+            const active = activeSection === s;
             return (
               <button
                 key={s}
@@ -678,17 +686,18 @@ export function SettingsPanel({
       </div>
       {/* Content */}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-8">
-        {section === "profile" && (
-          <ProfileSection walletAddress={walletAddress} />
+        {activeSection === "general" && <WorkspaceGeneralSettings mode={mode} />}
+        {activeSection === "profile" && (
+          <ProfileSection walletAddress={walletAddress} local={local} />
         )}
-        {section === "models" && <ModelDefaultsSection />}
-        {section === "storage" && <ArtifactStorageSection />}
-        {section === "providers" && <CapabilityProvidersSection />}
-        {section === "billing" && <BillingPanel />}
-        {section === "api-keys" && (
+        {activeSection === "models" && <ModelDefaultsSection />}
+        {activeSection === "storage" && <ArtifactStorageSection />}
+        {activeSection === "providers" && <CapabilityProvidersSection />}
+        {activeSection === "billing" && <BillingPanel />}
+        {activeSection === "api-keys" && (
           <DeveloperApiKeysSection workspaceId={workspaceId} />
         )}
-        {section === "usage" && <UsageSection walletAddress={walletAddress} />}
+        {activeSection === "usage" && <UsageSection walletAddress={walletAddress} />}
       </div>
     </div>
   );

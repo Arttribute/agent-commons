@@ -1,4 +1,6 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 
 import React, { use, useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -171,7 +173,7 @@ export default function TaskDetailPage({
 
   const fetchTask = useCallback(async () => {
     try {
-      const res = await fetch(`/api/tasks/${taskId}`);
+      const res = await desktopApiFetch(`/api/tasks/${taskId}`);
       if (!res.ok) { setTask(null); return; }
       const data = await res.json();
       setTask(data.data ?? data ?? null);
@@ -197,7 +199,7 @@ export default function TaskDetailPage({
   // Fetch agent name
   useEffect(() => {
     if (!task?.agentId) return;
-    fetch(`/api/agents/${task.agentId}`)
+    desktopApiFetch(`/api/agents/${task.agentId}`)
       .then((r) => r.json())
       .then((d) => {
         const name = d?.data?.name ?? d?.name ?? null;
@@ -212,7 +214,7 @@ export default function TaskDetailPage({
     if (!task) return;
     setActionLoading("execute");
     try {
-      await fetch(`/api/tasks/${task.taskId}/execute`, { method: "POST" });
+      await desktopApiFetch(`/api/tasks/${task.taskId}/execute`, { method: "POST" });
       await fetchTask();
     } finally {
       setActionLoading(null);
@@ -223,7 +225,7 @@ export default function TaskDetailPage({
     if (!task) return;
     setActionLoading("cancel");
     try {
-      await fetch(`/api/tasks/${task.taskId}/cancel`, { method: "POST" });
+      await desktopApiFetch(`/api/tasks/${task.taskId}/cancel`, { method: "POST" });
       await fetchTask();
     } finally {
       setActionLoading(null);
@@ -235,7 +237,7 @@ export default function TaskDetailPage({
     if (!confirm("Delete this task? This action cannot be undone.")) return;
     setActionLoading("delete");
     try {
-      await fetch(`/api/tasks/${task.taskId}`, { method: "DELETE" });
+      await desktopApiFetch(`/api/tasks/${task.taskId}`, { method: "DELETE" });
       router.push("/studio/tasks");
     } finally {
       setActionLoading(null);

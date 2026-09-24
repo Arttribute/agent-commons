@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -26,11 +26,17 @@ import SessionsList from "@/components/sessions/sessions-list";
 import { useSidebar } from "@/context/SidebarContext";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
 import { useSessionMutations } from "@/hooks/sessions/use-session-mutations";
+import { isLockedStudioDetailRoute, resolveWorkspaceRoute } from "@/lib/workspace-routes";
+import { WorkspaceModeSwitch } from "./workspace-mode-switch";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 export function DashboardSideBar({ username }: { username: string }) {
   const { isOpen, setIsOpen } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
+  const [desktop, setDesktop] = useState(false);
+  const { mode, setMode } = useWorkspaceMode();
+  useEffect(() => { setDesktop(Boolean(window.agentCommonsDesktop)); }, []);
 
   const { sessions, setSessions, isLoading, error, refetch } =
     useUserSessions(username);
@@ -40,14 +46,7 @@ export function DashboardSideBar({ username }: { username: string }) {
     if (!pathname) return false;
     // Detail pages ([id] routes) collapse the sidebar; create pages keep the
     // normal expanded sidebar like the studio list pages.
-    return (
-      /^\/studio\/(agents|tools|workflows|skills)\/(?!create(?:\/|$))[^/]+/.test(
-        pathname,
-      ) ||
-      /^\/studio\/customize\/skills\/[^/]+/.test(pathname) ||
-      pathname.startsWith("/studio/canvas") ||
-      pathname.startsWith("/knowledge")
-    );
+    return isLockedStudioDetailRoute(pathname);
   }, [pathname]);
   const sidebarOpen = isOpen && !isLockedDetailRoute;
 
@@ -59,23 +58,8 @@ export function DashboardSideBar({ username }: { username: string }) {
   }, [pathname]);
 
   const activeSection = useMemo(() => {
-    if (!pathname) return "agents";
-    if (pathname.startsWith("/studio/agents")) return "agents";
-    if (pathname.startsWith("/studio/tools")) return "tools";
-    if (pathname.startsWith("/studio/tasks")) return "tasks";
-    if (pathname.startsWith("/studio/workflows")) return "workflows";
-    if (
-      pathname.startsWith("/studio/customize") ||
-      pathname.startsWith("/studio/apps") ||
-      pathname.startsWith("/studio/skills")
-    )
-      return "customize";
-    if (pathname.startsWith("/library")) return "library";
-    if (pathname.startsWith("/knowledge")) return "knowledge";
-    if (pathname.startsWith("/logs")) return "logs";
-    if (pathname.startsWith("/spaces")) return "spaces";
-    if (pathname.startsWith("/developers")) return "developers";
-    return "agents";
+    const section = resolveWorkspaceRoute(pathname ?? "/studio/agents").section;
+    return section === "sessions" ? "agents" : section === "apps" ? "library" : section;
   }, [pathname]);
 
   const handleRename = async (sessionId: string, title: string) => {
@@ -103,6 +87,7 @@ export function DashboardSideBar({ username }: { username: string }) {
         sidebarOpen ? "w-[290px] min-w-[290px]" : "w-[60px] min-w-[60px]",
       )}
     >
+      {desktop && <WorkspaceModeSwitch mode={mode} onCloud={() => void setMode("cloud")} onLocal={() => void setMode("private-local")} />}
       <div className="px-3 pt-4">
         {sidebarOpen ? (
           <div>

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { isUiPlugin, type UiPlugin } from "@/components/plugins/types";
 import { subscribeToUiPluginChanges } from "@/lib/ui-plugin-events";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 export const GLOBAL_APPS_SCOPE = "global";
 export const DEFAULT_MAX_PINNED_APPS = 6;
@@ -36,10 +37,12 @@ export const useCommonsAppsStore = create<CommonsAppsState>((set, get) => ({
 
   refresh: async () => {
     const sequence = ++refreshSequence;
+    const local = typeof document !== "undefined" && document.cookie.split(";").some((part) => part.trim() === "commons-desktop-mode=private-local");
+    if (local) set({ plugins: [], loaded: false });
     try {
       const [pluginsResponse, layoutResponse] = await Promise.all([
-        fetch("/api/ui-plugins", { cache: "no-store" }),
-        fetch("/api/ui-plugins/layout", { cache: "no-store" }),
+        desktopApiFetch("/api/ui-plugins", { cache: "no-store" }),
+        desktopApiFetch("/api/ui-plugins/layout", { cache: "no-store" }),
       ]);
       if (sequence !== refreshSequence) return;
       const pluginsPayload = pluginsResponse.ok
@@ -64,7 +67,7 @@ export const useCommonsAppsStore = create<CommonsAppsState>((set, get) => ({
       });
     } catch {
       // Keep the last known apps during transient failures.
-      set({ loaded: true });
+      set(local ? { plugins: [], loaded: true } : { loaded: true });
     }
   },
 
@@ -73,7 +76,7 @@ export const useCommonsAppsStore = create<CommonsAppsState>((set, get) => ({
     const ids = pluginIds.slice(0, get().maxPinned);
     set({ layout: { ...previous, [scope]: ids } });
     try {
-      const response = await fetch("/api/ui-plugins/layout", {
+      const response = await desktopApiFetch("/api/ui-plugins/layout", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scope, pluginIds: ids }),
@@ -93,7 +96,7 @@ export const useCommonsAppsStore = create<CommonsAppsState>((set, get) => ({
     delete next[scope];
     set({ layout: next });
     try {
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/ui-plugins/layout?scope=${encodeURIComponent(scope)}`,
         { method: "DELETE" },
       );

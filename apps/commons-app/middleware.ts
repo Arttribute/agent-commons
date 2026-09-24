@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 
 /**
@@ -7,7 +7,7 @@ import { auth } from "@/auth";
  * authorization never depends on a client effect or localStorage value, and a
  * signed-in member never sees a flash of marketing before being routed home.
  */
-export default auth((request) => {
+const cloudAuthMiddleware = auth((request) => {
   const signedIn = Boolean(request.auth?.user?.id);
   const { pathname, search, origin } = request.nextUrl;
 
@@ -23,6 +23,24 @@ export default auth((request) => {
   return NextResponse.redirect(login);
 });
 
+export default function middleware(request: NextRequest, event: NextFetchEvent) {
+  const desktopLocal = process.env.COMMONS_DESKTOP_SERVER === "1" &&
+    request.cookies.get("commons-desktop-mode")?.value === "private-local";
+  if (desktopLocal) {
+    const { pathname, origin } = request.nextUrl;
+    if (pathname === "/api/auth/session") return NextResponse.json(null);
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Cloud APIs are unavailable in Local mode." }, { status: 503 });
+    }
+    if (pathname === "/") return NextResponse.redirect(new URL("/studio/agents", origin));
+    return NextResponse.next();
+  }
+  // Auth.js and the native sign-in handoff must remain reachable while signed
+  // out. Guarding these routes redirects /login back to its own start route.
+  if (request.nextUrl.pathname.startsWith("/api/auth/")) return NextResponse.next();
+  return cloudAuthMiddleware(request, event as never);
+}
+
 export const config = {
   matcher: [
     "/",
@@ -36,5 +54,6 @@ export const config = {
     "/library/:path*",
     "/brains/:path*",
     "/knowledge/:path*",
+    "/api/:path*",
   ],
 };

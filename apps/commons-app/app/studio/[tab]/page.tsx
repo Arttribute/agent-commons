@@ -2,12 +2,9 @@
 
 import { useParams, usePathname } from "next/navigation";
 import type { NextPage } from "next";
-import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
-import {
-  AgentsPagination,
-  AGENT_PAGE_SIZES,
-} from "@/components/agents/agents-pagination";
+import { AgentsWorkspaceView } from "@/components/studio/agents-workspace-view";
 import { StudioAgentLauncher } from "@/components/studio/agent-launcher";
 import { LauncherGreeting } from "@/components/studio/launcher-greeting";
 import { CommonsAppsBar } from "@/components/plugins/apps-bar";
@@ -24,6 +21,7 @@ import { CreateButton, PageHeader } from "@/components/layout/page-header";
 import { useRouter } from "next/navigation";
 import { useAgents } from "@/hooks/use-agents";
 import { normalizePrincipalId } from "@/lib/principal-id";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import {
   CREATE_UI_PLUGIN_HASH,
   openUiPluginCreator,
@@ -35,6 +33,8 @@ const StudioPage: NextPage = () => {
   const pathname = usePathname();
   const router = useRouter();
   const { authState } = useAuth();
+  const { mode } = useWorkspaceMode();
+  const local = mode === "private-local";
   const userAddress = normalizePrincipalId(authState.walletAddress);
 
   const activeTab =
@@ -56,8 +56,6 @@ const StudioPage: NextPage = () => {
   const registerTaskCreate = useCallback((fn: () => void) => {
     taskCreateRef.current = fn;
   }, []);
-  // The launcher's footprint, so the floating agents can keep clear of it.
-  const composerRef = useRef<HTMLDivElement>(null);
 
   const {
     agents,
@@ -65,36 +63,6 @@ const StudioPage: NextPage = () => {
     error: agentsError,
     refresh: refreshAgents,
   } = useAgents(activeTab === "agents" ? userAddress : undefined);
-
-  // Agents arrive ordered by latest interaction (falling back to creation);
-  // we page through them client-side, 10 floating profiles at a time.
-  const [agentPage, setAgentPage] = useState(0);
-  const [agentPageSize, setAgentPageSize] = useState(10);
-
-  useEffect(() => {
-    const stored = Number(
-      window.localStorage.getItem("studio-agents-per-page")
-    );
-    if (AGENT_PAGE_SIZES.includes(stored)) setAgentPageSize(stored);
-  }, []);
-
-  const handleAgentPageSizeChange = useCallback((size: number) => {
-    setAgentPageSize(size);
-    setAgentPage(0);
-    window.localStorage.setItem("studio-agents-per-page", String(size));
-  }, []);
-
-  // Keep the page in range when the list shrinks or the page size grows.
-  const agentPageCount = Math.max(1, Math.ceil(agents.length / agentPageSize));
-  useEffect(() => {
-    setAgentPage((p) => Math.min(p, agentPageCount - 1));
-  }, [agentPageCount]);
-
-  const pagedAgents = useMemo(
-    () =>
-      agents.slice(agentPage * agentPageSize, (agentPage + 1) * agentPageSize),
-    [agents, agentPage, agentPageSize]
-  );
 
   const mainContent = useMemo(() => {
     switch (activeTab) {
@@ -142,63 +110,24 @@ const StudioPage: NextPage = () => {
       // the plain showcase.
       case "agents":
         return (
-          <div className="p-4 sm:p-6">
-            <div className="relative h-[calc(100vh-170px)]">
-              {loadingAgents ? (
-                <div className="flex h-full items-center justify-center">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : agentsError ? (
-                <div className="flex h-full flex-col items-center justify-center text-center">
-                  <AlertCircle className="mb-3 h-6 w-6 text-red-500" />
-                  <p className="text-sm font-medium">
-                    Couldn’t load your agents
-                  </p>
-                  <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-                    Your account is still signed in. The connection to Agent
-                    Commons was interrupted.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={refreshAgents}
-                    className="mt-4 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
-                  >
-                    Try again
-                  </button>
-                </div>
-              ) : agents.length === 0 ? (
-                <AgentsShowcase agents={agents} />
-              ) : (
-                <>
-                  {/* Rendered before the showcase so composerRef is attached by
-                      the time the showcase measures it to route avatars clear.
-                      z-index (not DOM order) keeps the composer above them. */}
-                  <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-4">
-                    <div
-                      ref={composerRef}
-                      className="pointer-events-auto w-full max-w-[46rem]"
-                    >
-                      <div className="mb-5 text-center">
-                        <LauncherGreeting />
-                      </div>
-                      <StudioAgentLauncher
-                        agents={agents.map((a) => ({
-                          agentId: a.agentId,
-                          name: a.name,
-                          avatar: (a as any).avatar,
-                          modelId: (a as any).modelId,
-                          isDefault: Boolean((a as any).isDefault),
-                          conversationStarters: (a as any).conversationStarters,
-                        }))}
-                        userAddress={userAddress}
-                      />
-                    </div>
-                  </div>
-                  <AgentsShowcase agents={pagedAgents} avoidRef={composerRef} />
-                </>
-              )}
-            </div>
-          </div>
+          <AgentsWorkspaceView
+            agents={agents}
+            loading={loadingAgents}
+            error={Boolean(agentsError)}
+            onRetry={refreshAgents}
+            onAgentClick={(id) => router.push(`/studio/agents/${id}`)}
+            launcher={<StudioAgentLauncher
+              agents={agents.map((a) => ({
+                agentId: a.agentId,
+                name: a.name,
+                avatar: (a as any).avatar,
+                modelId: (a as any).modelId,
+                isDefault: Boolean((a as any).isDefault),
+                conversationStarters: (a as any).conversationStarters,
+              }))}
+              userAddress={userAddress}
+            />}
+          />
         );
       default:
         return (
@@ -209,7 +138,7 @@ const StudioPage: NextPage = () => {
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
               ) : (
-                <AgentsShowcase agents={agents} />
+                <AgentsShowcase agents={agents} onAgentClick={(id) => router.push(`/studio/agents/${id}`)} />
               )}
             </div>
           </div>
@@ -220,7 +149,6 @@ const StudioPage: NextPage = () => {
     loadingAgents,
     agentsError,
     agents,
-    pagedAgents,
     userAddress,
     registerSkillCreate,
     registerTaskCreate,
@@ -249,7 +177,9 @@ const StudioPage: NextPage = () => {
       case "tools":
         return {
           title: "Tools",
-          description: "Create and manage your tools and API integrations.",
+          description: local
+            ? "Review the tools available to agents on this computer."
+            : "Create and manage your tools and API integrations.",
         };
       case "tasks":
         return {
@@ -281,7 +211,7 @@ const StudioPage: NextPage = () => {
           description: "",
         };
     }
-  }, [activeTab]);
+  }, [activeTab, local]);
 
   const handleCreateClick = () => {
     if (activeTab === "workflows") {
@@ -303,11 +233,13 @@ const StudioPage: NextPage = () => {
     <div className="relative flex h-full min-w-0 flex-col bg-page">
       <PageHeader title={pageCopy.title} description={pageCopy.description}>
         <CommonsAppsBar />
-        <CreateButton
-          label={createLabel}
-          onClick={handleCreateClick}
-          href={activeTab === "apps" ? CREATE_UI_PLUGIN_HASH : undefined}
-        />
+        {!(activeTab === "tools" && local) && (
+          <CreateButton
+            label={createLabel}
+            onClick={handleCreateClick}
+            href={activeTab === "apps" ? CREATE_UI_PLUGIN_HASH : undefined}
+          />
+        )}
       </PageHeader>
 
       {isCustomize && <CustomizeTabs />}
@@ -316,17 +248,6 @@ const StudioPage: NextPage = () => {
 
       {/* Anchored at the page edge — same bottom line as the session chat
           input and other fixed bottom UI, clear of the padded content area. */}
-      {activeTab === "agents" && !loadingAgents && agents.length > 0 && (
-        <div className="pointer-events-none absolute bottom-4 left-4 z-30 sm:left-6">
-          <AgentsPagination
-            page={agentPage}
-            pageSize={agentPageSize}
-            total={agents.length}
-            onPageChange={setAgentPage}
-            onPageSizeChange={handleAgentPageSizeChange}
-          />
-        </div>
-      )}
 
       <CreateWorkflowDialog
         open={showCreateWorkflowDialog}

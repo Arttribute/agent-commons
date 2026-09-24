@@ -1,0 +1,11 @@
+{
+  "name": "@agent-commons/agent-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "./src/index.cjs",
+  "types": "./src/index.d.cts",
+  "exports": { ".": { "types": "./src/index.d.cts", "require": "./src/index.cjs", "default": "./src/index.cjs" } },
+  "scripts": { "typecheck": "tsc --noEmit", "test": "node --test src/*.test.mjs" },
+  "devDependencies": { "typescript": "^5" }
+}

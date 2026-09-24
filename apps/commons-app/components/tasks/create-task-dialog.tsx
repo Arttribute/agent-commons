@@ -1,4 +1,6 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 
 import React, { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
@@ -128,7 +130,7 @@ export function CreateTaskDialog({
 
   useEffect(() => {
     if (open) {
-      fetch("/api/tools").then((r) => r.json()).then((d) => setTools(d.data ?? [])).catch(() => {});
+      desktopApiFetch("/api/tools").then((r) => r.json()).then((d) => setTools(d.data ?? [])).catch(() => {});
       setFormData(EMPTY_FORM(preSelectedAgentId, initialScheduledFor));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -136,7 +138,7 @@ export function CreateTaskDialog({
 
   useEffect(() => {
     if (!formData.agentId) return;
-    fetch(`/api/sessions/list?agentId=${formData.agentId}&initiatorId=${encodeURIComponent(userAddress)}`)
+    desktopApiFetch(`/api/sessions/list?agentId=${formData.agentId}&initiatorId=${encodeURIComponent(userAddress)}`)
       .then((r) => r.json())
       .then((d) => setSessions(d.data ?? []))
       .catch(() => setSessions([]));
@@ -155,7 +157,7 @@ export function CreateTaskDialog({
     try {
       let sessionId = formData.sessionId;
       if (!sessionId || sessionId === "new-session") {
-        const res = await fetch("/api/sessions", {
+        const res = await desktopApiFetch("/api/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ agentId: formData.agentId, initiator: userAddress, title: `Task: ${formData.title}` }),
@@ -166,7 +168,7 @@ export function CreateTaskDialog({
         if (!sessionId) throw new Error("Session creation returned no sessionId");
       }
 
-      const taskRes = await fetch("/api/tasks", {
+      const taskRes = await desktopApiFetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

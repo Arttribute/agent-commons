@@ -100,6 +100,8 @@ import { normalizeSessionHistory } from "@/lib/session-history";
 import { useAuth } from "@/context/AuthContext";
 import { useAgentContext } from "@/context/AgentContext";
 import type { CommonAgent } from "@/types/agent";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { localAgentToCommon, localConversationToSession } from "@/lib/local-agent-adapter";
 
 type SectionKey =
   | "setup"
@@ -232,6 +234,7 @@ function SetupView({
   onSaved: (agent: CommonAgent) => void;
   onOpenSection?: (section: SectionKey) => void;
 }) {
+  const { mode } = useWorkspaceMode();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -289,6 +292,25 @@ function SetupView({
     setSaved(false);
     setSaveError(null);
     try {
+      if (mode === "private-local") {
+        const bridge = window.agentCommonsLocal;
+        if (!bridge) throw new Error("The local Desktop provider is unavailable.");
+        const state = await bridge.saveAgent({
+          id: agent.agentId,
+          name: form.name,
+          avatar: form.avatar,
+          description: form.description,
+          persona: form.persona,
+          instructions: form.instructions,
+          model: form.modelId,
+        });
+        const updated = state.agents.find((candidate) => candidate.id === agent.agentId);
+        if (!updated) throw new Error("Local agent not found after saving.");
+        onSaved(localAgentToCommon(updated, state));
+        setSaved(true);
+        setTimeout(() => setSaved(false), 1800);
+        return;
+      }
       const modelChanged =
         form.modelProvider !== ((agent as any).modelProvider || "openai") ||
         form.modelId !== ((agent as any).modelId || "") ||
@@ -2642,6 +2664,7 @@ export default function AgentStudioPage({
   ) as SectionKey | null;
   const requestedSessionId = searchParams.get("session");
   const { authState } = useAuth();
+  const { mode } = useWorkspaceMode();
   const userAddress = normalizePrincipalId(authState.walletAddress);
   const { agents } = useAgents(userAddress || undefined);
   const {
@@ -2724,6 +2747,13 @@ export default function AgentStudioPage({
     if (!agentId) return;
     setLoading(true);
     try {
+      if (mode === "private-local") {
+        const state = await window.agentCommonsLocal?.getState();
+        const localAgent = state?.agents.find((candidate) => candidate.id === agentId);
+        setAgent(state && localAgent ? localAgentToCommon(localAgent, state) : null);
+        setAgentTools([]);
+        return;
+      }
       const [agentRes, toolsRes] = await Promise.all([
         fetch(`/api/agents/${agentId}`),
         fetch(`/api/agents/${agentId}/tools`),
@@ -2735,10 +2765,15 @@ export default function AgentStudioPage({
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
+  }, [agentId, mode]);
 
   const loadSessions = useCallback(async () => {
     if (!agentId || !userAddress) return;
+    if (mode === "private-local") {
+      const state = await window.agentCommonsLocal?.getState();
+      setSessions(state?.conversations.filter((conversation) => conversation.agentId === agentId).map(localConversationToSession) ?? []);
+      return;
+    }
     const res = await fetch(`/api/sessions/list?agentId=${agentId}`);
     const data = await res.json();
     const list = (data?.data || []).sort(
@@ -2747,13 +2782,21 @@ export default function AgentStudioPage({
         new Date(a.createdAt || 0).getTime(),
     );
     setSessions(list);
-  }, [agentId, userAddress]);
+  }, [agentId, userAddress, mode]);
 
   const loadSession = useCallback(
     async (sessionId: string) => {
       setLoadingSession(true);
       clearMessages();
       try {
+        if (mode === "private-local") {
+          const state = await window.agentCommonsLocal?.getState();
+          const conversation = state?.conversations.find((candidate) => candidate.id === sessionId);
+          const session = conversation ? localConversationToSession(conversation) : null;
+          setSelectedSession(session);
+          setMessages(normalizeSessionHistory(session?.history));
+          return;
+        }
         const res = await fetch(`/api/sessions/${sessionId}?full=true`);
         const data = await res.json();
         const session = data.data ?? null;
@@ -2763,7 +2806,7 @@ export default function AgentStudioPage({
         setLoadingSession(false);
       }
     },
-    [clearMessages, setMessages],
+    [clearMessages, setMessages, mode],
   );
 
   useEffect(() => {
@@ -2960,6 +3003,7 @@ export default function AgentStudioPage({
             </Button>
             <div className="min-w-0 flex-1">
               <AgentSidebarSwitcher
+                onSelect={(id) => router.push(`/studio/agents/${id}`)}
                 current={{
                   id: agentId,
                   name: agent.name,

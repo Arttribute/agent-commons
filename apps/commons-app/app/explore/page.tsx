@@ -6,6 +6,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Loader2, Search } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface Agent {
   agentId: string;
@@ -26,6 +27,7 @@ interface Tool {
 }
 
 export default function ExplorePage() {
+  const router = useRouter();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [tools, setTools]   = useState<Tool[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
@@ -104,7 +106,7 @@ export default function ExplorePage() {
                 {agentSearch ? "No agents match your search." : "No public agents yet."}
               </div>
             ) : (
-              <AgentsShowcase agents={filteredAgents} />
+              <AgentsShowcase agents={filteredAgents} onAgentClick={(id) => router.push(`/studio/agents/${id}`)} />
             )}
           </TabsContent>
 

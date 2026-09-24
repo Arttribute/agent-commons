@@ -24,6 +24,7 @@ import {
 } from "@/components/billing/upgrade-dialog";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import type { AgentRuntimeType } from "@/types/agent";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 interface RegistryModel {
   provider: string;
@@ -58,6 +59,8 @@ const runtimeDescriptions: Record<string, string> = {
 export default function CreateAgentPage() {
   const router = useRouter();
   const { authState } = useAuth();
+  const { mode } = useWorkspaceMode();
+  const local = mode === "private-local";
   const { entitlements } = useEntitlements();
   const userAddress = authState.walletAddress?.toLowerCase();
 
@@ -78,6 +81,21 @@ export default function CreateAgentPage() {
   );
 
   useEffect(() => {
+    if (local) {
+      void Promise.all([
+        window.agentCommonsLocal?.getState(),
+        window.agentCommonsLocal?.listModels(),
+      ]).then(([state, available]) => {
+        setModels((available ?? []).map((modelId) => ({ provider: "ollama", modelId })));
+        setForm((current) => ({
+          ...current,
+          modelProvider: "ollama",
+          modelId: state?.settings.defaultModel ?? available?.[0] ?? "",
+          runtimeType: "native",
+        }));
+      }).catch(() => undefined);
+      return;
+    }
     fetch("/api/models")
       .then((r) => r.json())
       .then((d) => {
@@ -90,12 +108,12 @@ export default function CreateAgentPage() {
         );
       })
       .catch(() => {});
-  }, []);
+  }, [local]);
 
   const providers = useMemo(() => {
     const fromRegistry = models.map((m) => m.provider);
-    return [...new Set([...FALLBACK_PROVIDERS, ...fromRegistry])];
-  }, [models]);
+    return local ? ["ollama"] : [...new Set([...FALLBACK_PROVIDERS, ...fromRegistry])];
+  }, [models, local]);
 
   const providerModels = useMemo(
     () => models.filter((m) => m.provider === form.modelProvider),
@@ -135,6 +153,19 @@ export default function CreateAgentPage() {
     setCreating(true);
     setError(null);
     try {
+      if (local) {
+        const state = await window.agentCommonsLocal?.saveAgent({
+          name: form.name.trim(),
+          avatar: form.avatar || undefined,
+          instructions: form.instructions.trim(),
+          description: form.instructions.trim(),
+          model: effectiveModelId,
+        });
+        if (!state) throw new Error("The local Desktop provider is unavailable.");
+        const created = state?.agents.at(-1);
+        router.push(created ? `/studio/agents/${created.id}` : "/studio/agents");
+        return;
+      }
       const res = await fetch("/api/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -214,6 +245,7 @@ export default function CreateAgentPage() {
 
           <div className="flex items-center gap-5">
             <ImageUploader
+              local={local}
               onImageChange={(imageUrl) =>
                 setForm((f) => ({ ...f, avatar: imageUrl }))
               }

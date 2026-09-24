@@ -16,6 +16,7 @@ import {
 import { eq, and, or, sql, inArray } from 'drizzle-orm';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { buildSkillPromptIndex, findMatchingSkills } from '@agent-commons/agent-core';
 
 export interface CreateSkillDto {
   slug: string;
@@ -619,47 +620,11 @@ export class SkillService implements OnModuleInit {
 
   async buildPromptIndex(ownerId?: string, requestText = '') {
     const index = await this.getIndex(ownerId);
-    if (!index.length) return '';
-    const normalizedRequest = requestText.toLowerCase();
-    const matched = normalizedRequest
-      ? index
-          .filter((skill) =>
-            [skill.name, skill.slug, ...(skill.triggers ?? [])].some(
-              (trigger) =>
-                trigger.length >= 3 &&
-                normalizedRequest.includes(trigger.toLowerCase()),
-            ),
-          )
-          .slice(0, 3)
-      : [];
+    const matched = findMatchingSkills(index, requestText);
     const matchedPlaybooks = await Promise.all(
       matched.map((skill) => this.get(skill.slug)),
     );
-    const prompt = [
-      '## SPECIALIZED SKILLS',
-      'These are progressive-disclosure operating playbooks. When the user request matches one, you MUST call invoke_skill with its slug before the first execution tool call, then follow the returned instructions through validation. Load every clearly relevant skill; do not merely mention it.',
-      ...index
-        .slice(0, 60)
-        .map(
-          (skill) =>
-            `- ${skill.slug}: ${skill.description}${
-              skill.triggers?.length
-                ? ` Triggers: ${skill.triggers.join(', ')}.`
-                : ''
-            }`,
-        ),
-    ];
-    if (matchedPlaybooks.length) {
-      prompt.push(
-        '',
-        '## MATCHED SKILL PLAYBOOKS',
-        'These playbooks matched the current request and are preloaded to guarantee their quality gates. You MUST still call invoke_skill so the execution is visible, then follow this complete playbook rather than improvising a lower-quality shortcut.',
-        ...matchedPlaybooks.map(
-          (skill) => `### ${skill.slug}\n${skill.instructions}`,
-        ),
-      );
-    }
-    return prompt.join('\n');
+    return buildSkillPromptIndex(index, matchedPlaybooks);
   }
 
   private async syncBundledPlatformSkills() {

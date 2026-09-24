@@ -15,8 +15,13 @@ import { useCommonsAppsStore } from "@/lib/commons-apps-store";
 import { AppIcon } from "./app-icon";
 import { AppSettingsSheet, useAccessSummary } from "./app-settings-sheet";
 import { pluginHasSurface, type UiPlugin } from "./types";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export function UiPluginsView() {
+  const { mode: workspaceMode } = useWorkspaceMode();
+  const local = workspaceMode === "private-local";
   const [plugins, setPlugins] = useState<UiPlugin[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -24,10 +29,11 @@ export function UiPluginsView() {
     pluginId: string;
     mode: "review" | "settings";
   } | null>(null);
+  const [localDetails, setLocalDetails] = useState<UiPlugin | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(async () => {
-    const response = await fetch("/api/ui-plugins", { cache: "no-store" });
+    const response = await desktopApiFetch("/api/ui-plugins", { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     setPlugins(response.ok && Array.isArray(payload.data) ? payload.data : []);
     setLoading(false);
@@ -45,7 +51,7 @@ export function UiPluginsView() {
     setSavingId(plugin.pluginId);
     notifyUiPluginsChanged({ pluginId: plugin.pluginId, status: "disabled" });
     try {
-      const response = await fetch(`/api/ui-plugins/${plugin.pluginId}/status`, {
+      const response = await desktopApiFetch(`/api/ui-plugins/${plugin.pluginId}/status`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "disabled" }),
@@ -68,6 +74,21 @@ export function UiPluginsView() {
     } finally {
       setSavingId(null);
     }
+  };
+
+  const enableLocal = async (plugin: UiPlugin) => {
+    setSavingId(plugin.pluginId);
+    try {
+      const response = await desktopApiFetch(`/api/ui-plugins/${plugin.pluginId}/status`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "active" }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || "Could not start Local app");
+      replace(payload.data);
+      notifyUiPluginsChanged({ pluginId: plugin.pluginId, status: "active", plugin: payload.data });
+    } catch (cause) {
+      toast({ title: "Could not start Local app", description: cause instanceof Error ? cause.message : undefined, variant: "destructive" });
+    } finally { setSavingId(null); }
   };
 
   if (loading) {
@@ -121,8 +142,8 @@ export function UiPluginsView() {
                   key={plugin.pluginId}
                   plugin={plugin}
                   saving={savingId === plugin.pluginId}
-                  onToggle={() => setSheet({ pluginId: plugin.pluginId, mode: "review" })}
-                  onSettings={() => setSheet({ pluginId: plugin.pluginId, mode: "review" })}
+                  onToggle={() => local ? void enableLocal(plugin) : setSheet({ pluginId: plugin.pluginId, mode: "review" })}
+                  onSettings={() => local ? setLocalDetails(plugin) : setSheet({ pluginId: plugin.pluginId, mode: "review" })}
                 />
               ))}
             </AppSection>
@@ -135,7 +156,7 @@ export function UiPluginsView() {
                   plugin={plugin}
                   saving={savingId === plugin.pluginId}
                   onToggle={() => void disable(plugin)}
-                  onSettings={() => setSheet({ pluginId: plugin.pluginId, mode: "settings" })}
+                  onSettings={() => local ? setLocalDetails(plugin) : setSheet({ pluginId: plugin.pluginId, mode: "settings" })}
                 />
               ))}
             </AppSection>
@@ -143,7 +164,7 @@ export function UiPluginsView() {
         </>
       )}
 
-      <AppSettingsSheet
+      {!local && <AppSettingsSheet
         plugin={selected}
         mode={sheet?.mode ?? "settings"}
         open={Boolean(sheet && selected)}
@@ -151,7 +172,17 @@ export function UiPluginsView() {
           if (!open) setSheet(null);
         }}
         onUpdated={replace}
-      />
+      />}
+      <Dialog open={Boolean(localDetails)} onOpenChange={(open) => { if (!open) setLocalDetails(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{localDetails?.name}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">This app runs from a folder on your computer. Its preview remains on loopback.</p>
+          <div className="space-y-2 text-xs">
+            <p><strong>Folder:</strong> <code className="break-all">{localDetails?.description?.replace(/^Local app in /, "")}</code></p>
+            <p><strong>Preview:</strong> <code className="break-all">{localDetails?.entryUrl}</code></p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

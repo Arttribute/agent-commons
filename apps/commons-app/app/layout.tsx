@@ -13,6 +13,9 @@ import { FloatingCommonsCopilot } from "@/components/copilot/floating-commons-co
 import { auth } from "@/auth";
 import type { Session } from "next-auth";
 import { getAppBaseUrl } from "@/lib/app-url";
+import { cookies } from "next/headers";
+import { LocalApprovalPrompt } from "@/components/desktop/local-approval-prompt";
+import { WorkspaceModeProvider } from "@/context/WorkspaceModeContext";
 
 const spaceGrotesk = Space_Grotesk({
   weight: ["400", "500", "600", "700"],
@@ -79,7 +82,9 @@ export default async function RootLayout({
 }>) {
   // Seed the client provider from the signed server cookie. Authenticated UI is
   // now correct on the first render instead of waiting for /api/auth/session.
-  const serverSession = await auth();
+  const localMode = process.env.COMMONS_DESKTOP_SERVER === "1" &&
+    (await cookies()).get("commons-desktop-mode")?.value === "private-local";
+  const serverSession = localMode ? null : await auth();
   const session: Session | null = serverSession?.user
     ? {
         expires: serverSession.expires,
@@ -100,6 +105,7 @@ export default async function RootLayout({
         className={`${spaceGrotesk.className} ${spaceGrotesk.variable} ${geistMono.variable}`}
         suppressHydrationWarning
       >
+        <WorkspaceModeProvider initialMode={localMode ? "private-local" : "cloud"}>
         <Providers session={session}>
           <AuthProvider>
             <SidebarProvider>
@@ -109,11 +115,13 @@ export default async function RootLayout({
                 </div>
                 <FloatingCommonsCopilot />
                 <CommonsAppWindows />
+                <LocalApprovalPrompt />
                 <Toaster />
               </GlobalSearchProvider>
             </SidebarProvider>
           </AuthProvider>
         </Providers>
+        </WorkspaceModeProvider>
         <Analytics />
       </body>
     </html>

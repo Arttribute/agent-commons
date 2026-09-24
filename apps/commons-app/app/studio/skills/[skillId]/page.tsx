@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SkillIcon } from "@/components/skills/skill-icon";
 import type { Skill } from "@agent-commons/sdk";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 export default function SkillDetailPage({
   params,
@@ -24,7 +25,7 @@ export default function SkillDetailPage({
     async function loadSkill() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/skills/${skillId}`);
+        const res = await desktopApiFetch(`/api/skills/${skillId}`);
         const json = await res.json();
         if (alive) setSkill(res.ok ? json.data ?? json : null);
       } catch {

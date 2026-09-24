@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { getNodeTheme } from "./nodes/node-theme";
 import { getBrandIcon, type BrandIcon } from "@/lib/brand-icons";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 interface ToolSidebarProps {
   userId: string;
@@ -319,7 +320,7 @@ export function ToolSidebar({ userId }: ToolSidebarProps) {
   const loadCatalog = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/tools/catalog", { cache: "no-store" });
+      const response = await desktopApiFetch("/api/tools/catalog", { cache: "no-store" });
       const data = await response.json();
       setItems(data.items ?? []);
     } catch (error) {

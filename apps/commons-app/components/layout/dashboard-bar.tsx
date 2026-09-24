@@ -3,19 +3,11 @@
 
 import { FC, ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Bot,
-  LibraryBig,
-  Network,
-  Wrench,
-  Workflow,
-  Settings2,
-} from "lucide-react";
-import { ClipboardClock } from "@/components/icons/clipboard-clock";
 import Link from "next/link";
 import Image from "next/image";
 import { SearchTrigger } from "@/components/search/search-trigger";
 import { SidebarMoreMenu } from "./sidebar-more-menu";
+import { WorkspaceNavigation } from "./workspace-navigation";
 
 interface DashboardBarProps {
   // values: studio section keys plus the global dashboard sections
@@ -29,41 +21,11 @@ export const DashboardBar: FC<DashboardBarProps> = ({
 }) => {
   const router = useRouter();
 
-  const nav = (path: string) => router.push(path);
-
-  const navItems = [
-    { key: "agents", label: "Agents", icon: Bot, path: "/studio/agents" },
-    { key: "tools", label: "Tools", icon: Wrench, path: "/studio/tools" },
-    {
-      key: "tasks",
-      label: "Scheduled tasks",
-      icon: ClipboardClock,
-      path: "/studio/tasks",
-    },
-    {
-      key: "workflows",
-      label: "Workflows",
-      icon: Workflow,
-      path: "/studio/workflows",
-    },
-    { key: "knowledge", label: "Knowledge", icon: Network, path: "/knowledge" },
-    { key: "library", label: "Library", icon: LibraryBig, path: "/library" },
-    {
-      key: "customize",
-      label: "Customize",
-      icon: Settings2,
-      path: "/studio/customize/apps",
-    },
-  ];
-
   return (
-    <div className="w-full">
-      <div className="flex h-8 justify-between items-center mb-3 px-1">
-        <Link
-          href="/studio/agents"
-          className="flex items-center"
-          aria-label="Agent Commons"
-        >
+    <WorkspaceNavigation
+      activeTab={activeTab}
+      navigate={(path) => router.push(path)}
+      brand={<Link href="/studio/agents" className="flex items-center" aria-label="Agent Commons">
           <Image
             src="/logo.jpg"
             alt="Agent Commons"
@@ -72,28 +34,10 @@ export const DashboardBar: FC<DashboardBarProps> = ({
             priority
             className="h-8 w-auto rounded-md object-contain"
           />
-        </Link>
-        <div className="flex items-center">{rightSlot}</div>
-      </div>
-      <div className="flex flex-col gap-1">
-        <SearchTrigger />
-        {navItems.map(({ key, label, icon: Icon, path }) => (
-          <button
-            key={key}
-            type="button"
-            className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-normal transition-colors ${
-              activeTab === key
-                ? "bg-accent text-accent-foreground"
-                : "text-foreground/70 hover:bg-muted hover:text-foreground"
-            }`}
-            onClick={() => nav(path)}
-          >
-            <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-            <span className="min-w-0 flex-1 truncate">{label}</span>
-          </button>
-        ))}
-        <SidebarMoreMenu activeSection={activeTab} />
-      </div>
-    </div>
+        </Link>}
+      rightSlot={rightSlot}
+      search={<SearchTrigger />}
+      more={<SidebarMoreMenu activeSection={activeTab} />}
+    />
   );
 };

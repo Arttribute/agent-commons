@@ -4,11 +4,9 @@ on:
   pull_request:
     paths:
       - apps/commons-desktop/**
-      - apps/commons-app/components/desktop/**
-      - apps/commons-app/components/layout/sidebar-account.tsx
-      - apps/commons-app/components/account/AccountMenu.tsx
-      - apps/commons-app/app/download/desktop/**
+      - apps/commons-app/**
       - packages/commons-desktop-contract/**
+      - packages/commons-agent-core/**
       - packages/agc-cli/src/local-tools.ts
       - pnpm-lock.yaml
       - .github/workflows/desktop.yml
@@ -17,11 +15,9 @@ on:
     tags: ["desktop-v*"]
     paths:
       - apps/commons-desktop/**
-      - apps/commons-app/components/desktop/**
-      - apps/commons-app/components/layout/sidebar-account.tsx
-      - apps/commons-app/components/account/AccountMenu.tsx
-      - apps/commons-app/app/download/desktop/**
+      - apps/commons-app/**
       - packages/commons-desktop-contract/**
+      - packages/commons-agent-core/**
       - packages/agc-cli/src/local-tools.ts
       - pnpm-lock.yaml
       - .github/workflows/desktop.yml
@@ -51,27 +47,22 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @agent-commons/desktop-contract typecheck
+      - run: pnpm --filter @agent-commons/agent-core test
       - run: pnpm --filter @agent-commons/sdk build
       - run: pnpm --filter @agent-commons/cli typecheck
       - run: pnpm --filter commons-desktop typecheck
+      - run: pnpm --filter commons-desktop test
+      - run: pnpm --filter commons-desktop build:commons-app
       - run: pnpm --filter commons-desktop build
-      - name: Smoke test desktop text input (Linux)
+      - name: Smoke test unified desktop (Linux)
         if: runner.os == 'Linux'
         # GitHub's runner cannot set Electron's root-owned SUID sandbox helper.
         # BrowserWindow sandboxing remains enabled in the app; this flag is
         # limited to the disposable CI process under Xvfb.
-        run: xvfb-run -a pnpm --filter commons-desktop exec electron --no-sandbox .
-        env:
-          COMMONS_DESKTOP_START_MODE: private-local
-          COMMONS_DESKTOP_SKIP_MODEL_PREP: 1
-          COMMONS_DESKTOP_TEXT_INPUT_SMOKE: 1
-      - name: Smoke test desktop text input (macOS and Windows)
+        run: xvfb-run -a pnpm --filter commons-desktop smoke
+      - name: Smoke test unified desktop (macOS and Windows)
         if: runner.os != 'Linux'
-        run: pnpm --filter commons-desktop start
-        env:
-          COMMONS_DESKTOP_START_MODE: private-local
-          COMMONS_DESKTOP_SKIP_MODEL_PREP: 1
-          COMMONS_DESKTOP_TEXT_INPUT_SMOKE: 1
+        run: pnpm --filter commons-desktop smoke
       - name: Package signed macOS release
         if: runner.os == 'macOS' && env.MAC_SIGNING_ENABLED == 'true'
         run: pnpm --filter commons-desktop exec electron-builder --mac --x64 --arm64 --publish never
@@ -100,7 +91,24 @@ jobs:
       - name: Package Linux
         if: runner.os == 'Linux'
         run: pnpm --filter commons-desktop exec electron-builder --linux --publish never
+      - name: Smoke test packaged macOS desktop
+        if: runner.os == 'macOS'
+        timeout-minutes: 4
+        run: |
+          desktop_arch="$(uname -m)"
+          desktop_dir="mac"
+          if [ "$desktop_arch" = "arm64" ]; then desktop_dir="mac-arm64"; fi
+          echo "Testing the $desktop_dir package on $desktop_arch"
+          COMMONS_DESKTOP_SMOKE_EXECUTABLE="$PWD/apps/commons-desktop/release/$desktop_dir/Agent Commons.app/Contents/MacOS/Agent Commons" pnpm --filter commons-desktop smoke
+      - name: Smoke test packaged Windows desktop
+        if: runner.os == 'Windows'
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          $env:COMMONS_DESKTOP_SMOKE_EXECUTABLE = Join-Path (Get-Location).Path 'apps/commons-desktop/release/win-unpacked/Agent Commons.exe'
+          pnpm --filter commons-desktop smoke
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: desktop-${{ runner.os }}
           path: |
@@ -110,7 +118,7 @@ jobs:
             apps/commons-desktop/release/*.AppImage
             apps/commons-desktop/release/*.yml
             apps/commons-desktop/release/*.blockmap
-          if-no-files-found: error
+          if-no-files-found: warn
 
   release:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
@@ -130,12 +138,16 @@ jobs:
           files: release/*
           generate_release_notes: true
           body: |
-            ## Early desktop release
+            ## Unified desktop release
 
-            These installers are currently unsigned while publisher enrollment
-            is being completed. macOS Gatekeeper and Windows SmartScreen may
-            show a warning. Verify downloads against the SHA256SUMS file before
-            installing.
+            If publisher signing is unavailable, macOS Gatekeeper and Windows
+            SmartScreen may show a warning. Verify downloads against the
+            SHA256SUMS file before installing.
 
-            Private Local keeps conversations, files, tools, knowledge spaces,
-            workflows, and local-model traffic on the user's computer.
+            Cloud and Private Local use the same Commons interface. Private Local
+            keeps its app data and local-model traffic on the user's computer.
+            User-approved Local shell commands can use the computer's network.
+            Cloud file tools are limited to a selected folder. Full-computer
+            commands are off by default and require both a settings change and
+            approval for each command. Library files can be copied between
+            Cloud and Local through explicit transfer actions.

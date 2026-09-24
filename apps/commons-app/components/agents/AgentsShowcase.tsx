@@ -8,7 +8,6 @@ import React, {
   useState,
 } from "react";
 import { motion } from "framer-motion";
-import Link from "next/link";
 import {
   HoverCard,
   HoverCardContent,
@@ -156,6 +155,7 @@ function avoidOverlap(
 export default function AgentsShowcase({
   agents = [],
   avoidRef,
+  onAgentClick,
 }: {
   agents: Agent[];
   /**
@@ -163,6 +163,7 @@ export default function AgentsShowcase({
    * composer). When omitted, avatars scatter across the whole area as before.
    */
   avoidRef?: React.RefObject<HTMLElement | null>;
+  onAgentClick: (agentId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const basePositions = useMemo(() => generateAgentPositions(agents), [agents]);
@@ -228,8 +229,9 @@ export default function AgentsShowcase({
                     delay: (idx % 5) * 0.2,
                   }}
                 >
-                  <Link href={`/studio/agents/${agent.agentId}`}>
                     <button
+                      type="button"
+                      onClick={() => onAgentClick(agent.agentId)}
                       className="w-16 h-16 rounded-full overflow-hidden shadow-md hover:shadow-xl transition p-0.5 border border-border z-20"
                       aria-label={agent.name}
                     >
@@ -240,7 +242,6 @@ export default function AgentsShowcase({
                         bordered={false}
                       />
                     </button>
-                  </Link>
                 </motion.div>
               </HoverCardTrigger>
               <HoverCardContent className="z-[1000] w-60 px-3 py-2 rounded-lg shadow-lg">

@@ -1,4 +1,6 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -62,7 +64,7 @@ export function ArtifactSurface({
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/library/${encodeURIComponent(artifact.fileId)}/preview`,
         { cache: "no-store" },
       );
@@ -134,7 +136,7 @@ export function ArtifactSurface({
     setProvenanceLoading(true);
     setProvenanceError("");
     try {
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/library/${encodeURIComponent(artifact.fileId)}/provenance?eventLimit=40`,
         { cache: "no-store", signal: controller.signal },
       );

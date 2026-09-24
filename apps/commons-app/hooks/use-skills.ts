@@ -1,4 +1,6 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 import { useState, useEffect, useCallback } from "react";
 import type { AgentSkill, Skill, SkillIndex } from "@agent-commons/sdk";
 
@@ -24,7 +26,7 @@ export function useSkills(filter?: {
       if (filter?.isPublic !== undefined)
         params.set("isPublic", String(filter.isPublic));
       const qs = params.toString();
-      const res = await fetch(`/api/skills${qs ? `?${qs}` : ""}`);
+      const res = await desktopApiFetch(`/api/skills${qs ? `?${qs}` : ""}`);
       const data = await res.json();
       setSkills(data?.data ?? []);
     } catch (err: any) {
@@ -61,7 +63,7 @@ export function useAgentSkills(agentId?: string) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/skills/agents/${encodeURIComponent(agentId)}`,
         { cache: "no-store" },
       );
@@ -93,7 +95,7 @@ export function useAgentSkills(agentId?: string) {
           skill.skillId === skillId ? { ...skill, assigned: isEnabled } : skill,
         ),
       );
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/skills/${encodeURIComponent(skillId)}/agents/${encodeURIComponent(agentId)}`,
         {
           method: "PUT",
@@ -130,7 +132,7 @@ export function useSkillIndex(ownerId?: string) {
     setError(null);
     try {
       const qs = ownerId ? `?ownerId=${ownerId}` : "";
-      const res = await fetch(`/api/skills/index${qs}`);
+      const res = await desktopApiFetch(`/api/skills/index${qs}`);
       const data = await res.json();
       setIndex(data?.data ?? []);
     } catch (err: any) {

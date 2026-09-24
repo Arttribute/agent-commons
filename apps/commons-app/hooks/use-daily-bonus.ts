@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 const TOAST_LINES = [
   "☀️ Daily boost!",
@@ -18,9 +19,10 @@ const TOAST_LINES = [
  */
 export function useDailyBonus(principalId: string | undefined) {
   const { toast } = useToast();
+  const { mode } = useWorkspaceMode();
 
   useEffect(() => {
-    if (!principalId || typeof window === "undefined") return;
+    if (!principalId || mode === "private-local" || typeof window === "undefined") return;
     const today = new Date().toISOString().slice(0, 10);
     const key = `ac-daily-bonus:${principalId}:${today}`;
     if (window.localStorage.getItem(key)) return;
@@ -58,5 +60,5 @@ export function useDailyBonus(principalId: string | undefined) {
     return () => {
       cancelled = true;
     };
-  }, [principalId, toast]);
+  }, [principalId, toast, mode]);
 }

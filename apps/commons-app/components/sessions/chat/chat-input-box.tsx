@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ComposerSurface, ComposerTextArea } from "@agent-commons/ui";
+import { ComposerSurface } from "@agent-commons/ui";
 import "@agent-commons/ui/styles.css";
 import type { StreamEvent } from "@agent-commons/sdk";
 import Link from "next/link";
 import {
-  ArrowUp,
   BatteryLow,
   Check,
   Gauge,
+  FolderOpen,
   HardDriveUpload,
   LibraryBig,
   Loader2,
@@ -22,9 +22,11 @@ import {
 } from "lucide-react";
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
+import { ComposerSendButton, ComposerTextArea } from "./composer-controls";
 import { cn } from "@/lib/utils";
 import { ArtifactIcon } from "@/components/artifacts/artifact-icon";
 import {
@@ -140,6 +142,8 @@ export default function ChatInputBox({
   uiContext?: Record<string, unknown>;
   externalPrompt?: ExternalComposerPrompt | null;
 }) {
+  const { mode } = useWorkspaceMode();
+  const local = mode === "private-local";
   const isLaunchMode = Boolean(onLaunch);
   const accumulatedRef = useRef("");
   const activitySequenceRef = useRef(0);
@@ -176,6 +180,20 @@ export default function ChatInputBox({
     if (isLaunchMode || !userId) return;
     let cancelled = false;
     setKnowledgeLoading(true);
+    if (local) {
+      void window.agentCommonsLocal?.getState().then((state) => {
+        if (cancelled) return;
+        const spaces = state.spaces.map((space) => ({
+          spaceId: space.id,
+          name: space.name,
+          permission: "manage" as const,
+          counts: { documents: space.files.length },
+        }));
+        setKnowledgeSpaces(spaces);
+        setKnowledgeSpaceIds((current) => current.filter((id) => spaces.some((space) => space.spaceId === id)));
+      }).finally(() => { if (!cancelled) setKnowledgeLoading(false); });
+      return () => { cancelled = true; };
+    }
     fetch("/api/knowledge", { cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json().catch(() => null);
@@ -194,7 +212,7 @@ export default function ChatInputBox({
     return () => {
       cancelled = true;
     };
-  }, [isLaunchMode, userId]);
+  }, [isLaunchMode, userId, local]);
 
   const updateProvenance = (next: ProvenancePreferences) => {
     setProvenance(next);
@@ -215,7 +233,7 @@ export default function ChatInputBox({
   // The composer is locked while out of credits, so re-check the balance
   // whenever the user comes back (e.g. after topping up in another tab).
   useEffect(() => {
-    if (!outOfCredits) return;
+    if (!outOfCredits || local) return;
     const recheck = async () => {
       try {
         const response = await fetch("/api/credits", { cache: "no-store" });
@@ -229,10 +247,20 @@ export default function ChatInputBox({
     };
     window.addEventListener("focus", recheck);
     return () => window.removeEventListener("focus", recheck);
-  }, [outOfCredits]);
+  }, [outOfCredits, local]);
   const [computerConfig, setComputerConfig] =
     useState<ComputerConfigState | null>(null);
   const [computerEnabled, setComputerEnabled] = useState(false);
+  const [desktopWorkspace, setDesktopWorkspace] = useState<string | null>(null);
+  useEffect(() => {
+    if (local) {
+      void window.agentCommonsLocal?.getState().then((state) => {
+        setDesktopWorkspace(state.conversations.find((conversation) => conversation.id === sessionId)?.workspaceRoot ?? null);
+      }).catch(() => undefined);
+    } else {
+      void window.agentCommonsDesktop?.getWorkspace().then(setDesktopWorkspace).catch(() => undefined);
+    }
+  }, [local, sessionId]);
   const markRunning = useSessionRunStore((state) => state.markRunning);
   const markCompleted = useSessionRunStore((state) => state.markCompleted);
   const activeRunSessionRef = useRef<string>("");
@@ -250,6 +278,10 @@ export default function ChatInputBox({
   } = useAgentContext();
 
   const { stream, streaming } = useAgentStream(userId, {
+    onReset: () => {
+      accumulatedRef.current = "";
+      updateStreamingMessage("");
+    },
     onToken: (token) => {
       accumulatedRef.current += token;
       updateStreamingMessage(accumulatedRef.current);
@@ -547,7 +579,7 @@ export default function ChatInputBox({
       (!baseText && uploadedAttachments.length === 0) ||
       isLoading ||
       isUploading ||
-      outOfCredits
+      (!local && outOfCredits)
     )
       return;
 
@@ -614,19 +646,22 @@ export default function ChatInputBox({
       isStreaming: true,
     });
 
+    const cliContext = !local && desktopWorkspace
+      ? await window.agentCommonsDesktop?.getToolContext().catch(() => null)
+      : null;
     try {
       await stream({
         agentId,
         sessionId,
         uiContext,
         messages: [{ role: "user", content: userMessage }],
-        attachments: messageAttachments.map((attachment) => ({
-          fileId: attachment.fileId,
-        })),
+        attachments: messageAttachments.map((attachment) => ({ fileId: attachment.fileId })),
         computerRequest,
         knowledgeSpaceIds: selectedKnowledgeSpaceIds,
         reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
         provenance,
+        cliContext: cliContext ?? undefined,
+        localWorkspaceRoot: local ? desktopWorkspace ?? undefined : undefined,
       });
     } finally {
       sendInFlightRef.current = false;
@@ -944,7 +979,6 @@ export default function ChatInputBox({
             autoCorrect="on"
             spellCheck
             placeholder={placeholder}
-            className="text-sm w-full h-16 p-3 rounded-2xl resize-none focus:outline-none bg-transparent placeholder:text-muted-foreground/60"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => {
@@ -1166,6 +1200,18 @@ export default function ChatInputBox({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
+                {typeof window !== "undefined" && window.agentCommonsDesktop && (
+                  <button
+                    type="button"
+                    onClick={() => void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then(setDesktopWorkspace)}
+                    disabled={!!isLoading}
+                    title={desktopWorkspace ? `Local workspace: ${desktopWorkspace}` : "Choose a local workspace for agent file access"}
+                    aria-label="Choose local workspace"
+                    className={cn("rounded-lg p-1.5 transition-colors disabled:opacity-40", desktopWorkspace ? "bg-indigo-50 text-indigo-600" : "text-muted-foreground hover:bg-muted")}
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             )}
             <div className="flex items-center gap-1">
@@ -1234,29 +1280,23 @@ export default function ChatInputBox({
                   setVoiceError(null);
                   voice.start();
                 }}
-                disabled={!!isLoading || isUploading || outOfCredits}
+                disabled={!!isLoading || isUploading || (!local && outOfCredits)}
                 title="Dictate a message"
                 aria-label="Dictate a message"
                 className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
               >
                 <Mic className="h-4 w-4" />
               </button>
-              <button
+              <ComposerSendButton
                 onClick={() => handleSend()}
+                busy={Boolean(isLoading || isUploading)}
                 disabled={
                   (!inputText.trim() && uploadedAttachments.length === 0) ||
                   !!isLoading ||
                   isUploading ||
-                  outOfCredits
+                  (!local && outOfCredits)
                 }
-                className="bg-foreground rounded-lg p-1.5 text-background transition-opacity disabled:opacity-40 hover:opacity-80"
-              >
-                {isLoading || isUploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowUp className="h-4 w-4" />
-                )}
-              </button>
+              />
             </div>
           </div>
         </>

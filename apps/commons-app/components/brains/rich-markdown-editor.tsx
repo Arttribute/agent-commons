@@ -1,5 +1,7 @@
 "use client";
 
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -346,7 +348,7 @@ export function RichMarkdownEditor({
       try {
         const form = new FormData();
         files.forEach((file) => form.append("files", file));
-        const response = await fetch("/api/files/upload", {
+        const response = await desktopApiFetch("/api/files/upload", {
           method: "POST",
           body: form,
         });

@@ -1,14 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, Logs, Earth, Code2 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
+import { Logs, Earth, Code2 } from "lucide-react";
+import { WorkspaceMoreMenu } from "./workspace-navigation";
 
 const MORE_ITEMS = [
   { key: "logs", label: "Logs", icon: Logs, path: "/logs" },
@@ -29,46 +23,5 @@ export function SidebarMoreMenu({
   activeSection?: string;
 }) {
   const router = useRouter();
-  const active = MORE_ITEMS.some((i) => i.key === activeSection);
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        {collapsed ? (
-          <button
-            aria-label="More"
-            title="More"
-            className={cn(
-              "rounded-md p-1.5 text-foreground/70 hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground",
-              active && "bg-accent text-accent-foreground"
-            )}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
-        ) : (
-          <button
-            className={cn(
-              "flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm font-normal text-foreground/70 transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground",
-              active && "bg-accent text-accent-foreground"
-            )}
-          >
-            <MoreHorizontal className="h-4 w-4 shrink-0" />
-            <span className="flex-1 text-left">More</span>
-          </button>
-        )}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="start" sideOffset={8} className="w-44">
-        {MORE_ITEMS.map(({ key, label, icon: Icon, path }) => (
-          <DropdownMenuItem
-            key={key}
-            onSelect={() => router.push(path)}
-            className={cn(active && activeSection === key && "bg-accent")}
-          >
-            <Icon className="mr-2 h-4 w-4" />
-            {label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  return <WorkspaceMoreMenu items={MORE_ITEMS} activeSection={activeSection} navigate={(path) => router.push(path)} collapsed={collapsed} />;
 }

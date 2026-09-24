@@ -3,8 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     main: "src/main.ts",
-    "preload-cloud": "src/preload-cloud.ts",
-    "preload-local": "src/preload-local.ts"
+    "preload-unified": "src/preload-unified.ts"
   },
   format: ["cjs"],
   platform: "node",
@@ -16,5 +15,5 @@ export default defineConfig({
   external: ["electron"],
   // Workspace packages are copied into app.asar as source packages. Bundle
   // runtime imports so Electron never has to execute TypeScript in node_modules.
-  noExternal: ["@agent-commons/desktop-contract", "@agent-commons/cli"]
+  noExternal: ["@agent-commons/agent-core", "@agent-commons/desktop-contract", "@agent-commons/cli"]
 });
