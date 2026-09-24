@@ -122,7 +122,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
               collapsed ? "justify-center p-1.5" : "w-full px-2 py-2",
             )}
             aria-label={
-              available === undefined
+              mode === "private-local" || available === undefined
                 ? "Account menu"
                 : `Account menu, ${formatCreditsExact(available)} credits`
             }
@@ -137,9 +137,9 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
                     {displayName}
                   </span>
                   <span className="block truncate text-xs leading-4 text-muted-foreground tabular-nums">
-                    {available === undefined
-                      ? mode === "private-local" ? "Local workspace" : "\u00a0"
-                      : `${formatCredits(available)} credits`}
+                    {mode === "private-local"
+                      ? "Local workspace"
+                      : available === undefined ? "\u00a0" : `${formatCredits(available)} credits`}
                   </span>
                 </span>
                 <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
