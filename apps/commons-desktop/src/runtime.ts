@@ -414,16 +414,17 @@ export class PrivateLocalRuntime {
     const agent = state.agents.find((candidate) => candidate.id === input.agentId);
     if (!agent) throw new Error("Choose a local agent first");
     if (!input.prompt.trim()) throw new Error("Message is empty");
-    const available: string[] = await this.listModels().catch(() => []);
-    if (!available.length) throw new Error("No local model is available. Start Ollama and install a model, then try again.");
+    const directNameRequest = assistantIdentityRequestKind(input.prompt) === "name";
+    const available: string[] = directNameRequest ? [] : await this.listModels().catch(() => []);
+    if (!available.length && !directNameRequest) throw new Error("No local model is available. Start Ollama and install a model, then try again.");
     const explicitModel = agent.model?.trim();
     const isCopilot = agent.id === "local-copilot" || agent.id === "commons-local" || agent.name === "Commons Copilot";
-    if (explicitModel && !available.includes(explicitModel) && !isCopilot) {
+    if (explicitModel && !available.includes(explicitModel) && !isCopilot && !directNameRequest) {
       throw new Error(`The model ${explicitModel} is not installed on this computer. Choose an installed model in Private settings.`);
     }
     const selectedModel = explicitModel && available.includes(explicitModel)
       ? explicitModel
-      : available.includes(state.settings.defaultModel) ? state.settings.defaultModel : available[0];
+      : available.includes(state.settings.defaultModel) ? state.settings.defaultModel : available[0] ?? state.settings.defaultModel;
     if (state.settings.defaultModel !== selectedModel || (isCopilot && agent.model !== selectedModel)) {
       this.change((draft) => {
         draft.settings.defaultModel = selectedModel;

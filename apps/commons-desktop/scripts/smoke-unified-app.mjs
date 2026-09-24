@@ -38,7 +38,7 @@ async function evaluate(wsUrl, expression) {
         if (packet.result?.exceptionDetails || packet.error) reject(new Error(JSON.stringify(packet.result?.exceptionDetails ?? packet.error)));
         else resolve(packet.result?.result?.value);
       };
-      socket.send(JSON.stringify({ id: 1, method: "Runtime.evaluate", params: { expression, returnByValue: true } }));
+      socket.send(JSON.stringify({ id: 1, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
     });
   } finally { socket.close(); }
 }
@@ -46,6 +46,7 @@ async function evaluate(wsUrl, expression) {
 try {
   const deadline = Date.now() + 60_000;
   let ready = false;
+  let lastError;
   while (Date.now() < deadline && child.exitCode === null) {
     try {
       const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2_000) })).json();
@@ -54,15 +55,27 @@ try {
         const result = await evaluate(page.webSocketDebuggerUrl,
           "({path:location.pathname,local:document.cookie.includes('commons-desktop-mode=private-local'),bridge:!!window.agentCommonsLocal,cloudBridge:!!window.agentCommonsDesktop,agents:document.body.innerText.includes('Commons Copilot')})");
         if (result?.local && result.bridge && result.cloudBridge && result.agents) {
+          const provider = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const api = window.agentCommonsLocal.apiRequest;
+            const [knowledge, library, skills] = await Promise.all([
+              api({ path: "/api/knowledge", method: "GET" }),
+              api({ path: "/api/library", method: "GET" }),
+              api({ path: "/api/skills", method: "GET" }),
+            ]);
+            return { knowledge: knowledge.status, library: library.status, skills: skills.status };
+          })()`);
+          if (provider.knowledge !== 200 || provider.library !== 200 || provider.skills !== 200) {
+            throw new Error(`Local data providers failed: ${JSON.stringify(provider)}`);
+          }
           console.log(`Unified Commons desktop loaded ${result.path} with Local agent and both mode bridges.`);
           ready = true;
           break;
         }
       }
-    } catch { /* Server or renderer is still starting. */ }
+    } catch (error) { lastError = error; }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
-  if (!ready) throw new Error(`Unified Commons desktop did not load within 60 seconds.\n${output}`);
+  if (!ready) throw new Error(`Unified Commons desktop did not pass its checks within 60 seconds. ${lastError?.message ?? ""}\n${output}`);
 } finally {
   child.kill();
   await Promise.race([
