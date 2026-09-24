@@ -1,5 +1,13 @@
+import { resolve } from "node:path";
+
+const desktopBundle = process.env.COMMONS_DESKTOP_BUNDLE_APP === "1";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  ...(desktopBundle ? {
+    output: "standalone" as const,
+    outputFileTracingRoot: resolve(process.cwd(), "../.."),
+  } : {}),
   transpilePackages: ["@agent-commons/ui"],
   images: {
     remotePatterns: [

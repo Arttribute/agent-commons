@@ -1,4 +1,7 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+
 
 import { useState, useEffect, useRef } from "react";
 import {
@@ -215,8 +218,11 @@ export function SkillsMarketplaceView({
   userAddress,
   onRegisterCreate,
 }: SkillsMarketplaceViewProps) {
+  const { mode: workspaceMode } = useWorkspaceMode();
+  const local = workspaceMode === "private-local";
   const router = useRouter();
-  const [tab, setTab] = useState<"platform" | "mine">("platform");
+  const [tab, setTab] = useState<"platform" | "mine">(local ? "mine" : "platform");
+  useEffect(() => { if (local) setTab("mine"); }, [local]);
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<CreateMode>("choose");
@@ -274,7 +280,7 @@ export function SkillsMarketplaceView({
   const handleDelete = async (skillId: string) => {
     if (!confirm("Delete this skill?")) return;
     try {
-      await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
+      await desktopApiFetch(`/api/skills/${skillId}`, { method: "DELETE" });
       toast({ title: "Skill deleted" });
       refreshMine();
     } catch {
@@ -293,7 +299,7 @@ export function SkillsMarketplaceView({
     }
     setCreating(true);
     try {
-      await fetch("/api/skills", {
+      const response = await desktopApiFetch("/api/skills", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -326,6 +332,10 @@ export function SkillsMarketplaceView({
           source: "user",
         }),
       });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.message || "Could not create skill");
+      }
       toast({ title: "Skill created" });
       setShowCreate(false);
       setForm(EMPTY_FORM);
@@ -359,7 +369,7 @@ export function SkillsMarketplaceView({
     try {
       const body = new FormData();
       body.append("file", skillFile);
-      const response = await fetch("/api/skills/import", {
+      const response = await desktopApiFetch("/api/skills/import", {
         method: "POST",
         body,
       });
@@ -473,7 +483,7 @@ export function SkillsMarketplaceView({
     if (!recordedBlob) return;
     setCreating(true);
     try {
-      const copilotResponse = await fetch("/api/copilot", {
+      const copilotResponse = await desktopApiFetch("/api/copilot", {
         cache: "no-store",
       });
       const copilotPayload = await copilotResponse.json().catch(() => null);
@@ -488,7 +498,7 @@ export function SkillsMarketplaceView({
         })
       );
       body.append("agentId", copilotPayload.data.agentId);
-      const uploadResponse = await fetch("/api/files/upload", {
+      const uploadResponse = await desktopApiFetch("/api/files/upload", {
         method: "POST",
         body,
       });
@@ -530,7 +540,7 @@ export function SkillsMarketplaceView({
     if (!selectedSkill) return;
     setUpdatingAgentId(agentId);
     try {
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/skills/${encodeURIComponent(
           selectedSkill.skillId
         )}/agents/${encodeURIComponent(agentId)}`,
@@ -825,7 +835,7 @@ export function SkillsMarketplaceView({
                     }
                   />
                 </div>
-                <div className="flex items-center gap-2">
+                {!local && <div className="flex items-center gap-2">
                   <Switch
                     id="public-toggle"
                     checked={form.isPublic}
@@ -839,7 +849,7 @@ export function SkillsMarketplaceView({
                   >
                     Make publicly discoverable
                   </Label>
-                </div>
+                </div>}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowCreate(false)}>

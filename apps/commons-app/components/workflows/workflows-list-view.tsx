@@ -1,4 +1,6 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 
 import { useMemo, useState } from "react";
 import { WorkflowCard } from "./workflow-card";
@@ -31,7 +33,7 @@ export function WorkflowsListView({ userAddress }: WorkflowsListViewProps) {
   const handleDelete = async (workflowId: string) => {
     if (!confirm("Are you sure you want to delete this workflow?")) return;
     try {
-      await fetch(`/api/workflows/${workflowId}`, { method: "DELETE" });
+      await desktopApiFetch(`/api/workflows/${workflowId}`, { method: "DELETE" });
       toast({ title: "Workflow deleted" });
       refresh();
     } catch {
@@ -41,10 +43,10 @@ export function WorkflowsListView({ userAddress }: WorkflowsListViewProps) {
 
   const handleDuplicate = async (workflowId: string) => {
     try {
-      const res = await fetch(`/api/workflows/${workflowId}`);
+      const res = await desktopApiFetch(`/api/workflows/${workflowId}`);
       const json = await res.json();
       const workflow = json.data ?? json;
-      await fetch("/api/workflows", {
+      await desktopApiFetch("/api/workflows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

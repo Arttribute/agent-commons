@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { AgentProvider, useAgentContext } from "@/context/AgentContext";
 import { useAuth } from "@/context/AuthContext";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { localConversationToSession } from "@/lib/local-agent-adapter";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import SessionInterface from "@/components/sessions/session-interface";
 import SessionsList from "@/components/sessions/sessions-list";
@@ -82,6 +84,8 @@ export function FloatingCommonsCopilot() {
 function FloatingCommonsCopilotInner() {
   const pathname = usePathname();
   const { authenticated, ready, authState } = useAuth();
+  const { mode: workspaceMode } = useWorkspaceMode();
+  const isLocal = workspaceMode === "private-local";
   const { clearMessages, setMessages } = useAgentContext();
   const [copilot, setCopilot] = useState<CopilotAgent | null>(null);
   const [copilotLoading, setCopilotLoading] = useState(true);
@@ -158,6 +162,25 @@ function FloatingCommonsCopilotInner() {
     setCopilotLoading(true);
     setCopilotError(null);
     try {
+      if (isLocal) {
+        const bridge = window.agentCommonsLocal;
+        if (!bridge) throw new Error("Local workspace is unavailable");
+        const state = await bridge.getState();
+        const agent = state.agents.find((item) => item.id === "commons-local") ??
+          state.agents.find((item) => item.name === "Commons Copilot");
+        if (!agent) throw new Error("Commons Copilot is missing from this Local workspace.");
+        setCopilot({
+          agentId: agent.id,
+          name: agent.name,
+          avatar: agent.avatar || "/commons-copilot.png",
+          modelId: agent.model || state.settings.defaultModel,
+          copilotAccessMode: agent.copilotAccessMode ?? "confirm",
+          copilotScopes: agent.copilotScopes ?? [],
+        });
+        setMode(agent.copilotAccessMode ?? "confirm");
+        setScopes(agent.copilotScopes ?? []);
+        return;
+      }
       const response = await fetch("/api/copilot", { cache: "no-store" });
       const payload = await response.json().catch(() => null);
       const agent = response.ok ? payload?.data ?? null : null;
@@ -178,18 +201,28 @@ function FloatingCommonsCopilotInner() {
     } finally {
       setCopilotLoading(false);
     }
-  }, [authenticated]);
+  }, [authenticated, isLocal]);
 
   const loadChanges = useCallback(async () => {
     if (!authenticated) return;
+    if (isLocal) { setChanges([]); return; }
     const response = await fetch("/api/copilot/changes", { cache: "no-store" });
     if (!response.ok) return;
     const payload = await response.json();
     setChanges(payload?.data ?? []);
-  }, [authenticated]);
+  }, [authenticated, isLocal]);
 
   const loadSessions = useCallback(async () => {
     if (!copilot?.agentId) return;
+    if (isLocal) {
+      const bridge = window.agentCommonsLocal;
+      if (!bridge) return;
+      const state = await bridge.getState();
+      setSessions(state.conversations
+        .filter((item) => item.agentId === copilot.agentId)
+        .map((item) => localConversationToSession(item)));
+      return;
+    }
     const response = await fetch(
       `/api/sessions/list?agentId=${encodeURIComponent(copilot.agentId)}`,
       { cache: "no-store" }
@@ -197,7 +230,7 @@ function FloatingCommonsCopilotInner() {
     if (!response.ok) return;
     const payload = await response.json();
     setSessions(payload?.data ?? []);
-  }, [copilot?.agentId]);
+  }, [copilot?.agentId, isLocal]);
 
   useEffect(() => {
     loadCopilot();
@@ -289,7 +322,7 @@ function FloatingCommonsCopilotInner() {
       locale: navigator.language,
     };
     setUiContext(base);
-    if (!context.resourceType || !context.resourceId || !context.apiPath)
+    if (isLocal || !context.resourceType || !context.resourceId || !context.apiPath)
       return;
     fetch(context.apiPath, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
@@ -302,7 +335,7 @@ function FloatingCommonsCopilotInner() {
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, [pathname, isLocal]);
 
   if (hidden) return null;
 
@@ -376,6 +409,17 @@ function FloatingCommonsCopilotInner() {
   const openSession = async (id: string) => {
     setLoadingSession(true);
     try {
+      if (isLocal) {
+        const bridge = window.agentCommonsLocal;
+        if (!bridge) throw new Error("Local workspace is unavailable");
+        const state = await bridge.getState();
+        const conversation = state.conversations.find((item) => item.id === id && item.agentId === copilot?.agentId);
+        if (!conversation) throw new Error("Could not load Local chat");
+        setMessages(normalizeSessionHistory(localConversationToSession(conversation).history) as any);
+        setSessionId(id);
+        setView("chat");
+        return;
+      }
       const response = await fetch(`/api/sessions/${id}?full=true`, {
         cache: "no-store",
       });
@@ -423,6 +467,25 @@ function FloatingCommonsCopilotInner() {
     setSaving(true);
     setSaved(false);
     try {
+      if (isLocal) {
+        const bridge = window.agentCommonsLocal;
+        if (!bridge) throw new Error("Local workspace is unavailable");
+        const state = await bridge.getState();
+        const agent = state.agents.find((item) => item.id === copilot?.agentId);
+        if (!agent) throw new Error("Local Copilot is unavailable");
+        await bridge.saveAgent({
+          id: agent.id,
+          name: agent.name,
+          instructions: agent.instructions,
+          model: agent.model,
+          copilotAccessMode: mode,
+          copilotScopes: scopes,
+        });
+        setCopilot((current) => current && ({ ...current, copilotAccessMode: mode, copilotScopes: scopes }));
+        setSaved(true);
+        window.setTimeout(() => setSaved(false), 1600);
+        return;
+      }
       const response = await fetch("/api/copilot/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

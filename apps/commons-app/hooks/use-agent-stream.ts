@@ -2,9 +2,12 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { StreamEvent, ChatMessage } from "@agent-commons/sdk";
 import { parseEventStream } from "@/lib/sse";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { localToolCalls, mapLocalTool } from "@/lib/local-tool-calls";
 
 interface UseAgentStreamOptions {
   onToken?: (token: string) => void;
+  onReset?: () => void;
   onStatus?: (event: StreamEvent) => void;
   onTool?: (event: StreamEvent) => void;
   onToolProgress?: (event: StreamEvent) => void;
@@ -36,6 +39,7 @@ export function useAgentStream(
   initiator: string,
   options: UseAgentStreamOptions = {},
 ) {
+  const { mode } = useWorkspaceMode();
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<boolean>(false);
@@ -66,7 +70,9 @@ export function useAgentStream(
       /** Knowledge Spaces explicitly referenced for this turn. */
       knowledgeSpaceIds?: string[];
       /** Per-turn thinking depth chosen in the composer; omit for auto. */
-      reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+      reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+      cliContext?: string;
+      localWorkspaceRoot?: string;
       provenance?: {
         mode: "off" | "metadata" | "full";
         onchain?: boolean;
@@ -84,6 +90,81 @@ export function useAgentStream(
       let runId: string | null = null;
       let lastSeq = 0;
       let finished = false;
+      const handledLocalRequests = new Set<string>();
+
+      if (mode === "private-local") {
+        try {
+          const bridge = window.agentCommonsLocal;
+          if (!bridge) throw new Error("The local Desktop provider is unavailable.");
+          let currentConversationId = params.sessionId ?? "";
+          let lastContent = "";
+          const unsubscribe = bridge.onEvent((event) => {
+            if (abortRef.current) return;
+            if (event.type === "chat-start") currentConversationId = event.conversationId;
+            if (event.type === "chat-token" && event.conversationId === currentConversationId) {
+              if (!event.content) {
+                if (lastContent) optionsRef.current.onReset?.();
+                lastContent = "";
+              } else {
+                if (!event.content.startsWith(lastContent)) {
+                  optionsRef.current.onReset?.();
+                  lastContent = "";
+                }
+                const delta = event.content.slice(lastContent.length);
+                lastContent = event.content;
+                if (delta) optionsRef.current.onToken?.(delta);
+              }
+            }
+            if (event.type === "activity" && event.toolName && event.conversationId === currentConversationId) {
+              const mapped = mapLocalTool(event.toolName, event.args ?? {}, event.result ?? event.detail ?? "");
+              if (event.status === "running") {
+                optionsRef.current.onToolStart?.(mapped.name, JSON.stringify(mapped.args));
+              } else {
+                optionsRef.current.onTool?.({
+                  type: "tool",
+                  toolName: mapped.name,
+                  status: event.status === "error" ? "error" : "completed",
+                  output: mapped.result,
+                  timestamp: new Date().toISOString(),
+                });
+              }
+            }
+          });
+          try {
+            const content = params.messages.at(-1)?.content;
+            const prompt = typeof content === "string" ? content
+              : Array.isArray(content) ? content.map((part) =>
+                typeof part === "object" && part && "text" in part ? String(part.text) : "").join("\n") : "";
+            const result = await bridge.sendMessage({
+              agentId: params.agentId,
+              conversationId: params.sessionId || undefined,
+              prompt,
+              spaceIds: params.knowledgeSpaceIds,
+              workspaceRoot: params.localWorkspaceRoot,
+              interactive: true,
+            });
+            if (!abortRef.current) optionsRef.current.onFinal?.({
+              content: result.response,
+              sessionId: result.conversation.id,
+              title: result.conversation.title,
+              metadata: {
+                toolCalls: localToolCalls(result.conversation.messages),
+                artifacts: result.conversation.artifacts?.map((artifact) => ({ fileId: artifact.id, name: artifact.name })),
+                localConversationId: result.conversation.id,
+              },
+            });
+          } finally {
+            unsubscribe();
+          }
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : String(cause);
+          setError(message);
+          optionsRef.current.onError?.(message);
+        } finally {
+          setStreaming(false);
+        }
+        return;
+      }
 
       const consume = async (res: Response) => {
         for await (const event of parseEventStream<ResumableStreamEvent>(res)) {
@@ -92,6 +173,30 @@ export function useAgentStream(
           if (typeof event.seq === "number" && event.seq > lastSeq)
             lastSeq = event.seq;
           handleEvent(event, optionsRef.current);
+          if (event.type === "cli_tool_request" && event.requestId && !handledLocalRequests.has(event.requestId)) {
+            handledLocalRequests.add(event.requestId);
+            const bridge = window.agentCommonsDesktop;
+            if (bridge) {
+              void (async () => {
+                let result: string;
+                try {
+                  result = await bridge.runTool({
+                    tool: event.tool ?? event.toolName ?? "",
+                    args: event.args ?? {},
+                    sessionId: event.sessionId,
+                  });
+                } catch (cause) {
+                  result = `Error: ${cause instanceof Error ? cause.message : String(cause)}`;
+                }
+                const response = await fetch("/api/agents/cli-tool-result", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ requestId: event.requestId, result }),
+                });
+                if (!response.ok) optionsRef.current.onError?.("Could not return the local tool result to the agent.");
+              })().catch((cause) => optionsRef.current.onError?.(cause instanceof Error ? cause.message : String(cause)));
+            }
+          }
           if (TERMINAL_EVENT_TYPES.has(event.type)) {
             finished = true;
             return;
@@ -161,7 +266,7 @@ export function useAgentStream(
         setStreaming(false);
       }
     },
-    [initiator],
+    [initiator, mode],
   );
 
   const stop = useCallback(() => {

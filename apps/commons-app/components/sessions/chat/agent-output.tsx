@@ -55,6 +55,7 @@ interface AgentOutputProps {
     durationMs?: number;
     toolCalls?: ToolCall[];
     agentCalls?: AgentCall[];
+    artifacts?: ArtifactRef[];
   };
   className?: string;
   isStreaming?: boolean;
@@ -70,6 +71,7 @@ interface AgentOutputProps {
    */
   showAgentHeader?: boolean;
   onOpenArtifact?: (artifact: ArtifactRef) => void;
+  artifacts?: ArtifactRef[];
   sessionId?: string;
   /** Receives a response from a Commons app an agent showed in this turn. */
   onAppRespond?: (response: AppChatResponse) => void;
@@ -85,6 +87,7 @@ export default function AgentOutput({
   agentAvatar,
   showAgentHeader = false,
   onOpenArtifact,
+  artifacts,
   sessionId,
   onAppRespond,
 }: AgentOutputProps) {
@@ -101,12 +104,12 @@ export default function AgentOutput({
   const durationMs = metadata?.durationMs;
   const generatedArtifacts = useMemo(
     () =>
-      collectArtifactRefs(
+      [...(artifacts ?? []), ...(metadata?.artifacts ?? []), ...collectArtifactRefs(
         (metadata?.toolCalls ?? [])
           .filter((call) => isArtifactCreationTool(call.name))
           .map((call) => call.result),
-      ),
-    [metadata?.toolCalls],
+      )].filter((artifact, index, all) => all.findIndex((candidate) => candidate.fileId === artifact.fileId) === index),
+    [artifacts, metadata?.artifacts, metadata?.toolCalls],
   );
 
   const appWidgets = useMemo(
@@ -130,7 +133,8 @@ export default function AgentOutput({
     !content &&
     !isStreaming &&
     computerToolCalls.length === 0 &&
-    activities.length === 0
+    activities.length === 0 &&
+    generatedArtifacts.length === 0
   ) {
     return (
       <div

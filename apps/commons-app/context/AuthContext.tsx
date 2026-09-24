@@ -1,10 +1,12 @@
 "use client";
-import React, { createContext, useContext, useEffect, useMemo } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { DesktopAccount } from "@agent-commons/desktop-contract";
 import {
   signOut as commonsSignOut,
   useSession,
 } from "next-auth/react";
 import { DEFAULT_AUTH_CALLBACK } from "@/lib/auth-callback";
+import { useWorkspaceMode } from "./WorkspaceModeContext";
 
 declare module "@privy-io/react-auth" {
   interface Google {
@@ -47,13 +49,40 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const { mode, setMode } = useWorkspaceMode();
+  const [localAccount, setLocalAccount] = useState<DesktopAccount | undefined>();
   const { data: session, status, update } = useSession();
-  const ready = status !== "loading";
-  const authenticated = status === "authenticated";
+  const previousMode = useRef(mode);
+  useEffect(() => {
+    if (previousMode.current === "private-local" && mode === "cloud") void update();
+    previousMode.current = mode;
+  }, [mode, update]);
+  const local = mode === "private-local";
+  const ready = local || status !== "loading";
+  const authenticated = local || status === "authenticated";
+
+  useEffect(() => {
+    if (!local || !window.agentCommonsLocal) return;
+    const bridge = window.agentCommonsLocal;
+    void bridge.getState().then((state) => setLocalAccount(state.account)).catch(() => undefined);
+    return bridge.onEvent((event) => {
+      if (event.type === "state") setLocalAccount(event.state.account);
+    });
+  }, [local]);
 
   // Derive this compatibility shape synchronously. Copying it in an effect
   // used to add another anonymous render after NextAuth had resolved the user.
   const authState = useMemo<AuthState>(() => {
+    if (local) {
+      const id = localAccount?.userId ?? "local-workspace";
+      return {
+        idToken: "local-workspace",
+        username: localAccount?.displayName ?? "Local workspace",
+        email: localAccount?.email,
+        walletAddress: id,
+        userId: id,
+      };
+    }
     if (!authenticated || !session?.user?.id) return {};
     return {
       idToken: "commons-session",
@@ -69,22 +98,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       userId: session.user.id,
       workspaceId: session.user.workspaceId,
     };
-  }, [authenticated, session]);
+  }, [authenticated, session, local, localAccount]);
 
   // Keep the compatibility cache in sync for non-React integrations. It is
   // never read as proof of authentication.
   useEffect(() => {
+    if (local) return;
     if (!ready) return;
     if (!authenticated) {
       localStorage.removeItem("authState");
       return;
     }
     localStorage.setItem("authState", JSON.stringify(authState));
-  }, [ready, authenticated, authState]);
+  }, [ready, authenticated, authState, local]);
 
   // 2) Provide login, logout, and refresh
   const login = async () => {
     if (typeof window !== "undefined") {
+      if (local) await setMode("cloud");
       if (window.agentCommonsDesktop) {
         await window.agentCommonsDesktop.beginSignIn();
         return;
@@ -96,6 +127,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = async () => {
+    if (local) {
+      await setMode("cloud");
+      return;
+    }
     try {
       await commonsSignOut({ callbackUrl: "/" });
     } catch (err) {

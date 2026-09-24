@@ -1,5 +1,7 @@
 "use client";
 
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   Bot,
@@ -54,7 +56,7 @@ export function SpaceAccessDialog({
 
   async function load() {
     if (!space) return;
-    const response = await fetch(`/api/knowledge/${space.spaceId}`, {
+    const response = await desktopApiFetch(`/api/knowledge/${space.spaceId}`, {
       cache: "no-store",
     });
     const payload = await response.json();
@@ -89,13 +91,13 @@ export function SpaceAccessDialog({
       const existing = grants.get(`agent:${agentId}`);
       const response =
         permission === "none" && existing
-          ? await fetch(
+          ? await desktopApiFetch(
               `/api/knowledge/${detail.spaceId}/grants/${existing.grantId}`,
               { method: "DELETE" },
             )
           : permission === "none"
           ? null
-          : await fetch(`/api/knowledge/${detail.spaceId}/grants`, {
+          : await desktopApiFetch(`/api/knowledge/${detail.spaceId}/grants`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -126,7 +128,7 @@ export function SpaceAccessDialog({
     setBusy("future");
     setError("");
     try {
-      const response = await fetch(`/api/knowledge/${detail.spaceId}`, {
+      const response = await desktopApiFetch(`/api/knowledge/${detail.spaceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ autoGrantNewAgents: checked }),

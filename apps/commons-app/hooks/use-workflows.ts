@@ -1,4 +1,6 @@
 "use client";
+import { desktopApiFetch, isLocalDesktopMode } from "@/lib/desktop-api-fetch";
+
 import { useState, useEffect, useCallback } from "react";
 import type { Workflow, WorkflowExecution } from "@agent-commons/sdk";
 import { parseEventStream } from "@/lib/sse";
@@ -14,7 +16,7 @@ export function useWorkflows(ownerId?: string, ownerType?: 'user' | 'agent') {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/workflows?ownerId=${encodeURIComponent(ownerId)}&ownerType=${ownerType}`);
+      const res = await desktopApiFetch(`/api/workflows?ownerId=${encodeURIComponent(ownerId)}&ownerType=${ownerType}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message ?? data?.error ?? "Failed to load workflows");
       setWorkflows(Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : []);
@@ -50,7 +52,22 @@ export function useWorkflowExecutionStream(workflowId: string | undefined, execu
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/workflows/${workflowId}/executions/${executionId}/stream`);
+        if (isLocalDesktopMode()) {
+          while (!cancelled) {
+            const response = await desktopApiFetch(`/api/workflows/${workflowId}/executions/${executionId}`);
+            if (!response.ok) throw new Error("Could not read the Local workflow run");
+            const run = await response.json();
+            if (cancelled) break;
+            setExecution(run);
+            if (run.status === "completed" || run.status === "failed") {
+              setDone(true);
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 750));
+          }
+          return;
+        }
+        const res = await desktopApiFetch(`/api/workflows/${workflowId}/executions/${executionId}/stream`);
         if (!res.ok) throw new Error(`Stream error: ${res.statusText}`);
         for await (const event of parseEventStream<any>(res)) {
           if (cancelled) break;

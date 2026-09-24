@@ -1,6 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import type { LocalState } from "@agent-commons/desktop-contract";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+
+function localSessions(state: LocalState) {
+  return state.conversations.map((conversation) => ({
+    sessionId: conversation.id,
+    agentId: conversation.agentId,
+    title: conversation.title,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+  }));
+}
 
 const SESSION_LIST_CACHE_MS = 2_000;
 const sessionListCache = new Map<
@@ -42,6 +54,7 @@ async function requestUserSessions(userAddress: string, force = false) {
 }
 
 export function useUserSessions(userAddress: string) {
+  const { mode } = useWorkspaceMode();
   const [sessions, setSessions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadedUser, setLoadedUser] = useState<string | null>(null);
@@ -53,6 +66,12 @@ export function useUserSessions(userAddress: string) {
       setIsLoading(true);
       setError(null);
       try {
+        if (mode === "private-local") {
+          const state = await window.agentCommonsLocal?.getState();
+          if (!state) throw new Error("The local Desktop provider is unavailable.");
+          setSessions(localSessions(state));
+          return;
+        }
         setSessions(await requestUserSessions(userAddress, force));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
@@ -62,12 +81,18 @@ export function useUserSessions(userAddress: string) {
         setIsLoading(false);
       }
     },
-    [userAddress],
+    [userAddress, mode],
   );
 
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
+  useEffect(() => {
+    if (mode !== "private-local") return;
+    return window.agentCommonsLocal?.onEvent((event) => {
+      if (event.type === "state") setSessions(localSessions(event.state));
+    });
+  }, [mode]);
 
   const refetch = useCallback(() => fetchSessions(true), [fetchSessions]);
 

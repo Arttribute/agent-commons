@@ -1,4 +1,6 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 import { useState, useEffect, useCallback } from "react";
 import type { Task, CreateTaskParams } from "@agent-commons/sdk";
 import { parseEventStream } from "@/lib/sse";
@@ -19,7 +21,7 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
       if (filter.ownerType) params.set("ownerType", filter.ownerType);
       if (filter.sessionId) params.set("sessionId", filter.sessionId);
       if (filter.agentId) params.set("agentId", filter.agentId);
-      const res = await fetch(`/api/tasks?${params.toString()}`);
+      const res = await desktopApiFetch(`/api/tasks?${params.toString()}`);
       const data = await res.json();
       setTasks(data.data ?? []);
     } catch (err: any) {
@@ -34,7 +36,7 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
 
   const createTask = useCallback(async (params: CreateTaskParams): Promise<Task | null> => {
     try {
-      const res = await fetch("/api/tasks", {
+      const res = await desktopApiFetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(params),
@@ -51,7 +53,7 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
 
   const cancelTask = useCallback(async (taskId: string) => {
     try {
-      const res = await fetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
+      const res = await desktopApiFetch(`/api/tasks/${taskId}/cancel`, { method: "POST" });
       if (res.ok) setTasks((p) => p.map((t) => t.taskId === taskId ? { ...t, status: 'cancelled' } : t));
     } catch (err: any) {
       setError(err.message);
@@ -63,7 +65,7 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
     patch: { title?: string; description?: string; priority?: number },
   ): Promise<Task | null> => {
     try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
+      const res = await desktopApiFetch(`/api/tasks/${taskId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
@@ -83,7 +85,7 @@ export function useTasks(filter: { sessionId?: string; agentId?: string; ownerId
     patch: { scheduledFor?: Date; estimatedDuration?: number },
   ): Promise<Task | null> => {
     try {
-      const res = await fetch(`/api/tasks/${taskId}/schedule`, {
+      const res = await desktopApiFetch(`/api/tasks/${taskId}/schedule`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
@@ -137,10 +139,25 @@ export function useTaskStream(taskId: string | undefined) {
     setDone(false);
     setError(null);
 
+    const local = document.cookie.split(";").some((part) => part.trim() === "commons-desktop-mode=private-local");
+    if (local && window.agentCommonsLocal) {
+      const bridge = window.agentCommonsLocal;
+      const apply = (task: { status: string } | undefined) => {
+        if (!task) return;
+        setStatus(task.status);
+        setProgress(task.status === "completed" ? 100 : task.status === "running" ? 50 : 0);
+        setDone(["completed", "failed", "cancelled"].includes(task.status));
+      };
+      void bridge.getState().then((state) => apply(state.tasks.find((task) => task.id === taskId)));
+      return bridge.onEvent((event) => {
+        if (event.type === "state") apply(event.state.tasks.find((task) => task.id === taskId));
+      });
+    }
+
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/tasks/${taskId}/stream`);
+        const res = await desktopApiFetch(`/api/tasks/${taskId}/stream`);
         if (!res.ok) throw new Error(`Stream error: ${res.statusText}`);
         for await (const event of parseEventStream<any>(res)) {
           if (cancelled) break;

@@ -30,6 +30,7 @@ import { useAgentContext } from "@/context/AgentContext";
 import { ArtifactSurface } from "@/components/artifacts/artifact-surface";
 import type { ArtifactRef } from "@/lib/artifacts";
 import { TrajectoryView } from "@/components/provenance/trajectory-view";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 interface Message {
   role: string;
@@ -57,6 +58,7 @@ interface Message {
     computerRequest?: {
       enabled: boolean;
     };
+    localConversationId?: string;
   };
   isStreaming?: boolean;
 }
@@ -153,6 +155,7 @@ export default function SessionInterfaceImproved({
   externalPrompt,
   viewMode = "chat",
 }: SessionInterfaceImprovedProps) {
+  const { mode } = useWorkspaceMode();
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -593,6 +596,11 @@ export default function SessionInterfaceImproved({
                               timestamp={message.timestamp}
                               metadata={message.metadata}
                               onOpenArtifact={(artifact) => {
+                                if (mode === "private-local") {
+                                  const localConversationId = message.metadata?.localConversationId ?? sessionId;
+                                  void window.agentCommonsLocal?.openArtifact(localConversationId, artifact.fileId);
+                                  return;
+                                }
                                 setComputerOpen(false);
                                 setOpenProjectId(null);
                                 setOpenArtifact(artifact);
@@ -617,6 +625,11 @@ export default function SessionInterfaceImproved({
                               agentAvatar={(agent as any)?.avatar}
                               showAgentHeader={showAgentHeader}
                               onOpenArtifact={(artifact) => {
+                                if (mode === "private-local") {
+                                  const localConversationId = message.metadata?.localConversationId ?? sessionId;
+                                  void window.agentCommonsLocal?.openArtifact(localConversationId, artifact.fileId);
+                                  return;
+                                }
                                 setComputerOpen(false);
                                 setOpenProjectId(null);
                                 setOpenArtifact(artifact);

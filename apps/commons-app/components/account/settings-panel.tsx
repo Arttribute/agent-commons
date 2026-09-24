@@ -29,8 +29,10 @@ import { useAuth } from "@/context/AuthContext";
 import { UsageSection } from "@/components/account/usage-section";
 import { BillingPanel } from "@/components/billing/billing-panel";
 import { DeveloperApiKeysSection } from "@/components/account/developer-api-keys-section";
+import { WorkspaceGeneralSettings } from "@/components/layout/workspace-general-settings";
 
 export const SETTINGS_SECTIONS = [
+  "general",
   "profile",
   "models",
   "storage",
@@ -42,6 +44,7 @@ export const SETTINGS_SECTIONS = [
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 const SECTION_LABELS: Record<SettingsSection, string> = {
+  general: "General",
   profile: "Profile",
   models: "Model Defaults",
   storage: "Artifact Storage",
@@ -52,6 +55,7 @@ const SECTION_LABELS: Record<SettingsSection, string> = {
 };
 
 const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
+  general: Globe2,
   profile: User,
   models: Cpu,
   storage: HardDrive,
@@ -678,6 +682,7 @@ export function SettingsPanel({
       </div>
       {/* Content */}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-8">
+        {section === "general" && <WorkspaceGeneralSettings mode="cloud" />}
         {section === "profile" && (
           <ProfileSection walletAddress={walletAddress} />
         )}

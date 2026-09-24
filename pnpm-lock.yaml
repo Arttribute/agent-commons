@@ -162,6 +162,9 @@ importers:
 
   apps/commons-api:
     dependencies:
+      '@agent-commons/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/commons-agent-core
       '@aws-sdk/client-s3':
         specifier: ^3.1073.0
         version: 3.1073.0
@@ -816,6 +819,9 @@ importers:
       '@types/react-dom':
         specifier: ^19
         version: 19.0.4(@types/react@19.0.10)
+      '@types/react-syntax-highlighter':
+        specifier: ^15.5.13
+        version: 15.5.13
       eslint:
         specifier: ^9
         version: 9.21.0(jiti@2.6.1)
@@ -946,6 +952,9 @@ importers:
 
   apps/commons-desktop:
     devDependencies:
+      '@agent-commons/agent-core':
+        specifier: workspace:*
+        version: link:../../packages/commons-agent-core
       '@agent-commons/cli':
         specifier: workspace:*
         version: link:../../packages/agc-cli
@@ -985,6 +994,9 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.4(react@19.2.4)
+      tailwindcss:
+        specifier: ^3.4.17
+        version: 3.4.17(ts-node@10.9.2(@swc/core@1.11.21)(@types/node@22.13.9)(typescript@5.8.3))
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(@swc/core@1.11.21)(jiti@2.6.1)(postcss@8.5.28)(tsx@4.22.4)(typescript@5.8.3)(yaml@2.9.0)
@@ -1143,6 +1155,12 @@ importers:
         version: 8.5.1(@swc/core@1.11.21)(jiti@2.6.1)(postcss@8.5.28)(tsx@4.22.4)(typescript@5.8.3)(yaml@2.9.0)
       typescript:
         specifier: ^5.7.2
+        version: 5.8.3
+
+  packages/commons-agent-core:
+    devDependencies:
+      typescript:
+        specifier: ^5
         version: 5.8.3
 
   packages/commons-desktop-contract:
@@ -7742,6 +7760,9 @@ packages:
     resolution: {integrity: sha512-HHM3nxyUZ3zAylX8ZEyrDNd2XZOnQ0D5XfunJF5FLQnZbHHYq4UWvW1QfelQNXv1ICNkwYhfxjwfnqivYB6bFg==}
     peerDependencies:
       '@types/react': '*'
+
+  '@types/react-syntax-highlighter@15.5.13':
+    resolution: {integrity: sha512-uLGJ87j6Sz8UaBAooU0T6lWJ0dBmjZgN1PZTrj05TNql2/XpC6+4HhMT5syIdFUUt+FASfCeLLv4kBygNU+8qA==}
 
   '@types/react@19.0.10':
     resolution: {integrity: sha512-JuRQ9KXLEjaUNjTWpzuR231Z2WpIwczOkBEIvbHNCzQefFIT0L8IqE6NV6ULLyC1SI/i234JnDoMkfg+RjQj2g==}
@@ -22291,7 +22312,7 @@ snapshots:
       hermes-parser: 0.36.1
       invariant: 2.2.4
       nullthrows: 1.1.1
-      tinyglobby: 0.2.15
+      tinyglobby: 0.2.17
       yargs: 17.7.2
 
   '@react-native/community-cli-plugin@0.87.1(bufferutil@4.0.9)(utf-8-validate@5.0.10)':
@@ -24544,6 +24565,10 @@ snapshots:
       '@types/react': 19.0.10
 
   '@types/react-reconciler@0.28.9(@types/react@19.0.10)':
+    dependencies:
+      '@types/react': 19.0.10
+
+  '@types/react-syntax-highlighter@15.5.13':
     dependencies:
       '@types/react': 19.0.10
 
@@ -28199,7 +28224,7 @@ snapshots:
       '@typescript-eslint/parser': 8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2)
       eslint: 9.21.0(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.8.3(eslint-plugin-import@2.31.0(@typescript-eslint/parser@8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2))(eslint@9.21.0(jiti@2.6.1)))(eslint@9.21.0(jiti@2.6.1))
+      eslint-import-resolver-typescript: 3.8.3(eslint-plugin-import@2.31.0)(eslint@9.21.0(jiti@2.6.1))
       eslint-plugin-import: 2.31.0(@typescript-eslint/parser@8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2))(eslint-import-resolver-typescript@3.8.3)(eslint@9.21.0(jiti@2.6.1))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.21.0(jiti@2.6.1))
       eslint-plugin-react: 7.37.4(eslint@9.21.0(jiti@2.6.1))
@@ -28243,7 +28268,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.8.3(eslint-plugin-import@2.31.0(@typescript-eslint/parser@8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2))(eslint@9.21.0(jiti@2.6.1)))(eslint@9.21.0(jiti@2.6.1)):
+  eslint-import-resolver-typescript@3.8.3(eslint-plugin-import@2.31.0)(eslint@9.21.0(jiti@2.6.1)):
     dependencies:
       '@nolyfill/is-core-module': 1.0.39
       debug: 4.4.3
@@ -28273,14 +28298,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.8.3(eslint-plugin-import@2.31.0(@typescript-eslint/parser@8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2))(eslint@9.21.0(jiti@2.6.1)))(eslint@9.21.0(jiti@2.6.1)))(eslint@9.21.0(jiti@2.6.1)):
+  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.8.3)(eslint@9.21.0(jiti@2.6.1)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       '@typescript-eslint/parser': 8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2)
       eslint: 9.21.0(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.8.3(eslint-plugin-import@2.31.0(@typescript-eslint/parser@8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2))(eslint@9.21.0(jiti@2.6.1)))(eslint@9.21.0(jiti@2.6.1))
+      eslint-import-resolver-typescript: 3.8.3(eslint-plugin-import@2.31.0)(eslint@9.21.0(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
@@ -28306,7 +28331,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.21.0(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.8.3(eslint-plugin-import@2.31.0(@typescript-eslint/parser@8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2))(eslint@9.21.0(jiti@2.6.1)))(eslint@9.21.0(jiti@2.6.1)))(eslint@9.21.0(jiti@2.6.1))
+      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.26.0(eslint@9.21.0(jiti@2.6.1))(typescript@5.8.2))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.8.3)(eslint@9.21.0(jiti@2.6.1))
       hasown: 2.0.4
       is-core-module: 2.16.1
       is-glob: 4.0.3
@@ -33667,7 +33692,7 @@ snapshots:
       scheduler: 0.27.0
       semver: 7.7.4
       stacktrace-parser: 0.1.11
-      tinyglobby: 0.2.15
+      tinyglobby: 0.2.17
       whatwg-fetch: 3.6.20
       ws: 8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       yargs: 17.7.2
@@ -33710,7 +33735,7 @@ snapshots:
       scheduler: 0.27.0
       semver: 7.7.4
       stacktrace-parser: 0.1.11
-      tinyglobby: 0.2.15
+      tinyglobby: 0.2.17
       whatwg-fetch: 3.6.20
       ws: 8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
       yargs: 17.7.2

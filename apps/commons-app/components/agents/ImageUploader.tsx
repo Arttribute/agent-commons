@@ -7,11 +7,13 @@ import { Camera, Loader2 } from "lucide-react";
 interface ImageUploaderProps {
   onImageChange: (imageUrl: string) => void;
   defaultImage?: string;
+  local?: boolean;
 }
 
 export default function ImageUploader({
   onImageChange,
   defaultImage,
+  local = false,
 }: ImageUploaderProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [preview, setPreview] = useState(defaultImage);
@@ -20,11 +22,16 @@ export default function ImageUploader({
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
+      if (local && (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type) || file.size > 1_000_000)) {
+        window.alert("Choose a PNG, JPEG, WebP, or GIF image smaller than 1 MB.");
+        return;
+      }
 
       // Show a local preview
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreview(reader.result as string);
+        if (local) onImageChange(reader.result as string);
       };
       reader.readAsDataURL(file);
 
@@ -35,9 +42,9 @@ export default function ImageUploader({
 
       // Once done, pass the final URL to the parent
       // If you do a real upload, you'd set the actual CDN URL here
-      onImageChange(URL.createObjectURL(file));
+      if (!local) onImageChange(URL.createObjectURL(file));
     },
-    [onImageChange]
+    [onImageChange, local]
   );
 
   return (

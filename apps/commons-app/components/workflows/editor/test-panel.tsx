@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useWorkflowStore } from "@/lib/workflows/workflow-store";
 import { WorkflowExecution } from "@/types/workflow";
 import { useWorkflowExecutionStream } from "@/hooks/use-workflows";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -97,7 +98,7 @@ export function TestPanel({ workflowId }: TestPanelProps) {
         return acc;
       }, {} as Record<string, any>);
 
-      const res = await fetch(`/api/workflows/${workflowId}/execute`, {
+      const res = await desktopApiFetch(`/api/workflows/${workflowId}/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inputData: cleanInputs }),
@@ -128,7 +129,7 @@ export function TestPanel({ workflowId }: TestPanelProps) {
     setApprovalSubmitting(true);
     setApprovalError(null);
     try {
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/workflows/${workflowId}/executions/${execution.executionId}/${action}`,
         {
           method: "POST",

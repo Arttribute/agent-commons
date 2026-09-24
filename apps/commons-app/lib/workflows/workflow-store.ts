@@ -9,6 +9,7 @@ import {
 } from "@/types/workflow";
 import { validateDAG, ValidationResult } from "./workflow-validator";
 import { findAppWorkflowOp } from "./app-nodes";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 
 interface HistoryState {
@@ -372,7 +373,7 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
       };
 
       // Save to backend
-      const res = await fetch(`/api/workflows/${workflow.workflowId}`, {
+      const res = await desktopApiFetch(`/api/workflows/${workflow.workflowId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -395,7 +396,7 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
 
   loadWorkflow: async (workflowId: string) => {
     try {
-      const res = await fetch(`/api/workflows/${workflowId}`);
+      const res = await desktopApiFetch(`/api/workflows/${workflowId}`);
       if (!res.ok) {
         throw new Error("Failed to load workflow");
       }
@@ -406,9 +407,9 @@ export const useWorkflowStore = create<WorkflowEditorState>((set, get) => ({
 
       // Fetch catalog/static tools to restore schemas and reusable node metadata
       const [catalogRes, staticRes, platformRes] = await Promise.all([
-        fetch("/api/tools/catalog").catch(() => null),
-        fetch("/api/tools/static").catch(() => null),
-        fetch("/api/tools?ownerType=platform").catch(() => null),
+        desktopApiFetch("/api/tools/catalog").catch(() => null),
+        desktopApiFetch("/api/tools/static").catch(() => null),
+        desktopApiFetch("/api/tools?ownerType=platform").catch(() => null),
       ]);
       const catalogData = catalogRes ? await catalogRes.json().catch(() => ({ items: [] })) : { items: [] };
       const staticToolsData = staticRes ? await staticRes.json().catch(() => ({ data: [] })) : { data: [] };

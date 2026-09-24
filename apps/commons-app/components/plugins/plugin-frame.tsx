@@ -31,6 +31,7 @@ import {
 import { createPluginStorage } from "./plugin-storage";
 import type { UiPlugin, UiPluginSurfaceType } from "./types";
 import { notifyUiPluginsChanged } from "@/lib/ui-plugin-events";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 type CommonsTheme = "light" | "dark";
 
@@ -92,6 +93,7 @@ export function PluginFrame({
     | undefined
   >(undefined);
   const router = useRouter();
+  const { mode: workspaceMode } = useWorkspaceMode();
   const canReadTheme = plugin.manifest.permissions.includes("theme.read");
   const capabilities = useMemo(() => pluginCapabilityNames(plugin), [plugin]);
   const pluginStorage = useMemo(
@@ -141,6 +143,7 @@ export function PluginFrame({
         hostOrigin: window.location.origin,
         surface,
         theme: canReadTheme ? readTheme() : undefined,
+        local: workspaceMode === "private-local",
       }),
     );
   }, [
@@ -150,6 +153,7 @@ export function PluginFrame({
     plugin.manifest.schemaVersion,
     plugin.manifest.surfaces,
     surface,
+    workspaceMode,
   ]);
 
   const frameState =
@@ -484,6 +488,7 @@ function resolveFrame(args: {
   hostOrigin: string;
   surface: UiPluginSurfaceType;
   theme?: CommonsTheme;
+  local: boolean;
 }): FrameState {
   try {
     if (!args.declared) {
@@ -505,6 +510,10 @@ function resolveFrame(args: {
         surface: args.surface,
         message: "This custom app must use a dedicated preview origin.",
       };
+    }
+    if (args.local) {
+      if (!["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname)) throw new Error("Local apps must use this computer.");
+      return { status: "ready", entryUrl: args.entryUrl, surface: args.surface, src: url.toString(), origin: url.origin };
     }
     if (!args.deploymentId) throw new Error("missing deployment pin");
     const frameUrl = new URL("/v1/ui-plugin-host", url.origin);

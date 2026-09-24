@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 export interface Entitlements {
   computerUse: boolean;
@@ -17,10 +18,23 @@ export interface Entitlements {
  * only reacting to a 402 after the fact.
  */
 export function useEntitlements() {
+  const { mode } = useWorkspaceMode();
   const [entitlements, setEntitlements] = useState<Entitlements | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (mode === "private-local") {
+      setEntitlements({
+        computerUse: true,
+        allowedProfiles: ["local"],
+        maxComputerAgents: 0,
+        maxConcurrentComputers: 0,
+        modelTiers: ["local"],
+        maxConcurrentRuns: 1,
+      });
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -39,7 +53,7 @@ export function useEntitlements() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [mode]);
 
   return { entitlements, loading };
 }

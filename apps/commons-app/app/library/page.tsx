@@ -1,10 +1,13 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
 import { PageTitle } from "@/components/layout/page-header";
 import { CommonsAppsBar } from "@/components/plugins/apps-bar";
 import { useAuth } from "@/context/AuthContext";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,6 +97,8 @@ const tabs = [
 
 export default function LibraryPage() {
   const { authState } = useAuth();
+  const { mode } = useWorkspaceMode();
+  const local = mode === "private-local";
   const userAddress = normalizePrincipalId(authState.walletAddress);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +128,7 @@ export default function LibraryPage() {
     if (source !== "all") params.set("source", source);
     if (favorites) params.set("favorite", "true");
     try {
-      const response = await fetch(`/api/library?${params}`, {
+      const response = await desktopApiFetch(`/api/library?${params}`, {
         cache: "no-store",
       });
       const data = await response.json();
@@ -163,7 +168,7 @@ export default function LibraryPage() {
   async function upload(files: FileList | null, provider?: "s3" | "ipfs") {
     if (!files?.length) return;
     if (
-      provider === "ipfs" &&
+      !local && provider === "ipfs" &&
       !window.confirm(
         "IPFS files are publicly addressable and may remain available after deletion. Publish these files to IPFS?",
       )
@@ -176,7 +181,7 @@ export default function LibraryPage() {
       const body = new FormData();
       [...files].forEach((file) => body.append("files", file));
       if (provider) body.set("storageProvider", provider);
-      const response = await fetch("/api/files/upload", {
+      const response = await desktopApiFetch("/api/files/upload", {
         method: "POST",
         body,
       });
@@ -208,7 +213,7 @@ export default function LibraryPage() {
     method: "PATCH" | "DELETE",
     body?: unknown,
   ) {
-    const response = await fetch(`/api/library/${itemId}`, {
+    const response = await desktopApiFetch(`/api/library/${itemId}`, {
       method,
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
@@ -218,13 +223,14 @@ export default function LibraryPage() {
   }
 
   async function download(item: LibraryItem) {
-    const response = await fetch(`/api/library/${item.itemId}/download`);
+    if (local) { await window.agentCommonsLocal?.openLibraryItem(item.itemId); return; }
+    const response = await desktopApiFetch(`/api/library/${item.itemId}/download`);
     const data = await response.json();
     if (data?.url) window.open(data.url, "_blank", "noopener,noreferrer");
   }
 
   async function shareLink(item: LibraryItem) {
-    const response = await fetch(`/api/library/${item.itemId}/share-links`, {
+    const response = await desktopApiFetch(`/api/library/${item.itemId}/share-links`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -238,14 +244,14 @@ export default function LibraryPage() {
   }
 
   async function openAccess(item: LibraryItem) {
-    const response = await fetch(`/api/library/${item.itemId}`);
+    const response = await desktopApiFetch(`/api/library/${item.itemId}`);
     const data = await response.json();
     if (response.ok) setSelected(data);
   }
 
   async function addGrant() {
     if (!selected || !grantId.trim()) return;
-    const response = await fetch(`/api/library/${selected.itemId}/grants`, {
+    const response = await desktopApiFetch(`/api/library/${selected.itemId}/grants`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -317,8 +323,9 @@ export default function LibraryPage() {
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => inputRef.current?.click()}>
                       <ShieldCheck />
-                      Upload using account default
+                      {local ? "Add files from this computer" : "Upload using account default"}
                     </DropdownMenuItem>
+                    {!local && <>
                     <DropdownMenuItem
                       onClick={() => {
                         inputRef.current?.setAttribute("data-provider", "s3");
@@ -337,6 +344,7 @@ export default function LibraryPage() {
                       <Link2 />
                       Publish to IPFS
                     </DropdownMenuItem>
+                    </>}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -462,6 +470,7 @@ export default function LibraryPage() {
                         <Artifact
                           key={item.itemId}
                           item={item}
+                          local={local}
                           layout={layout}
                           onOpen={() =>
                             setPreviewing({ fileId: item.itemId, ...item })
@@ -496,7 +505,7 @@ export default function LibraryPage() {
       </div>
 
       <Dialog
-        open={!!selected}
+        open={!local && !!selected}
         onOpenChange={(open) => !open && setSelected(null)}
       >
         <DialogContent>
@@ -557,6 +566,7 @@ export default function LibraryPage() {
 
 function Artifact({
   item,
+  local,
   layout,
   onOpen,
   onDownload,
@@ -566,6 +576,7 @@ function Artifact({
   onDelete,
 }: {
   item: LibraryItem;
+  local: boolean;
   layout: "grid" | "list";
   onOpen(): void;
   onDownload(): void;
@@ -590,14 +601,14 @@ function Artifact({
           <Heart />
           {item.isFavorite ? "Remove favorite" : "Favorite"}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onAccess}>
+        {!local && <DropdownMenuItem onClick={onAccess}>
           <ShieldCheck />
           Manage access
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onShare}>
+        </DropdownMenuItem>}
+        {!local && <DropdownMenuItem onClick={onShare}>
           <Share2 />
           Copy 7-day link
-        </DropdownMenuItem>
+        </DropdownMenuItem>}
         <DropdownMenuItem className="text-red-600" onClick={onDelete}>
           <Trash2 />
           Delete

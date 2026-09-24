@@ -9,6 +9,7 @@ import { CommonsAppsBar } from "@/components/plugins/apps-bar";
 import { PluginFrame } from "@/components/plugins/plugin-frame";
 import { isUiPlugin, type UiPlugin } from "@/components/plugins/types";
 import { subscribeToUiPluginChanges } from "@/lib/ui-plugin-events";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 export default function CustomAppPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -20,7 +21,7 @@ export default function CustomAppPage() {
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current;
     try {
-      const response = await fetch(
+      const response = await desktopApiFetch(
         `/api/ui-plugins/slug/${encodeURIComponent(slug)}`,
         {
           cache: "no-store",

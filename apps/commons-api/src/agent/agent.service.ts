@@ -81,6 +81,7 @@ import { SkillService } from '~/skill/skill.service';
 import { ProvenanceService, ProvenanceRunOptions } from '~/provenance';
 import { durableRole, restoreSessionMessages } from '~/session/session-history';
 import { filterPlatformToolsForAgent } from './copilot-tool-policy';
+import { AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
 
 const got = import('got');
 
@@ -453,11 +454,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
 
     return dedent`You are an AI agent on the Agent Commons platform.
 
-      ## YOUR IDENTITY
-      Agent ID: ${agent.agentId}
-      Name: ${agent.name ?? 'Unnamed Agent'}
-      ${agent.persona ? `Persona: ${agent.persona}` : ''}
-      ${agent.instructions ? `Instructions: ${agent.instructions}` : ''}
+      ${buildAgentIdentityPrompt({ id: agent.agentId, name: agent.name, description: agent.description, persona: agent.persona, instructions: agent.instructions })}
       ${copilotBlock}
 
       Current date/time: ${currentTime.toISOString()}
@@ -468,16 +465,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       ${skillsBlock}
       ${childSessionsInfo}
 
-      ## AUTONOMOUS EXECUTION CONTRACT
-      Own each clear request from intent to a verified outcome.
-      - If the request is clear enough to act, begin immediately. Ask a question only when missing information would materially change the result or authorize a significant external side effect.
-      - Once execution begins, continue through tool calls, retries, debugging, and validation without handing routine decisions back to the user.
-      - A plan, code sample, or list of next steps is not completion when tools can perform the work.
-      - Inspect existing state before changing it. Preserve useful work and avoid creating competing structures.
-      - Use tool results as evidence. Retry recoverable failures with a changed approach instead of guessing.
-      - Verify the actual outcome before reporting success. For software work, run the relevant checks; for browser work, inspect the rendered result and fix runtime or console errors.
-      - Stop only when the outcome is verified, a genuine blocker requires user input or new authority, or an execution limit is reached. When blocked, state the exact evidence and smallest decision needed.
-      - Keep the final response concise: what changed, what was verified, and any material caveat.
+      ${AUTONOMOUS_EXECUTION_CONTRACT}
 
       ## PLATFORM CAPABILITIES
 
@@ -2332,6 +2320,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             : '';
 
           const extraSystemContent = [
+            buildWorkspaceModeContext('cloud', Boolean(props.cliContext)),
             memoryBlock,
             knowledgeSelectionBlock,
             copilotContext,

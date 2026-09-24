@@ -4,11 +4,9 @@ on:
   pull_request:
     paths:
       - apps/commons-desktop/**
-      - apps/commons-app/components/desktop/**
-      - apps/commons-app/components/layout/sidebar-account.tsx
-      - apps/commons-app/components/account/AccountMenu.tsx
-      - apps/commons-app/app/download/desktop/**
+      - apps/commons-app/**
       - packages/commons-desktop-contract/**
+      - packages/commons-agent-core/**
       - packages/agc-cli/src/local-tools.ts
       - pnpm-lock.yaml
       - .github/workflows/desktop.yml
@@ -17,11 +15,9 @@ on:
     tags: ["desktop-v*"]
     paths:
       - apps/commons-desktop/**
-      - apps/commons-app/components/desktop/**
-      - apps/commons-app/components/layout/sidebar-account.tsx
-      - apps/commons-app/components/account/AccountMenu.tsx
-      - apps/commons-app/app/download/desktop/**
+      - apps/commons-app/**
       - packages/commons-desktop-contract/**
+      - packages/commons-agent-core/**
       - packages/agc-cli/src/local-tools.ts
       - pnpm-lock.yaml
       - .github/workflows/desktop.yml
@@ -51,27 +47,22 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @agent-commons/desktop-contract typecheck
+      - run: pnpm --filter @agent-commons/agent-core test
       - run: pnpm --filter @agent-commons/sdk build
       - run: pnpm --filter @agent-commons/cli typecheck
       - run: pnpm --filter commons-desktop typecheck
+      - run: pnpm --filter commons-desktop test
+      - run: pnpm --filter commons-desktop build:commons-app
       - run: pnpm --filter commons-desktop build
-      - name: Smoke test desktop text input (Linux)
+      - name: Smoke test unified desktop (Linux)
         if: runner.os == 'Linux'
         # GitHub's runner cannot set Electron's root-owned SUID sandbox helper.
         # BrowserWindow sandboxing remains enabled in the app; this flag is
         # limited to the disposable CI process under Xvfb.
-        run: xvfb-run -a pnpm --filter commons-desktop exec electron --no-sandbox .
-        env:
-          COMMONS_DESKTOP_START_MODE: private-local
-          COMMONS_DESKTOP_SKIP_MODEL_PREP: 1
-          COMMONS_DESKTOP_TEXT_INPUT_SMOKE: 1
-      - name: Smoke test desktop text input (macOS and Windows)
+        run: xvfb-run -a pnpm --filter commons-desktop smoke
+      - name: Smoke test unified desktop (macOS and Windows)
         if: runner.os != 'Linux'
-        run: pnpm --filter commons-desktop start
-        env:
-          COMMONS_DESKTOP_START_MODE: private-local
-          COMMONS_DESKTOP_SKIP_MODEL_PREP: 1
-          COMMONS_DESKTOP_TEXT_INPUT_SMOKE: 1
+        run: pnpm --filter commons-desktop smoke
       - name: Package signed macOS release
         if: runner.os == 'macOS' && env.MAC_SIGNING_ENABLED == 'true'
         run: pnpm --filter commons-desktop exec electron-builder --mac --x64 --arm64 --publish never

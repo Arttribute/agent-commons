@@ -11,6 +11,9 @@ function starterAgent() {
     id: "commons-local",
     source: "local" as const,
     name: "Commons Copilot",
+    avatar: "/commons-copilot.png",
+    isDefault: true,
+    copilotAccessMode: "confirm" as const,
     instructions:
       "You are a calm, capable Agent Commons co-creator. Help the user build, edit, research, and operate projects on this computer. Use local tools when useful, ask before consequential actions, and verify your work.",
     model: "",
@@ -23,7 +26,9 @@ export const initialState = (): LocalState => ({
   version: 1,
   agents: [starterAgent()],
   conversations: [],
+  library: [],
   spaces: [],
+  skills: [],
   tasks: [],
   workflows: [],
   apps: [],
@@ -62,7 +67,15 @@ export class LocalStore {
         this.state = initialState();
       }
     }
-    this.persist();
+    if (this.state.agents.length === 0) {
+      this.state.agents.push(initialState().agents[0]);
+      this.persist();
+    }
+    if (!Array.isArray(this.state.skills)) {
+      this.state.skills = [];
+      this.persist();
+    }
+    if (!Array.isArray(this.state.library)) this.state.library = [];
   }
 
   get(): LocalState {

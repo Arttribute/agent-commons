@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { Loader2 } from "lucide-react";
 import { useWorkflows } from "@/hooks/use-workflows";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 export default function WorkflowEditorPage() {
   const params = useParams();
@@ -51,7 +52,7 @@ export default function WorkflowEditorPage() {
     if (!walletAddress) return;
 
     try {
-      const res = await fetch("/api/workflows", {
+      const res = await desktopApiFetch("/api/workflows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

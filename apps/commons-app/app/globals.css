@@ -396,3 +396,34 @@ body {
     transform: scaleX(1);
   }
 }
+.workspace-mode-switch {
+  position: fixed;
+  z-index: 60;
+  top: 12px;
+  left: calc(50% + 145px);
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--background));
+  box-shadow: 0 2px 9px rgb(0 0 0 / 8%);
+}
+.workspace-mode-switch button {
+  min-width: 72px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 600;
+}
+.workspace-mode-switch button[aria-pressed="true"] {
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+}
+.workspace-mode-switch button:hover:not([aria-pressed="true"]) {
+  background: hsl(var(--muted));
+}

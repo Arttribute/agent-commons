@@ -7,16 +7,19 @@
   "description": "Agent Commons desktop — cloud and private-local workspaces",
   "main": "dist/main.cjs",
   "scripts": {
-    "dev": "concurrently -k \"vite --config vite.config.ts\" \"tsup --watch\" \"wait-on tcp:4173 dist/main.cjs && cross-env COMMONS_DESKTOP_DEV_URL=http://127.0.0.1:4173 electron .\"",
-    "build:renderer": "vite build --config vite.config.ts",
+    "dev": "pnpm build:commons-app && pnpm build:main && electron .",
     "build:main": "tsup",
-    "build": "pnpm build:renderer && pnpm build:main",
+    "build": "pnpm build:main",
+    "build:commons-app": "cross-env COMMONS_DESKTOP_BUNDLE_APP=1 pnpm --filter commons-app build && node scripts/bundle-commons-app.mjs",
     "typecheck": "tsc --noEmit",
+    "test": "node --test src/*.test.mjs",
+    "smoke": "node scripts/smoke-unified-app.mjs",
     "start": "electron .",
-    "package": "pnpm build && electron-builder",
-    "package:dir": "pnpm build && electron-builder --dir"
+    "package": "pnpm build:commons-app && pnpm build && electron-builder",
+    "package:dir": "pnpm build:commons-app && pnpm build && electron-builder --dir"
   },
   "devDependencies": {
+    "@agent-commons/agent-core": "workspace:*",
     "@agent-commons/desktop-contract": "workspace:*",
     "@agent-commons/cli": "workspace:*",
     "@types/node": "^22.10.2",
@@ -30,6 +33,7 @@
     "lucide-react": "^0.474.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "tailwindcss": "^3.4.17",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vite": "latest",
@@ -47,9 +51,11 @@
     "asar": true,
     "files": [
       "dist/**/*",
-      "renderer-dist/**/*",
       "package.json",
       "THIRD_PARTY_NOTICES.md"
+    ],
+    "extraResources": [
+      { "from": "commons-app-dist", "to": "commons-app" }
     ],
     "mac": {
       "category": "public.app-category.productivity",

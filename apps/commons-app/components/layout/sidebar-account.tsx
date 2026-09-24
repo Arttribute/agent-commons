@@ -23,6 +23,7 @@ import {
   type SettingsSection,
 } from "@/components/account/settings-panel";
 import { useCredits } from "@/hooks/use-credits";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { formatCredits, formatCreditsExact } from "@/lib/format-credits";
 import {
   UserRound,
@@ -42,6 +43,7 @@ const DESKTOP_DOWNLOAD_URL =
 export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
   const router = useRouter();
   const { authState, login, logout } = useAuth();
+  const { mode } = useWorkspaceMode();
   const { idToken, username, walletAddress } = authState;
   const isAuthenticated = !!idToken;
   const principalId = normalizePrincipalId(walletAddress);
@@ -57,18 +59,27 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
     setDesktopAvailable(Boolean(window.agentCommonsDesktop));
   }, []);
 
-  const { summary, plan, refresh: refreshCredits } = useCredits(isAuthenticated);
+  const { summary, plan, refresh: refreshCredits } = useCredits(isAuthenticated && mode === "cloud");
   const available = summary?.balance.available;
   const isFreePlan = !plan || plan.planKey === "free";
 
   useEffect(() => {
-    if (menuOpen) void refreshCredits();
-  }, [menuOpen, refreshCredits]);
+    if (menuOpen && mode === "cloud") void refreshCredits();
+  }, [menuOpen, mode, refreshCredits]);
 
   const go = (href: string) => {
     setMenuOpen(false);
     router.push(href);
   };
+  useEffect(() => {
+    if (mode === "cloud" && isAuthenticated && principalId && window.agentCommonsDesktop) {
+      void window.agentCommonsDesktop.syncAccount({
+        userId: principalId,
+        displayName,
+        email: authState.email,
+      });
+    }
+  }, [mode, isAuthenticated, principalId, displayName, authState.email]);
 
   const openSettings = (section: SettingsSection) => {
     setSettingsSection(section);
@@ -174,21 +185,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
               {label}
             </button>
           ))}
-          {desktopAvailable ? (
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                void window.agentCommonsDesktop?.openPrivateWorkspace();
-              }}
-              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-accent"
-            >
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              Keep everything local
-              <span className="ml-auto h-4 w-7 rounded-full bg-muted p-0.5" aria-hidden="true">
-                <span className="block h-3 w-3 rounded-full bg-muted-foreground/60" />
-              </span>
-            </button>
-          ) : (
+          {!desktopAvailable && (
             <a
               href={DESKTOP_DOWNLOAD_URL}
               target="_blank"
