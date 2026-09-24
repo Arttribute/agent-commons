@@ -104,17 +104,20 @@ export function TestPanel({ workflowId }: TestPanelProps) {
         body: JSON.stringify({ inputData: cleanInputs }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message ?? data.error ?? "Failed to execute workflow");
+      }
       setExecution(data as any);
       if ((data as any).status === "running" || (data as any).status === "pending") {
         setPendingExecutionId((data as any).executionId);
       }
-    } catch {
+    } catch (error) {
       setExecution({
         executionId: "",
         workflowId,
         status: "failed",
         startedAt: new Date().toISOString(),
-        error: "Failed to execute workflow",
+        error: error instanceof Error ? error.message : "Failed to execute workflow",
       });
     } finally {
       setLoading(false);
