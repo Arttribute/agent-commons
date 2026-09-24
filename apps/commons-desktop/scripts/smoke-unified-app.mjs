@@ -66,7 +66,7 @@ try {
       if (page) {
         lastPage = page;
         const result = await evaluate(page.webSocketDebuggerUrl,
-          "({path:location.pathname,local:document.cookie.includes('commons-desktop-mode=private-local'),bridge:!!window.agentCommonsLocal,cloudBridge:!!window.agentCommonsDesktop,agents:document.body.textContent?.includes('Commons Copilot'),body:document.body.innerText.slice(0,600),text:document.body.textContent?.slice(0,600),readyState:document.readyState})");
+          "({path:location.pathname,local:document.cookie.includes('commons-desktop-mode=private-local'),bridge:!!window.agentCommonsLocal,cloudBridge:!!window.agentCommonsDesktop,agents:document.body.textContent?.includes('Commons Copilot'),body:document.body.innerText.slice(0,600),text:document.body.textContent?.slice(0,600),readyState:document.readyState,htmlLength:document.documentElement.outerHTML.length,htmlEnd:document.documentElement.outerHTML.slice(-450),scripts:[...document.querySelectorAll('script[src]')].slice(0,8).map(s=>s.src),resources:performance.getEntriesByType('resource').filter(r=>r.name.includes('/_next/')).slice(-12).map(r=>({name:r.name.split('/').slice(-1)[0],duration:r.duration,size:r.transferSize}))})");
         lastResult = result;
         if (result?.local && result.bridge && result.cloudBridge && result.agents) {
           const provider = await evaluate(page.webSocketDebuggerUrl, `(async () => {
