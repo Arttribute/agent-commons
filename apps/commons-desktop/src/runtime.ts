@@ -859,7 +859,7 @@ export class PrivateLocalRuntime {
       }, this.toolsConfig(this.layout.root, conversationId));
     } else if (["local_create_knowledge_space", "local_create_note", "local_save_skill", "local_register_app"].includes(name)) {
       if (this.store.get().settings.permissionMode === "read-only") result = "Error: Local workspace is read only.";
-      else if (!(await this.requestApproval(`${name.replaceAll("_", " ")}: ${JSON.stringify({ ...args, content: typeof args.content === "string" ? `[${args.content.length} characters]` : undefined, instructions: typeof args.instructions === "string" ? `[${args.instructions.length} characters]` : undefined })}`, name))) result = "User denied the Local workspace change.";
+      else if (!(await this.requestApproval(`${name.replaceAll("_", " ")}: ${JSON.stringify({ ...args, content: typeof args.content === "string" ? args.content.slice(0, 1_000) : undefined, instructions: typeof args.instructions === "string" ? args.instructions.slice(0, 1_000) : undefined })}`, name))) result = "User denied the Local workspace change.";
       else {
         try {
           if (name === "local_create_knowledge_space") {

@@ -856,6 +856,11 @@ export function KnowledgeSpacesView() {
     setError("");
     setNotice("");
     try {
+      if (local && window.agentCommonsLocal) {
+        await window.agentCommonsLocal.reindexKnowledgeSpace(activeSpace.spaceId);
+        setNotice("Local files refreshed.");
+        return;
+      }
       const selected =
         activeSpace.provider === "browser_filesystem"
           ? await reconnectMarkdownFolder(activeSpace.spaceId)
@@ -1128,12 +1133,14 @@ export function KnowledgeSpacesView() {
                 >
                   {syncing ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : activeSpace?.provider === "browser_filesystem" ? (
+                  ) : local || activeSpace?.provider === "browser_filesystem" ? (
                     <FolderSync className="h-3.5 w-3.5" />
                   ) : (
                     <FolderInput className="h-3.5 w-3.5" />
                   )}
-                  {activeSpace?.provider === "browser_filesystem"
+                  {local
+                    ? "Refresh local files"
+                    : activeSpace?.provider === "browser_filesystem"
                     ? connectedFolderIds.has(activeSpace.spaceId)
                       ? "Sync connected folder"
                       : "Reconnect folder"

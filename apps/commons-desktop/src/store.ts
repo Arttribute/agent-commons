@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { safeStorage } from "electron";
 import type { LocalState } from "@agent-commons/desktop-contract";
@@ -45,25 +45,39 @@ export class LocalStore {
 
   constructor(userDataDirectory: string) {
     this.path = join(userDataDirectory, "private-local", "state.bin");
-    mkdirSync(dirname(this.path), { recursive: true });
-    try {
+    mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") chmodSync(dirname(this.path), 0o700);
+    if (existsSync(this.path)) {
       const bytes = readFileSync(this.path);
-      const plaintext = safeStorage.isEncryptionAvailable()
-        ? safeStorage.decryptString(bytes)
-        : bytes.toString("utf8");
-      const stored = JSON.parse(plaintext) as LocalState;
-      this.state = stored.version === 1 ? stored : initialState();
+      let plaintext: string;
+      try {
+        plaintext = safeStorage.isEncryptionAvailable()
+          ? safeStorage.decryptString(bytes)
+          : bytes.toString("utf8");
+      } catch {
+        // Early installations could store plain JSON when system encryption
+        // was unavailable. Accept that format without overwriting encrypted data.
+        plaintext = bytes.toString("utf8");
+      }
+      let stored: LocalState;
+      try { stored = JSON.parse(plaintext) as LocalState; }
+      catch { throw new Error("The Local workspace state could not be unlocked. Its files were left untouched; restore access to this computer's secure storage and reopen Desktop."); }
+      if (stored.version !== 1) throw new Error(`Unsupported Local workspace version: ${stored.version}. Its files were left untouched.`);
+      this.state = stored;
       this.normalize();
-    } catch {
+    } else {
       // Migrate early developer builds that stored state as permission-limited JSON.
       const legacy = join(dirname(this.path), "state.json");
-      try {
-        const stored = JSON.parse(readFileSync(legacy, "utf8")) as LocalState;
-        this.state = stored.version === 1 ? stored : initialState();
+      if (existsSync(legacy)) {
+        let stored: LocalState;
+        try { stored = JSON.parse(readFileSync(legacy, "utf8")) as LocalState; }
+        catch { throw new Error("The legacy Local workspace could not be read. Its files were left untouched."); }
+        if (stored.version !== 1) throw new Error(`Unsupported Local workspace version: ${stored.version}. Its files were left untouched.`);
+        this.state = stored;
         this.normalize();
         this.persist();
-        if (existsSync(legacy)) unlinkSync(legacy);
-      } catch {
+        unlinkSync(legacy);
+      } else {
         this.state = initialState();
       }
     }

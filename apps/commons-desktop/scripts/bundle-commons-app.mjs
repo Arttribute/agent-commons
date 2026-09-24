@@ -1,6 +1,7 @@
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { relocateStandaloneLinks } from "./relocate-standalone-links.mjs";
 
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const commonsApp = resolve(desktop, "../commons-app");
@@ -14,7 +15,12 @@ if (!existsSync(server)) {
 
 rmSync(target, { recursive: true, force: true });
 cpSync(standalone, target, { recursive: true });
+
+relocateStandaloneLinks(standalone, target);
 const bundledApp = join(target, "apps", "commons-app");
 mkdirSync(join(bundledApp, ".next"), { recursive: true });
 cpSync(join(commonsApp, ".next", "static"), join(bundledApp, ".next", "static"), { recursive: true });
 cpSync(join(commonsApp, "public"), join(bundledApp, "public"), { recursive: true });
+if (!existsSync(join(bundledApp, "node_modules", "next", "package.json"))) {
+  throw new Error("The packaged Commons app cannot resolve Next.js.");
+}

@@ -767,6 +767,10 @@ app.whenReady().then(async () => {
       void createUnifiedView().then(showView);
     }
   });
+}).catch((error) => {
+  console.error("Agent Commons desktop startup failed:", error);
+  dialog.showErrorBox("Agent Commons could not start", error instanceof Error ? error.message : String(error));
+  app.quit();
 });
 
 app.on("before-quit", () => { runtime?.close(); commonsServer?.stop(); });

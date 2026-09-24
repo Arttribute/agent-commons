@@ -16,8 +16,9 @@ const port = await new Promise((resolve, reject) => {
 });
 const env = { ...process.env, COMMONS_DESKTOP_START_MODE: "private-local" };
 delete env.ELECTRON_RUN_AS_NODE;
-const child = spawn(electron, [
-  ".",
+const packagedExecutable = process.env.COMMONS_DESKTOP_SMOKE_EXECUTABLE;
+const child = spawn(packagedExecutable || electron, [
+  ...(packagedExecutable ? [] : ["."]),
   `--user-data-dir=${temp}`,
   `--remote-debugging-port=${port}`,
   ...(process.platform === "linux" ? ["--no-sandbox"] : []),

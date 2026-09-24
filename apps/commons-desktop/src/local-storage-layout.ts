@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LocalState } from "@agent-commons/desktop-contract";
 
@@ -17,6 +17,7 @@ export class LocalStorageLayout {
       "",
       "Everything in this directory stays on this computer. The desktop app uses ../state.bin as its transactional index, protected by the operating system's secure storage when available.",
       "Knowledge notes and artifact copies live here as normal files. The other folders contain readable records for local agents and people.",
+      "Managed agent, conversation, app, task, workflow, and skill records are regenerated from state.bin. Edit them through Agent Commons; Knowledge notes can also be edited directly on disk and reindexed.",
       "Cloud mode cannot select this workspace for computer tools.",
       "",
     ].join("\n"));
@@ -58,6 +59,8 @@ export class LocalStorageLayout {
   }
 
   private syncJson(section: Exclude<typeof SECTIONS[number], "skills" | "uploads">, entries: Array<readonly [string, unknown]>) {
+    const manifest = `${section}/.managed-records.json`;
+    const previous = this.readManagedNames(manifest);
     const expected = new Set<string>();
     for (const [id, value] of entries) {
       if (!/^[a-zA-Z0-9_-]+$/.test(id)) continue;
@@ -65,12 +68,17 @@ export class LocalStorageLayout {
       expected.add(filename);
       this.write(`${section}/${filename}`, `${JSON.stringify(value, null, 2)}\n`);
     }
-    for (const filename of readdirSync(this.path(section))) {
-      if (filename.endsWith(".json") && filename !== "library.json" && !expected.has(filename)) unlinkSync(this.path(section, filename));
+    for (const filename of previous) {
+      if (filename.endsWith(".json") && filename !== "library.json" && !expected.has(filename)) {
+        try { unlinkSync(this.path(section, filename)); } catch { /* Already removed. */ }
+      }
     }
+    this.write(manifest, `${JSON.stringify([...expected], null, 2)}\n`);
   }
 
   private syncMarkdownSkills(state: LocalState) {
+    const manifest = "skills/.managed-skills.json";
+    const previous = this.readManagedNames(manifest);
     const expected = new Set<string>();
     for (const skill of state.skills ?? []) {
       if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill.slug)) continue;
@@ -90,9 +98,20 @@ export class LocalStorageLayout {
         "",
       ].join("\n"));
     }
-    for (const filename of readdirSync(this.path("skills"))) {
-      if (filename.endsWith(".md") && !expected.has(filename)) unlinkSync(this.path("skills", filename));
+    for (const filename of previous) {
+      if (filename.endsWith(".md") && !expected.has(filename)) {
+        try { unlinkSync(this.path("skills", filename)); } catch { /* Already removed. */ }
+      }
     }
+    this.write(manifest, `${JSON.stringify([...expected], null, 2)}\n`);
+  }
+
+  private readManagedNames(relativePath: string): Set<string> {
+    try {
+      const names = JSON.parse(readFileSync(join(this.root, relativePath), "utf8")) as unknown;
+      return new Set(Array.isArray(names) ? names.filter((name): name is string =>
+        typeof name === "string" && /^[a-zA-Z0-9_-]+\.(?:json|md)$/.test(name)) : []);
+    } catch { return new Set(); }
   }
 
   private write(relativePath: string, content: string) {
