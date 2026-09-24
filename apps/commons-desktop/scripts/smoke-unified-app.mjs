@@ -103,6 +103,13 @@ try {
           if (!cloudPage || cloudPage.id !== page.id) throw new Error("Changing modes replaced the Commons renderer");
           const access = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsDesktop.getAccess()");
           if (access?.runCommands !== false || access?.readFiles !== true) throw new Error(`Unexpected Cloud desktop access: ${JSON.stringify(access)}`);
+          const restricted = await evaluate(cloudPage.webSocketDebuggerUrl,
+            "window.agentCommonsDesktop.updateAccess({readFiles:false,writeFiles:false,runCommands:false})");
+          if (restricted?.readFiles !== false || restricted?.writeFiles !== false || restricted?.runCommands !== false) {
+            throw new Error(`Could not restrict Cloud desktop access: ${JSON.stringify(restricted)}`);
+          }
+          await evaluate(cloudPage.webSocketDebuggerUrl,
+            "window.agentCommonsDesktop.updateAccess({readFiles:true,writeFiles:true,runCommands:false})");
           await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsDesktop.openPrivateWorkspace('/studio/agents')");
           const localAgain = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getInfo()");
           if (localAgain?.mode !== "private-local") throw new Error("Could not return to the Local workspace in the same renderer");
