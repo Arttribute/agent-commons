@@ -97,6 +97,15 @@ try {
           if (identities?.copilot !== "My name is Commons Copilot." || identities?.research !== "My name is Research Agent.") {
             throw new Error(`Local agent identity failed: ${JSON.stringify(identities)}`);
           }
+          await evaluate(page.webSocketDebuggerUrl, "window.agentCommonsLocal.openCloud('/studio/agents')");
+          const cloudPages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+          const cloudPage = cloudPages.find((item) => item.type === "page" && item.url.startsWith("http://localhost:"));
+          if (!cloudPage || cloudPage.id !== page.id) throw new Error("Changing modes replaced the Commons renderer");
+          const access = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsDesktop.getAccess()");
+          if (access?.runCommands !== false || access?.readFiles !== true) throw new Error(`Unexpected Cloud desktop access: ${JSON.stringify(access)}`);
+          await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsDesktop.openPrivateWorkspace('/studio/agents')");
+          const localAgain = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getInfo()");
+          if (localAgain?.mode !== "private-local") throw new Error("Could not return to the Local workspace in the same renderer");
           console.log(`Unified Commons desktop loaded ${result.path} with Local agent and both mode bridges.`);
           ready = true;
           break;

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import {
   app,
@@ -16,6 +16,7 @@ import {
   type AgentInput,
   type AppInput,
   type ChatRequest,
+  type CloudAccess,
   type DesktopAccount,
   type LocalSettings,
   type SkillInput,
@@ -37,6 +38,7 @@ import { handleLocalSessionsApi } from "./local-sessions-api";
 import { handleLocalAgentsApi } from "./local-agents-api";
 import { handleLocalWorkflowsApi } from "./local-workflows-api";
 import { handleLocalToolsApi } from "./local-tools-api";
+import { DEFAULT_CLOUD_ACCESS, assertCloudToolAllowed, normalizeCloudAccess } from "./cloud-access-policy.mjs";
 
 const CLOUD_URL = process.env.COMMONS_DESKTOP_CLOUD_URL ?? "https://www.agentcommons.io";
 const CLOUD_ORIGIN = new URL(CLOUD_URL).origin;
@@ -65,6 +67,7 @@ let runtime: PrivateLocalRuntime;
 let activeMode: "cloud" | "private-local" = "private-local";
 let cloudTransition = false;
 let cloudWorkspace: string | null = null;
+let cloudAccess: CloudAccess = { ...DEFAULT_CLOUD_ACCESS };
 let cloudAuthAttempt = 0;
 let cloudAuthController: AbortController | null = null;
 let cloudSyncController: AbortController | null = null;
@@ -84,6 +87,52 @@ function assertCloudWorkspacePrivacy(selected: string) {
   if (pathContains(selected, privateRoot) || pathContains(privateRoot, selected)) {
     throw new Error("Choose a project folder outside the Private Local data directory so local conversations and settings stay private.");
   }
+}
+
+function cloudAccessPath() { return join(app.getPath("userData"), "cloud-access.json"); }
+
+function loadCloudAccess() {
+  if (!existsSync(cloudAccessPath())) return;
+  try {
+    const saved = JSON.parse(readFileSync(cloudAccessPath(), "utf8")) as { access?: CloudAccess; workspace?: string };
+    cloudAccess = normalizeCloudAccess(saved.access);
+    if (saved.workspace && statSync(saved.workspace).isDirectory()) {
+      const selected = realpathSync(saved.workspace);
+      assertCloudWorkspacePrivacy(selected);
+      cloudWorkspace = selected;
+    }
+  } catch {
+    cloudWorkspace = null;
+    cloudAccess = { ...DEFAULT_CLOUD_ACCESS };
+  }
+}
+
+function saveCloudAccess() {
+  const path = cloudAccessPath();
+  const temporary = `${path}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify({ access: cloudAccess, workspace: cloudWorkspace })}\n`, { mode: 0o600 });
+  renameSync(temporary, path);
+}
+
+const MAX_TRANSFER_BYTES = 20_000_000;
+
+async function readTransfer(response: Response) {
+  if (!response.ok || !response.body) throw new Error("Could not download the Cloud Library file.");
+  if (Number(response.headers.get("content-length") ?? 0) > MAX_TRANSFER_BYTES) throw new Error("Library transfers are limited to 20 MB per file.");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_TRANSFER_BYTES) {
+      await reader.cancel();
+      throw new Error("Library transfers are limited to 20 MB per file.");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
 }
 
 type DeviceCodeResponse = {
@@ -621,11 +670,79 @@ function registerIpc() {
     if (!statSync(selected).isDirectory()) throw new Error("Choose a directory");
     assertCloudWorkspacePrivacy(selected);
     cloudWorkspace = selected;
+    saveCloudAccess();
     return cloudWorkspace;
+  });
+  ipcMain.handle("cloud:get-access", (event) => {
+    assertCloudSender(event);
+    return cloudAccess;
+  });
+  ipcMain.handle("cloud:update-access", (event, access: CloudAccess) => {
+    assertCloudSender(event);
+    cloudAccess = normalizeCloudAccess(access);
+    for (const controller of cloudToolControllers) controller.abort();
+    saveCloudAccess();
+    return cloudAccess;
+  });
+  ipcMain.handle("cloud:import-library-to-local", async (event, itemId: string, name: string, mimeType: string) => {
+    assertCloudSender(event);
+    if (typeof itemId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(itemId)) throw new Error("Invalid Cloud Library item.");
+    if (typeof name !== "string" || name.length > 255 || typeof mimeType !== "string" || mimeType.length > 120) throw new Error("Invalid Library file metadata.");
+    const cloudSession = session.fromPartition("persist:commons-unified");
+    const response = await cloudSession.fetch(`${commonsServer!.origin}/api/library/${encodeURIComponent(itemId)}/download`, {
+      cache: "no-store", signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error("Could not get a Cloud Library download link.");
+    const payload = await response.json() as { url?: string };
+    if (!payload.url) throw new Error("The Cloud Library item has no downloadable file.");
+    const source = new URL(payload.url);
+    if (source.protocol !== "https:") throw new Error("The Cloud Library download must use HTTPS.");
+    const bytes = await readTransfer(await cloudSession.fetch(source.toString(), { redirect: "error", signal: AbortSignal.timeout(60_000) }));
+    if (activeMode !== "cloud") throw new Error("The mode changed before the transfer completed.");
+    runtime.importLibraryFiles([{ name, mimeType, bytes }]);
+  });
+  ipcMain.handle("cloud:list-local-transfer-items", async (event) => {
+    assertCloudSender(event);
+    const choice = await dialog.showMessageBox(desktopWindow!, {
+      type: "question", title: "Show Local files in Cloud mode?",
+      message: "Show Local Library file names so you can choose one to copy to Cloud?",
+      detail: "Only file names appear in the Cloud view. File contents require a separate confirmation before upload.",
+      buttons: ["Cancel", "Show files"], defaultId: 0, cancelId: 0, noLink: true,
+    });
+    if (choice.response !== 1 || activeMode !== "cloud") return [];
+    const root = realpathSync(runtime.storageRoot());
+    return (runtime.state().library ?? []).flatMap((item) => {
+      try {
+        const path = realpathSync(item.path);
+        if (!pathContains(root, path) || statSync(path).size > MAX_TRANSFER_BYTES) return [];
+        return [{ id: item.id, name: item.name, mimeType: item.mimeType }];
+      } catch { return []; }
+    });
+  });
+  ipcMain.handle("cloud:read-local-transfer-item", async (event, id: string) => {
+    assertCloudSender(event);
+    const item = runtime.state().library?.find((entry) => entry.id === id);
+    if (!item) throw new Error("Local Library item not found.");
+    const root = realpathSync(runtime.storageRoot());
+    const path = realpathSync(item.path);
+    if (!pathContains(root, path) || statSync(path).size > MAX_TRANSFER_BYTES) throw new Error("Only Local Library files up to 20 MB can be transferred.");
+    const choice = await dialog.showMessageBox(desktopWindow!, {
+      type: "warning", title: "Send Local file to Commons Cloud?",
+      message: `Upload ${item.name} to your Commons Cloud Library?`,
+      detail: "This copies the selected Private Local file into your Cloud account. Other Local files stay on this computer.",
+      buttons: ["Cancel", "Send to Cloud"], defaultId: 0, cancelId: 0, noLink: true,
+    });
+    if (choice.response !== 1 || activeMode !== "cloud") throw new Error("Transfer cancelled.");
+    return { name: item.name, mimeType: item.mimeType, bytes: readFileSync(path) };
   });
   ipcMain.handle("cloud:get-tool-context", (event) => {
     assertCloudSender(event);
-    return cloudWorkspace ? buildLocalToolsManifest(cloudWorkspace, buildDirSnapshot(cloudWorkspace, 2)) : null;
+    if (!cloudWorkspace || (!cloudAccess.readFiles && !cloudAccess.writeFiles && !cloudAccess.runCommands)) return null;
+    assertCloudWorkspacePrivacy(cloudWorkspace);
+    const access = `Cloud desktop permissions: file reading ${cloudAccess.readFiles ? "on" : "off"}; file editing ${cloudAccess.writeFiles ? "on" : "off"}; full computer commands ${cloudAccess.runCommands ? "on, with approval for each command" : "off"}. Only use permitted tools. File tools stay inside the selected workspace. Command tools, when enabled, can access other files on this computer.`;
+    return cloudAccess.runCommands
+      ? `${buildLocalToolsManifest(cloudWorkspace, cloudAccess.readFiles ? buildDirSnapshot(cloudWorkspace, 2) : "(file reading disabled)")}\n${access}`
+      : `## Desktop workspace tools\nWorkspace: ${cloudWorkspace}\n${access}\nAvailable: ${[cloudAccess.readFiles && "cli_list_directory, cli_read_file, cli_search_files", cloudAccess.writeFiles && "cli_write_file"].filter(Boolean).join(", ")}.\n${cloudAccess.readFiles ? buildDirSnapshot(cloudWorkspace, 2) : ""}`;
   });
   ipcMain.handle("cloud:run-tool", async (event, request: { tool: string; args: Record<string, unknown>; sessionId?: string }) => {
     assertCloudSender(event);
@@ -634,6 +751,7 @@ function registerIpc() {
     assertCloudWorkspacePrivacy(cloudWorkspace);
     const tool = request?.tool?.replace(/^cli_/, "");
     if (!tool || !cloudToolNames.has(tool)) throw new Error("Unsupported local tool");
+    assertCloudToolAllowed(tool, cloudAccess);
     if (!request.args || typeof request.args !== "object" || Array.isArray(request.args)) throw new Error("Invalid tool arguments");
     const controller = new AbortController();
     cloudToolControllers.add(controller);
@@ -652,7 +770,7 @@ function registerIpc() {
             message: `Allow ${permission.replaceAll("_", " ")} in ${cloudWorkspace}?`,
             detail: [
               summary.replace(/\x1b\[[0-9;]*m/g, "").slice(0, 12_000),
-              isCommand ? "This command runs with your computer account's file permissions, including access outside the selected project. Its output may be sent to the online agent. Review it before allowing access to Private Local files." : "",
+              isCommand ? "Full computer command access is enabled. This command can read outside the selected project, including Private Local files, and its output may be sent to Commons Cloud." : "",
             ].filter(Boolean).join("\n\n"),
             buttons: ["Decline", "Allow once"], defaultId: 0, cancelId: 0, noLink: true,
           });
@@ -759,6 +877,7 @@ async function openLocalApp(id: string) {
 
 app.whenReady().then(async () => {
   runtime = new PrivateLocalRuntime(app.getPath("userData"));
+  loadCloudAccess();
   registerIpc();
   installApplicationMenu();
   activeMode = await selectStartupMode();

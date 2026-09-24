@@ -181,6 +181,13 @@ export type WorkspacePreferences = {
   pinnedAppIds?: { value: string[]; updatedAt: number };
 };
 
+export type CloudAccess = {
+  readFiles: boolean;
+  writeFiles: boolean;
+  /** Enables commands with the computer account's full filesystem access. */
+  runCommands: boolean;
+};
+
 export type LocalState = {
   version: 1;
   agents: LocalAgent[];
@@ -267,6 +274,11 @@ export interface CloudDesktopBridge {
   chooseWorkspace(): Promise<string | null>;
   getToolContext(): Promise<string | null>;
   runTool(request: { tool: string; args: Record<string, unknown>; sessionId?: string }): Promise<string>;
+  getAccess(): Promise<CloudAccess>;
+  updateAccess(access: CloudAccess): Promise<CloudAccess>;
+  importCloudLibraryItemToLocal(itemId: string, name: string, mimeType: string): Promise<void>;
+  listLocalTransferItems(): Promise<Array<{ id: string; name: string; mimeType: string }>>;
+  readLocalTransferItem(id: string): Promise<{ name: string; mimeType: string; bytes: Uint8Array }>;
   syncAccount(account: DesktopAccount): Promise<void>;
   getPreferences(): Promise<WorkspacePreferences>;
   syncPreferences(preferences: WorkspacePreferences): Promise<WorkspacePreferences>;

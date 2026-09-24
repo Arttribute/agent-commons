@@ -97,7 +97,7 @@ const tabs = [
 
 export default function LibraryPage() {
   const { authState } = useAuth();
-  const { mode } = useWorkspaceMode();
+  const { mode, desktop } = useWorkspaceMode();
   const local = mode === "private-local";
   const userAddress = normalizePrincipalId(authState.walletAddress);
   const [items, setItems] = useState<LibraryItem[]>([]);
@@ -227,6 +227,14 @@ export default function LibraryPage() {
     const response = await desktopApiFetch(`/api/library/${item.itemId}/download`);
     const data = await response.json();
     if (data?.url) window.open(data.url, "_blank", "noopener,noreferrer");
+  }
+
+  async function saveToLocal(item: LibraryItem) {
+    try {
+      setError("");
+      await window.agentCommonsDesktop?.importCloudLibraryItemToLocal(item.itemId, item.name, item.mimeType);
+      setNotice(`${item.name} was copied to your Local Library.`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not copy the file to Local"); }
   }
 
   async function shareLink(item: LibraryItem) {
@@ -476,6 +484,7 @@ export default function LibraryPage() {
                             setPreviewing({ fileId: item.itemId, ...item })
                           }
                           onDownload={() => download(item)}
+                          onSaveToLocal={desktop && !local ? () => void saveToLocal(item) : undefined}
                           onFavorite={() =>
                             mutate(item.itemId, "PATCH", {
                               isFavorite: !item.isFavorite,
@@ -570,6 +579,7 @@ function Artifact({
   layout,
   onOpen,
   onDownload,
+  onSaveToLocal,
   onFavorite,
   onShare,
   onAccess,
@@ -580,6 +590,7 @@ function Artifact({
   layout: "grid" | "list";
   onOpen(): void;
   onDownload(): void;
+  onSaveToLocal?(): void;
   onFavorite(): void;
   onShare(): void;
   onAccess(): void;
@@ -597,6 +608,10 @@ function Artifact({
           <Download />
           Open or download
         </DropdownMenuItem>
+        {onSaveToLocal && <DropdownMenuItem onClick={onSaveToLocal}>
+          <Download />
+          Copy to Local Library
+        </DropdownMenuItem>}
         <DropdownMenuItem onClick={onFavorite}>
           <Heart />
           {item.isFavorite ? "Remove favorite" : "Favorite"}

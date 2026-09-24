@@ -138,12 +138,16 @@ jobs:
           files: release/*
           generate_release_notes: true
           body: |
-            ## Early desktop release
+            ## Unified desktop release
 
-            These installers are currently unsigned while publisher enrollment
-            is being completed. macOS Gatekeeper and Windows SmartScreen may
-            show a warning. Verify downloads against the SHA256SUMS file before
-            installing.
+            If publisher signing is unavailable, macOS Gatekeeper and Windows
+            SmartScreen may show a warning. Verify downloads against the
+            SHA256SUMS file before installing.
 
-            Private Local keeps conversations, files, tools, knowledge spaces,
-            workflows, and local-model traffic on the user's computer.
+            Cloud and Private Local use the same Commons interface. Private Local
+            keeps its app data and local-model traffic on the user's computer.
+            User-approved Local shell commands can use the computer's network.
+            Cloud file tools are limited to a selected folder. Full-computer
+            commands are off by default and require both a settings change and
+            approval for each command. Library files can be copied between
+            Cloud and Local through explicit transfer actions.
