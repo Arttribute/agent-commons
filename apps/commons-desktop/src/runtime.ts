@@ -37,6 +37,7 @@ import { handleLocalKnowledgeApi } from "./local-knowledge-api";
 import { assistantIdentityAnswer, assistantIdentityRequestKind, assistantNameAnswer, looksLikeInventedToolCall, looksLikeModelIdentity, parseToolArguments } from "./local-response";
 import { readOllamaChatResponse, type OllamaMessage } from "./ollama-stream";
 import { mergeWorkspacePreferences } from "./workspace-preferences";
+import { compileLocalWorkflow } from "./local-workflow-plan.mjs";
 
 type PendingApproval = {
   resolve: (allow: boolean) => void;
@@ -599,7 +600,6 @@ export class PrivateLocalRuntime {
 
   saveWorkflow(input: WorkflowInput) {
     const timestamp = now();
-    if (!input.steps.length) throw new Error("Add at least one workflow step");
     return this.change((state) => {
       const existing = input.id ? state.workflows.find((workflow) => workflow.id === input.id) : undefined;
       if (existing) Object.assign(existing, input, { updatedAt: timestamp });
@@ -607,21 +607,34 @@ export class PrivateLocalRuntime {
     });
   }
 
-  async runWorkflow(id: string) {
+  async runWorkflow(id: string, inputData?: Record<string, unknown>) {
     const workflow = this.store.get().workflows.find((candidate) => candidate.id === id);
     if (!workflow) throw new Error("Workflow not found");
+    const hasGraph = Array.isArray(workflow.definition?.nodes) && workflow.definition.nodes.length > 0;
+    const plan = hasGraph
+      ? compileLocalWorkflow(workflow.definition, workflow.agentId)
+      : workflow.steps.map((prompt, index) => ({ nodeId: `step-${index}`, agentId: workflow.agentId, prompt }));
+    if (!plan.length) throw new Error("Add an agent step before running this Local workflow.");
+    for (const step of plan) {
+      if (!this.store.get().agents.some((agent) => agent.id === step.agentId)) {
+        throw new Error(`The Local agent for workflow node ${step.nodeId} is unavailable.`);
+      }
+    }
     const executionId = randomUUID();
     this.change((state) => {
       const current = state.workflows.find((candidate) => candidate.id === id)!;
       current.lastRun = { executionId, status: "running", startedAt: now() };
     });
     let context = "";
+    const hasInput = inputData && Object.keys(inputData).length > 0;
     try {
-      for (const [index, step] of workflow.steps.entries()) {
-        const prompt = context ? `${step}\n\nPrevious step result:\n${context}` : step;
-        this.change((state) => { state.workflows.find((candidate) => candidate.id === id)!.lastRun!.currentNode = `step-${index}`; });
-        this.emit({ type: "activity", label: `${workflow.name}: step ${index + 1}/${workflow.steps.length}`, status: "running" });
-        context = (await this.sendMessage({ agentId: workflow.agentId, prompt, workspaceRoot: workflow.workspaceRoot })).response;
+      for (const [index, step] of plan.entries()) {
+        const prompt = context
+          ? `${step.prompt}\n\nPrevious step result:\n${context}`
+          : hasInput ? `${step.prompt}\n\nWorkflow input:\n${JSON.stringify(inputData)}` : step.prompt;
+        this.change((state) => { state.workflows.find((candidate) => candidate.id === id)!.lastRun!.currentNode = step.nodeId; });
+        this.emit({ type: "activity", label: `${workflow.name}: step ${index + 1}/${plan.length}`, status: "running" });
+        context = (await this.sendMessage({ agentId: step.agentId, prompt, workspaceRoot: workflow.workspaceRoot })).response;
       }
       return this.change((state) => {
         const current = state.workflows.find((candidate) => candidate.id === id)!;

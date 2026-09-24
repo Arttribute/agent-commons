@@ -7,7 +7,7 @@ export function handleLocalToolsApi(runtime: PrivateLocalRuntime, url: URL, meth
     return { status: 404, body: { message: "Local tool operation not found" } };
   }
   const hasSkills = Boolean(runtime.state().skills?.length);
-  const items = LOCAL_TOOLS
+  const builtInItems = LOCAL_TOOLS
     .filter((entry) => entry.function.name !== "invoke_skill" || hasSkills)
     .map((entry) => {
       const name = entry.function.name;
@@ -21,5 +21,18 @@ export function handleLocalToolsApi(runtime: PrivateLocalRuntime, url: URL, meth
         tags: ["local", group.toLowerCase()], verified: true, sourceLabel: "Private Local",
       };
     });
+  const agentItems = runtime.state().agents.map((agent) => ({
+    id: `agent:${agent.id}`, name: agent.name, displayName: agent.name,
+    description: agent.description || agent.persona || "Use this Local agent as a reasoning step in a workflow.",
+    category: "agents", categoryLabel: "Agent Processors", connectionMode: "agent",
+    status: "connected", statusLabel: "Available", actionLabel: "Use in workflow",
+    icon: "Bot", tags: ["agent", "workflow", "local"], sourceLabel: "Local agents",
+    agent: { agentId: agent.id, name: agent.name, avatar: agent.avatar },
+    workflowNode: {
+      kind: "agent_processor", nodeType: "agent_processor", agentId: agent.id,
+      config: { agentId: agent.id, prompt: "Process the provided workflow data and return a concise result." },
+    },
+  }));
+  const items = [...builtInItems, ...agentItems];
   return { status: 200, body: { items, total: items.length, meta: { mode: "private-local", generatedAt: new Date().toISOString() } } };
 }

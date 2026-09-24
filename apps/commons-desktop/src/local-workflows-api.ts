@@ -1,6 +1,7 @@
 import type { LocalWorkflow } from "@agent-commons/desktop-contract";
 import type { PrivateLocalRuntime } from "./runtime";
 import type { LocalApiResult } from "./local-knowledge-api";
+import { compileLocalWorkflow } from "./local-workflow-plan.mjs";
 
 const ok = (data: unknown): LocalApiResult => ({ status: 200, body: { data } });
 const bad = (message: string, status = 400): LocalApiResult => ({ status, body: { message } });
@@ -14,16 +15,17 @@ function view(workflow: LocalWorkflow, runtime: PrivateLocalRuntime) {
   };
 }
 
-function stepsFromDefinition(definition: Record<string, unknown> | undefined, fallback: string) {
+function stepsFromDefinition(definition: Record<string, unknown> | undefined) {
   const nodes = Array.isArray(definition?.nodes) ? definition.nodes : [];
   const steps = nodes.flatMap((node) => {
     if (!node || typeof node !== "object") return [];
     const value = node as Record<string, unknown>;
     if (["input", "output"].includes(String(value.type))) return [];
     const data = value.data && typeof value.data === "object" ? value.data as Record<string, unknown> : {};
-    return [String(data.prompt ?? data.instructions ?? data.label ?? value.label ?? value.type ?? "Continue workflow")];
+    const config = value.config && typeof value.config === "object" ? value.config as Record<string, unknown> : {};
+    return [String(config.prompt ?? data.prompt ?? data.instructions ?? data.label ?? value.label ?? value.type ?? "Continue workflow")];
   });
-  return steps.length ? steps : [fallback];
+  return steps;
 }
 
 export async function handleLocalWorkflowsApi(runtime: PrivateLocalRuntime, url: URL, method: string, body: Record<string, unknown>): Promise<LocalApiResult> {
@@ -39,7 +41,7 @@ export async function handleLocalWorkflowsApi(runtime: PrivateLocalRuntime, url:
         const agentId = String(body.agentId ?? runtime.state().agents[0]?.id ?? "");
         if (!runtime.state().agents.some((agent) => agent.id === agentId)) return bad("Choose a Local agent for this workflow");
         const state = runtime.saveWorkflow({ name, description: typeof body.description === "string" ? body.description : undefined,
-          agentId, definition, steps: stepsFromDefinition(definition, name) });
+          agentId, definition, steps: stepsFromDefinition(definition) });
         return ok(view(state.workflows[0], runtime));
       }
     }
@@ -54,12 +56,22 @@ export async function handleLocalWorkflowsApi(runtime: PrivateLocalRuntime, url:
         const name = typeof body.name === "string" ? body.name : workflow.name;
         const state = runtime.saveWorkflow({ id: workflow.id, name, description: typeof body.description === "string" ? body.description : workflow.description,
           agentId: workflow.agentId, workspaceRoot: workflow.workspaceRoot, definition,
-          steps: stepsFromDefinition(definition, name) });
+          steps: stepsFromDefinition(definition) });
         return ok(view(state.workflows.find((item) => item.id === workflow.id)!, runtime));
       }
     }
     if (parts[1] === "execute" && method === "POST") {
-      void runtime.runWorkflow(workflow.id).catch(() => undefined);
+      const inputData = body.inputData && typeof body.inputData === "object" && !Array.isArray(body.inputData)
+        ? body.inputData as Record<string, unknown> : undefined;
+      const hasGraph = Array.isArray(workflow.definition?.nodes) && workflow.definition.nodes.length > 0;
+      const plan = hasGraph
+        ? compileLocalWorkflow(workflow.definition, workflow.agentId)
+        : workflow.steps.map((prompt, index) => ({ nodeId: `step-${index}`, agentId: workflow.agentId, prompt }));
+      if (!plan.length) return bad("Add an agent step before running this Local workflow.");
+      if (plan.some((step) => !runtime.state().agents.some((agent) => agent.id === step.agentId))) {
+        return bad("A Local workflow agent is unavailable. Choose an available agent before running.");
+      }
+      void runtime.runWorkflow(workflow.id, inputData).catch(() => undefined);
       const run = runtime.state().workflows.find((item) => item.id === workflow.id)?.lastRun;
       return { status: 200, body: { ...run, workflowId: workflow.id } };
     }
