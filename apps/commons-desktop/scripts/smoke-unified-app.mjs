@@ -120,5 +120,11 @@ try {
     new Promise((resolve) => setTimeout(resolve, 3_000)),
   ]);
   if (child.exitCode === null) child.kill("SIGKILL");
-  rmSync(temp, { recursive: true, force: true });
+  try {
+    rmSync(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch (error) {
+    // A packaged Electron helper can still be writing its profile after the
+    // parent exits. Preserve the original smoke failure for diagnosis.
+    console.warn(`Could not remove smoke profile ${temp}: ${error.message}`);
+  }
 }
