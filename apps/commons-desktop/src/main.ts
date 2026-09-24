@@ -653,10 +653,14 @@ function registerIpc() {
         appendLog: () => undefined,
         confirm: async (summary, permission) => {
           if (!desktopWindow || desktopWindow.isDestroyed() || controller.signal.aborted || activeMode !== "cloud") return false;
+          const isCommand = permission === "run_command" || permission === "start_process";
           const result = await dialog.showMessageBox(desktopWindow, {
             type: "warning", title: "Allow local agent action?",
             message: `Allow ${permission.replaceAll("_", " ")} in ${cloudWorkspace}?`,
-            detail: summary.replace(/\x1b\[[0-9;]*m/g, "").slice(0, 12_000),
+            detail: [
+              summary.replace(/\x1b\[[0-9;]*m/g, "").slice(0, 12_000),
+              isCommand ? "This command runs with your computer account's file permissions, including access outside the selected project. Its output may be sent to the online agent. Review it before allowing access to Private Local files." : "",
+            ].filter(Boolean).join("\n\n"),
             buttons: ["Decline", "Allow once"], defaultId: 0, cancelId: 0, noLink: true,
           });
           return result.response === 1 && !controller.signal.aborted && activeMode === "cloud";

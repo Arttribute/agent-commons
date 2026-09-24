@@ -37,7 +37,7 @@ test("pnpm sibling dependencies resolve from an externally linked Next package",
     mkdirSync(join(source, "apps", "commons-app", "node_modules"), { recursive: true });
     writeFileSync(join(nextWrapper, "next", "require-hook.js"), 'module.exports = require("styled-jsx/package.json").name;');
     writeFileSync(join(styledWrapper, "styled-jsx", "package.json"), '{"name":"styled-jsx"}');
-    symlinkSync(join(styledWrapper, "styled-jsx"), join(nextWrapper, "styled-jsx"), "dir");
+    symlinkSync("../../styled-jsx@1/node_modules/styled-jsx", join(nextWrapper, "styled-jsx"), "dir");
     symlinkSync(join(nextWrapper, "next"), join(source, "apps", "commons-app", "node_modules", "next"), "dir");
     cpSync(source, target, { recursive: true });
     relocateStandaloneLinks(source, target);
