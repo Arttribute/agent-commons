@@ -17,4 +17,6 @@ apps/commons-courses
 apps/commons-docs
 docs
 onchain
-packages
+packages/*
+!packages/commons-agent-core
+!packages/commons-agent-core/**
