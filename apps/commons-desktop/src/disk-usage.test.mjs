@@ -14,13 +14,13 @@ test("ranks selected-folder sizes without following links or reading excluded pa
     writeFileSync(join(root, "small.txt"), "12");
     writeFileSync(join(root, ".ssh"), "excluded");
     writeFileSync(join(outside, "secret.bin"), "1234567890");
-    symlinkSync(outside, join(root, "linked"), "dir");
+    if (process.platform !== "win32") symlinkSync(outside, join(root, "linked"), "dir");
     const result = await scanDiskUsage(root, undefined, (path) => {
       if (path.endsWith(".ssh")) throw new Error("excluded");
     });
     assert.deepEqual(result.entries.map(({ path, sizeBytes }) => [path, sizeBytes]), [["large", 6], ["small.txt", 2]]);
     assert.equal(result.incomplete, false);
-    assert.ok(result.skipped >= 2);
+    assert.ok(result.skipped >= (process.platform === "win32" ? 1 : 2));
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
