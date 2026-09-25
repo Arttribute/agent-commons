@@ -4,6 +4,7 @@ import { DEFAULT_CLOUD_ACCESS, assertCloudToolAllowed, normalizeCloudAccess } fr
 
 test("Cloud commands require a separate full computer permission", () => {
   assert.doesNotThrow(() => assertCloudToolAllowed("read_file", DEFAULT_CLOUD_ACCESS));
+  assert.doesNotThrow(() => assertCloudToolAllowed("disk_usage", DEFAULT_CLOUD_ACCESS));
   assert.doesNotThrow(() => assertCloudToolAllowed("write_file", DEFAULT_CLOUD_ACCESS));
   for (const tool of ["run_command", "start_process", "wait_for_process", "kill_process"]) {
     assert.throws(() => assertCloudToolAllowed(tool, DEFAULT_CLOUD_ACCESS), /Cloud commands are off/);
@@ -17,5 +18,6 @@ test("missing or invalid Cloud settings cannot enable command access", () => {
   assert.throws(() => assertCloudToolAllowed("unknown", { ...DEFAULT_CLOUD_ACCESS, runCommands: true }), /Unsupported/);
   const restricted = { readFiles: false, writeFiles: false, runCommands: false };
   assert.throws(() => assertCloudToolAllowed("read_file", restricted), /file reading is off/);
+  assert.throws(() => assertCloudToolAllowed("disk_usage", restricted), /file reading is off/);
   assert.throws(() => assertCloudToolAllowed("write_file", restricted), /file editing is off/);
 });

@@ -60,6 +60,9 @@ export const LOCAL_TOOLS = [
     pattern: { type: "string" },
     directory: { type: "string" },
   }, ["pattern"]),
+  functionTool("cli_disk_usage", "Rank the largest files and folders inside the selected workspace using a bounded read-only scan. Sizes are limited to that folder.", {
+    path: { type: "string", description: "Workspace-relative directory, default ." },
+  }),
   functionTool("cli_run_command", "Run a non-interactive command with an argument array.", {
     command: { type: "string" },
     args: { type: "array", items: { type: "string" } },

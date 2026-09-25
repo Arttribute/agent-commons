@@ -1512,6 +1512,18 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 {
                   type: 'function',
                   function: {
+                    name: 'cli_disk_usage',
+                    description: "Rank files and folders by size inside the user's selected local folder. Read only and bounded; does not inspect the whole computer unless that folder was selected.",
+                    parameters: {
+                      type: 'object',
+                      properties: { path: { type: 'string', description: 'Directory relative to the selected folder (default: root)' } },
+                      required: [],
+                    },
+                  },
+                },
+                {
+                  type: 'function',
+                  function: {
                     name: 'cli_run_command',
                     description:
                       "Run a shell command on the user's local machine and return output. Requires user confirmation.",
@@ -1911,6 +1923,11 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                         'Directory to search in (default: session root)',
                       ),
                   }),
+                ),
+                makeCliTool(
+                  'cli_disk_usage',
+                  "Rank files and folders by size inside the user's selected local folder. Read only and bounded.",
+                  z.object({ path: z.string().optional().describe('Directory relative to the selected folder (default: root)') }),
                 ),
                 makeCliTool(
                   'cli_run_command',
