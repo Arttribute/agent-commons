@@ -328,6 +328,7 @@ async function switchToLocal(path?: string) {
     });
     rememberStartupMode(activeMode);
     unifiedView!.webContents.send("desktop:mode-changed", activeMode, sectionPath(path));
+    if (process.env.COMMONS_DESKTOP_SMOKE_DEBUG !== "1") void runtime.prepareLocalModel().catch(() => undefined);
   } catch (error) {
     activeMode = previousMode;
     throw error;
@@ -802,6 +803,8 @@ function registerIpc() {
   ipcMain.handle("cloud:sync-preferences", (event, incoming: WorkspacePreferences) => { assertCloudSender(event); return syncPreferences(incoming, "cloud"); });
 
   localHandler("local:get-state", () => runtime.state());
+  localHandler("local:get-model-status", () => runtime.modelStatus());
+  localHandler("local:prepare-model", () => runtime.prepareLocalModel());
   localHandler("local:get-preferences", () => runtime.preferences());
   localHandler<[WorkspacePreferences]>("local:sync-preferences", (incoming) => syncPreferences(incoming, "private-local"));
   localHandler("local:choose-workspace", async () => {
@@ -895,6 +898,9 @@ app.whenReady().then(async () => {
   installApplicationMenu();
   activeMode = await selectStartupMode();
   showView(await createUnifiedView());
+  if (activeMode === "private-local" && process.env.COMMONS_DESKTOP_SMOKE_DEBUG !== "1") {
+    void runtime.prepareLocalModel().catch(() => undefined);
+  }
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       void createUnifiedView().then(showView);

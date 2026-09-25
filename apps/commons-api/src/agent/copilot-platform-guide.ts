@@ -1,4 +1,5 @@
 export type CopilotUiContext = {
+  desktopMode?: 'cloud';
   pathname?: string;
   pageTitle?: string;
   routeName?: string;
@@ -152,6 +153,7 @@ export function sanitizeUiContext(value: unknown): CopilotUiContext | null {
       )
     : undefined;
   return {
+    desktopMode: input.desktopMode === 'cloud' ? 'cloud' : undefined,
     pathname: text('pathname', 500),
     pageTitle: text('pageTitle', 300),
     routeName: text('routeName', 120),

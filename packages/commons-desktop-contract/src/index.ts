@@ -289,6 +289,8 @@ export interface CloudDesktopBridge {
 export interface LocalDesktopBridge {
   getInfo(): Promise<DesktopInfo>;
   getState(): Promise<LocalState>;
+  getModelStatus(): Promise<LocalModelStatus>;
+  prepareModel(): Promise<void>;
   getStorageRoot(): Promise<string>;
   openStorageRoot(): Promise<void>;
   apiRequest(request: { path: string; method: string; body?: unknown }): Promise<{ status: number; body: unknown }>;

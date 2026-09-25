@@ -20,6 +20,10 @@ test("mode context states available resources and the local/cloud boundary", () 
   assert.match(buildWorkspaceModeContext("private-local"), /No Commons Cloud account data/);
   assert.match(buildWorkspaceModeContext("cloud", true), /file and command results cross into this cloud conversation/);
   assert.match(buildWorkspaceModeContext("cloud"), /No desktop filesystem workspace is connected/);
+  const desktop = buildWorkspaceModeContext("cloud", false, true);
+  assert.match(desktop, /their own computer, not an agent-hosted computer/);
+  assert.match(desktop, /choose a folder with the desktop folder button/);
+  assert.match(buildWorkspaceModeContext("cloud", true, true), /A user-selected folder on their computer/);
 });
 
 test("cloud and local agent prompts use one identity block", () => {

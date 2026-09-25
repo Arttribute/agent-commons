@@ -31,7 +31,8 @@ import {
   type LocalToolsConfig,
 } from "../../../packages/agc-cli/src/local-tools";
 import { indexFolders, searchSpaces } from "./knowledge";
-import { LocalStore } from "./store";
+import { DEFAULT_LOCAL_MODEL, LocalStore } from "./store";
+import { LocalModelManager } from "./local-model";
 import { LocalStorageLayout } from "./local-storage-layout";
 import { handleLocalKnowledgeApi } from "./local-knowledge-api";
 import { assistantIdentityAnswer, assistantIdentityRequestKind, assistantNameAnswer, looksLikeInventedToolCall, looksLikeModelIdentity, parseToolArguments } from "./local-response";
@@ -163,11 +164,17 @@ export class PrivateLocalRuntime {
   private readonly store: LocalStore;
   private readonly layout: LocalStorageLayout;
   private readonly scheduler: NodeJS.Timeout;
+  private readonly modelManager: LocalModelManager;
   private target?: WebContents;
 
   constructor(userDataDirectory: string) {
     this.store = new LocalStore(userDataDirectory);
     this.layout = new LocalStorageLayout(userDataDirectory);
+    this.modelManager = new LocalModelManager(
+      this.layout.root,
+      DEFAULT_LOCAL_MODEL,
+      (model) => this.emit({ type: "model", model }),
+    );
     this.layout.sync(this.store.get());
     this.scheduler = setInterval(() => void this.runDueTasks(), 30_000);
     this.scheduler.unref();
@@ -179,6 +186,15 @@ export class PrivateLocalRuntime {
 
   state() {
     return this.store.get();
+  }
+
+  modelStatus() {
+    return this.modelManager.currentStatus();
+  }
+
+  prepareLocalModel() {
+    if (this.store.get().settings.ollamaUrl !== "http://127.0.0.1:11434") return Promise.resolve();
+    return this.modelManager.prepare();
   }
 
   storageRoot() {
@@ -416,8 +432,12 @@ export class PrivateLocalRuntime {
     if (!agent) throw new Error("Choose a local agent first");
     if (!input.prompt.trim()) throw new Error("Message is empty");
     const directNameRequest = assistantIdentityRequestKind(input.prompt) === "name";
-    const available: string[] = directNameRequest ? [] : await this.listModels().catch(() => []);
-    if (!available.length && !directNameRequest) throw new Error("No local model is available. Start Ollama and install a model, then try again.");
+    let available: string[] = directNameRequest ? [] : await this.listModels().catch(() => []);
+    if (!available.length && !directNameRequest && state.settings.ollamaUrl === "http://127.0.0.1:11434") {
+      await this.prepareLocalModel();
+      available = await this.listModels();
+    }
+    if (!available.length && !directNameRequest) throw new Error("No model is available at the configured local model server. Check the Local model server address in Settings.");
     const explicitModel = agent.model?.trim();
     const isCopilot = agent.id === "local-copilot" || agent.id === "commons-local" || agent.name === "Commons Copilot";
     if (explicitModel && !available.includes(explicitModel) && !isCopilot && !directNameRequest) {
@@ -439,6 +459,8 @@ export class PrivateLocalRuntime {
     let conversation = input.conversationId
       ? state.conversations.find((candidate) => candidate.id === input.conversationId)
       : undefined;
+    if (input.conversationId && !conversation) throw new Error("This Local conversation could not be found. Open a saved conversation or start a new one.");
+    if (conversation && conversation.agentId !== agent.id) throw new Error("This Local conversation belongs to a different agent.");
     if (!conversation) {
       conversation = {
         id: randomUUID(),
@@ -721,6 +743,7 @@ export class PrivateLocalRuntime {
 
   close() {
     clearInterval(this.scheduler);
+    this.modelManager.stop();
     this.cancelPendingApprovals();
     stopLocalProcesses();
   }

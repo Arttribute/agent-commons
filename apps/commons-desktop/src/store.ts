@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { safeStorage } from "electron";
 import type { LocalState } from "@agent-commons/desktop-contract";
@@ -48,28 +48,14 @@ export class LocalStore {
     mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
     if (process.platform !== "win32") chmodSync(dirname(this.path), 0o700);
     if (existsSync(this.path)) {
-      const bytes = readFileSync(this.path);
-      let plaintext: string;
-      // Plain JSON has always been a supported fallback. Recognize it first
-      // so macOS does not consult Keychain just to open a permission-limited
-      // Local file. Packaged, ad-hoc signed apps can otherwise block forever
-      // in SecItemCopyMatching on a machine without an unlocked Keychain.
-      if (bytes.subarray(0, 1).toString("utf8") === "{") {
-        plaintext = bytes.toString("utf8");
-      } else {
-        try {
-          plaintext = safeStorage.isEncryptionAvailable()
-            ? safeStorage.decryptString(bytes)
-            : bytes.toString("utf8");
-        } catch {
-          throw new Error("The Local workspace state could not be unlocked. Its files were left untouched; restore access to this computer's secure storage and reopen Desktop.");
-        }
+      try {
+        this.state = this.readState(this.path);
+      } catch (error) {
+        const backup = `${this.path}.bak`;
+        if (!existsSync(backup)) throw error;
+        this.state = this.readState(backup);
+        this.persist(false);
       }
-      let stored: LocalState;
-      try { stored = JSON.parse(plaintext) as LocalState; }
-      catch { throw new Error("The Local workspace state could not be unlocked. Its files were left untouched; restore access to this computer's secure storage and reopen Desktop."); }
-      if (stored.version !== 1) throw new Error(`Unsupported Local workspace version: ${stored.version}. Its files were left untouched.`);
-      this.state = stored;
       this.normalize();
     } else {
       // Migrate early developer builds that stored state as permission-limited JSON.
@@ -98,19 +84,49 @@ export class LocalStore {
     if (!Array.isArray(this.state.library)) this.state.library = [];
   }
 
+  private readState(path: string): LocalState {
+      const bytes = readFileSync(path);
+      let plaintext: string;
+      // Plain JSON has always been a supported fallback. Recognize it first
+      // so macOS does not consult Keychain just to open a permission-limited
+      // Local file. Packaged, ad-hoc signed apps can otherwise block forever
+      // in SecItemCopyMatching on a machine without an unlocked Keychain.
+      if (bytes.subarray(0, 1).toString("utf8") === "{") {
+        plaintext = bytes.toString("utf8");
+      } else {
+        try {
+          plaintext = safeStorage.isEncryptionAvailable()
+            ? safeStorage.decryptString(bytes)
+            : bytes.toString("utf8");
+        } catch {
+          throw new Error("The Local workspace state could not be unlocked. Its files were left untouched; restore access to this computer's secure storage and reopen Desktop.");
+        }
+      }
+      let stored: LocalState;
+      try { stored = JSON.parse(plaintext) as LocalState; }
+      catch { throw new Error("The Local workspace state could not be unlocked. Its files were left untouched; restore access to this computer's secure storage and reopen Desktop."); }
+      if (stored.version !== 1) throw new Error(`Unsupported Local workspace version: ${stored.version}. Its files were left untouched.`);
+      if (!Array.isArray(stored.conversations) || !Array.isArray(stored.agents) || !stored.settings) {
+        throw new Error("The Local workspace state is incomplete. Its files were left untouched.");
+      }
+      return stored;
+  }
+
   get(): LocalState {
     return structuredClone(this.state);
   }
 
   update(mutator: (state: LocalState) => void): LocalState {
-    mutator(this.state);
-    this.persist();
+    const next = structuredClone(this.state);
+    mutator(next);
+    this.persist(true, next);
+    this.state = next;
     return this.get();
   }
 
-  private persist() {
+  private persist(backup = true, state = this.state) {
     const temporary = `${this.path}.tmp`;
-    const plaintext = `${JSON.stringify(this.state)}\n`;
+    const plaintext = `${JSON.stringify(state)}\n`;
     // The readable Local workspace already contains user data protected by
     // owner-only permissions. On macOS, safeStorage may synchronously wait for
     // Keychain authorization in packaged apps and freeze every IPC handler.
@@ -118,6 +134,7 @@ export class LocalStore {
       ? safeStorage.encryptString(plaintext)
       : Buffer.from(plaintext, "utf8");
     writeFileSync(temporary, bytes, { mode: 0o600 });
+    if (backup && existsSync(this.path)) copyFileSync(this.path, `${this.path}.bak`);
     renameSync(temporary, this.path);
   }
 

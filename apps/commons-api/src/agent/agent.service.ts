@@ -2320,7 +2320,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             : '';
 
           const extraSystemContent = [
-            buildWorkspaceModeContext('cloud', Boolean(props.cliContext)),
+            buildWorkspaceModeContext('cloud', Boolean(props.cliContext), props.uiContext?.desktopMode === 'cloud'),
             memoryBlock,
             knowledgeSelectionBlock,
             copilotContext,

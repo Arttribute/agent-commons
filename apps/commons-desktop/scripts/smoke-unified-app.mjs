@@ -97,6 +97,24 @@ try {
           if (identities?.copilot !== "My name is Commons Copilot." || identities?.research !== "My name is Research Agent.") {
             throw new Error(`Local agent identity failed: ${JSON.stringify(identities)}`);
           }
+          const savedSession = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const bridge = window.agentCommonsLocal;
+            const conversation = (await bridge.getState()).conversations[0];
+            const result = await bridge.apiRequest({ path: '/api/sessions/' + conversation.id + '?full=true', method: 'GET' });
+            return { id: conversation.id, status: result.status, title: result.body?.data?.title, messages: result.body?.data?.history?.length };
+          })()`);
+          if (savedSession.status !== 200 || savedSession.messages < 2) throw new Error(`Local session was not stored: ${JSON.stringify(savedSession)}`);
+          await evaluate(page.webSocketDebuggerUrl, `location.href = '/sessions/${savedSession.id}'`);
+          let sessionVisible = false;
+          for (let attempt = 0; attempt < 15; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            const rendered = await evaluate(page.webSocketDebuggerUrl, "({path:location.pathname,body:document.body.innerText})").catch(() => null);
+            if (rendered?.path === `/sessions/${savedSession.id}` && rendered.body.includes("Research Agent") && !rendered.body.includes("Session not found")) {
+              sessionVisible = true;
+              break;
+            }
+          }
+          if (!sessionVisible) throw new Error(`Saved Local session did not render: ${savedSession.id}`);
           await evaluate(page.webSocketDebuggerUrl, "window.agentCommonsLocal.openCloud('/studio/agents')");
           const cloudPages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
           const cloudPage = cloudPages.find((item) => item.type === "page" && item.url.startsWith("http://localhost:"));
@@ -111,6 +129,10 @@ try {
           await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsDesktop.openPrivateWorkspace('/studio/agents')");
           const localAgain = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getInfo()");
           if (localAgain?.mode !== "private-local") throw new Error("Could not return to the Local workspace in the same renderer");
+          const restored = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getState()");
+          if (!restored?.conversations?.some((conversation) => conversation.id === savedSession.id)) {
+            throw new Error("Saved Local session disappeared after switching modes");
+          }
           console.log(`Unified Commons desktop loaded ${result.path} with Local agent and both mode bridges.`);
           ready = true;
           break;

@@ -54,6 +54,7 @@ export function useAgentStream(
       messages: ChatMessage[];
       sessionId?: string;
       uiContext?: {
+        desktopMode?: "cloud";
         pathname?: string;
         pageTitle?: string;
         routeName?: string;
