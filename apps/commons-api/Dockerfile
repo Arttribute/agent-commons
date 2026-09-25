@@ -12,10 +12,12 @@ RUN corepack enable && corepack prepare pnpm@9.15.3 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/commons-api/package.json apps/commons-api/package.json
+COPY packages/commons-agent-core/package.json packages/commons-agent-core/package.json
 
 RUN pnpm install --filter commons-api... --frozen-lockfile
 
 COPY apps/commons-api apps/commons-api
+COPY packages/commons-agent-core packages/commons-agent-core
 
 RUN pnpm --filter commons-api build \
     && pnpm --filter commons-api deploy --prod --ignore-scripts /deploy \
