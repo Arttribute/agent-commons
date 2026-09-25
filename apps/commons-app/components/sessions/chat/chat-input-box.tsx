@@ -653,7 +653,9 @@ export default function ChatInputBox({
       await stream({
         agentId,
         sessionId,
-        uiContext,
+        uiContext: !local && window.agentCommonsDesktop
+          ? { ...uiContext, desktopMode: "cloud" }
+          : uiContext,
         messages: [{ role: "user", content: userMessage }],
         attachments: messageAttachments.map((attachment) => ({ fileId: attachment.fileId })),
         computerRequest,

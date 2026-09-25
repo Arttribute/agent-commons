@@ -50,11 +50,17 @@ Own each clear request from intent to a verified outcome.
 - Stop only when the outcome is verified, a genuine blocker requires user input or new authority, or an execution limit is reached. When blocked, state the exact evidence and smallest decision needed.
 - Keep the final response concise: what changed, what was verified, and any material caveat.`;
 
-function buildWorkspaceModeContext(mode, hasDesktopWorkspace = false) {
+function buildWorkspaceModeContext(mode, hasDesktopWorkspace = false, isDesktop = false) {
   if (mode === "private-local") return `## WORKSPACE MODE: PRIVATE LOCAL
-Work entirely with this computer's local model, local agents, local Knowledge Spaces, local skills, and local artifacts. No Commons Cloud account data or cloud integrations are available for this run. Do not claim to have searched or changed cloud resources. Use the provided local tools for files and commands when needed, with their approval rules. Answer ordinary chat naturally and keep the same Commons Copilot tone and task ownership. When asked which mode you are using, answer "Private Local" and say inference uses a model on this computer.`;
+Work entirely with the user's computer, using its local model, local agents, local Knowledge Spaces, local skills, and local artifacts. No Commons Cloud account data or cloud integrations are available for this run. Do not claim to have searched or changed cloud resources. The selected workspace is a folder on the user's computer, not the whole disk; distinguish its scope when answering storage questions. Use cli_disk_usage to measure file and folder sizes inside that workspace. Use the provided local tools for files and commands when needed, with their approval rules. Answer ordinary chat naturally and keep the same Commons Copilot tone and task ownership. When asked which mode you are using, answer "Private Local" and say inference uses a model on this computer.`;
+  const desktop = isDesktop ? " This conversation is in the Agent Commons desktop app. When the user says 'my computer' or 'this computer', they mean their own computer, not an agent-hosted computer. Do not start or inspect an agent computer to answer that request." : "";
+  const access = hasDesktopWorkspace
+    ? "A user-selected folder on their computer is available through the provided CLI tools; its file and command results cross into this cloud conversation. Use those tools for requests about their computer, within the selected folder and its approval boundary. For storage questions, call cli_disk_usage to measure sizes instead of guessing from filenames. A selected folder does not imply access to the whole disk."
+    : isDesktop
+      ? "No folder on the user's computer is connected to this turn. Ask the user to choose a folder with the desktop folder button when local file inspection is needed. State the selected-folder limit clearly; do not claim to have inspected the computer."
+      : "No desktop filesystem workspace is connected to this turn. Use only the cloud tools actually provided.";
   return `## WORKSPACE MODE: CLOUD${hasDesktopWorkspace ? " WITH LOCAL FILE TOOLS" : ""}
-This run uses Commons Cloud models and cloud services. ${hasDesktopWorkspace ? "A user-selected local workspace is also available through the provided CLI tools; its file and command results cross into this cloud conversation. Use it only when the request calls for local file work and follow each tool's approval boundary." : "No desktop filesystem workspace is connected to this turn. Use only the cloud tools actually provided."} Never assume Private Local conversations, files, apps, or Knowledge Spaces are present in this cloud workspace.`;
+This run uses Commons Cloud models and cloud services.${desktop} ${access} Never assume Private Local conversations, files, apps, or Knowledge Spaces are present in this cloud workspace.`;
 }
 
 /** Keep the agent's identity independent from the model used to run it. */

@@ -13,7 +13,7 @@ export function normalizeCloudAccess(value) {
 }
 
 export function cloudToolPermission(tool) {
-  if (["list_directory", "read_file", "search_files"].includes(tool)) return "readFiles";
+  if (["list_directory", "read_file", "search_files", "disk_usage"].includes(tool)) return "readFiles";
   if (tool === "write_file") return "writeFiles";
   if (["run_command", "start_process", "wait_for_process", "process_status", "kill_process", "list_processes"].includes(tool)) return "runCommands";
   return null;

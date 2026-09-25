@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { normalizeSessionHistory } from "@/lib/session-history";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 function SessionPageSkeleton() {
   return (
@@ -54,14 +55,14 @@ export default function SessionPage() {
       clearMessages();
 
       try {
-        const sessionRes = await fetch(`/api/sessions/${sessionId}?full=true`);
+        const sessionRes = await desktopApiFetch(`/api/sessions/${sessionId}?full=true`);
         const sessionData = await sessionRes.json();
         const loadedSession = sessionRes.ok ? (sessionData.data ?? null) : null;
         setSession(loadedSession);
         setMessages(normalizeSessionHistory(loadedSession?.history));
 
         if (loadedSession?.agentId) {
-          const agentRes = await fetch(`/api/agents/${loadedSession.agentId}`);
+          const agentRes = await desktopApiFetch(`/api/agents/${loadedSession.agentId}`);
           const agentData = await agentRes.json();
           setAgent(agentRes.ok ? (agentData.data ?? null) : null);
         } else {

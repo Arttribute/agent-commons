@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { accessSync, constants, createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, unlinkSync } from "node:fs";
-import { basename, delimiter, join } from "node:path";
+import { basename, delimiter, join, sep } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
@@ -68,6 +68,7 @@ function systemCandidates() {
     "/opt/homebrew/bin/ollama",
     "/usr/local/bin/ollama",
     "/usr/bin/ollama",
+    "/Applications/Ollama.app/Contents/Resources/ollama",
     process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Programs", "Ollama", "ollama.exe") : undefined,
     ...fromPath,
   ];
@@ -104,9 +105,8 @@ export class LocalModelManager {
         state: "error",
         label,
       });
-      this.preparation = undefined;
       throw new Error(label, { cause: error });
-    });
+    }).finally(() => { this.preparation = undefined; });
     return this.preparation;
   }
 
@@ -128,8 +128,11 @@ export class LocalModelManager {
     }
 
     const models = await this.listModels();
-    if (!models.some((candidate) => candidate === this.model || candidate === `${this.model}:latest`)) {
+    if (!models.length) {
       await this.pullModel();
+      if (!(await this.listModels()).some((candidate) => candidate === this.model || candidate === `${this.model}:latest`)) {
+        throw new Error("The local model download did not complete. Try again from Local settings.");
+      }
     }
     this.update({ state: "ready", label: "Local AI ready", progress: 1 });
   }
@@ -229,6 +232,7 @@ export class LocalModelManager {
   private async startServer(executable: string) {
     this.update({ state: "starting", label: "Starting local AI" });
     const runtimeRoot = join(this.directory, "runtime", OLLAMA_VERSION);
+    const managedRuntime = executable.startsWith(`${runtimeRoot}${sep}`);
     const pathParts = [join(runtimeRoot, "bin"), process.env.PATH].filter(Boolean).join(process.platform === "win32" ? ";" : ":");
     const libraryParts = [join(runtimeRoot, "lib", "ollama"), process.env.LD_LIBRARY_PATH].filter(Boolean).join(":");
     this.server = spawn(executable, ["serve"], {
@@ -237,7 +241,8 @@ export class LocalModelManager {
         PATH: pathParts,
         LD_LIBRARY_PATH: libraryParts,
         OLLAMA_HOST: "127.0.0.1:11434",
-        OLLAMA_MODELS: join(this.directory, "models"),
+        ...(managedRuntime ? { OLLAMA_MODELS: join(this.directory, "models") } : {}),
+        OLLAMA_NO_CLOUD: "1",
       },
       stdio: "ignore",
       windowsHide: true,
@@ -263,6 +268,7 @@ export class LocalModelManager {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let completed = false;
     while (true) {
       const { value, done } = await reader.read();
       buffer += decoder.decode(value, { stream: !done });
@@ -277,6 +283,7 @@ export class LocalModelManager {
           }
           throw new Error(event.error);
         }
+        if (event.status === "success") completed = true;
         this.update({
           state: "downloading-model",
           label: event.status ? `Preparing local AI · ${event.status}` : "Preparing local AI",
@@ -285,5 +292,6 @@ export class LocalModelManager {
       }
       if (done) break;
     }
+    if (!completed) throw new Error("The local model download ended before completion. Try again from Local settings.");
   }
 }

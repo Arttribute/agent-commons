@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CloudAccess, LocalState } from "@agent-commons/desktop-contract";
+import type { CloudAccess, LocalModelStatus, LocalState } from "@agent-commons/desktop-contract";
 import { useWorkspacePreferences } from "../../hooks/use-workspace-preferences";
 import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
@@ -12,6 +12,7 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
   const [storageRoot, setStorageRoot] = useState("");
   const [models, setModels] = useState<string[]>([]);
   const [modelServerUnavailable, setModelServerUnavailable] = useState(false);
+  const [modelStatus, setModelStatus] = useState<LocalModelStatus | null>(null);
   const [ollamaUrl, setOllamaUrl] = useState("");
   const [error, setError] = useState("");
   const [desktop, setDesktop] = useState(false);
@@ -73,10 +74,11 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
     if (!local || !window.agentCommonsLocal) return;
     const bridge = window.agentCommonsLocal;
     let active = true;
-    void Promise.all([bridge.getState(), bridge.getStorageRoot()]).then(([state, root]) => {
+    void Promise.all([bridge.getState(), bridge.getStorageRoot(), bridge.getModelStatus()]).then(([state, root, status]) => {
       if (!active) return;
       setLocalState(state);
       setStorageRoot(root);
+      setModelStatus(status);
       setOllamaUrl(state.settings.ollamaUrl);
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Could not load Local settings"); });
     void bridge.listModels().then((items) => {
@@ -84,7 +86,17 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
       setModels(items);
       setModelServerUnavailable(false);
     }).catch(() => { if (active) setModelServerUnavailable(true); });
-    const off = bridge.onEvent((event) => { if (active && event.type === "state") setLocalState(event.state); });
+    const off = bridge.onEvent((event) => {
+      if (!active) return;
+      if (event.type === "state") setLocalState(event.state);
+      if (event.type === "model") {
+        setModelStatus(event.model);
+        if (event.model.state === "ready") {
+          setModelServerUnavailable(false);
+          void bridge.listModels().then(setModels).catch(() => undefined);
+        }
+      }
+    });
     return () => { active = false; off(); };
   }, [local]);
 
@@ -166,7 +178,12 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
           {models.length ? models.map((model) => <option key={model} value={model}>{model}</option>) : <option value={localState?.settings.defaultModel ?? ""}>{localState?.settings.defaultModel || "No model installed"}</option>}
         </select>
       </label>
-      {modelServerUnavailable && <p className="text-xs text-muted-foreground">The Local model server is unavailable. Check its address below or start Ollama.</p>}
+      {modelStatus && <div role="status" className="max-w-xl space-y-2 text-xs text-muted-foreground">
+        <p>{modelStatus.label}</p>
+        {modelStatus.progress !== undefined && modelStatus.state !== "ready" && <progress className="w-full" value={modelStatus.progress} max={1} />}
+        {modelStatus.state === "error" && <button type="button" className="rounded-md border px-2 py-1 hover:bg-muted" onClick={() => void window.agentCommonsLocal?.prepareModel().catch((cause) => setError(cause instanceof Error ? cause.message : "Local AI setup failed"))}>Retry local AI setup</button>}
+      </div>}
+      {modelServerUnavailable && modelStatus?.state !== "downloading-runtime" && modelStatus?.state !== "downloading-model" && modelStatus?.state !== "starting" && <p className="text-xs text-muted-foreground">The Local model server is unavailable. Check its address below.</p>}
       <label className="flex max-w-xl items-center justify-between gap-4">
         <span>Agent command permission</span>
         <select className="rounded-md border border-border bg-background px-3 py-2" value={localState?.settings.permissionMode ?? "ask"} onChange={(event) => void saveLocalSettings({ permissionMode: event.target.value as "ask" | "read-only" })}>

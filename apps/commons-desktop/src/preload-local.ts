@@ -6,6 +6,8 @@ const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(ch
 const bridge: LocalDesktopBridge = {
   getInfo: () => invoke("desktop:get-info", "private-local"),
   getState: () => invoke("local:get-state"),
+  getModelStatus: () => invoke("local:get-model-status"),
+  prepareModel: () => invoke("local:prepare-model"),
   getStorageRoot: () => invoke("local:get-storage-root"),
   openStorageRoot: () => invoke("local:open-storage-root"),
   apiRequest: (request) => invoke("local:api-request", request),

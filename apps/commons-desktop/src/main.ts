@@ -73,7 +73,7 @@ let cloudAuthController: AbortController | null = null;
 let cloudSyncController: AbortController | null = null;
 const cloudToolControllers = new Set<AbortController>();
 const cloudToolNames = new Set([
-  "list_directory", "read_file", "write_file", "search_files", "run_command",
+  "list_directory", "read_file", "write_file", "search_files", "disk_usage", "run_command",
   "start_process", "wait_for_process", "process_status", "kill_process", "list_processes",
 ]);
 
@@ -328,6 +328,7 @@ async function switchToLocal(path?: string) {
     });
     rememberStartupMode(activeMode);
     unifiedView!.webContents.send("desktop:mode-changed", activeMode, sectionPath(path));
+    if (process.env.COMMONS_DESKTOP_SMOKE_DEBUG !== "1") void runtime.prepareLocalModel().catch(() => undefined);
   } catch (error) {
     activeMode = previousMode;
     throw error;
@@ -755,7 +756,7 @@ function registerIpc() {
     const access = `Cloud desktop permissions: file reading ${cloudAccess.readFiles ? "on" : "off"}; file editing ${cloudAccess.writeFiles ? "on" : "off"}; full computer commands ${cloudAccess.runCommands ? "on, with approval for each command" : "off"}. Only use permitted tools. File tools stay inside the selected workspace. Command tools, when enabled, can access other files on this computer.`;
     return cloudAccess.runCommands
       ? `${buildLocalToolsManifest(cloudWorkspace, cloudAccess.readFiles ? buildDirSnapshot(cloudWorkspace, 2) : "(file reading disabled)")}\n${access}`
-      : `## Desktop workspace tools\nWorkspace: ${cloudWorkspace}\n${access}\nAvailable: ${[cloudAccess.readFiles && "cli_list_directory, cli_read_file, cli_search_files", cloudAccess.writeFiles && "cli_write_file"].filter(Boolean).join(", ")}.\n${cloudAccess.readFiles ? buildDirSnapshot(cloudWorkspace, 2) : ""}`;
+      : `## Desktop workspace tools\nWorkspace: ${cloudWorkspace}\n${access}\nAvailable: ${[cloudAccess.readFiles && "cli_list_directory, cli_read_file, cli_search_files, cli_disk_usage", cloudAccess.writeFiles && "cli_write_file"].filter(Boolean).join(", ")}.\n${cloudAccess.readFiles ? buildDirSnapshot(cloudWorkspace, 2) : ""}`;
   });
   ipcMain.handle("cloud:run-tool", async (event, request: { tool: string; args: Record<string, unknown>; sessionId?: string }) => {
     assertCloudSender(event);
@@ -802,6 +803,8 @@ function registerIpc() {
   ipcMain.handle("cloud:sync-preferences", (event, incoming: WorkspacePreferences) => { assertCloudSender(event); return syncPreferences(incoming, "cloud"); });
 
   localHandler("local:get-state", () => runtime.state());
+  localHandler("local:get-model-status", () => runtime.modelStatus());
+  localHandler("local:prepare-model", () => runtime.prepareLocalModel());
   localHandler("local:get-preferences", () => runtime.preferences());
   localHandler<[WorkspacePreferences]>("local:sync-preferences", (incoming) => syncPreferences(incoming, "private-local"));
   localHandler("local:choose-workspace", async () => {
@@ -895,6 +898,9 @@ app.whenReady().then(async () => {
   installApplicationMenu();
   activeMode = await selectStartupMode();
   showView(await createUnifiedView());
+  if (activeMode === "private-local" && process.env.COMMONS_DESKTOP_SMOKE_DEBUG !== "1") {
+    void runtime.prepareLocalModel().catch(() => undefined);
+  }
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       void createUnifiedView().then(showView);

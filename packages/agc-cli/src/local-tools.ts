@@ -35,6 +35,7 @@ import { join, resolve, relative, extname, dirname, isAbsolute, sep } from 'path
 import { execFile, spawn } from 'child_process';
 import * as readline from 'readline';
 import { editPreview } from './edit-preview.js';
+import { scanDiskUsage } from './disk-usage.js';
 // pdf-parse: pure-JS PDF text extractor, no system dependencies required.
 // Import from lib/pdf-parse.js to skip the test-file side-effect in the main entry.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -197,6 +198,7 @@ ${fileSection}
 | \`cli_read_file\` | Read a file (PDF and Word docs are extracted to text) |
 | \`cli_write_file\` | Write or overwrite a file (user confirmation required) |
 | \`cli_search_files\` | Find files matching a pattern |
+| \`cli_disk_usage\` | Measure and rank file and folder sizes inside the selected root (read only; bounded scan) |
 | \`cli_run_command\` | Run a short command and return its output (user confirmation required) |
 | \`cli_start_process\` | Start a long-running command in the background; returns a processId immediately |
 | \`cli_wait_for_process\` | Block up to N seconds for a background process, then return current output |
@@ -547,6 +549,11 @@ async function toolListDirectory(args: Record<string, any>, cfg: LocalToolsConfi
   return lines.join('\n') || '(empty directory)';
 }
 
+async function toolDiskUsage(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
+  const root = safePath(cfg.rootDir, String(args.path ?? '.'));
+  return JSON.stringify(await scanDiskUsage(root, cfg.signal, assertNotSensitive));
+}
+
 async function toolSearchFiles(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
   const { pattern, directory } = args;
   if (!pattern) throw new Error('search_files requires a "pattern" argument');
@@ -793,6 +800,7 @@ export async function runLocalTool(
       case 'write_file':      result = await toolWriteFile(args, cfg);      break;
       case 'list_directory':  result = await toolListDirectory(args, cfg);  break;
       case 'search_files':    result = await toolSearchFiles(args, cfg);    break;
+      case 'disk_usage':      result = await toolDiskUsage(args, cfg);      break;
       case 'run_command':     result = await toolRunCommand(args, cfg);      break;
       case 'start_process':   result = await toolStartProcess(args, cfg);   break;
       case 'process_status':  result = await toolProcessStatus(args, cfg);  break;
@@ -800,7 +808,7 @@ export async function runLocalTool(
       case 'kill_process':    result = await toolKillProcess(args, cfg);    break;
       case 'list_processes':  result = await toolListProcesses(args, cfg);  break;
       default:
-        result = `Unknown tool: "${tool}". Available: read_file, write_file, list_directory, search_files, run_command, start_process, wait_for_process, process_status, kill_process, list_processes`;
+        result = `Unknown tool: "${tool}". Available: read_file, write_file, list_directory, search_files, disk_usage, run_command, start_process, wait_for_process, process_status, kill_process, list_processes`;
     }
   } catch (err: any) {
     result = `Error: ${err?.message ?? String(err)}`;
