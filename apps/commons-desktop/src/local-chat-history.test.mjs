@@ -37,3 +37,13 @@ test("oversized user requests fail explicitly rather than silently losing the ta
   assert.equal(messages.at(-1).content, request);
   assert.throws(() => compactToolLoop(messages), /context budget/);
 });
+
+test("retains recent process evidence when earlier output exceeds the history budget", () => {
+  const history = [{ role: "user", content: "Create Mango" }];
+  for (let i = 0; i < 10; i++) history.push({ role: "tool", toolName: "cli_wait_for_process", toolArgs: { processId: "p1" }, content: `process-${i}\n` + "x".repeat(9_000) });
+  history.push({ role: "assistant", content: "Still running" }, { role: "user", content: "Finish it" });
+  const messages = localChatHistory(history);
+  assert.equal(messages[0].content, "Create Mango");
+  assert.ok(messages.some((message) => message.role === "tool" && message.content.includes("process-9")));
+  assert.equal(messages.at(-1).content, "Finish it");
+});

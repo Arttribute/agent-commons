@@ -27,14 +27,21 @@ export function localChatHistory(history: LocalMessage[]): OllamaMessage[] {
   });
   const retained: OllamaMessage[][] = [];
   let characters = 0;
-  for (const group of groups.reverse()) {
+  let start = groups.length;
+  for (let index = groups.length - 1; index >= 0; index--) {
+    const group = groups[index];
     const size = JSON.stringify(group).length;
     if (characters + size > 28_000 && retained.length) break;
     retained.unshift(group);
     characters += size;
+    start = index;
   }
-  // Always start at a user turn, never an orphaned assistant/tool exchange.
-  while (retained.length > 1 && retained[0][0]?.role !== "user") retained.shift();
+  // Keep recent evidence even when earlier logs were too large to retain. Its
+  // initiating user turn anchors the reconstructed (complete) tool pairs.
+  if (retained[0]?.[0]?.role !== "user") {
+    const request = history.slice(0, start).reverse().find((message) => message.role === "user");
+    if (request) retained.unshift([{ role: "user", content: boundedContent(request.content, 4_000) }]);
+  }
   return retained.flat();
 }
 
