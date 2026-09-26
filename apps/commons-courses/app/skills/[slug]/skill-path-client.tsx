@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   Flame,
+  Image as ImageIcon,
   Route,
   X,
   Zap,
@@ -20,6 +21,7 @@ import { Confetti, type ConfettiRef } from "@/components/magicui/confetti";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import { AgentLearnerSandbox } from "@/components/agents/agent-learner-sandbox";
 import { LearningStudio } from "@/components/learning/learning-studio";
+import { StageMedia, StudyShell } from "@/components/learning/study-shell";
 import { cn } from "@/lib/utils";
 import type { CourseSkillPack, SkillChallenge } from "@/types/skills";
 
@@ -317,138 +319,219 @@ export default function SkillPathClient({
     celebrateChallenge(confettiRef.current, challenge.accentColor);
   };
 
+  const nextChallenge = pack.challenges[currentIndex + 1];
+  const quizQuestionCount = challenge.questions.length;
+
+  const footer = locked ? null : mode === "quiz" ? (
+    <div className="flex items-center justify-between gap-3">
+      <button
+        type="button"
+        onClick={() => setQuestionIndex((index) => Math.max(index - 1, 0))}
+        disabled={questionIndex === 0}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-sm text-stone-700 disabled:opacity-40"
+      >
+        <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+        Back
+      </button>
+      {progress.authenticated ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (selectedAnswer === undefined) return;
+            if (!currentCorrect) {
+              setFeedback("Not quite. Review the lesson and try again.");
+              playCue("focus");
+              return;
+            }
+            setFeedback(null);
+            if (questionIndex < quizQuestionCount - 1) setQuestionIndex((index) => index + 1);
+            else completeChallenge();
+          }}
+          disabled={selectedAnswer === undefined || saving}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+        >
+          {saving ? "Saving" : questionIndex === quizQuestionCount - 1 ? "Finish" : "Next"}
+          <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
+        </button>
+      ) : (
+        <Link
+          href={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white"
+        >
+          Sign in <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
+        </Link>
+      )}
+    </div>
+  ) : mode === "done" ? (
+    nextChallenge ? (
+      <button
+        type="button"
+        onClick={() => selectChallenge(nextChallenge.id)}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white"
+      >
+        Next day <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
+      </button>
+    ) : (
+      <Link
+        href="/skills"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white"
+      >
+        Back to skills <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
+      </Link>
+    )
+  ) : !progress.authenticated ? (
+    <Link
+      href={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
+      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white"
+    >
+      Sign in to save your streak <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
+    </Link>
+  ) : challenge.questions.length ? (
+    <button
+      type="button"
+      onClick={() => setMode("quiz")}
+      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white"
+    >
+      Start the check <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={completeChallenge}
+      disabled={saving}
+      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
+    >
+      {saving ? "Saving" : "Complete lesson"} <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
+    </button>
+  );
+
   return (
-    <div className="min-h-screen bg-white text-slate-950">
+    <div className="flex h-dvh flex-col overflow-hidden bg-page text-foreground">
       <Confetti ref={confettiRef} />
       <Nav />
-      <main className="flex h-dvh flex-col overflow-hidden pt-16">
-        {!isSandboxChallenge ? (
-          <header className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
-            <div className="mx-auto flex max-w-6xl items-center gap-3">
-              <Link
-                href="/skills"
-                className="hidden items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900 sm:inline-flex"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Skills
-              </Link>
+      <div className="flex min-h-0 flex-1 flex-col pt-16">
+        {isSandboxChallenge ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <AgentLearnerSandbox
+              key={challenge.id}
+              courseSlug={pack.skillSlug}
+              challengeId={challenge.id}
+              config={challenge.sandbox!}
+              completed={completed}
+              authenticated={progress.authenticated}
+              signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
+              courseTitle={pack.title}
+              challengeTitle={`Day ${challenge.day}: ${challenge.title}`}
+              onComplete={completeSandboxChallenge}
+              onExit={() => {
+                window.location.href = "/skills";
+              }}
+              onContinue={
+                nextChallenge
+                  ? () => selectChallenge(nextChallenge.id)
+                  : () => {
+                      window.location.href = "/skills";
+                    }
+              }
+            />
+          </div>
+        ) : (
+          <>
+            <header className="flex shrink-0 items-center gap-3 border-b border-border bg-white px-4 py-2.5 sm:px-6">
               <button
                 type="button"
                 onClick={() => setDrawerOpen(true)}
-                className="inline-flex rounded-lg border border-slate-200 p-2 text-slate-600 sm:hidden"
                 aria-label="Open daily path"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-2.5 text-xs text-stone-600 lg:hidden"
               >
-                <Route className="h-4 w-4" />
+                <Route className="h-4 w-4" strokeWidth={1.75} />
+                Day {challenge.day}
               </button>
+              <Link
+                href="/skills"
+                className="hidden shrink-0 items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground lg:inline-flex"
+              >
+                <ArrowLeft className="h-4 w-4" strokeWidth={1.75} />
+                Skills
+              </Link>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-slate-500">
-                  {pack.title}
-                </p>
-                <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full bg-slate-950"
-                    style={{ width: `${completionPct}%` }}
+                <p className="truncate text-sm font-medium">{pack.title}</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="h-1 w-24 overflow-hidden rounded-full bg-muted sm:w-40">
+                    <span
+                      className="block h-full rounded-full bg-stone-800 transition-all"
+                      style={{ width: `${completionPct}%` }}
+                    />
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {progress.completedChallenges.length}/{pack.challenges.length}
+                  </span>
+                </div>
+              </div>
+              <span className="hidden items-center gap-2 sm:flex">
+                <Pill icon={Flame} label={String(progress.streak)} color="text-orange-500" />
+                <Pill icon={Zap} label={String(progress.points)} color="text-sky-500" />
+              </span>
+            </header>
+
+            <StudyShell
+              rail={
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+                  <DailyPath
+                    pack={pack}
+                    progress={progress}
+                    selectedId={challenge.id}
+                    unlockedIndex={unlockedIndex}
+                    onSelect={selectChallenge}
                   />
                 </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Pill
-                  icon={Flame}
-                  label={String(progress.streak)}
-                  color="text-orange-500"
-                />
-                <Pill
-                  icon={Zap}
-                  label={String(progress.points)}
-                  color="text-sky-500"
-                />
-              </div>
-            </div>
-          </header>
-        ) : null}
-
-        <div
-          className={cn(
-            "min-h-0 w-full flex-1",
-            isSandboxChallenge
-              ? "flex"
-              : "grid grid-cols-1 gap-0 sm:grid-cols-[240px_minmax(0,1fr)]",
-          )}
-        >
-          {!isSandboxChallenge ? (
-            <aside className="hidden border-r border-slate-200 bg-slate-50 p-3 sm:block">
-              <DailyPath
-                pack={pack}
-                progress={progress}
-                selectedId={challenge.id}
-                unlockedIndex={unlockedIndex}
-                onSelect={selectChallenge}
-              />
-            </aside>
-          ) : null}
-
-          <section
-            className={cn(
-              "min-h-0",
-              isSandboxChallenge
-                ? "flex flex-1 flex-col overflow-hidden"
-                : "overflow-y-auto px-4 py-4 sm:px-6",
-            )}
-          >
-            <div
-              className={cn(
-                "mx-auto flex w-full flex-col",
-                isSandboxChallenge
-                  ? "min-h-0 max-w-none flex-1"
-                  : "min-h-full max-w-3xl",
-              )}
-            >
-              {!isSandboxChallenge ? (
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-medium text-slate-500">
-                      Day {challenge.day}
-                    </p>
-                    <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
-                      {challenge.title}
-                    </h1>
-                  </div>
-                  {completed ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-md bg-[#B8F56D] px-2.5 py-1 text-xs font-semibold">
-                      <BadgeCheck className="h-4 w-4" />
-                      Done
+              }
+              stage={
+                challenge.assetUrl && mode !== "quiz"
+                  ? [
+                      {
+                        key: "visual",
+                        label: "Visual",
+                        icon: ImageIcon,
+                        node: <StageMedia src={challenge.assetUrl} alt={challenge.assetAlt} />,
+                      },
+                    ]
+                  : []
+              }
+              contentLabel={mode === "quiz" ? "Check" : "Lesson"}
+              contentWidth={challenge.assetUrl && mode !== "quiz" ? "wide" : "md"}
+              contentHeader={
+                <div className="flex items-center justify-between gap-3">
+                  <p className="min-w-0 truncate text-sm font-medium">
+                    {mode === "quiz"
+                      ? `Question ${questionIndex + 1} of ${quizQuestionCount}`
+                      : `Day ${challenge.day} · ${challenge.title}`}
+                  </p>
+                  {mode === "quiz" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode("learn");
+                        setFeedback(null);
+                      }}
+                      className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Back to lesson
+                    </button>
+                  ) : completed ? (
+                    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-emerald-700">
+                      <BadgeCheck className="h-4 w-4" strokeWidth={1.75} /> Done
                     </span>
-                  ) : null}
+                  ) : (
+                    <span className="shrink-0 text-xs text-muted-foreground">{challenge.minutes} min</span>
+                  )}
                 </div>
-              ) : null}
-
+              }
+              footer={footer}
+            >
               {locked ? (
                 <LockedState />
-              ) : challenge.sandbox?.enabled ? (
-                <AgentLearnerSandbox
-                  key={challenge.id}
-                  courseSlug={pack.skillSlug}
-                  challengeId={challenge.id}
-                  config={challenge.sandbox}
-                  completed={completed}
-                  authenticated={progress.authenticated}
-                  signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
-                  courseTitle={pack.title}
-                  challengeTitle={`Day ${challenge.day}: ${challenge.title}`}
-                  onComplete={completeSandboxChallenge}
-                  onExit={() => {
-                    window.location.href = "/skills";
-                  }}
-                  onContinue={
-                    pack.challenges[currentIndex + 1]
-                      ? () =>
-                          selectChallenge(pack.challenges[currentIndex + 1].id)
-                      : () => {
-                          window.location.href = "/skills";
-                        }
-                  }
-                />
-              ) : mode === "quiz" && challenge.questions.length ? (
+              ) : mode === "quiz" ? (
                 <QuizView
                   challenge={challenge}
                   questionIndex={questionIndex}
@@ -456,9 +539,6 @@ export default function SkillPathClient({
                   currentCorrect={Boolean(currentCorrect)}
                   selectedAnswers={selectedAnswers}
                   feedback={feedback}
-                  saving={saving}
-                  authenticated={progress.authenticated}
-                  signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
                   onSelect={(answerIndex) => {
                     setSelectedAnswers((current) => ({
                       ...current,
@@ -466,72 +546,34 @@ export default function SkillPathClient({
                     }));
                     setFeedback(null);
                   }}
-                  onPrevious={() =>
-                    setQuestionIndex((index) => Math.max(index - 1, 0))
-                  }
-                  onBackToLesson={() => {
-                    setMode("learn");
-                    setFeedback(null);
-                  }}
-                  onNext={() => {
-                    if (selectedAnswer === undefined) return;
-                    if (!currentCorrect) {
-                      setFeedback(
-                        "Not quite. Review the lesson and try again.",
-                      );
-                      playCue("focus");
-                      return;
-                    }
-                    setFeedback(null);
-                    if (questionIndex < challenge.questions.length - 1) {
-                      setQuestionIndex((index) => index + 1);
-                    } else {
-                      completeChallenge();
-                    }
-                  }}
                 />
               ) : mode === "done" ? (
-                <DoneView
-                  challenge={challenge}
-                  feedback={feedback}
-                  nextChallenge={pack.challenges[currentIndex + 1]}
-                  onNext={(nextId) => selectChallenge(nextId)}
-                />
+                <DoneView challenge={challenge} feedback={feedback} />
               ) : (
-                <LessonView
-                  challenge={challenge}
-                  courseSlug={pack.skillSlug}
-                  courseTitle={pack.title}
-                  authenticated={progress.authenticated}
-                  signInHref={`/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`}
-                  hasQuiz={challenge.questions.length > 0}
-                  saving={saving}
-                  onStartQuiz={() => setMode("quiz")}
-                  onComplete={completeChallenge}
-                />
+                <LessonView challenge={challenge} courseSlug={pack.skillSlug} courseTitle={pack.title} />
               )}
-            </div>
-          </section>
-        </div>
-      </main>
+            </StudyShell>
+          </>
+        )}
+      </div>
 
       {drawerOpen ? (
-        <div className="fixed inset-0 z-50 sm:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <button
-            className="absolute inset-0 bg-black/30"
+            className="absolute inset-0 bg-stone-950/30"
             aria-label="Close daily path"
             onClick={() => setDrawerOpen(false)}
           />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[78dvh] overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl">
+          <div className="absolute bottom-0 left-0 right-0 max-h-[78dvh] overflow-y-auto rounded-t-2xl bg-white p-4 shadow-floating">
             <div className="mb-3 flex items-center justify-between">
-              <p className="text-sm font-semibold text-slate-950">Daily path</p>
+              <p className="text-sm font-medium">Daily path</p>
               <button
                 type="button"
                 onClick={() => setDrawerOpen(false)}
-                className="rounded-lg border border-slate-200 p-2 text-slate-600"
+                className="rounded-lg border border-border p-2 text-stone-600"
                 aria-label="Close daily path"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" strokeWidth={1.75} />
               </button>
             </div>
             <DailyPath
@@ -552,94 +594,37 @@ function LessonView({
   challenge,
   courseSlug,
   courseTitle,
-  authenticated,
-  signInHref,
-  hasQuiz,
-  saving,
-  onStartQuiz,
-  onComplete,
 }: {
   challenge: SkillChallenge;
   courseSlug: string;
   courseTitle: string;
-  authenticated: boolean;
-  signInHref: string;
-  hasQuiz: boolean;
-  saving: boolean;
-  onStartQuiz: () => void;
-  onComplete: () => void;
 }) {
   return (
-    <div className="flex flex-1 flex-col">
-      {challenge.assetUrl ? (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={challenge.assetUrl}
-            alt={challenge.assetAlt || ""}
-            className="h-auto max-h-[44dvh] w-full object-contain"
-          />
-        </div>
-      ) : null}
-
-      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+    <LearningStudio
+      courseSlug={courseSlug}
+      courseTitle={courseTitle}
+      contentTitle={challenge.title}
+      source={[challenge.hook, challenge.lesson, ...challenge.keyIdeas].filter(Boolean).join("\n\n")}
+    >
+      <div>
         {challenge.hook ? (
-          <p className="mb-3 text-base font-semibold leading-7 text-slate-950">
-            {challenge.hook}
-          </p>
+          <p className="mb-4 text-base font-medium leading-7">{challenge.hook}</p>
         ) : null}
-        <LearningStudio
-          courseSlug={courseSlug}
-          courseTitle={courseTitle}
-          contentTitle={challenge.title}
-          source={[challenge.hook, challenge.lesson, ...challenge.keyIdeas]
-            .filter(Boolean)
-            .join("\n\n")}
-          compact
-        />
         <RichTextRenderer value={challenge.lesson} />
-      </div>
-
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
-        {challenge.keyIdeas.map((idea) => (
-          <div
-            key={idea}
-            className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700"
-          >
-            {idea}
+        {challenge.keyIdeas.length ? (
+          <div className="mt-6 border-t border-border pt-4">
+            <p className="mb-2 text-xs text-muted-foreground">Key ideas</p>
+            <ul className="space-y-2">
+              {challenge.keyIdeas.map((idea) => (
+                <li key={idea} className="rounded-lg bg-muted px-3 py-2 text-sm leading-6 text-stone-700">
+                  {idea}
+                </li>
+              ))}
+            </ul>
           </div>
-        ))}
+        ) : null}
       </div>
-
-      <div className="sticky bottom-0 -mx-4 mt-4 flex flex-col gap-2 border-t border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:mt-auto sm:flex-row sm:items-center sm:justify-between sm:border-t-0 sm:bg-transparent sm:px-0 sm:backdrop-blur-none">
-        {!authenticated ? (
-          <Link
-            href={signInHref}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white"
-          >
-            Sign in to save streak <ArrowRight className="h-4 w-4" />
-          </Link>
-        ) : hasQuiz ? (
-          <button
-            type="button"
-            onClick={onStartQuiz}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white"
-          >
-            I am ready for the quiz <ArrowRight className="h-4 w-4" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onComplete}
-            disabled={saving}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            {saving ? "Saving..." : "Complete lesson"}{" "}
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-    </div>
+    </LearningStudio>
   );
 }
 
@@ -649,13 +634,7 @@ function QuizView({
   selectedAnswer,
   currentCorrect,
   feedback,
-  saving,
-  authenticated,
-  signInHref,
   onSelect,
-  onPrevious,
-  onBackToLesson,
-  onNext,
 }: {
   challenge: SkillChallenge;
   questionIndex: number;
@@ -663,65 +642,25 @@ function QuizView({
   currentCorrect: boolean;
   selectedAnswers: Record<string, number>;
   feedback: string | null;
-  saving: boolean;
-  authenticated: boolean;
-  signInHref: string;
   onSelect: (answerIndex: number) => void;
-  onPrevious: () => void;
-  onBackToLesson: () => void;
-  onNext: () => void;
 }) {
   const question = challenge.questions[questionIndex];
-  const isLast = questionIndex === challenge.questions.length - 1;
   const options = useMemo(
     () =>
       question.options
         .map((option, originalIndex) => ({ option, originalIndex }))
         .sort(
           (a, b) =>
-            stableOptionRank(
-              challenge.id,
-              question.id,
-              a.option,
-              a.originalIndex,
-            ) -
-            stableOptionRank(
-              challenge.id,
-              question.id,
-              b.option,
-              b.originalIndex,
-            ),
+            stableOptionRank(challenge.id, question.id, a.option, a.originalIndex) -
+            stableOptionRank(challenge.id, question.id, b.option, b.originalIndex),
         ),
     [challenge.id, question.id, question.options],
   );
 
   return (
-    <div className="flex flex-1 flex-col rounded-xl border border-slate-200 bg-white p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-xs font-medium text-slate-500">
-          Question {questionIndex + 1} of {challenge.questions.length}
-        </p>
-        <button
-          type="button"
-          onClick={onBackToLesson}
-          className="text-xs font-semibold text-slate-500 hover:text-slate-950"
-        >
-          Back to lesson
-        </button>
-        <div className="h-2 w-28 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-slate-950"
-            style={{
-              width: `${((questionIndex + 1) / challenge.questions.length) * 100}%`,
-            }}
-          />
-        </div>
-      </div>
-
-      <h2 className="text-xl font-semibold leading-8 text-slate-950">
-        {question.prompt}
-      </h2>
-      <div className="mt-5 grid gap-3">
+    <div>
+      <h2 className="text-lg font-medium leading-7">{question.prompt}</h2>
+      <div className="mt-5 grid gap-2.5">
         {options.map(({ option, originalIndex }) => {
           const selected = selectedAnswer === originalIndex;
           return (
@@ -730,12 +669,12 @@ function QuizView({
               type="button"
               onClick={() => onSelect(originalIndex)}
               className={cn(
-                "rounded-xl border px-4 py-3 text-left text-sm font-semibold leading-6 transition-colors",
+                "rounded-xl border px-4 py-3 text-left text-sm leading-6 transition-colors",
                 selected
                   ? currentCorrect
-                    ? "border-green-400 bg-green-50 text-green-950"
-                    : "border-slate-950 bg-slate-950 text-white"
-                  : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50",
+                    ? "border-emerald-300 bg-emerald-50"
+                    : "border-stone-900 bg-stone-900 text-white"
+                  : "border-border bg-white hover:bg-page",
               )}
             >
               {option}
@@ -743,48 +682,14 @@ function QuizView({
           );
         })}
       </div>
-
       {selectedAnswer !== undefined && currentCorrect ? (
-        <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm leading-6 text-green-800">
+        <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm leading-6 text-emerald-800">
           {question.explanation || "Correct."}
         </p>
       ) : null}
       {feedback ? (
-        <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm leading-6 text-rose-700">
-          {feedback}
-        </p>
+        <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm leading-6 text-red-700">{feedback}</p>
       ) : null}
-
-      <div className="sticky bottom-0 -mx-4 mt-auto flex items-center justify-between gap-3 border-t border-slate-100 bg-white/95 px-4 py-3 pt-3 backdrop-blur">
-        <button
-          type="button"
-          onClick={onPrevious}
-          disabled={questionIndex === 0}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-40"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Back
-        </button>
-        {authenticated ? (
-          <button
-            type="button"
-            onClick={onNext}
-            disabled={selectedAnswer === undefined || saving}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            {saving ? "Saving..." : isLast ? "Finish" : "Next"}
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        ) : (
-          <Link
-            href={signInHref}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white"
-          >
-            Sign in
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        )}
-      </div>
     </div>
   );
 }
@@ -792,69 +697,26 @@ function QuizView({
 function DoneView({
   challenge,
   feedback,
-  nextChallenge,
-  onNext,
 }: {
   challenge: SkillChallenge;
   feedback: string | null;
-  nextChallenge?: SkillChallenge;
-  onNext: (id: string) => void;
 }) {
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#B8F56D]">
-            <CheckCircle2 className="h-5 w-5 text-slate-950" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-slate-950">
-              Daily challenge complete
-            </h2>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
-              {feedback || `You earned ${challenge.points} points.`}
-            </p>
-          </div>
+    <div>
+      <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" strokeWidth={1.75} />
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Challenge complete</p>
+          <p className="mt-1 text-sm leading-6 text-stone-600">
+            {feedback || `You earned ${challenge.points} points.`}
+          </p>
         </div>
       </div>
-
-      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="mt-5">
         {challenge.hook ? (
-          <p className="mb-3 text-base font-semibold leading-7 text-slate-950">
-            {challenge.hook}
-          </p>
+          <p className="mb-3 text-base font-medium leading-7">{challenge.hook}</p>
         ) : null}
         <RichTextRenderer value={challenge.lesson} />
-      </div>
-
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
-        {challenge.keyIdeas.map((idea) => (
-          <div
-            key={idea}
-            className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700"
-          >
-            {idea}
-          </div>
-        ))}
-      </div>
-
-      <div className="sticky bottom-0 -mx-4 mt-4 flex border-t border-slate-100 bg-white/95 px-4 py-3 backdrop-blur sm:mt-auto sm:border-t-0 sm:bg-transparent sm:px-0 sm:backdrop-blur-none">
-        {nextChallenge ? (
-          <button
-            type="button"
-            onClick={() => onNext(nextChallenge.id)}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white sm:w-fit"
-          >
-            Continue to next day <ArrowRight className="h-4 w-4" />
-          </button>
-        ) : (
-          <Link
-            href="/skills"
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white sm:w-fit"
-          >
-            Back to skills <ArrowRight className="h-4 w-4" />
-          </Link>
-        )}
       </div>
     </div>
   );

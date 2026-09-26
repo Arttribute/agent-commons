@@ -15,15 +15,16 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
-  ChevronDown,
   Clock3,
   Download,
   ExternalLink,
   FlaskConical,
   GraduationCap,
   LoaderCircle,
+  ListChecks,
   LockKeyhole,
   Plus,
+  Presentation,
   Radio,
   Save,
   Send,
@@ -33,6 +34,7 @@ import {
   X,
 } from "lucide-react";
 import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
+import { StudyShell, type StudyStage } from "@/components/learning/study-shell";
 import { CourseMaterialViewer } from "@/components/course-material-viewer";
 import { LearnerLabWorkspace } from "@/components/labs/learner-lab-workspace";
 import { cn } from "@/lib/utils";
@@ -498,24 +500,93 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
       <Centered message="This live session has ended. Your responses are saved with your course." />
     );
 
+  const structuredResponse = [
+    "worksheet",
+    "card_collection",
+    "linked_scorecard",
+    "prioritization",
+  ].includes(activity?.type || "");
+  const stages: StudyStage[] = [];
+  if (activity?.materialId) {
+    stages.push({
+      key: "slides",
+      label: "Slides",
+      icon: Presentation,
+      flush: true,
+      node: (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+          <CourseMaterialViewer
+            key={activity.id}
+            materialId={activity.materialId}
+            initialSlide={activity.materialStartSlide}
+            progressKey={activity.id}
+            syncMode="off"
+            compact
+          />
+        </div>
+      ),
+    });
+  }
+  if (activity?.labWorkspaceId) {
+    stages.push({
+      key: "lab",
+      label: "Lab",
+      icon: FlaskConical,
+      flush: true,
+      node: (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+          <LearnerLabWorkspace
+            workspaceId={activity.labWorkspaceId}
+            entryPath={activity.labEntryPath}
+            compact
+          />
+        </div>
+      ),
+    });
+  }
+
+  const paceNav =
+    session.pace === "learner" && activity ? (
+      <div className="flex items-center justify-between gap-2">
+        <button
+          disabled={availableActivityIndex <= 0}
+          onClick={() =>
+            setSelectedId(availableActivities[availableActivityIndex - 1]?.id || activity.id)
+          }
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-30"
+        >
+          <ArrowLeft className="h-4 w-4" /> Previous
+        </button>
+        <button
+          disabled={
+            availableActivityIndex < 0 ||
+            availableActivityIndex >= availableActivities.length - 1
+          }
+          onClick={goNext}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm disabled:opacity-30"
+        >
+          Next <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+    ) : null;
+
   return (
     <main
       style={getCourseThemeStyle(session.courseTheme) as CSSProperties}
-      className="min-h-screen bg-[var(--course-background)] text-[var(--course-text)]"
+      className="flex h-dvh flex-col overflow-hidden bg-[var(--course-background)] text-[var(--course-text)]"
     >
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-[var(--course-surface)]/95 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-[1600px] items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:px-10">
+      <header className="shrink-0 border-b border-slate-200 bg-[var(--course-surface)]">
+        <div className="flex h-14 items-center gap-2 px-3 sm:gap-3 sm:px-6">
           <Link
             href="/dashboard"
+            aria-label="Dashboard"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--course-primary)] text-[var(--course-on-primary)]"
           >
             <FlaskConical className="h-4 w-4" />
           </Link>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-semibold sm:text-sm">
-              {session.title}
-            </p>
-            <p className="mt-0.5 inline-flex items-center gap-1.5 text-[9px] font-medium text-slate-500 sm:text-[10px]">
+            <p className="truncate text-sm font-medium">{session.title}</p>
+            <p className="mt-0.5 flex items-center gap-1.5 text-xs opacity-55">
               <span
                 className={cn(
                   "h-1.5 w-1.5 rounded-full",
@@ -523,31 +594,10 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
                 )}
               />
               {session.status === "live" ? "Live" : "Not live"}
+              {connection !== "synced" ? " · reconnecting" : ""}
             </p>
           </div>
-          <span
-            className={cn(
-              "hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold sm:inline-flex",
-              connection === "synced"
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-amber-50 text-amber-700",
-            )}
-          >
-            <span
-              className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                connection === "synced"
-                  ? "bg-emerald-500"
-                  : "animate-pulse bg-amber-500",
-              )}
-            />
-            {connection === "synced"
-              ? "In sync"
-              : connection === "offline"
-                ? "Offline"
-                : "Reconnecting"}
-          </span>
-          <span className="hidden items-center gap-1.5 text-xs opacity-50 lg:inline-flex">
+          <span className="hidden items-center gap-1.5 text-xs opacity-50 sm:inline-flex">
             <Users className="h-3.5 w-3.5" />
             {session.participantCount}
           </span>
@@ -556,18 +606,15 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             onClick={() => setWorkbookOpen(true)}
             aria-expanded={workbookOpen}
             aria-controls="live-workbook-drawer"
-            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-[var(--course-surface)] px-3 text-xs font-semibold shadow-sm hover:border-slate-300"
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-[var(--course-surface)] px-2.5 text-xs hover:border-slate-300"
           >
             <BookOpen className="h-4 w-4" />
-            <span className="hidden sm:inline">Activities</span>
+            <span className="hidden sm:inline">Workbook</span>
             <span className="rounded bg-[var(--course-background)] px-1.5 py-0.5 text-[10px]">
               {activityPosition || "–"}/{activeActivities.length}
             </span>
-            <ChevronDown className="hidden h-3.5 w-3.5 opacity-50 sm:block" />
           </button>
         </div>
-      </header>
-      <div className="mx-auto w-full max-w-[1600px] px-3 py-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8">
         {session.parts.length ? (
           <ProgrammePartStrip
             session={session}
@@ -587,98 +634,89 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             }}
           />
         ) : null}
-        <section className="min-w-0">
-          <div className="mb-3 flex items-center justify-between text-xs opacity-50 sm:mb-4">
-            <span>
-              {activityPosition
-                ? `Activity ${activityPosition} of ${activeActivities.length}`
-                : "Waiting for the current activity"}
-            </span>
-            {activity?.estimatedMinutes ? (
-              <span className="inline-flex items-center gap-1.5">
-                <Clock3 className="h-3.5 w-3.5" />
-                {activity.estimatedMinutes} min
+      </header>
+
+      {activity ? (
+        <StudyShell
+          key={activity.id}
+          stage={stages}
+          layout={structuredResponse ? "tabs" : "split"}
+          contentLabel="Task"
+          contentIcon={ListChecks}
+          contentWidth={structuredResponse ? "full" : stages.length ? "wide" : "md"}
+          contentHeader={
+            <div className="flex items-center justify-between gap-3 text-xs opacity-60">
+              <span className="truncate">
+                {activityPosition
+                  ? `Activity ${activityPosition} of ${activeActivities.length}`
+                  : "Current activity"}
+                {activity.required ? " · required" : ""}
               </span>
-            ) : null}
-          </div>
-          {activity ? (
-            <LearnerActivity
-              key={activity.id}
-              activity={activity}
-              learnerSeed={session.participant.id}
-              value={values[activity.id]}
-              response={response}
-              sourceActivity={session.activities.find(
-                (item) => item.id === activity.sourceActivityId,
-              )}
-              sourceResponse={
-                activity.sourceActivityId
-                  ? session.responses[activity.sourceActivityId]
-                  : undefined
-              }
-              submitting={submitting}
-              onChange={(value) =>
-                setValues((current) => ({ ...current, [activity.id]: value }))
-              }
-              onSubmit={submit}
-              onOpenActivity={setSelectedId}
-              onDownload={() => downloadWorkbook(activity.id)}
-            />
-          ) : (
-            <div className="flex min-h-[55dvh] items-center justify-center rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-8 text-center">
-              <div>
-                <Radio className="mx-auto h-6 w-6 opacity-25" />
-                <p className="mt-4 text-sm font-semibold">
-                  Ready for the next activity
-                </p>
-                <p className="mt-2 text-xs leading-5 opacity-50">
-                  You are enrolled and connected. The activity will appear when
-                  your facilitator presents it.
-                </p>
-                {connection !== "synced" ? (
+              <span className="flex shrink-0 items-center gap-3">
+                {activity.estimatedMinutes ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Clock3 className="h-3.5 w-3.5" />
+                    {activity.estimatedMinutes} min
+                  </span>
+                ) : null}
+                {response ? (
                   <button
-                    onClick={() => void load(true)}
-                    className="mt-5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold"
+                    type="button"
+                    onClick={() => downloadWorkbook(activity.id)}
+                    className="inline-flex items-center gap-1.5 hover:opacity-100"
+                    title="Download this saved response"
                   >
-                    Reconnect now
+                    <Download className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Download</span>
                   </button>
                 ) : null}
-              </div>
+              </span>
             </div>
-          )}
+          }
+          footer={paceNav}
+        >
           {notice ? (
-            <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              {notice}
+            <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">{notice}</p>
+          ) : null}
+          <LearnerActivity
+            activity={activity}
+            learnerSeed={session.participant.id}
+            value={values[activity.id]}
+            response={response}
+            sourceActivity={session.activities.find(
+              (item) => item.id === activity.sourceActivityId,
+            )}
+            sourceResponse={
+              activity.sourceActivityId ? session.responses[activity.sourceActivityId] : undefined
+            }
+            submitting={submitting}
+            onChange={(value) =>
+              setValues((current) => ({ ...current, [activity.id]: value }))
+            }
+            onSubmit={submit}
+            onOpenActivity={setSelectedId}
+          />
+        </StudyShell>
+      ) : (
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center">
+          <div>
+            <Radio className="mx-auto h-6 w-6 opacity-25" />
+            <p className="mt-4 text-sm font-medium">Ready for the next activity</p>
+            <p className="mt-2 text-xs leading-5 opacity-50">
+              It appears here when your facilitator presents it.
             </p>
-          ) : null}
-          {session.pace === "learner" && activity ? (
-            <div className="mt-5 flex justify-between">
+            {connection !== "synced" ? (
               <button
-                disabled={availableActivityIndex <= 0}
-                onClick={() => {
-                  setSelectedId(
-                    availableActivities[availableActivityIndex - 1]?.id ||
-                      activity.id,
-                  );
-                }}
-                className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 disabled:opacity-30"
+                onClick={() => void load(true)}
+                className="mt-5 rounded-lg border border-slate-200 px-3 py-2 text-xs"
               >
-                <ArrowLeft className="h-4 w-4" /> Previous
+                Reconnect now
               </button>
-              <button
-                disabled={
-                  availableActivityIndex < 0 ||
-                  availableActivityIndex >= availableActivities.length - 1
-                }
-                onClick={goNext}
-                className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 disabled:opacity-30"
-              >
-                Next <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          ) : null}
-        </section>
-      </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
       <WorkbookDrawer
         open={workbookOpen}
         session={session}
@@ -698,11 +736,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             page: "live_session",
             liveSessionId: session.id,
             title: activity?.title || session.title,
-            visibleText: [
-              activity?.prompt,
-              activity?.instructions,
-              activity?.successCriteria,
-            ]
+            visibleText: [activity?.prompt, activity?.instructions, activity?.successCriteria]
               .filter(Boolean)
               .join("\n"),
           }}
@@ -722,62 +756,41 @@ function ProgrammePartStrip({
   onSelect: (partId: string) => void;
 }) {
   return (
-    <section className="mb-5" aria-label="Programme sessions">
-      <p className="mb-2 text-[10px] font-medium opacity-45">
-        Programme sessions
-      </p>
-      <div className="grid gap-2 sm:grid-cols-2 lg:flex">
-        {session.parts.map((part, index) => {
-          const active = part.id === activePartId && part.status === "open";
-          return (
-            <button
-              type="button"
-              key={part.id}
-              disabled={part.status === "closed"}
-              onClick={() => onSelect(part.id)}
-              className={cn(
-                "flex min-w-0 items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition lg:min-w-64",
-                active
-                  ? "border-[var(--course-primary)] bg-[var(--course-surface)] shadow-sm"
-                  : "border-slate-200 bg-[var(--course-surface)]/60 opacity-70",
-                part.status === "open" &&
-                  !active &&
-                  "hover:border-[var(--course-primary)] hover:opacity-100",
-                part.status === "closed" && "cursor-default",
-              )}
-            >
-              <span
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold",
-                  active
-                    ? "bg-[var(--course-primary)] text-[var(--course-on-primary)]"
-                    : "bg-slate-100 text-slate-500",
-                )}
-              >
-                {index + 1}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold">
-                  {part.title}
-                </span>
-                <span className="mt-0.5 block text-[10px] font-medium opacity-55">
-                  {part.status === "closed"
-                    ? "Not open yet"
-                    : part.pace === "learner"
-                      ? "Move at your own pace"
-                      : "Facilitator guided"}
-                </span>
-              </span>
-              {part.status === "closed" ? (
-                <LockKeyhole className="h-3.5 w-3.5 shrink-0 opacity-50" />
-              ) : (
-                <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </section>
+    <nav
+      aria-label="Programme sessions"
+      className="flex items-center gap-1.5 overflow-x-auto border-t border-slate-200 px-3 py-2 sm:px-6"
+    >
+      {session.parts.map((part, index) => {
+        const active = part.id === activePartId && part.status === "open";
+        const closed = part.status === "closed";
+        return (
+          <button
+            type="button"
+            key={part.id}
+            disabled={closed}
+            title={
+              closed
+                ? "Not open yet"
+                : part.pace === "learner"
+                  ? "Move at your own pace"
+                  : "Facilitator guided"
+            }
+            onClick={() => onSelect(part.id)}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition",
+              active
+                ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
+                : "border-slate-200 bg-[var(--course-surface)] opacity-70 hover:opacity-100",
+              closed && "cursor-default opacity-40",
+            )}
+          >
+            <span className="tabular-nums">{index + 1}</span>
+            <span className="max-w-32 truncate sm:max-w-44">{part.title}</span>
+            {closed ? <LockKeyhole className="h-3 w-3 shrink-0" /> : null}
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -1056,7 +1069,6 @@ function LearnerActivity({
   onChange,
   onSubmit,
   onOpenActivity,
-  onDownload,
 }: {
   activity: LiveActivity;
   learnerSeed: string;
@@ -1068,7 +1080,6 @@ function LearnerActivity({
   onChange: (value: LiveResponseValue) => void;
   onSubmit: (valueOverride?: LiveResponseValue) => void;
   onOpenActivity: (activityId: string) => void;
-  onDownload: () => void;
 }) {
   const isChoice = activity.options.length > 0;
   const result = activity.status === "closed" && activity.showResults;
@@ -1079,83 +1090,34 @@ function LearnerActivity({
   const typedOther = decodeOtherResponse(value);
   const hasValidValue = Boolean(value && isValidLiveResponse(activity, value));
   return (
-    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-[var(--course-surface)]">
-      <div className="p-6 sm:p-9">
-        <div className="flex items-center justify-between gap-3">
-          <span className="rounded-full bg-[var(--course-accent)] px-2.5 py-1 text-[10px] font-medium text-[var(--course-on-accent)]">
-            {labelFor(activity.type)}
-          </span>
-          <span className="flex items-center gap-3">
-            {activity.required ? (
-              <span className="hidden text-[10px] font-medium opacity-50 sm:inline">
-                Required
-              </span>
-            ) : null}
-            {response ? (
-              <button
-                type="button"
-                onClick={onDownload}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-semibold transition hover:border-slate-300 hover:bg-[var(--course-background)]"
-                title="Download this saved response"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Download response</span>
-              </button>
-            ) : null}
-          </span>
-        </div>
-        <h1 className="mt-6 text-3xl font-semibold tracking-tight">
-          {activity.title || labelFor(activity.type)}
-        </h1>
-        {activity.prompt ? (
-          <p className="mt-4 text-lg leading-8 opacity-80">{activity.prompt}</p>
-        ) : null}
-        {activity.instructions ? (
-          <div className="mt-6 whitespace-pre-wrap rounded-xl bg-[var(--course-background)] p-4 text-sm leading-7 opacity-80">
-            {activity.instructions}
-          </div>
-        ) : null}
-        {activity.successCriteria ? (
-          <div className="mt-4 border-l-2 border-[var(--course-highlight)] pl-4">
-            <p className="text-[10px] font-medium opacity-50">
-              Done when
-            </p>
-            <p className="mt-1 text-sm leading-6 opacity-80">
-              {activity.successCriteria}
-            </p>
-          </div>
-        ) : null}
-        {activity.resourceUrl ? (
-          <a
-            href={activity.resourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-5 inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4"
-          >
-            Open activity resource <ExternalLink className="h-4 w-4" />
-          </a>
-        ) : null}
-      </div>
-      {activity.materialId ? (
-        <div className="border-t border-slate-100 p-4 sm:p-6">
-          <CourseMaterialViewer
-            key={activity.id}
-            materialId={activity.materialId}
-            initialSlide={activity.materialStartSlide}
-            progressKey={activity.id}
-            syncMode="off"
-            compact
-          />
+    <div>
+      <p className="text-xs opacity-55">{labelFor(activity.type)}</p>
+      <h1 className="mt-1.5 text-2xl font-medium tracking-tight">
+        {activity.title || labelFor(activity.type)}
+      </h1>
+      {activity.prompt ? (
+        <p className="mt-3 text-base leading-7 opacity-80">{activity.prompt}</p>
+      ) : null}
+      {activity.instructions ? (
+        <div className="mt-4 whitespace-pre-wrap rounded-xl bg-[var(--course-background)] p-4 text-sm leading-7 opacity-80">
+          {activity.instructions}
         </div>
       ) : null}
-      {activity.labWorkspaceId ? (
-        <div className="border-t border-slate-100 p-4 sm:p-6">
-          <LearnerLabWorkspace
-            workspaceId={activity.labWorkspaceId}
-            entryPath={activity.labEntryPath}
-            compact
-          />
+      {activity.successCriteria ? (
+        <div className="mt-4 border-l-2 border-[var(--course-highlight)] pl-4">
+          <p className="text-xs opacity-50">Done when</p>
+          <p className="mt-1 text-sm leading-6 opacity-80">{activity.successCriteria}</p>
         </div>
+      ) : null}
+      {activity.resourceUrl ? (
+        <a
+          href={activity.resourceUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-4 inline-flex items-center gap-2 text-sm underline underline-offset-4"
+        >
+          Open activity resource <ExternalLink className="h-4 w-4" />
+        </a>
       ) : null}
       {activity.type === "card_collection" ? (
         <CardCollectionResponsePanel
@@ -1197,7 +1159,7 @@ function LearnerActivity({
           onSubmit={onSubmit}
         />
       ) : isChoice ? (
-        <div className="border-t border-slate-100 bg-slate-50 p-5 sm:p-7">
+        <div className="mt-6 border-t border-slate-200 pt-5">
           {activity.responseStyle === "scale" ? (
             <div className="mb-3 flex items-center justify-between gap-4 text-xs font-medium text-slate-500">
               <span>{scaleEndpoint(activity.options[0]?.label)}</span>
@@ -1334,7 +1296,7 @@ function LearnerActivity({
           )}
         </div>
       ) : activity.type === "content" || activity.type === "break" ? (
-        <div className="border-t border-slate-100 bg-slate-50 p-5 sm:p-7">
+        <div className="mt-6 border-t border-slate-200 pt-5">
           {response ? (
             <Saved />
           ) : activity.status !== "open" ? (
@@ -1351,11 +1313,11 @@ function LearnerActivity({
           )}
         </div>
       ) : activity.status !== "open" && !response ? (
-        <div className="border-t border-slate-100 bg-slate-50 p-5 sm:p-7">
+        <div className="mt-6 border-t border-slate-200 pt-5">
           <ResponsesClosed />
         </div>
       ) : (
-        <div className="border-t border-slate-100 bg-slate-50 p-5 sm:p-7">
+        <div className="mt-6 border-t border-slate-200 pt-5">
           <textarea
             value={typeof value === "string" ? value : ""}
             onChange={(event) => onChange(event.target.value)}
@@ -1386,7 +1348,7 @@ function LearnerActivity({
           )}
         </div>
       )}
-    </article>
+    </div>
   );
 }
 
@@ -1459,7 +1421,7 @@ function CardCollectionResponsePanel({
   }
 
   return (
-    <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
+    <div className="mt-6 border-t border-slate-200 pt-5">
       <div
         className={cn(
           "mx-auto max-w-5xl",
@@ -1789,7 +1751,7 @@ function LinkedScorecardResponsePanel({
     });
 
   return (
-    <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
+    <div className="mt-6 border-t border-slate-200 pt-5">
       <div
         className={cn("mx-auto max-w-5xl", structuredResponseWorkspaceClass)}
       >
@@ -2003,7 +1965,7 @@ function WorksheetResponsePanel({
   }
 
   return (
-    <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
+    <div className="mt-6 border-t border-slate-200 pt-5">
       <div
         className={cn("mx-auto max-w-4xl", structuredResponseWorkspaceClass)}
       >
@@ -2220,7 +2182,7 @@ function PrioritizationResponsePanel({
   }
 
   return (
-    <div className="border-t border-slate-100 bg-[var(--course-background)] p-4 sm:p-7">
+    <div className="mt-6 border-t border-slate-200 pt-5">
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
         <section className="rounded-2xl border border-slate-200 bg-[var(--course-surface)] p-4 sm:p-5">
           <div className="flex items-start justify-between gap-4">

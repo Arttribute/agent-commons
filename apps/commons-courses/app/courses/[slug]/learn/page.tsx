@@ -8,6 +8,7 @@ import { AssignmentSubmissions } from "@/components/courses/assignment-submissio
 import { AnalyticsTracker, useAnalytics } from "@/components/analytics/analytics-tracker";
 import { CourseAgentDrawer } from "@/components/course-agents/course-agent-drawer";
 import { LearningStudio } from "@/components/learning/learning-studio";
+import { StageMedia, StudyShell } from "@/components/learning/study-shell";
 import { LearnerLabWorkspace } from "@/components/labs/learner-lab-workspace";
 import { RichTextRenderer } from "@/components/rich-text-renderer";
 import {
@@ -15,6 +16,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  FlaskConical,
+  Image as ImageIcon,
   Lock,
   Menu,
   Presentation,
@@ -84,6 +87,7 @@ export default function LearnPage({ params }: Props) {
   const [startDateLabel, setStartDateLabel] = useState<string | null>(null);
   const [marking, setMarking] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [contentTab, setContentTab] = useState<"lesson" | "assignment">("lesson");
   const track = useAnalytics();
 
   const lessonKey = `${moduleIdx}:${lessonIdx}`;
@@ -385,9 +389,109 @@ export default function LearnPage({ params }: Props) {
   const totalLessons = allLessons.length;
   const progressPct =
     totalLessons > 0 ? Math.round((completedLessons.length / totalLessons) * 100) : 0;
+  const isLastLessonOfModule = lessonIdx === currentModule.lessons.length - 1;
+  const hasAssignment = Boolean(isLastLessonOfModule && currentModule.assignment);
+
+  const lessonNav = (
+    <>
+      <div className="shrink-0 border-b border-border px-4 py-3">
+        <Link
+          href={`/courses/${slug}`}
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
+          Course
+        </Link>
+        <p className="mt-1 line-clamp-2 text-sm font-medium leading-snug">{course.title}</p>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+            <span
+              className="block h-full rounded-full bg-stone-800 transition-all"
+              style={{ width: `${progressPct}%` }}
+            />
+          </span>
+          <span className="text-xs text-muted-foreground">{progressPct}%</span>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2">
+        {course.modules.map((mod, mi) => (
+          <div key={mi} className="mb-1">
+            <p className="px-4 py-2 text-xs text-muted-foreground">
+              {mi + 1}. {mod.title}
+            </p>
+            {mod.lessons.map((les, li) => {
+              const key = `${mi}:${li}`;
+              const done = completedLessons.includes(key);
+              const active = mi === moduleIdx && li === lessonIdx;
+              const accessible = hasStarted && (les.isFree || enrolled);
+              return (
+                <button
+                  key={li}
+                  disabled={!accessible}
+                  onClick={() => {
+                    if (!accessible) return;
+                    navigate(mi, li);
+                    setSidebarOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-start gap-2.5 px-4 py-2 text-left transition-colors",
+                    active ? "bg-accent" : accessible ? "hover:bg-muted" : "cursor-not-allowed opacity-40",
+                  )}
+                >
+                  <span className="mt-0.5 shrink-0">
+                    {!accessible ? (
+                      <Lock className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.75} />
+                    ) : done ? (
+                      <CheckCircle className="h-3.5 w-3.5 text-emerald-600" strokeWidth={1.75} />
+                    ) : (
+                      <Circle className="h-3.5 w-3.5 text-stone-300" strokeWidth={1.75} />
+                    )}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={cn("block text-sm leading-snug", active && "font-medium")}>
+                      {les.title}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {formatDuration(les.duration)}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+
+  const stage = [];
+  if (currentLesson.assetUrl) {
+    stage.push({
+      key: "visual",
+      label: "Visual",
+      icon: ImageIcon,
+      node: <StageMedia src={currentLesson.assetUrl} alt={currentLesson.assetAlt} />,
+    });
+  }
+  if (currentLesson.labWorkspaceId) {
+    stage.push({
+      key: "lab",
+      label: "Lab",
+      icon: FlaskConical,
+      flush: true,
+      node: (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+          <LearnerLabWorkspace workspaceId={currentLesson.labWorkspaceId} compact />
+        </div>
+      ),
+    });
+  }
 
   return (
-    <div style={getCourseThemeStyle(course.theme) as CSSProperties} className="h-dvh bg-[var(--course-background)] text-[var(--course-text)] flex flex-col overflow-hidden">
+    <div
+      style={getCourseThemeStyle(course.theme) as CSSProperties}
+      className="flex h-dvh flex-col overflow-hidden bg-page text-foreground"
+    >
       <AnalyticsTracker
         courseSlug={slug}
         page="course.learn"
@@ -407,261 +511,202 @@ export default function LearnPage({ params }: Props) {
             currentModule?.title,
             currentLesson?.title,
             currentLesson?.description,
-            lessonIdx === currentModule?.lessons.length - 1
-              ? currentModule?.assignment
-              : "",
+            hasAssignment ? currentModule?.assignment : "",
           ]
             .filter(Boolean)
             .join("\n"),
         }}
       />
 
-      <div className="flex flex-1 min-h-0 pt-16">
-        {/* ── Sidebar ── */}
-        {/* Mobile overlay */}
-        {sidebarOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/30 lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
+      <div className="flex min-h-0 flex-1 flex-col pt-16">
+        <header className="flex shrink-0 items-center gap-3 border-b border-border bg-white px-4 py-2.5 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open lessons"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-stone-600 lg:hidden"
+          >
+            <Menu className="h-4 w-4" strokeWidth={1.75} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs text-muted-foreground">
+              {currentModule.title} · Lesson {lessonIdx + 1}
+            </p>
+            <h1 className="truncate text-sm font-medium">{currentLesson.title}</h1>
+          </div>
+          <Link
+            href={`/courses/${slug}/materials`}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs text-stone-600 transition-colors hover:bg-muted"
+          >
+            <Presentation className="h-3.5 w-3.5" strokeWidth={1.75} />
+            <span className="hidden sm:inline">Materials</span>
+          </Link>
+        </header>
 
-        <aside
-          className={cn(
-            "fixed lg:static z-50 top-0 left-0 h-dvh lg:h-full w-72 bg-white border-r border-slate-100 flex flex-col transition-transform duration-200 pt-16 lg:pt-0",
-            sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
-          )}
-        >
-          {/* Sidebar header */}
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-            <div>
-              <Link
-                href={`/courses/${slug}`}
-                className="text-[10px] text-slate-400 hover:text-slate-700 transition-colors"
+        <StudyShell
+          rail={lessonNav}
+          stage={stage}
+          contentLabel="Lesson"
+          contentWidth={stage.length ? "wide" : "md"}
+          contentHeader={
+            hasAssignment ? (
+              <div className="flex items-center gap-1">
+                <ContentTab
+                  active={contentTab === "lesson"}
+                  label="Lesson"
+                  onClick={() => setContentTab("lesson")}
+                />
+                <ContentTab
+                  active={contentTab === "assignment"}
+                  label="Assignment"
+                  onClick={() => setContentTab("assignment")}
+                />
+              </div>
+            ) : null
+          }
+          footer={
+            <div className="flex items-center justify-between gap-2">
+              <button
+                onClick={markComplete}
+                disabled={isCompleted || marking || enrolled === false}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+                  isCompleted
+                    ? "cursor-default bg-emerald-50 text-emerald-700"
+                    : "bg-stone-900 text-white hover:bg-stone-800 disabled:opacity-40",
+                )}
               >
-                ← Course
-              </Link>
-              <h2 className="text-sm font-semibold text-slate-900 mt-0.5 leading-snug line-clamp-2">
-                {course.title}
-              </h2>
-            </div>
-            <button
-              className="lg:hidden p-1 rounded text-slate-400 hover:text-slate-700"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Progress bar */}
-          <div className="px-4 py-3 border-b border-slate-100">
-            <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-              <span>Progress</span>
-              <span className="font-semibold">{progressPct}%</span>
-            </div>
-            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-              <div
-                className="h-full bg-slate-900 rounded-full transition-all duration-500"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Module + lesson list */}
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-2">
-            {course.modules.map((mod, mi) => (
-              <div key={mi} className="mb-1">
-                <div className="px-4 py-2 text-[10px] font-medium text-slate-400">
-                  Module {mi + 1} · {mod.title}
-                </div>
-                {mod.lessons.map((les, li) => {
-                  const key = `${mi}:${li}`;
-                  const done = completedLessons.includes(key);
-                  const active = mi === moduleIdx && li === lessonIdx;
-                  const accessible = hasStarted && (les.isFree || enrolled);
-
-                  return (
-                    <button
-                      key={li}
-                      disabled={!accessible}
-                      onClick={() => accessible && navigate(mi, li)}
-                      className={cn(
-                        "w-full flex items-start gap-2.5 px-4 py-2.5 text-left transition-colors",
-                        active
-                          ? "bg-slate-900 text-white"
-                          : accessible
-                          ? "hover:bg-slate-50 text-slate-700"
-                          : "opacity-40 cursor-not-allowed text-slate-400",
-                      )}
-                    >
-                      <span className="mt-0.5 flex-shrink-0">
-                        {!accessible ? (
-                          <Lock className="h-3.5 w-3.5" />
-                        ) : done ? (
-                          <CheckCircle className={cn("h-3.5 w-3.5", active ? "text-white" : "text-green-500")} />
-                        ) : (
-                          <Circle className="h-3.5 w-3.5" />
-                        )}
-                      </span>
-                      <div className="min-w-0">
-                        <p className={cn("text-xs font-medium leading-snug", active ? "text-white" : "")}>
-                          {les.title}
-                        </p>
-                        <p className={cn("text-[10px] mt-0.5", active ? "text-white/60" : "text-slate-400")}>
-                          {les.duration}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </aside>
-
-        {/* ── Main content ── */}
-        <main className="flex-1 min-w-0 min-h-0 flex flex-col">
-          {/* Top bar */}
-          <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-100 bg-white sticky top-16 z-10">
-            <button
-              className="lg:hidden p-1.5 rounded text-slate-500 hover:bg-slate-100"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <Menu className="h-4 w-4" />
-            </button>
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] text-slate-400 truncate">
-                Module {moduleIdx + 1} · Lesson {lessonIdx + 1}
-              </p>
-              <h1 className="text-sm font-semibold text-slate-900 truncate">
-                {currentLesson?.title}
-              </h1>
-            </div>
-            <Link href={`/courses/${slug}/materials`} className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"><Presentation className="h-3.5 w-3.5" /><span className="hidden sm:inline">Materials</span></Link>
-            <span className="text-xs text-slate-400 flex-shrink-0">{currentLesson?.duration}</span>
-          </div>
-
-          {/* Lesson body */}
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-            <div className="max-w-3xl mx-auto px-6 py-10">
-              {/* Module / lesson header */}
-              <div className="mb-8">
-                <p className="text-xs font-semibold text-slate-400 mb-2">
-                  {currentModule?.title}
-                </p>
-                <h2 className="text-2xl font-semibold text-slate-900 leading-tight">
-                  {currentLesson?.title}
-                </h2>
-                {currentLesson?.duration && (
-                  <p className="text-sm text-slate-400 mt-1">{currentLesson.duration}</p>
+                {isCompleted ? (
+                  <>
+                    <CheckCircle className="h-4 w-4" strokeWidth={1.75} /> Completed
+                  </>
+                ) : marking ? (
+                  "Saving"
+                ) : (
+                  "Mark complete"
+                )}
+              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => prevLesson && navigate(prevLesson.mi, prevLesson.li)}
+                  disabled={!prevLesson}
+                  aria-label="Previous lesson"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-stone-600 disabled:opacity-30"
+                >
+                  <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+                </button>
+                {nextLesson ? (
+                  <button
+                    onClick={() => navigate(nextLesson.mi, nextLesson.li)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-stone-700 transition-colors hover:bg-muted"
+                  >
+                    Next <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
+                  </button>
+                ) : (
+                  <Link
+                    href="/dashboard"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-stone-700 transition-colors hover:bg-muted"
+                  >
+                    Finish <CheckCircle className="h-4 w-4" strokeWidth={1.75} />
+                  </Link>
                 )}
               </div>
-
-              {currentLesson?.assetUrl && (
-                <div className="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={currentLesson.assetUrl}
-                    alt={currentLesson.assetAlt || ""}
-                    className="h-auto w-full object-contain"
-                  />
-                </div>
-              )}
-
-              {/* Lesson description / summary */}
-              {currentLesson?.description && (
-                <div className="prose prose-sm max-w-none">
-                  <LearningStudio
-                    courseSlug={slug}
-                    courseTitle={course.title}
-                    contentTitle={currentLesson.title}
-                    source={currentLesson.description}
-                  />
-                  <h3 className="text-base font-semibold text-slate-900 mb-3">
-                    Educator&apos;s lesson
-                  </h3>
-                  <RichTextRenderer value={currentLesson.description} />
-                </div>
-              )}
-
-              {currentLesson?.labWorkspaceId ? (
-                <LearnerLabWorkspace workspaceId={currentLesson.labWorkspaceId} />
-              ) : null}
-
-              {/* Module assignment (show on last lesson of each module) */}
-              {lessonIdx === currentModule?.lessons.length - 1 &&
-                currentModule.assignment && (
-                  <div className="mt-8 rounded-xl border border-slate-200 bg-slate-50 p-5">
-                    <p className="text-xs font-medium text-slate-500 mb-2">
-                      Module Assignment
-                    </p>
-                    <RichTextRenderer value={currentModule.assignment} />
-                  </div>
-                )}
-
+            </div>
+          }
+        >
+          {contentTab === "assignment" && hasAssignment ? (
+            <div>
+              <RichTextRenderer value={currentModule.assignment || ""} />
               <AssignmentSubmissions
                 courseSlug={slug}
                 moduleIndex={moduleIdx}
                 lessonIndex={lessonIdx}
                 enrolled={enrolled}
               />
-
-              {/* Mark complete + navigation */}
-              <div className="mt-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <button
-                  onClick={markComplete}
-                  disabled={isCompleted || marking || enrolled === false}
-                  className={cn(
-                    "flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold transition-all",
-                    isCompleted
-                      ? "bg-green-100 text-green-700 cursor-default"
-                      : "bg-slate-900 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed",
-                  )}
-                >
-                  {isCompleted ? (
-                    <>
-                      <CheckCircle className="h-4 w-4" /> Completed
-                    </>
-                  ) : marking ? (
-                    "Saving…"
-                  ) : (
-                    "Mark as complete"
-                  )}
-                </button>
-
-                <div className="flex gap-2 sm:ml-auto">
-                  {prevLesson && (
-                    <button
-                      onClick={() => navigate(prevLesson.mi, prevLesson.li)}
-                      className="flex items-center gap-1.5 px-4 py-3 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      <ChevronLeft className="h-4 w-4" /> Previous
-                    </button>
-                  )}
-                  {nextLesson && (
-                    <button
-                      onClick={() => navigate(nextLesson.mi, nextLesson.li)}
-                      className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-                    >
-                      Next <ChevronRight className="h-4 w-4" />
-                    </button>
-                  )}
-                  {!nextLesson && (
-                    <Link
-                      href="/dashboard"
-                      className="flex items-center gap-1.5 px-4 py-3 rounded-xl bg-green-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-                    >
-                      Finish course <CheckCircle className="h-4 w-4" />
-                    </Link>
-                  )}
-                </div>
-              </div>
             </div>
-          </div>
-        </main>
+          ) : (
+            <>
+              {currentLesson.description ? (
+                <LearningStudio
+                  courseSlug={slug}
+                  courseTitle={course.title}
+                  contentTitle={currentLesson.title}
+                  source={currentLesson.description}
+                >
+                  <RichTextRenderer value={currentLesson.description} />
+                </LearningStudio>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  This lesson has no written notes. Use the lab or materials to continue.
+                </p>
+              )}
+              {!hasAssignment ? (
+                <AssignmentSubmissions
+                  courseSlug={slug}
+                  moduleIndex={moduleIdx}
+                  lessonIndex={lessonIdx}
+                  enrolled={enrolled}
+                />
+              ) : null}
+            </>
+          )}
+        </StudyShell>
       </div>
+
+      {sidebarOpen ? (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <button
+            className="absolute inset-0 bg-stone-950/30"
+            aria-label="Close lessons"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="absolute inset-y-0 left-0 flex w-80 max-w-[85vw] flex-col bg-white shadow-floating">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <p className="text-sm font-medium">Lessons</p>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Close lessons"
+                className="rounded-lg border border-border p-1.5 text-stone-600"
+              >
+                <X className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            </div>
+            {lessonNav}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function ContentTab({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "rounded-lg px-2.5 py-1.5 text-sm transition-colors",
+        active ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function formatDuration(value?: string) {
+  if (!value) return "";
+  return /^\d+$/.test(value.trim()) ? `${value.trim()} min` : value;
 }
 
 function formatDate(value: string) {

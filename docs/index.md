@@ -12,6 +12,7 @@ Agent Commons is a platform for building, running, and connecting AI agents. You
 
 ### By interface
 - [Web UI Guide](./ui.md) — Full walkthrough of every screen
+- [UI guidelines](./ui-guidelines.md) — How Agent Commons interfaces should look and behave
 - [REST API Reference](./api.md) — All endpoints with examples
 - [TypeScript SDK](./sdk.md) — Programmatic access from Node.js / TypeScript
 - [CLI Reference](./cli.md) — Terminal-based `agc` commands
