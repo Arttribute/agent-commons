@@ -1,6 +1,8 @@
 export type OllamaMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  thinking?: string;
+  tool_name?: string;
   tool_calls?: Array<{ function: { name: string; arguments: unknown } }>;
 };
 
@@ -24,6 +26,7 @@ export async function readOllamaChatResponse(
   const decoder = new TextDecoder();
   let pending = "";
   let content = "";
+  let thinking = "";
   let completed = false;
   const calls: NonNullable<OllamaMessage["tool_calls"]> = [];
 
@@ -36,6 +39,7 @@ export async function readOllamaChatResponse(
       throw new Error("Local model returned an invalid response stream");
     }
     if (chunk.error) throw new Error(chunk.error);
+    if (chunk.message?.thinking) thinking += chunk.message.thinking;
     if (chunk.message?.content) {
       content += chunk.message.content;
       onContent?.(content);
@@ -59,7 +63,7 @@ export async function readOllamaChatResponse(
     pending += decoder.decode();
     consume(pending);
     if (!completed) throw new Error("Local model response ended before completion");
-    return { role: "assistant", content, ...(calls.length ? { tool_calls: calls } : {}) };
+    return { role: "assistant", content, ...(thinking ? { thinking } : {}), ...(calls.length ? { tool_calls: calls } : {}) };
   } finally {
     reader.releaseLock();
   }

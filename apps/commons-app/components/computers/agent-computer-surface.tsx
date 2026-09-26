@@ -42,6 +42,8 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { LocalComputerSurface } from "./local-computer-surface";
 import {
   currentNodes,
   isActiveComputer,
@@ -97,7 +99,12 @@ function mapTab(tab?: ComputerRuntimeTab): ComputerApp {
   return "code";
 }
 
-export function AgentComputerSurface({
+export function AgentComputerSurface(props: Parameters<typeof CloudComputerSurface>[0] & { conversationId?: string }) {
+  const { mode } = useWorkspaceMode();
+  return mode === "private-local" ? <LocalComputerSurface {...props} /> : <CloudComputerSurface {...props} />;
+}
+
+function CloudComputerSurface({
   agentId,
   activeTab,
   autoRefresh = false,

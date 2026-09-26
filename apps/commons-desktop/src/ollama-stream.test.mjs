@@ -31,3 +31,13 @@ test("collects native tool calls and rejects incomplete streams", async () => {
   assert.deepEqual(result.tool_calls, [call]);
   await assert.rejects(readOllamaChatResponse(response(['{"message":{"content":"partial"}}\n'])), /before completion/);
 });
+
+test("preserves model thinking for tool continuation without displaying it as chat text", async () => {
+  const tokens = [];
+  const result = await readOllamaChatResponse(response([
+    '{"message":{"thinking":"Inspect the "}}\n',
+    '{"message":{"thinking":"workspace","content":"Checking files"},"done":true}\n',
+  ]), (content) => tokens.push(content));
+  assert.equal(result.thinking, "Inspect the workspace");
+  assert.deepEqual(tokens, ["Checking files"]);
+});

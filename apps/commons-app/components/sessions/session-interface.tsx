@@ -271,6 +271,7 @@ export default function SessionInterfaceImproved({
   }, [sessionId]);
 
   const fetchAgentComputer = useCallback(async () => {
+    if (mode === "private-local") { setSessionComputer(null); return; }
     if (!agentId || !allowComputer) return;
     try {
       const res = await fetch(`/api/agents/${agentId}/computer`, {
@@ -284,7 +285,7 @@ export default function SessionInterfaceImproved({
     } catch {
       // Computer status is a lightweight hint here; the drawer can refresh itself.
     }
-  }, [agentId, allowComputer]);
+  }, [agentId, allowComputer, mode]);
 
   useEffect(() => {
     fetchAgentComputer();
@@ -672,6 +673,7 @@ export default function SessionInterfaceImproved({
 
       {allowComputer && computerOpen && (
         <AgentComputerSurface
+          conversationId={sessionId || undefined}
           agentId={agentId}
           activeTab={computerRuntimeTab}
           autoRefresh={computerOpen || Boolean(isStreaming)}

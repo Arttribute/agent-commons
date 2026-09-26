@@ -22,15 +22,14 @@ import type {
 } from "@agent-commons/desktop-contract";
 import { AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills } from "@agent-commons/agent-core";
 import {
-  buildDirSnapshot,
-  buildLocalToolsManifest,
   extractToolCall,
   runLocalTool,
   safePath,
   stopLocalProcesses,
   type LocalToolsConfig,
 } from "../../../packages/agc-cli/src/local-tools";
-import { indexFolders, searchSpaces } from "./knowledge";
+import { indexFolders, searchSpaces, accessibleSpaces, knowledgeTool } from "./knowledge";
+import { compactToolLoop, localChatHistory, LOCAL_CONTEXT_SIZE, toolResult } from "./local-chat-history";
 import { DEFAULT_LOCAL_MODEL, LocalStore } from "./store";
 import { LocalModelManager } from "./local-model";
 import { LocalStorageLayout } from "./local-storage-layout";
@@ -85,6 +84,13 @@ export const LOCAL_TOOLS = [
     processId: { type: "string" },
   }, ["processId"]),
   functionTool("cli_list_processes", "List background processes started by the agent.", {}),
+  functionTool("list_knowledge_spaces", "List the Knowledge Spaces available to this agent, with IDs and document counts. Use this when asked what knowledge is available.", {}),
+  functionTool("list_knowledge_documents", "List documents in a Knowledge Space, including their paths. Supports pagination.", {
+    spaceId: { type: "string" }, offset: { type: "number" },
+  }, ["spaceId"]),
+  functionTool("read_knowledge_document", "Read an indexed document from a Knowledge Space. Supports offsets for long documents.", {
+    spaceId: { type: "string" }, path: { type: "string" }, offset: { type: "number" },
+  }, ["spaceId", "path"]),
   functionTool("search_knowledge", "Search the user's selected local Knowledge Spaces.", {
     query: { type: "string" },
   }, ["query"]),
@@ -480,6 +486,7 @@ export class PrivateLocalRuntime {
     this.change((draft) => {
       const current = draft.conversations.find((candidate) => candidate.id === conversationId)!;
       current.workspaceRoot = input.workspaceRoot ?? current.workspaceRoot ?? homedir();
+      if (input.spaceIds !== undefined) current.spaceIds = input.spaceIds;
       current.messages.push({ id: randomUUID(), role: "user", content: input.prompt.trim(), createdAt: timestamp });
       current.updatedAt = timestamp;
     });
@@ -767,16 +774,20 @@ export class PrivateLocalRuntime {
   private async runAgent(agent: LocalAgent, conversationId: string, spaceIds?: string[], interactive = false) {
     const state = this.store.get();
     const conversation = state.conversations.find((candidate) => candidate.id === conversationId)!;
+    spaceIds ??= conversation.spaceIds;
     const lastUser = [...conversation.messages].reverse().find((message) => message.role === "user")?.content ?? "";
     const identityRequest = assistantIdentityRequestKind(lastUser);
     if (identityRequest === "name") return assistantNameAnswer(agent.name);
     if (identityRequest === "about") return assistantIdentityAnswer(agent.name, agent.model || state.settings.defaultModel);
-    const knowledge = searchSpaces(state.spaces, lastUser, spaceIds);
+    const spaces = accessibleSpaces(state.spaces, agent.id, spaceIds);
+    const knowledge = searchSpaces(spaces, lastUser);
     const skills = (state.skills ?? []).filter((skill) => skill.assignedAgentIds === undefined || skill.assignedAgentIds.includes(agent.id));
     const skillsBlock = buildSkillPromptIndex(skills, findMatchingSkills(skills, lastUser));
     const workspace = conversation.workspaceRoot;
     const localManifest = workspace
-      ? buildLocalToolsManifest(workspace, buildDirSnapshot(workspace, 2), [], false)
+      ? `Workspace: ${workspace}. File paths and command cwd are relative to this folder. Use cli_list_directory to inspect folders as needed.
+Use cli_run_command for short commands. Use cli_start_process for installs, builds and scaffolding, then cli_wait_for_process until done or error. Never claim completion while a setup process is running. Dev servers may keep running after you verify they are ready.
+Commands must be non-interactive: pass the executable as command and arguments as an array. Writes and commands require approval. Use real output to diagnose failures and continue the user's task.`
       : "No workspace folder is selected. Do not call cli_* filesystem or command tools.";
     const system = [
       "You are an AI agent on the Agent Commons platform.",
@@ -789,33 +800,35 @@ export class PrivateLocalRuntime {
       AUTONOMOUS_EXECUTION_CONTRACT,
       localManifest,
       `Agent Commons Local data is organized at ${this.layout.root}. Use local_list_data and local_read_data to inspect agents, conversations, knowledge, artifacts, apps, skills, tasks, workflows, and uploads. The private state index is outside this workspace and must not be edited directly.`,
+      `Available Knowledge Spaces: ${JSON.stringify(spaces.map((space) => ({ spaceId: space.id, name: space.name, documents: space.files.length })))}. Use list_knowledge_spaces, list_knowledge_documents, read_knowledge_document and search_knowledge for knowledge questions. These tools refer to the same spaces shown in the Knowledge page.`,
       skillsBlock,
       knowledge.length
-        ? `Local Knowledge Space excerpts:\n${knowledge.map((entry) => `\n[${entry.space}] ${entry.path}\n${entry.excerpt}`).join("\n")}`
+        ? `Local Knowledge Space excerpts (use the Knowledge tools for full documents):\n${knowledge.slice(0, 4).map((entry) => `\n[${entry.space}] ${entry.path}\n${entry.excerpt.slice(0, 1_500)}`).join("\n")}`
         : "",
       `Current runtime: Private Local. Inference model: ${agent.model || state.settings.defaultModel}. Say this explicitly if the user asks about the current mode or model.`,
     ].filter(Boolean).join("\n\n");
     const messages: OllamaMessage[] = [
       { role: "system", content: system },
-      ...conversation.messages.filter((message) => message.role !== "tool").slice(-40).map((message) => ({
-        role: message.role,
+      ...localChatHistory(conversation.messages).map((message) => ({
+        ...message,
         content: message.role === "assistant" && looksLikeModelIdentity(message.content)
           ? assistantIdentityAnswer(agent.name, agent.model || state.settings.defaultModel)
           : message.content,
-      }) as OllamaMessage),
+      })),
     ];
     const endpoint = ensureLoopback(state.settings.ollamaUrl);
-    const tools = (workspace ? LOCAL_TOOLS : LOCAL_TOOLS.filter((entry) => ["search_knowledge", "invoke_skill", "local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill"].includes(entry.function.name)))
+    const tools = (workspace ? LOCAL_TOOLS : LOCAL_TOOLS.filter((entry) => ["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge", "invoke_skill", "local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill"].includes(entry.function.name)))
       .filter((entry) => entry.function.name !== "invoke_skill" || skills.length > 0);
 
     let repairAttempted = false;
     let identityRepairAttempted = false;
-    for (let turn = 0; turn < 16; turn += 1) {
+    for (let turn = 0; turn < 64; turn += 1) {
+      compactToolLoop(messages);
       const response = await fetch(`${endpoint}/api/chat`, {
         method: "POST",
         redirect: "error",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages, tools: repairAttempted ? [] : tools, stream: true, options: { temperature: 0.3 } }),
+        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages, tools: repairAttempted ? [] : tools, stream: true, options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE } }),
         signal: AbortSignal.timeout(10 * 60_000),
       });
       const message = await readOllamaChatResponse(response, interactive && !identityRequest ? (content) => {
@@ -846,30 +859,33 @@ export class PrivateLocalRuntime {
             messages.push({ role: "system", content: "Your previous response was an invented function call. The user needs a natural language answer. Reply directly, without JSON or code fences." });
             continue;
           }
-          return message.content?.trim() || "Done.";
+          if (!message.content?.trim()) throw new Error("The local model returned no answer. Tool results are saved; send a follow-up to continue or select another local model.");
+          return message.content.trim();
         }
         if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
+        if (!supportedToolNames.has(fallback.tool) && supportedToolNames.has(`cli_${fallback.tool}`)) fallback.tool = `cli_${fallback.tool}`;
         if (!supportedToolNames.has(fallback.tool)) {
           if (repairAttempted) throw new Error("The local model repeatedly called an unavailable tool. Try a stronger tool-capable model.");
           repairAttempted = true;
           messages.push({ role: "system", content: `The tool ${fallback.tool} does not exist. Reply to the user's request in plain language, or use a provided structured tool.` });
           continue;
         }
+        messages[messages.length - 1] = { role: "assistant", content: "", tool_calls: [{ function: { name: fallback.tool, arguments: fallback.args } }] };
         const result = await this.executeTool(fallback.tool, fallback.args, workspace, conversationId, spaceIds);
-        messages.push({ role: "tool", content: result });
+        messages.push(toolResult(fallback.tool, result));
         continue;
       }
       repairAttempted = false;
       for (const call of calls) {
         if (!supportedToolNames.has(call.function.name)) {
-          messages.push({ role: "tool", content: `Error: ${call.function.name} is not an available tool.` });
+          messages.push(toolResult(call.function.name, `Error: ${call.function.name} is not an available tool.`));
           continue;
         }
         const args = parseToolArguments(call.function.arguments);
         const result = args
           ? await this.executeTool(call.function.name, args, workspace, conversationId, spaceIds)
           : "Error: tool arguments must be a JSON object.";
-        messages.push({ role: "tool", content: result });
+        messages.push(toolResult(call.function.name, result));
       }
     }
     throw new Error("Local agent reached its tool-call limit. Send a follow-up to continue.");
@@ -885,8 +901,10 @@ export class PrivateLocalRuntime {
     const label = name.replace(/^cli_/, "");
     this.emit({ type: "activity", label: label.replaceAll("_", " "), detail: JSON.stringify(args), status: "running", conversationId, toolName: name, args });
     let result: string;
-    if (name === "search_knowledge") {
-      result = JSON.stringify(searchSpaces(this.store.get().spaces, String(args.query ?? ""), spaceIds));
+    if (["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge"].includes(name)) {
+      const state = this.store.get();
+      const agentId = state.conversations.find((item) => item.id === conversationId)!.agentId;
+      result = await knowledgeTool(accessibleSpaces(state.spaces, agentId, spaceIds), name, args);
     } else if (name === "invoke_skill") {
       const slug = String(args.skillSlug ?? "");
       const skill = (this.store.get().skills ?? []).find((candidate) => candidate.slug === slug);

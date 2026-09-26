@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
+import { spawn } from "node:child_process";
+import { computerWorkspace, terminalCommand } from "./local-computer";
 import {
   app,
   BrowserWindow,
@@ -803,6 +805,21 @@ function registerIpc() {
   ipcMain.handle("cloud:sync-preferences", (event, incoming: WorkspacePreferences) => { assertCloudSender(event); return syncPreferences(incoming, "cloud"); });
 
   localHandler("local:get-state", () => runtime.state());
+  localHandler<[{ agentId: string; conversationId?: string; target: "files" | "terminal" }]>("local:open-computer", async (input) => {
+    const path = computerWorkspace(runtime.state(), input.agentId, input.conversationId);
+    if (input.target === "files") {
+      const error = await shell.openPath(path);
+      if (error) throw new Error(error);
+    } else if (input.target === "terminal") {
+      const { command, args } = terminalCommand(process.platform, path);
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(command, args, { cwd: path, detached: true, stdio: "ignore", shell: false });
+        child.once("error", () => reject(new Error("Could not open the system terminal. Open the workspace folder and launch your terminal there.")));
+        if (process.platform === "darwin") child.once("exit", (code) => code === 0 ? resolve() : reject(new Error("Could not open Terminal.")));
+        else child.once("spawn", () => { child.unref(); resolve(); });
+      });
+    } else throw new Error("Unsupported Local computer window");
+  });
   localHandler("local:get-model-status", () => runtime.modelStatus());
   localHandler("local:prepare-model", () => runtime.prepareLocalModel());
   localHandler("local:get-preferences", () => runtime.preferences());

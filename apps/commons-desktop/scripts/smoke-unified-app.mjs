@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
+import { smokeLocalTools } from "./smoke-local-tools.mjs";
 
 const temp = mkdtempSync(join(tmpdir(), "commons-desktop-smoke-"));
 const port = await new Promise((resolve, reject) => {
@@ -28,7 +29,7 @@ let childError = "";
 child.on("error", (error) => { childError = error.message; });
 for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => { output = (output + chunk.toString()).slice(-6_000); });
 
-async function evaluate(wsUrl, expression) {
+async function evaluate(wsUrl, expression, timeout = 5_000) {
   const socket = new WebSocket(wsUrl);
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { socket.close(); reject(new Error("Desktop DevTools did not connect")); }, 5_000);
@@ -38,7 +39,7 @@ async function evaluate(wsUrl, expression) {
   });
   try {
     return await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Desktop page did not respond")), 5_000);
+      const timer = setTimeout(() => reject(new Error("Desktop page did not respond")), timeout);
       socket.onmessage = (event) => {
         const packet = JSON.parse(event.data);
         if (packet.id !== 1) return;
@@ -97,11 +98,12 @@ try {
           if (identities?.copilot !== "My name is Commons Copilot." || identities?.research !== "My name is Research Agent.") {
             throw new Error(`Local agent identity failed: ${JSON.stringify(identities)}`);
           }
+          await smokeLocalTools(evaluate, page.webSocketDebuggerUrl, temp);
           const savedSession = await evaluate(page.webSocketDebuggerUrl, `(async () => {
             const bridge = window.agentCommonsLocal;
             const conversation = (await bridge.getState()).conversations[0];
             const result = await bridge.apiRequest({ path: '/api/sessions/' + conversation.id + '?full=true', method: 'GET' });
-            return { id: conversation.id, status: result.status, title: result.body?.data?.title, messages: result.body?.data?.history?.length };
+            return { id: conversation.id, agentName: (await bridge.getState()).agents.find(agent => agent.id === conversation.agentId).name, status: result.status, title: result.body?.data?.title, messages: result.body?.data?.history?.length };
           })()`);
           if (savedSession.status !== 200 || savedSession.messages < 2) throw new Error(`Local session was not stored: ${JSON.stringify(savedSession)}`);
           await evaluate(page.webSocketDebuggerUrl, `location.href = '/sessions/${savedSession.id}'`);
@@ -109,12 +111,20 @@ try {
           for (let attempt = 0; attempt < 15; attempt += 1) {
             await new Promise((resolve) => setTimeout(resolve, 500));
             const rendered = await evaluate(page.webSocketDebuggerUrl, "({path:location.pathname,body:document.body.innerText})").catch(() => null);
-            if (rendered?.path === `/sessions/${savedSession.id}` && rendered.body.includes("Research Agent") && !rendered.body.includes("Session not found")) {
+            if (rendered?.path === `/sessions/${savedSession.id}` && rendered.body.includes(savedSession.agentName) && !rendered.body.includes("Session not found")) {
               sessionVisible = true;
               break;
             }
           }
           if (!sessionVisible) throw new Error(`Saved Local session did not render: ${savedSession.id}`);
+          await evaluate(page.webSocketDebuggerUrl, "window.dispatchEvent(new CustomEvent('agent-computer-open', { detail: { tab: 'browser' } }))");
+          let computerVisible = false;
+          for (let attempt = 0; attempt < 10; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            const panel = await evaluate(page.webSocketDebuggerUrl, "({ text: document.body.innerText, native: typeof window.agentCommonsLocal.openComputer === 'function' })");
+            if (panel.native && panel.text.includes('This computer') && panel.text.includes('Open terminal') && !panel.text.includes('Cloud APIs are unavailable')) { computerVisible = true; break; }
+          }
+          if (!computerVisible) throw new Error("Local Computer panel did not route to native windows");
           await evaluate(page.webSocketDebuggerUrl, "window.agentCommonsLocal.openCloud('/studio/agents')");
           const cloudPages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
           const cloudPage = cloudPages.find((item) => item.type === "page" && item.url.startsWith("http://localhost:"));
