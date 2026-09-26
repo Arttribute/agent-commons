@@ -135,6 +135,10 @@ Agent wallets use viem EOA keypairs (stored encrypted in `agent_wallet.encrypted
 
 ---
 
+## UI work
+
+Any user interface work in this repo follows `docs/ui-guidelines.md`: one task per view, lists that open detail views, forms in drawers, explanations behind info tips, panes that scroll instead of pages, and the shared `components/ui` kit. Read it before designing a new screen.
+
 ## CI/CD and versioning
 
 Version bumps are handled automatically by CI via changesets — **never manually edit `package.json` version fields**. Use `pnpm changeset` to create a changeset entry for a PR.
