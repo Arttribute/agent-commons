@@ -30,6 +30,7 @@ import {
 } from "../../../packages/agc-cli/src/local-tools";
 import { indexFolders, searchSpaces, accessibleSpaces, knowledgeTool } from "./knowledge";
 import { compactToolLoop, localChatHistory, LOCAL_CONTEXT_SIZE, toolResult } from "./local-chat-history";
+import { normalizeLocalCommand } from "./local-command";
 import { DEFAULT_LOCAL_MODEL, LocalStore } from "./store";
 import { LocalModelManager } from "./local-model";
 import { LocalStorageLayout } from "./local-storage-layout";
@@ -899,9 +900,15 @@ Commands must be non-interactive: pass the executable as command and arguments a
     spaceIds?: string[],
   ) {
     const label = name.replace(/^cli_/, "");
+    let commandError: string | undefined;
+    if (name === "cli_run_command" || name === "cli_start_process") {
+      try { args = normalizeLocalCommand(args); }
+      catch (error) { commandError = `Error: ${error instanceof Error ? error.message : String(error)}`; }
+    }
     this.emit({ type: "activity", label: label.replaceAll("_", " "), detail: JSON.stringify(args), status: "running", conversationId, toolName: name, args });
     let result: string;
-    if (["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge"].includes(name)) {
+    if (commandError) result = commandError;
+    else if (["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge"].includes(name)) {
       const state = this.store.get();
       const agentId = state.conversations.find((item) => item.id === conversationId)!.agentId;
       result = await knowledgeTool(accessibleSpaces(state.spaces, agentId, spaceIds), name, args);

@@ -29,7 +29,7 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
         assert.equal(messages.at(-2).tool_calls[0].function.name, last.tool_name);
       }
       if (prompt === "Run the smoke command") {
-        if (last.role === "user") answer = call("cli_run_command", { command: process.execPath, args: ["-e", "console.log('mango-731')"] });
+        if (last.role === "user") answer = call("cli_run_command", { command: JSON.stringify(process.execPath) + " -e", args: ["-e", "console.log('mango-731')"] });
         else { assert.match(last.content, /mango-731/); answer.content = "Command returned mango-731."; }
       } else if (prompt === "Remember the command result") {
         assert.ok(messages.some((message) => message.role === "tool" && message.tool_name === "cli_run_command" && message.content.includes("mango-731")), "saved tool history was lost on follow-up");

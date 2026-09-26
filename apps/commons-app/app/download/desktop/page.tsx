@@ -3,7 +3,7 @@ import Link from "next/link";
 // Keep desktop downloads pinned to a desktop release. The repository also
 // publishes CLI and VS Code releases, so GitHub's repository-wide `latest`
 // redirect can point at a release that does not contain desktop installers.
-const desktopReleaseTag = "desktop-v0.3.1";
+const desktopReleaseTag = "desktop-v0.3.3";
 const releaseRoot = `https://github.com/Arttribute/agent-commons/releases/download/${desktopReleaseTag}`;
 
 const downloads = [
@@ -18,7 +18,7 @@ export default function DesktopDownloadPage() {
     <main className="h-full overflow-y-auto">
       <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center px-6 py-16">
         <Link href="/" className="mb-12 text-sm text-muted-foreground hover:text-foreground">← Agent Commons</Link>
-        <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Agent Commons Desktop · version 0.3.1</p>
+        <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Agent Commons Desktop · version 0.3.3</p>
         <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">One Commons workspace. Cloud or Private Local.</h1>
         <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
           Use the same Commons interface in Cloud or Private Local. Local chats, agents, files, Knowledge Spaces, and model inference stay on this computer. Cloud access to desktop files and commands is configurable.

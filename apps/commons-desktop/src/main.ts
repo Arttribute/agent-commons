@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync
 import { isAbsolute, join, relative, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { computerWorkspace, terminalCommand } from "./local-computer";
+import { initializeCommandPath } from "./local-command";
 import {
   app,
   BrowserWindow,
@@ -909,6 +910,7 @@ async function openLocalApp(id: string) {
 }
 
 app.whenReady().then(async () => {
+  await initializeCommandPath();
   runtime = new PrivateLocalRuntime(app.getPath("userData"));
   loadCloudAccess();
   registerIpc();

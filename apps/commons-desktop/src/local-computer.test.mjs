@@ -13,7 +13,7 @@ test("native windows use the selected conversation's workspace and reject unrela
 test("terminal paths remain literal across operating systems", () => {
   const path = "/a folder/it's; $(echo bad)";
   assert.deepEqual(terminalCommand("darwin", path).args, ["-a", "Terminal", path]);
-  assert.deepEqual(terminalCommand("linux", path).args, ["--working-directory", path]);
+  assert.deepEqual(terminalCommand("linux", path).args, []);
   const windows = terminalCommand("win32", path);
   assert.equal(Buffer.from(windows.args.at(-1), "base64").toString("utf16le"), "Set-Location -LiteralPath '/a folder/it''s; $(echo bad)'");
 });

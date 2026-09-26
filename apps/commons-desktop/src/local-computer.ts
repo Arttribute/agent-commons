@@ -17,5 +17,7 @@ export function terminalCommand(platform: string, path: string) {
     const script = `Set-Location -LiteralPath '${path.replaceAll("'", "''")}'`;
     return { command: "powershell.exe", args: ["-NoLogo", "-NoProfile", "-NoExit", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")] };
   }
-  return { command: "x-terminal-emulator", args: ["--working-directory", path] };
+  // The main process sets cwd when spawning. Avoid emulator-specific flags:
+  // x-terminal-emulator can resolve to xterm, GNOME Terminal or Konsole.
+  return { command: "x-terminal-emulator", args: [] };
 }
