@@ -9,6 +9,7 @@ const bridge: LocalDesktopBridge = {
   getModelStatus: () => invoke("local:get-model-status"),
   prepareModel: () => invoke("local:prepare-model"),
   getStorageRoot: () => invoke("local:get-storage-root"),
+  openComputer: (input) => invoke("local:open-computer", input),
   openStorageRoot: () => invoke("local:open-storage-root"),
   apiRequest: (request) => invoke("local:api-request", request),
   openLibraryItem: (id) => invoke("local:open-library-item", id),

@@ -1,5 +1,5 @@
-import { lstat, readdir, readFile, stat } from "node:fs/promises";
-import { extname, join, relative } from "node:path";
+import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { basename, extname, isAbsolute, join, relative } from "node:path";
 import type { KnowledgeFile, KnowledgeSpace } from "@agent-commons/desktop-contract";
 
 const ignored = new Set([
@@ -122,6 +122,45 @@ export function searchSpaces(spaces: KnowledgeSpace[], query: string, ids?: stri
       path: file.path,
       excerpt: relevantExcerpt(file.excerpt, terms),
     }));
+}
+
+export function accessibleSpaces(spaces: KnowledgeSpace[], agentId: string, ids?: string[]) {
+  return spaces.filter((space) => (!ids?.length || ids.includes(space.id)) &&
+    (space.autoGrantNewAgents !== false || space.grants?.some((grant) =>
+      grant.subjectType === "agent" && grant.subjectId === agentId)));
+}
+
+export async function knowledgeTool(spaces: KnowledgeSpace[], name: string, args: Record<string, unknown>) {
+  if (name === "list_knowledge_spaces") return JSON.stringify(spaces.map((space) => ({
+    spaceId: space.id, name: space.name, documents: space.files.length, indexedAt: space.indexedAt,
+  })));
+  if (name === "search_knowledge") return JSON.stringify(searchSpaces(spaces, String(args.query ?? "")));
+  const space = spaces.find((item) => item.id === args.spaceId);
+  if (!space) return "Error: Knowledge Space is not available to this agent or conversation.";
+  const offset = Number.isFinite(Number(args.offset)) ? Math.max(0, Math.trunc(Number(args.offset))) : 0;
+  if (name === "list_knowledge_documents") return JSON.stringify({
+    spaceId: space.id, name: space.name, total: space.files.length,
+    documents: space.files.slice(offset, offset + 50).map((file) => ({ path: file.path, name: basename(file.path), size: file.size })),
+    nextOffset: offset + 50 < space.files.length ? offset + 50 : null,
+  });
+  const file = space.files.find((item) => item.path === args.path);
+  if (!file) return "Error: Document not found. Use a path returned by list_knowledge_documents.";
+  try {
+    // A linked folder can change after indexing. Resolve it again before reading.
+    const canonical = await realpath(file.path);
+    let withinSource = false;
+    for (const source of space.folders) {
+      const root = await realpath(source);
+      const rel = relative(root, canonical);
+      if (canonical === root || (!rel.startsWith("..") && !isAbsolute(rel) && (await stat(root)).isDirectory())) withinSource = true;
+    }
+    if (!withinSource || !(await lstat(file.path)).isFile() || !allowed(basename(file.path))) return "Error: Document is outside its Knowledge source.";
+    if ((await stat(canonical)).size > 750_000) return "Error: Document is too large. Reindex the Knowledge Space.";
+    const content = await readFile(canonical, "utf8");
+    return JSON.stringify({ spaceId: space.id, path: file.path, content: content.slice(offset, offset + 6_000), nextOffset: offset + 6_000 < content.length ? offset + 6_000 : null });
+  } catch {
+    return "Error: Document is no longer readable. Reindex the Knowledge Space.";
+  }
 }
 
 function relevantExcerpt(content: string, terms: string[]) {

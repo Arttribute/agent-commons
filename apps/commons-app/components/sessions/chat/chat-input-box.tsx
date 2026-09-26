@@ -530,6 +530,7 @@ export default function ChatInputBox({
   }, [isLoading]);
 
   useEffect(() => {
+    if (local) { setComputerConfig(null); return; }
     if (isLaunchMode || !agentId || !allowComputer) return;
     let cancelled = false;
     async function loadComputerConfig() {
@@ -548,7 +549,7 @@ export default function ChatInputBox({
     return () => {
       cancelled = true;
     };
-  }, [agentId, allowComputer, isLaunchMode]);
+  }, [agentId, allowComputer, isLaunchMode, local]);
 
   useEffect(() => {
     if (

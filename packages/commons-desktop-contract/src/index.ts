@@ -50,6 +50,7 @@ export type LocalConversation = {
   agentId: string;
   title: string;
   workspaceRoot?: string;
+  spaceIds?: string[];
   messages: LocalMessage[];
   artifacts?: LocalArtifact[];
   createdAt: string;
@@ -292,6 +293,7 @@ export interface LocalDesktopBridge {
   getModelStatus(): Promise<LocalModelStatus>;
   prepareModel(): Promise<void>;
   getStorageRoot(): Promise<string>;
+  openComputer(input: { agentId: string; conversationId?: string; target: "files" | "terminal" }): Promise<void>;
   openStorageRoot(): Promise<void>;
   apiRequest(request: { path: string; method: string; body?: unknown }): Promise<{ status: number; body: unknown }>;
   openLibraryItem(id: string): Promise<void>;
