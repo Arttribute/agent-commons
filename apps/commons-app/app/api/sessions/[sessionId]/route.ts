@@ -34,7 +34,7 @@ async function assertOwnership(sessionId: string, userId: string) {
   return { ok: true as const, status: 200 };
 }
 
-// PATCH /api/sessions/[sessionId]  { title }  — rename
+// PATCH /api/sessions/[sessionId]  { title?, projectId? } — rename or move to a project
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
   if (!baseUrl) return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
@@ -52,7 +52,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const res = await fetch(`${baseUrl}/v1/sessions/${sessionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...(await backendAuthHeaders()) },
-      body: JSON.stringify({ title: body.title }),
+      body: JSON.stringify({
+        ...(typeof body.title === "string" ? { title: body.title } : {}),
+        ...(body.projectId !== undefined ? { projectId: body.projectId, initiator: user.userId } : {}),
+      }),
     });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
     return NextResponse.json(data, { status: res.status });

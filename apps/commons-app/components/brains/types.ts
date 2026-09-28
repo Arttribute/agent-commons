@@ -31,6 +31,11 @@ export type KnowledgeSpace = {
   autoGrantNewAgents: boolean;
   autoRetrieve?: boolean;
   counts: { documents: number; links: number; folders?: number };
+  /** Private Local: where the space lives and how it follows its folder. */
+  location?: "local" | "cloud";
+  linkedFolder?: string;
+  liveSync?: boolean;
+  source?: { git?: { branch?: string; commit?: string; root: string } };
   grants?: KnowledgeGrant[];
   updatedAt: string;
 };
@@ -69,6 +74,9 @@ export type KnowledgeDocument = {
     sourceCount: number;
   };
   tags: string[];
+  /** Local PDF and Office documents are shown as extracted, read-only text. */
+  editable?: boolean;
+  format?: "text" | "pdf" | "office";
   contentHash: string;
   createdAt: string;
   updatedAt: string;

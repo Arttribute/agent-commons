@@ -31,8 +31,8 @@ import {
   Wrench,
   XCircle,
   Zap,
+  Clock,
 } from "lucide-react";
-import { ClipboardClock } from "@/components/icons/clipboard-clock";
 import { SkillIcon } from "@/components/skills/skill-icon";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -64,6 +64,7 @@ import {
   useAgentRuntime,
 } from "@/components/agents/runtime-native-tooling";
 import SessionInterface from "@/components/sessions/session-interface";
+import { startChat } from "@/lib/start-chat";
 import SessionsList from "@/components/sessions/sessions-list";
 import { SearchTrigger } from "@/components/search/search-trigger";
 import { useSessionMutations } from "@/hooks/sessions/use-session-mutations";
@@ -124,7 +125,7 @@ const sections: Array<{ key: SectionKey; label: string; icon: typeof Bot }> = [
   { key: "new-session", label: "New session", icon: Plus },
   { key: "sessions", label: "Sessions", icon: MessageSquare },
   { key: "computer", label: "Computer", icon: Monitor },
-  { key: "tasks", label: "Scheduled tasks", icon: ClipboardClock },
+  { key: "tasks", label: "Scheduled tasks", icon: Clock },
   { key: "tools", label: "Tools", icon: Wrench },
   { key: "skills", label: "Skills", icon: Zap },
   { key: "artifacts", label: "Artifacts", icon: FileText },
@@ -2697,6 +2698,7 @@ export default function AgentStudioPage({
   );
   const [agent, setAgent] = useState<CommonAgent | null>(null);
   const [loading, setLoading] = useState(true);
+  const [launchingChat, setLaunchingChat] = useState(false);
   const [agentTools, setAgentTools] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [selectedSession, setSelectedSession] = useState<any>(null);
@@ -2902,6 +2904,13 @@ export default function AgentStudioPage({
             isLoadingSession={loadingSession}
             initialPrompt={autoPrompt}
             onInitialPromptSent={() => setAutoPrompt(null)}
+            onLaunch={autoPrompt ? undefined : (launch) => {
+              setLaunchingChat(true);
+              void startChat({ agentId, launch })
+                .then((path) => router.push(path))
+                .catch(() => setLaunchingChat(false));
+            }}
+            launching={launchingChat}
             onSessionCreated={(sessionId, title) => {
               const newSession = {
                 sessionId,

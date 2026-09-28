@@ -16,6 +16,9 @@ interface SessionsListProps {
   streamingTitleText?: string;
   /** Sessions with something awaiting the user (e.g. a copilot review). */
   attentionSessionIds?: string[];
+  projects?: Array<{ projectId: string; name: string }>;
+  onMoveToProject?: (sessionId: string, projectId: string | null) => void;
+  nested?: boolean;
 }
 
 export default function SessionsList({
@@ -29,6 +32,9 @@ export default function SessionsList({
   streamingTitleSessionId,
   streamingTitleText = "",
   attentionSessionIds,
+  projects,
+  onMoveToProject,
+  nested,
 }: SessionsListProps) {
   if (sessions.length === 0) {
     return (
@@ -53,6 +59,9 @@ export default function SessionsList({
           onSelect={onSelect}
           onRename={onRename}
           onDelete={onDelete}
+          projects={projects}
+          onMoveToProject={onMoveToProject}
+          nested={nested}
         />
       ))}
     </div>

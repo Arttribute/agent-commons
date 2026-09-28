@@ -1,17 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Bot, LibraryBig, MoreHorizontal, Network, Settings2, Wrench, Workflow, type LucideIcon } from "lucide-react";
-import { ClipboardClock } from "../icons/clipboard-clock";
+import { Bot, Brain, Clock, FolderClosed, LibraryBig, MoreHorizontal, Settings2, type LucideIcon } from "lucide-react";
 import { workspacePaths } from "../../lib/workspace-routes";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 
+/** Main navigation. Tools, workflows, skills, and apps live under Customize. */
 export const workspaceNavigationItems = [
   { key: "agents", label: "Agents", icon: Bot, path: workspacePaths.agents },
-  { key: "tools", label: "Tools", icon: Wrench, path: workspacePaths.tools },
-  { key: "tasks", label: "Scheduled tasks", icon: ClipboardClock, path: workspacePaths.tasks },
-  { key: "workflows", label: "Workflows", icon: Workflow, path: workspacePaths.workflows },
-  { key: "knowledge", label: "Knowledge", icon: Network, path: workspacePaths.knowledge },
+  { key: "projects", label: "Projects", icon: FolderClosed, path: workspacePaths.projects },
+  { key: "tasks", label: "Scheduled", icon: Clock, path: workspacePaths.tasks },
+  { key: "knowledge", label: "Knowledge", icon: Brain, path: workspacePaths.knowledge },
   { key: "library", label: "Library", icon: LibraryBig, path: workspacePaths.library },
   { key: "customize", label: "Customize", icon: Settings2, path: workspacePaths.customize },
 ] as const;

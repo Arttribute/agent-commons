@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AppWindow, Zap } from "lucide-react";
+import { AppWindow, Workflow, Wrench, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const tabs = [
@@ -17,6 +17,18 @@ const tabs = [
     href: "/studio/customize/skills",
     segment: "/studio/customize/skills",
     icon: Zap,
+  },
+  {
+    label: "Tools",
+    href: "/studio/customize/tools",
+    segment: "/studio/customize/tools",
+    icon: Wrench,
+  },
+  {
+    label: "Workflows",
+    href: "/studio/customize/workflows",
+    segment: "/studio/customize/workflows",
+    icon: Workflow,
   },
 ] as const;
 

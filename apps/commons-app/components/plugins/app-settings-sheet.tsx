@@ -60,12 +60,15 @@ export function AppSettingsSheet({
   open,
   onOpenChange,
   onUpdated,
+  overview,
 }: {
   plugin: UiPlugin | null;
   mode: "review" | "settings";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdated: (plugin: UiPlugin) => void;
+  /** Description and quick actions shown above the settings. */
+  overview?: React.ReactNode;
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -77,6 +80,7 @@ export function AppSettingsSheet({
             mode={mode}
             onClose={() => onOpenChange(false)}
             onUpdated={onUpdated}
+            overview={overview}
           />
         )}
       </SheetContent>
@@ -89,11 +93,13 @@ function AppSettingsBody({
   mode,
   onClose,
   onUpdated,
+  overview,
 }: {
   plugin: UiPlugin;
   mode: "review" | "settings";
   onClose: () => void;
   onUpdated: (plugin: UiPlugin) => void;
+  overview?: React.ReactNode;
 }) {
   const { toast } = useToast();
   const [draft, setDraft] = useState<Draft>(() => initialDraft(plugin));
@@ -168,6 +174,7 @@ function AppSettingsBody({
           </div>
         </div>
       </SheetHeader>
+      {overview && <div className="border-b border-border px-5 py-3">{overview}</div>}
 
       <Tabs defaultValue="access" className="flex min-h-0 flex-1 flex-col">
         <TabsList className="mx-5 mt-3 grid h-8 grid-cols-4 p-0.5">

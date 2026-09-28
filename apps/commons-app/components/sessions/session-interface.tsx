@@ -9,6 +9,7 @@ import {
 import { ChevronDown, Loader2, Monitor } from "lucide-react";
 import ExecutionWidget from "@/components/sessions/chat/execution-widget";
 import ChatInputBox, {
+  type ComposerLaunch,
   type ExternalComposerPrompt,
 } from "./chat/chat-input-box";
 import InitiatorMessage from "./chat/initiator-message";
@@ -31,6 +32,7 @@ import { ArtifactSurface } from "@/components/artifacts/artifact-surface";
 import type { ArtifactRef } from "@/lib/artifacts";
 import { TrajectoryView } from "@/components/provenance/trajectory-view";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { InlineApprovals } from "@/components/desktop/approval-widgets";
 
 interface Message {
   role: string;
@@ -76,6 +78,13 @@ interface SessionInterfaceImprovedProps {
   /** A message to auto-send once on mount (handed off from the agents launcher). */
   initialPrompt?: string | null;
   onInitialPromptSent?: () => void;
+  /** A launched first message with attachments and knowledge, sent once. */
+  initialLaunch?: ComposerLaunch | null;
+  onInitialLaunchSent?: () => void;
+  projectId?: string;
+  /** New chats hand their first message to this callback (opens /sessions/[id]). */
+  onLaunch?: (launch: ComposerLaunch) => void;
+  launching?: boolean;
   /**
    * Optional content (e.g. a back button + title) rendered in a slim bar
    * above the conversation. When present the computer button moves into
@@ -148,6 +157,11 @@ export default function SessionInterfaceImproved({
   isRedirecting = false,
   initialPrompt,
   onInitialPromptSent,
+  initialLaunch,
+  onInitialLaunchSent,
+  projectId,
+  onLaunch,
+  launching,
   header,
   allowComputer = true,
   conversationAddon,
@@ -452,6 +466,11 @@ export default function SessionInterfaceImproved({
       disabled={isRedirecting || isLoadingSession}
       initialPrompt={initialPrompt}
       onInitialPromptSent={onInitialPromptSent}
+      initialLaunch={initialLaunch}
+      onInitialLaunchSent={onInitialLaunchSent}
+      projectId={projectId}
+      onLaunch={!sessionId ? onLaunch : undefined}
+      launching={launching}
       allowComputer={allowComputer}
       uiContext={uiContext}
       externalPrompt={composerPrompt}
@@ -572,6 +591,8 @@ export default function SessionInterfaceImproved({
                       </div>
                     )}
                     {conversationAddon}
+                  <InlineApprovals sessionId={sessionId} />
+                    <InlineApprovals sessionId={sessionId} />
                   </div>
                   <div ref={bottomRef} />
                 </div>

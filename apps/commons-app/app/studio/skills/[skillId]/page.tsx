@@ -2,13 +2,15 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Globe, Lock } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { ArrowLeft, ChevronDown, Globe, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SkillIcon } from "@/components/skills/skill-icon";
 import type { Skill } from "@agent-commons/sdk";
 import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+import { cn } from "@/lib/utils";
 
 export default function SkillDetailPage({
   params,
@@ -19,6 +21,7 @@ export default function SkillDetailPage({
   const router = useRouter();
   const [skill, setSkill] = useState<Skill | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -40,11 +43,13 @@ export default function SkillDetailPage({
     };
   }, [skillId]);
 
+  const back = () => router.push("/studio/customize/skills");
+
   if (loading) {
     return (
-      <div className="space-y-4 p-6">
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-24 w-full" />
+      <div className="mx-auto max-w-3xl space-y-4 px-6 py-8">
+        <Skeleton className="h-11 w-64" />
+        <Skeleton className="h-4 w-96" />
         <Skeleton className="h-80 w-full" />
       </div>
     );
@@ -54,7 +59,7 @@ export default function SkillDetailPage({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
         Skill not found.
-        <Button variant="outline" size="sm" onClick={() => router.push("/studio/customize/skills")}>
+        <Button variant="outline" size="sm" onClick={back}>
           <ArrowLeft className="h-4 w-4" />
           Back to skills
         </Button>
@@ -62,106 +67,82 @@ export default function SkillDetailPage({
     );
   }
 
+  const details: Array<[string, React.ReactNode]> = [
+    ["Source", skill.source],
+    ["Version", skill.version],
+    ["Uses", String(skill.usageCount ?? 0)],
+    ["Slug", skill.slug],
+  ];
+  const chips: Array<[string, string[]]> = [
+    ["Tools", skill.tools ?? []],
+    ["Triggers", skill.triggers ?? []],
+    ["Tags", skill.tags ?? []],
+  ];
+
   return (
-    <div className="flex h-full min-w-0 flex-col bg-page">
-      <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            onClick={() => router.push("/studio/customize/skills")}
-            aria-label="Back to skills"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div className="flex min-w-0 items-center gap-2">
-            <SkillIcon icon={skill.icon} size="sm" />
-            <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold">{skill.name}</h1>
-              <p className="truncate text-xs text-muted-foreground">{skill.slug}</p>
-            </div>
-          </div>
-        </div>
-        <Badge variant="outline" className="gap-1 text-xs">
-          {skill.isPublic ? <Globe className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
-          {skill.isPublic ? "Public" : "Private"}
-        </Badge>
-      </div>
+    <div className="h-full min-w-0 overflow-y-auto bg-page">
+      <div className="mx-auto max-w-3xl px-6 pb-16 pt-4">
+        <button
+          type="button"
+          onClick={back}
+          className="-ml-1 flex items-center gap-1 rounded-md px-1 py-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Skills
+        </button>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <section className="space-y-4">
-            <div className="rounded-lg border border-border bg-card p-4">
-              <h2 className="text-sm font-semibold">Overview</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {skill.description}
-              </p>
-              {skill.tags.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {skill.tags.map((tag) => (
-                    <Badge key={tag} variant="secondary" className="text-xs">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
+        <header className="mt-6 flex items-start gap-4">
+          <SkillIcon icon={skill.icon} size="lg" />
+          <div className="min-w-0 flex-1">
+            <h1 className="flex items-center gap-2 text-xl font-medium tracking-tight">
+              <span className="truncate">{skill.name}</span>
+              {skill.isPublic ? (
+                <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Public" />
+              ) : (
+                <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Private" />
               )}
-            </div>
+            </h1>
+            {skill.description && (
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">{skill.description}</p>
+            )}
+          </div>
+        </header>
 
-            <div className="rounded-lg border border-border bg-card p-4">
-              <h2 className="text-sm font-semibold">Instructions</h2>
-              <pre className="mt-3 max-h-[520px] overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 text-xs leading-5">
-                {skill.instructions}
-              </pre>
-            </div>
-          </section>
+        <article className="prose prose-sm mt-8 max-w-none prose-headings:font-medium prose-pre:bg-muted prose-pre:text-foreground">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{skill.instructions || "_No instructions yet._"}</ReactMarkdown>
+        </article>
 
-          <aside className="space-y-4">
-            <div className="rounded-lg border border-border bg-card p-4">
-              <h2 className="text-sm font-semibold">Details</h2>
-              <dl className="mt-3 space-y-2 text-xs">
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">Source</dt>
-                  <dd className="text-right">{skill.source}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">Version</dt>
-                  <dd className="text-right">{skill.version}</dd>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">Uses</dt>
-                  <dd className="text-right">{skill.usageCount}</dd>
-                </div>
+        <section className="mt-10 border-t border-border/70 pt-3">
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((open) => !open)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            aria-expanded={detailsOpen}
+          >
+            Details
+            <ChevronDown className={cn("h-3 w-3 transition-transform", detailsOpen && "rotate-180")} />
+          </button>
+          {detailsOpen && (
+            <div className="mt-3 space-y-3 text-xs">
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-4">
+                {details.map(([label, value]) => value ? (
+                  <div key={label}>
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="truncate text-foreground/80">{value}</dd>
+                  </div>
+                ) : null)}
               </dl>
+              {chips.map(([label, values]) => values.length ? (
+                <div key={label} className="flex flex-wrap items-center gap-1.5">
+                  <span className="mr-1 text-muted-foreground">{label}</span>
+                  {values.map((value) => (
+                    <span key={value} className="rounded-md bg-muted px-1.5 py-0.5 text-foreground/75">{value}</span>
+                  ))}
+                </div>
+              ) : null)}
             </div>
-
-            {skill.tools.length > 0 && (
-              <div className="rounded-lg border border-border bg-card p-4">
-                <h2 className="text-sm font-semibold">Tools</h2>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {skill.tools.map((tool) => (
-                    <Badge key={tool} variant="outline" className="text-xs">
-                      {tool}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {skill.triggers.length > 0 && (
-              <div className="rounded-lg border border-border bg-card p-4">
-                <h2 className="text-sm font-semibold">Triggers</h2>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {skill.triggers.map((trigger) => (
-                    <Badge key={trigger} variant="outline" className="text-xs">
-                      {trigger}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-          </aside>
-        </div>
+          )}
+        </section>
       </div>
     </div>
   );

@@ -9,12 +9,20 @@ function localSessions(state: LocalState) {
     sessionId: conversation.id,
     agentId: conversation.agentId,
     title: conversation.title,
+    projectId: conversation.projectId ?? null,
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
   }));
 }
 
 const SESSION_LIST_CACHE_MS = 2_000;
+
+/** Fired when a chat is created, titled, or finishes, so lists refresh. */
+export const SESSIONS_CHANGED = "commons-sessions-changed";
+
+export function notifySessionsChanged(detail: { sessionId?: string; title?: string } = {}) {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(SESSIONS_CHANGED, { detail }));
+}
 const sessionListCache = new Map<
   string,
   { sessions: any[]; expiresAt: number }
@@ -95,6 +103,12 @@ export function useUserSessions(userAddress: string) {
   }, [mode]);
 
   const refetch = useCallback(() => fetchSessions(true), [fetchSessions]);
+  useEffect(() => {
+    if (mode === "private-local") return;
+    const onChange = () => void fetchSessions(true);
+    window.addEventListener(SESSIONS_CHANGED, onChange);
+    return () => window.removeEventListener(SESSIONS_CHANGED, onChange);
+  }, [fetchSessions, mode]);
 
   return {
     sessions,

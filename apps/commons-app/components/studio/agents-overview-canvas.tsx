@@ -4,6 +4,7 @@ import type { ReactNode, RefObject } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import AgentsShowcase from "../agents/AgentsShowcase";
 import { LauncherGreeting } from "./launcher-greeting";
+import type { AgentRun } from "@/hooks/use-agent-activity";
 
 export type OverviewAgent = {
   agentId: string;
@@ -13,7 +14,8 @@ export type OverviewAgent = {
   description?: string;
 };
 
-export function AgentsOverviewCanvas({ agents, composerRef, launcher, loading = false, error, onRetry, onAgentClick }: {
+export function AgentsOverviewCanvas({ agents, composerRef, launcher, loading = false, error, onRetry, onAgentClick, activity }: {
+  activity?: Record<string, AgentRun[]>;
   agents: OverviewAgent[];
   composerRef: RefObject<HTMLDivElement | null>;
   launcher: ReactNode;
@@ -37,7 +39,7 @@ export function AgentsOverviewCanvas({ agents, composerRef, launcher, loading = 
               {launcher}
             </div>
           </div>
-          <AgentsShowcase agents={agents} avoidRef={composerRef} onAgentClick={onAgentClick} />
+          <AgentsShowcase agents={agents} avoidRef={composerRef} onAgentClick={onAgentClick} activity={activity} />
         </>}
     </div>
   </div>;

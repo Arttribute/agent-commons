@@ -14,6 +14,10 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import Link from "next/link";
+import { Check, CircleAlert, Hand, Loader2 } from "lucide-react";
+import type { AgentRun } from "@/hooks/use-agent-activity";
+import { cn } from "@/lib/utils";
 
 // useLayoutEffect warns during SSR; fall back to useEffect on the server.
 const useIsomorphicLayoutEffect =
@@ -152,11 +156,27 @@ function avoidOverlap(
   });
 }
 
+function RunStateIcon({ run }: { run: AgentRun }) {
+  if (run.state === "running") return <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" aria-label="Working" />;
+  if (run.state === "awaiting_approval" || run.state === "awaiting_input") return <Hand className="h-3 w-3 shrink-0 text-amber-600" aria-label="Waiting for you" />;
+  if (run.state === "failed") return <CircleAlert className="h-3 w-3 shrink-0 text-red-500" aria-label="Stopped" />;
+  return <Check className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Done" />;
+}
+
+function runLabel(run: AgentRun) {
+  if (run.state === "awaiting_approval") return "Needs approval";
+  if (run.state === "awaiting_input") return "Waiting for you";
+  return null;
+}
+
 export default function AgentsShowcase({
   agents = [],
   avoidRef,
   onAgentClick,
+  activity = {},
 }: {
+  /** Recent runs per agent for the working indicator and hover list. */
+  activity?: Record<string, AgentRun[]>;
   agents: Agent[];
   /**
    * Optional element the avatars should keep clear of (e.g. a centered
@@ -218,7 +238,7 @@ export default function AgentsShowcase({
               transform: "translate(-50%, -50%)",
             }}
           >
-            <HoverCard>
+            <HoverCard openDelay={150}>
               <HoverCardTrigger asChild>
                 <motion.div
                   animate={{ y: [0, -5, 0] }}
@@ -229,6 +249,7 @@ export default function AgentsShowcase({
                     delay: (idx % 5) * 0.2,
                   }}
                 >
+                  <div className="relative">
                     <button
                       type="button"
                       onClick={() => onAgentClick(agent.agentId)}
@@ -242,13 +263,46 @@ export default function AgentsShowcase({
                         bordered={false}
                       />
                     </button>
+                    {(() => {
+                      const runs = activity[agent.agentId] ?? [];
+                      const waiting = runs.some((run) => run.state === "awaiting_approval" || run.state === "awaiting_input");
+                      const working = runs.some((run) => run.state === "running");
+                      if (!waiting && !working) return null;
+                      return (
+                        <span
+                          className="pointer-events-none absolute bottom-0.5 right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white shadow-sm"
+                          aria-label={waiting ? "Waiting for you" : "Working"}
+                        >
+                          {working && !waiting && <span className="absolute h-2.5 w-2.5 animate-ping rounded-full bg-indigo-400/40" />}
+                          <span className={cn("relative h-2 w-2 rounded-full", waiting ? "bg-amber-500" : "bg-indigo-500")} />
+                        </span>
+                      );
+                    })()}
+                  </div>
                 </motion.div>
               </HoverCardTrigger>
-              <HoverCardContent className="z-[1000] w-60 px-3 py-2 rounded-lg shadow-lg">
-                <h3 className="text-sm font-semibold truncate">{agent.name}</h3>
-                <p className="text-xs text-muted-foreground truncate w-full">
-                  {agent.persona || agent.description || "No description."}
-                </p>
+              <HoverCardContent className="z-[1000] w-64 rounded-lg px-3 py-2 shadow-lg">
+                <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
+                {(activity[agent.agentId] ?? []).length ? (
+                  <ul className="mt-1.5 space-y-0.5">
+                    {(activity[agent.agentId] ?? []).map((run) => (
+                      <li key={run.sessionId}>
+                        <Link
+                          href={`/sessions/${encodeURIComponent(run.sessionId)}`}
+                          className="-mx-1.5 flex items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-muted"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-foreground/80">{run.title}</span>
+                          {runLabel(run) && <span className="shrink-0 text-[10px] text-amber-700">{runLabel(run)}</span>}
+                          <RunStateIcon run={run} />
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="w-full truncate text-xs text-muted-foreground">
+                    {agent.persona || agent.description || "No description."}
+                  </p>
+                )}
               </HoverCardContent>
             </HoverCard>
           </div>

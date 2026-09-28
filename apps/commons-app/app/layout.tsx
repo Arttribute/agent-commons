@@ -14,7 +14,7 @@ import { auth } from "@/auth";
 import type { Session } from "next-auth";
 import { getAppBaseUrl } from "@/lib/app-url";
 import { cookies } from "next/headers";
-import { LocalApprovalPrompt } from "@/components/desktop/local-approval-prompt";
+import { DesktopApprovalBridge } from "@/components/desktop/approval-widgets";
 import { WorkspaceModeProvider } from "@/context/WorkspaceModeContext";
 
 const spaceGrotesk = Space_Grotesk({
@@ -31,7 +31,7 @@ const geistMono = Geist_Mono({
 });
 
 const SITE_DESCRIPTION =
-  "Create, deploy, and manage AI agents — and whole teams of them. Agent computers, workflows, integrations, and every major model, in one place.";
+  "One space for your agents and knowledge. Organize projects, chat with agents that cite your sources, and keep work in the cloud or on your computer.";
 
 // The /og image is served `immutable` for a year, so its URL must change when
 // the image does — otherwise social crawlers keep the previously scraped copy
@@ -56,20 +56,20 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "Agent Commons",
     url: getAppBaseUrl(),
-    title: "Agent Commons — build, deploy, and orchestrate AI agents",
+    title: "Agent Commons: one space for your agents and knowledge",
     description: SITE_DESCRIPTION,
     images: [
       {
         url: OG_IMAGE_URL,
         width: 1200,
         height: 630,
-        alt: "Agent Commons — build, deploy, and orchestrate AI agents",
+        alt: "Agent Commons: one space for your agents and knowledge",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Agent Commons — build, deploy, and orchestrate AI agents",
+    title: "Agent Commons: one space for your agents and knowledge",
     description: SITE_DESCRIPTION,
     images: [OG_IMAGE_URL],
   },
@@ -115,7 +115,7 @@ export default async function RootLayout({
                 </div>
                 <FloatingCommonsCopilot />
                 <CommonsAppWindows />
-                <LocalApprovalPrompt />
+                <DesktopApprovalBridge />
                 <Toaster />
               </GlobalSearchProvider>
             </SidebarProvider>

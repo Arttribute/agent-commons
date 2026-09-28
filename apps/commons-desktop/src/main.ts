@@ -41,6 +41,10 @@ import { handleLocalSessionsApi } from "./local-sessions-api";
 import { handleLocalAgentsApi } from "./local-agents-api";
 import { handleLocalWorkflowsApi } from "./local-workflows-api";
 import { handleLocalToolsApi } from "./local-tools-api";
+import { handleLocalProjectsApi } from "./local-projects-api";
+import { approvalTitle, plainSummary } from "./approval-summary";
+import { randomUUID } from "node:crypto";
+import { downloadPublishedApp } from "./cloud-app-download";
 import { DEFAULT_CLOUD_ACCESS, assertCloudToolAllowed, normalizeCloudAccess } from "./cloud-access-policy.mjs";
 
 const CLOUD_URL = process.env.COMMONS_DESKTOP_CLOUD_URL ?? "https://www.agentcommons.io";
@@ -75,6 +79,10 @@ let cloudAuthAttempt = 0;
 let cloudAuthController: AbortController | null = null;
 let cloudSyncController: AbortController | null = null;
 const cloudToolControllers = new Set<AbortController>();
+/** Cloud computer-tool approvals waiting for an answer in the chat. */
+const cloudApprovals = new Map<string, { resolve: (allow: boolean) => void; sessionId: string; permission: string; timeout: NodeJS.Timeout }>();
+/** Permissions the user chose to always allow for one Cloud session in this app run. */
+const cloudRememberedApprovals = new Map<string, Set<string>>();
 const cloudToolNames = new Set([
   "list_directory", "read_file", "write_file", "search_files", "disk_usage", "run_command",
   "start_process", "wait_for_process", "process_status", "kill_process", "list_processes",
@@ -625,6 +633,9 @@ function registerIpc() {
     if (url.pathname === "/api/tools/catalog") {
       return handleLocalToolsApi(runtime, url, method);
     }
+    if (url.pathname === "/api/projects" || url.pathname.startsWith("/api/projects/")) {
+      return handleLocalProjectsApi(runtime, url, method, body);
+    }
     return { status: 404, body: { message: "This Local workspace operation is not available yet." } };
   });
   localHandler("local:open-library-item", async (id: string) => {
@@ -729,6 +740,7 @@ function registerIpc() {
     if (choice.response !== 1 || activeMode !== "cloud") return [];
     const root = realpathSync(runtime.storageRoot());
     return (runtime.state().library ?? []).flatMap((item) => {
+      if (item.keepOnDevice) return [];
       try {
         const path = realpathSync(item.path);
         if (!pathContains(root, path) || statSync(path).size > MAX_TRANSFER_BYTES) return [];
@@ -740,6 +752,7 @@ function registerIpc() {
     assertCloudSender(event);
     const item = runtime.state().library?.find((entry) => entry.id === id);
     if (!item) throw new Error("Local Library item not found.");
+    if (item.keepOnDevice) throw new Error("This file is set to stay on this computer.");
     const root = realpathSync(runtime.storageRoot());
     const path = realpathSync(item.path);
     if (!pathContains(root, path) || statSync(path).size > MAX_TRANSFER_BYTES) throw new Error("Only Local Library files up to 20 MB can be transferred.");
@@ -751,6 +764,50 @@ function registerIpc() {
     });
     if (choice.response !== 1 || activeMode !== "cloud") throw new Error("Transfer cancelled.");
     return { name: item.name, mimeType: item.mimeType, bytes: readFileSync(path) };
+  });
+  ipcMain.handle("cloud:save-app-locally", async (event, input: { pluginId?: unknown; name?: unknown; description?: unknown; entryUrl?: unknown; manifest?: unknown }) => {
+    assertCloudSender(event);
+    if (typeof input?.pluginId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.pluginId)) throw new Error("Invalid app.");
+    if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 120) throw new Error("Invalid app name.");
+    if (typeof input.entryUrl !== "string") throw new Error("This app has no published build.");
+    const cloudSession = session.fromPartition("persist:commons-unified");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90_000);
+    try {
+      const files = await downloadPublishedApp(input.entryUrl, (url, init) => cloudSession.fetch(url, { ...init, cache: "no-store" }), controller.signal);
+      if (activeMode !== "cloud") throw new Error("The mode changed before the download completed.");
+      const manifest = input.manifest && typeof input.manifest === "object" && !Array.isArray(input.manifest)
+        ? JSON.parse(JSON.stringify(input.manifest)) as Record<string, unknown>
+        : undefined;
+      runtime.importCloudApp({
+        pluginId: input.pluginId,
+        name: input.name.trim(),
+        description: typeof input.description === "string" ? input.description.slice(0, 500) : undefined,
+        manifest,
+        files,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+  ipcMain.handle("cloud:mark-local-transferred", (event, id: string, cloudItemId: string) => {
+    assertCloudSender(event);
+    if (typeof id !== "string" || typeof cloudItemId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(cloudItemId)) throw new Error("Invalid transfer record.");
+    runtime.markLibraryItemInCloud(id, cloudItemId);
+  });
+  ipcMain.handle("cloud:answer-approval", (event, id: string, allow: boolean, remember?: boolean) => {
+    assertCloudSender(event);
+    const pending = cloudApprovals.get(id);
+    if (!pending) return;
+    clearTimeout(pending.timeout);
+    cloudApprovals.delete(id);
+    if (allow && remember) {
+      const remembered = cloudRememberedApprovals.get(pending.sessionId) ?? new Set<string>();
+      remembered.add(pending.permission);
+      cloudRememberedApprovals.set(pending.sessionId, remembered);
+    }
+    unifiedView?.webContents.send("desktop:cloud-approval-resolved", id);
+    pending.resolve(Boolean(allow));
   });
   ipcMain.handle("cloud:get-tool-context", (event) => {
     assertCloudSender(event);
@@ -780,18 +837,36 @@ function registerIpc() {
         signal: controller.signal,
         appendLog: () => undefined,
         confirm: async (summary, permission) => {
-          if (!desktopWindow || desktopWindow.isDestroyed() || controller.signal.aborted || activeMode !== "cloud") return false;
+          if (!unifiedView || unifiedView.webContents.isDestroyed() || controller.signal.aborted || activeMode !== "cloud") return false;
+          const sessionId = request.sessionId ?? "cloud-desktop";
+          if (cloudRememberedApprovals.get(sessionId)?.has(permission)) return true;
           const isCommand = permission === "run_command" || permission === "start_process";
-          const result = await dialog.showMessageBox(desktopWindow, {
-            type: "warning", title: "Allow local agent action?",
-            message: `Allow ${permission.replaceAll("_", " ")} in ${cloudWorkspace}?`,
-            detail: [
-              summary.replace(/\x1b\[[0-9;]*m/g, "").slice(0, 12_000),
-              isCommand ? "Full computer command access is enabled. This command can read outside the selected project, including Private Local files, and its output may be sent to Commons Cloud." : "",
-            ].filter(Boolean).join("\n\n"),
-            buttons: ["Decline", "Allow once"], defaultId: 0, cancelId: 0, noLink: true,
+          const plain = plainSummary(summary).slice(0, 12_000);
+          const id = randomUUID();
+          // The approval is answered in the chat that asked for it.
+          const allowed = await new Promise<boolean>((resolve) => {
+            const timeout = setTimeout(() => {
+              cloudApprovals.delete(id);
+              unifiedView?.webContents.send("desktop:cloud-approval-resolved", id);
+              resolve(false);
+            }, 10 * 60_000);
+            cloudApprovals.set(id, { resolve, sessionId, permission, timeout });
+            controller.signal.addEventListener("abort", () => {
+              if (!cloudApprovals.has(id)) return;
+              clearTimeout(timeout);
+              cloudApprovals.delete(id);
+              unifiedView?.webContents.send("desktop:cloud-approval-resolved", id);
+              resolve(false);
+            }, { once: true });
+            unifiedView!.webContents.send("desktop:cloud-approval", {
+              id, permission, summary: plain, title: approvalTitle(plain, permission),
+              conversationId: request.sessionId, toolName: request.tool,
+              note: isCommand
+                ? "Full computer command access is on. This command can read outside the selected folder, including Private Local files, and its output may be sent to Commons Cloud."
+                : `Runs in ${cloudWorkspace}. The result is sent to your Cloud agent.`,
+            });
           });
-          return result.response === 1 && !controller.signal.aborted && activeMode === "cloud";
+          return allowed && !controller.signal.aborted && activeMode === "cloud";
         },
       });
     } finally {
@@ -842,7 +917,7 @@ function registerIpc() {
   localHandler<[ChatRequest]>("local:send-message", (input) => runtime.sendMessage(input));
   localHandler<[string]>("local:delete-conversation", (id) => runtime.deleteConversation(id));
   localHandler<[string, string]>("local:rename-conversation", (id, title) => runtime.renameConversation(id, title));
-  localHandler<[string, boolean]>("local:approve", (id, allow) => runtime.resolveApproval(id, allow));
+  localHandler<[string, boolean, boolean | undefined]>("local:approve", (id, allow, remember) => runtime.resolveApproval(id, allow, Boolean(remember)));
   localHandler<[string, string[]]>("local:add-space", (name, folders) => runtime.addKnowledgeSpace(name, folders));
   localHandler<[string]>("local:reindex-space", (id) => runtime.reindexKnowledgeSpace(id));
   localHandler<[string]>("local:remove-space", (id) => runtime.removeKnowledgeSpace(id));

@@ -20,6 +20,10 @@ import {
 import { MiniComputer } from "@/components/computers/mini-computer";
 import type { AgentComputer } from "@/components/computers/computer-types";
 import { ArtifactCard } from "@/components/artifacts/artifact-card";
+import { collectEntityRefs, EntityCard } from "./entity-cards";
+import { collectVideoEmbeds, VideoEmbedCard } from "./link-embeds";
+import { useRouter } from "next/navigation";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { collectArtifactRefs, type ArtifactRef } from "@/lib/artifacts";
 import {
   AlertCircle,
@@ -112,6 +116,28 @@ export default function AgentOutput({
     [artifacts, metadata?.artifacts, metadata?.toolCalls],
   );
 
+  const router = useRouter();
+  const { mode } = useWorkspaceMode();
+  const entities = useMemo(
+    () =>
+      collectEntityRefs([
+        ...(metadata?.toolCalls ?? []),
+        ...(metadata?.activity ?? [])
+          .filter((activity) => activity.status === "completed" && activity.toolName)
+          .map((activity) => ({
+            name: activity.toolName,
+            args: activity.payload?.args,
+            result: activity.payload?.output ?? activity.payload?.result,
+          })),
+      ]),
+    [metadata?.activity, metadata?.toolCalls],
+  );
+  // Video links play in place; Local mode has no network, so they stay links.
+  const embeds = useMemo(
+    () => (isStreaming || mode === "private-local" ? [] : collectVideoEmbeds(content)),
+    [content, isStreaming, mode],
+  );
+
   const appWidgets = useMemo(
     () =>
       collectCommonsAppWidgets([
@@ -134,7 +160,8 @@ export default function AgentOutput({
     !isStreaming &&
     computerToolCalls.length === 0 &&
     activities.length === 0 &&
-    generatedArtifacts.length === 0
+    generatedArtifacts.length === 0 &&
+    entities.length === 0
   ) {
     return (
       <div
@@ -258,12 +285,27 @@ export default function AgentOutput({
                   />
                 );
               },
-              a({ node, ...props }) {
+              a({ node, href, ...props }) {
+                const internal = internalPath(href);
+                if (internal) {
+                  return (
+                    <a
+                      {...props}
+                      href={internal}
+                      className="text-primary underline underline-offset-4 transition-colors hover:text-primary/80"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        router.push(internal);
+                      }}
+                    />
+                  );
+                }
                 return (
                   <a
                     className="text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
                     target="_blank"
                     rel="noopener noreferrer"
+                    href={href}
                     {...props}
                   />
                 );
@@ -292,6 +334,12 @@ export default function AgentOutput({
           >
             {content}
           </ReactMarkdown>
+          {entities.map((entity) => (
+            <EntityCard key={entity.key} entity={entity} />
+          ))}
+          {embeds.map((embed) => (
+            <VideoEmbedCard key={embed.key} embed={embed} />
+          ))}
           {appWidgets.map((widget) => (
             <AppChatCard
               key={widget.widgetId}
@@ -318,6 +366,26 @@ export default function AgentOutput({
       </div>
     </div>
   );
+}
+
+const COMMONS_HOSTS = new Set(["agentcommons.io", "www.agentcommons.io", "staging.agentcommons.io"]);
+
+/**
+ * Links to Commons pages open inside the app (also in the desktop app, where
+ * a browser tab would leave the workspace).
+ */
+function internalPath(href?: string) {
+  if (!href) return null;
+  if (href.startsWith("/") && !href.startsWith("//")) return href;
+  try {
+    const url = new URL(href);
+    const sameOrigin = typeof window !== "undefined" && url.origin === window.location.origin;
+    if (!sameOrigin && !COMMONS_HOSTS.has(url.hostname)) return null;
+    if (!/^\/(?:studio|sessions|projects|knowledge|library|apps|settings|spaces|logs)(?:\/|$|\?)/.test(url.pathname)) return null;
+    return url.pathname + url.search + url.hash;
+  } catch {
+    return null;
+  }
 }
 
 function isArtifactCreationTool(name: string) {

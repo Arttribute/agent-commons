@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { WorkspaceModeSwitch } from "@/components/layout/workspace-mode-switch";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { AuthShell, AuthTitle, authPrimaryButtonClass } from "@/components/auth/auth-shell";
 
 export default function DesktopAuthPage() {
   const { mode, setMode } = useWorkspaceMode();
@@ -32,47 +33,45 @@ export default function DesktopAuthPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f5f3ee] px-6 text-stone-950 dark:bg-stone-950 dark:text-stone-50">
-      {desktopAvailable && <div className="absolute top-5 left-1/2 -translate-x-1/2"><WorkspaceModeSwitch mode={mode} onCloud={() => undefined} onLocal={() => void setMode("private-local")} /></div>}
-      <section className="w-full max-w-lg rounded-3xl border border-stone-200 bg-white p-8 shadow-sm dark:border-stone-800 dark:bg-stone-900 sm:p-10">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">
-          Agent Commons Desktop
-        </p>
-        <h1 className="mt-4 text-3xl font-semibold tracking-tight">
-          {error ? "Sign-in needs your attention" : "Finish signing in on the web"}
-        </h1>
-        <p className="mt-4 text-sm leading-6 text-stone-600 dark:text-stone-300">
-          {error
-            ? error
-            : "We opened your browser, where your Commons account may already be signed in. Approve this desktop app there and this window will continue automatically."}
-        </p>
-        {!error && code ? (
-          <div className="mt-7 rounded-2xl border border-stone-200 bg-stone-50 px-5 py-4 dark:border-stone-700 dark:bg-stone-800">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-stone-500">
-              One-time code
-            </p>
-            <p className="mt-2 font-mono text-2xl font-semibold tracking-[0.16em]">
-              {code}
-            </p>
-          </div>
-        ) : null}
-        <div className="mt-7 flex items-center gap-3">
-          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500" />
-          <span className="text-sm text-stone-600 dark:text-stone-300">
-            {error ? "Authorization was not completed" : "Waiting for browser approval…"}
-          </span>
+    <AuthShell
+      footer={false}
+      corner={desktopAvailable ? (
+        <WorkspaceModeSwitch mode={mode} onCloud={() => undefined} onLocal={() => void setMode("private-local")} />
+      ) : undefined}
+    >
+      <AuthTitle
+        description={error
+          ? error
+          : "We opened your browser. Approve this app there and this window continues on its own."}
+      >
+        {error ? "Sign-in needs your attention" : "Finish signing in in your browser"}
+      </AuthTitle>
+      {!error && code ? (
+        <div className="rounded-[10px] bg-stone-100 px-4 py-3 text-center">
+          <p className="text-[11px] text-stone-500">Check that your browser shows this code</p>
+          <p className="mt-1 font-mono text-2xl font-semibold tracking-[0.18em]">{code}</p>
         </div>
-        {error ? (
-          <button
-            type="button"
-            onClick={() => void retry()}
-            disabled={retrying || !desktopAvailable}
-            className="mt-7 rounded-xl bg-stone-950 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-stone-50 dark:text-stone-950"
-          >
-            {retrying ? "Opening browser…" : "Try again"}
-          </button>
-        ) : null}
-      </section>
-    </main>
+      ) : null}
+      {error ? (
+        <button
+          type="button"
+          onClick={() => void retry()}
+          disabled={retrying || !desktopAvailable}
+          className={`mt-2 ${authPrimaryButtonClass}`}
+        >
+          {retrying ? "Opening browser…" : "Try again"}
+        </button>
+      ) : (
+        <p className="mt-5 flex items-center gap-2 text-sm text-stone-500">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+          Waiting for approval
+        </p>
+      )}
+      {desktopAvailable && !error && (
+        <p className="mt-5 border-t border-stone-100 pt-4 text-xs leading-5 text-stone-400">
+          Prefer not to sign in? Switch to Local in the corner. Local keeps everything on this computer.
+        </p>
+      )}
+    </AuthShell>
   );
 }

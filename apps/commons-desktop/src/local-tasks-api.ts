@@ -10,6 +10,8 @@ function taskView(task: LocalTask, runtime: PrivateLocalRuntime) {
     taskId: task.id, agentId: task.agentId, sessionId: task.sessionId ?? "",
     title: task.title, description: task.description ?? task.prompt,
     status: task.status, executionMode: "single", scheduledFor: task.dueAt,
+    isRecurring: Boolean(task.repeat), repeat: task.repeat ?? null,
+    cronExpression: task.repeat === "daily" ? "daily" : task.repeat === "weekly" ? "weekly" : null,
     nextRunAt: task.status === "pending" ? task.dueAt : undefined,
     priority: task.priority ?? 0, progress: task.status === "completed" ? 100 : task.status === "running" ? 50 : 0,
     resultContent: task.result, summary: task.status === "completed" ? task.result : undefined,
@@ -31,10 +33,11 @@ export async function handleLocalTasksApi(runtime: PrivateLocalRuntime, url: URL
         const title = String(body.title ?? "").trim();
         if (!title) return bad("Task title is required");
         const dueAt = typeof body.scheduledFor === "string" && body.scheduledFor ? new Date(body.scheduledFor).toISOString() : undefined;
+        const repeat = body.repeat === "daily" || body.repeat === "weekly" ? body.repeat : undefined;
         const state = runtime.saveTask({
           title, prompt: String(body.description ?? title), description: String(body.description ?? ""),
           agentId, sessionId: typeof body.sessionId === "string" ? body.sessionId : undefined,
-          dueAt, priority: Number.isFinite(Number(body.priority)) ? Number(body.priority) : 0,
+          dueAt, repeat, priority: Number.isFinite(Number(body.priority)) ? Number(body.priority) : 0,
         });
         return ok(taskView(state.tasks[0], runtime));
       }

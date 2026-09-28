@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { basename } from "node:path";
-import { copyFileSync, existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import type { WebContents } from "electron";
 import type {
   AgentInput,
@@ -13,7 +13,9 @@ import type {
   LocalApp,
   LocalConversation,
   LocalLibraryItem,
+  LocalProject,
   LocalState,
+  ProjectInput,
   RuntimeEvent,
   SkillInput,
   TaskInput,
@@ -22,13 +24,18 @@ import type {
 } from "@agent-commons/desktop-contract";
 import { AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills } from "@agent-commons/agent-core";
 import {
+  extractDocumentText,
   extractToolCall,
+  isExtractableDocument,
   runLocalTool,
   safePath,
   stopLocalProcesses,
   type LocalToolsConfig,
 } from "../../../packages/agc-cli/src/local-tools";
-import { indexFolders, searchSpaces, accessibleSpaces, knowledgeTool } from "./knowledge";
+import { indexFolders, searchSpaces, accessibleSpaces, knowledgeTool, gitInfo, setDocumentExtractor } from "./knowledge";
+import { KnowledgeWatcher } from "./knowledge-watcher";
+import { approvalTitle, plainSummary } from "./approval-summary";
+import { serveStaticApp, type StaticAppServer } from "./local-static-server";
 import { compactToolLoop, localChatHistory, LOCAL_CONTEXT_SIZE, toolResult } from "./local-chat-history";
 import { normalizeLocalCommand } from "./local-command";
 import { DEFAULT_LOCAL_MODEL, LocalStore } from "./store";
@@ -43,6 +50,8 @@ import { compileLocalWorkflow } from "./local-workflow-plan.mjs";
 type PendingApproval = {
   resolve: (allow: boolean) => void;
   timeout: NodeJS.Timeout;
+  conversationId?: string;
+  permission: string;
 };
 
 export const LOCAL_TOOLS = [
@@ -92,9 +101,12 @@ export const LOCAL_TOOLS = [
   functionTool("read_knowledge_document", "Read an indexed document from a Knowledge Space. Supports offsets for long documents.", {
     spaceId: { type: "string" }, path: { type: "string" }, offset: { type: "number" },
   }, ["spaceId", "path"]),
-  functionTool("search_knowledge", "Search the user's selected local Knowledge Spaces.", {
-    query: { type: "string" },
+  functionTool("search_knowledge", "Search the user's local Knowledge Spaces. Results are numbered passages with their source file and line range for citations.", {
+    query: { type: "string" }, spaceId: { type: "string", description: "Optional: limit to one space" },
   }, ["query"]),
+  functionTool("read_library_item", "Read the text of a file attached to this chat or included in this project, by its Library item ID. PDFs and Office documents are extracted to text. Supports offsets for long files.", {
+    itemId: { type: "string" }, offset: { type: "number" },
+  }, ["itemId"]),
   functionTool("invoke_skill", "Load the complete instructions for a locally saved skill by slug.", {
     skillSlug: { type: "string" },
   }, ["skillSlug"]),
@@ -114,10 +126,10 @@ export const LOCAL_TOOLS = [
     slug: { type: "string" }, name: { type: "string" }, description: { type: "string" }, instructions: { type: "string" },
     triggers: { type: "array", items: { type: "string" } }, tags: { type: "array", items: { type: "string" } },
   }, ["slug", "name", "instructions"]),
-  functionTool("local_register_app", "Register an app built in the selected workspace. Its preview URL must use localhost. The app then appears in Commons Apps.", {
-    name: { type: "string" }, directory: { type: "string", description: "Selected workspace-relative app folder" },
+  functionTool("local_register_app", "Register an app built in the selected workspace so it appears in Commons Apps. For a folder with a built index.html, omit command and previewUrl; Commons serves it. For a dev server, give the command and its localhost preview URL.", {
+    name: { type: "string" }, description: { type: "string" }, directory: { type: "string", description: "Selected workspace-relative app folder" },
     command: { type: "string" }, args: { type: "array", items: { type: "string" } }, previewUrl: { type: "string" },
-  }, ["name", "directory", "command", "previewUrl"]),
+  }, ["name", "directory"]),
 ];
 
 function functionTool(
@@ -149,11 +161,31 @@ function ensureLoopback(raw: string) {
   return url.toString().replace(/\/$/, "");
 }
 
-function mimeFor(path: string) {
+export function mimeFor(path: string) {
   const extension = path.split(".").at(-1)?.toLowerCase();
   return ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif",
     svg: "image/svg+xml", pdf: "application/pdf", md: "text/markdown", txt: "text/plain", html: "text/html",
-    json: "application/json", csv: "text/csv", js: "text/javascript", ts: "text/plain", css: "text/css" } as Record<string, string>)[extension ?? ""] ?? "application/octet-stream";
+    json: "application/json", csv: "text/csv", js: "text/javascript", ts: "text/plain", css: "text/css",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } as Record<string, string>)[extension ?? ""] ?? "application/octet-stream";
+}
+
+const TEXT_EXTENSIONS = /\.(?:md|mdx|txt|json|jsonl|csv|tsv|html?|css|scss|js|jsx|ts|tsx|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|sql|ya?ml|toml|xml|sh)$/i;
+
+/** Reads a Local Library file as text for the agent, extracting documents. */
+export async function readLibraryText(item: LocalLibraryItem) {
+  if (!existsSync(item.path)) throw new Error("The file is missing from this computer.");
+  const size = statSync(item.path).size;
+  if (isExtractableDocument(item.path) || item.mimeType === "application/pdf" || /officedocument/.test(item.mimeType)) {
+    return extractDocumentText(item.path);
+  }
+  if (item.mimeType.startsWith("text/") || item.mimeType === "application/json" || TEXT_EXTENSIONS.test(item.name)) {
+    if (size > 2_000_000) throw new Error("Text files larger than 2 MB cannot be read in chat.");
+    return readFileSync(item.path, "utf8");
+  }
+  if (item.mimeType.startsWith("image/")) return `[Image file ${item.name}. Describe it only if the local model supports images.]`;
+  return `[${item.name} is a binary ${extname(item.name) || "file"} and has no readable text.]`;
 }
 
 const supportedToolNames = new Set(LOCAL_TOOLS.map((tool) => tool.function.name));
@@ -171,15 +203,24 @@ type CloudAgentSnapshot = {
 export class PrivateLocalRuntime {
   private readonly approvals = new Map<string, PendingApproval>();
   private readonly appProcesses = new Map<string, string>();
+  private readonly staticApps = new Map<string, StaticAppServer>();
   private readonly store: LocalStore;
   private readonly layout: LocalStorageLayout;
   private readonly scheduler: NodeJS.Timeout;
   private readonly modelManager: LocalModelManager;
+  private readonly watcher: KnowledgeWatcher;
+  /** Approvals the user chose to always allow, per conversation and permission. */
+  private readonly rememberedApprovals = new Map<string, Set<string>>();
+  private readonly reindexing = new Map<string, Promise<LocalState>>();
   private target?: WebContents;
 
   constructor(userDataDirectory: string) {
+    setDocumentExtractor(extractDocumentText);
     this.store = new LocalStore(userDataDirectory);
     this.layout = new LocalStorageLayout(userDataDirectory);
+    this.watcher = new KnowledgeWatcher((spaceId) => {
+      void this.reindexKnowledgeSpace(spaceId).catch(() => undefined);
+    });
     this.modelManager = new LocalModelManager(
       this.layout.root,
       DEFAULT_LOCAL_MODEL,
@@ -188,6 +229,24 @@ export class PrivateLocalRuntime {
     this.layout.sync(this.store.get());
     this.scheduler = setInterval(() => void this.runDueTasks(), 30_000);
     this.scheduler.unref();
+    if (this.store.get().apps.some((app) => app.status === "running")) {
+      // App servers and processes do not survive a restart.
+      this.change((state) => { for (const app of state.apps) if (app.status === "running") app.status = "stopped"; });
+    }
+    this.syncWatchers();
+    // Catch edits made while Commons was closed. Unchanged files are reused.
+    for (const space of this.store.get().spaces) {
+      if (space.linked) void this.reindexKnowledgeSpace(space.id).catch(() => undefined);
+    }
+  }
+
+  private syncWatchers() {
+    this.watcher.sync(this.store.get().spaces
+      .filter((space) => space.linked && space.liveSync !== false)
+      .map((space) => ({ id: space.id, folders: space.folders.filter((folder) => {
+        try { return statSync(folder).isDirectory(); } catch { return false; }
+      }) }))
+      .filter((space) => space.folders.length > 0));
   }
 
   setTarget(target: WebContents | undefined) {
@@ -211,6 +270,10 @@ export class PrivateLocalRuntime {
     return this.layout.root;
   }
 
+  appsDirectory() {
+    return this.layout.path("apps");
+  }
+
   importLibraryFiles(files: Array<{ name: string; mimeType: string; bytes: Uint8Array }>) {
     if (!files.length) throw new Error("Choose a file to upload into the Local Library.");
     const imported: LocalLibraryItem[] = [];
@@ -221,20 +284,40 @@ export class PrivateLocalRuntime {
       const path = this.layout.path("uploads", `${id}-${name}`);
       writeFileSync(path, file.bytes, { flag: "wx", mode: 0o600 });
       const timestamp = now();
-      imported.push({ id, name, path, mimeType: file.mimeType || mimeFor(name), source: "upload", createdAt: timestamp, updatedAt: timestamp });
+      const mimeType = file.mimeType && file.mimeType !== "application/octet-stream" ? file.mimeType : mimeFor(name);
+      imported.push({ id, name, path, mimeType, source: "upload", createdAt: timestamp, updatedAt: timestamp });
     }
     this.change((state) => { (state.library ??= []).unshift(...imported); });
     return imported;
   }
 
-  updateLibraryItem(id: string, patch: { name?: string; isFavorite?: boolean }) {
+  updateLibraryItem(id: string, patch: { name?: string; isFavorite?: boolean; keepOnDevice?: boolean }) {
     return this.change((state) => {
       const item = state.library?.find((entry) => entry.id === id);
       if (!item) throw new Error("Local Library item not found");
       if (patch.name !== undefined) item.name = patch.name.trim().slice(0, 180) || item.name;
       if (patch.isFavorite !== undefined) item.isFavorite = patch.isFavorite;
+      if (patch.keepOnDevice !== undefined) item.keepOnDevice = patch.keepOnDevice;
       item.updatedAt = now();
     });
+  }
+
+  markLibraryItemInCloud(id: string, cloudItemId: string) {
+    return this.change((state) => {
+      const item = state.library?.find((entry) => entry.id === id);
+      if (!item) throw new Error("Local Library item not found");
+      if (item.keepOnDevice) throw new Error("This file is set to stay on this computer.");
+      item.cloudItemId = cloudItemId.slice(0, 128);
+      item.cloudCopiedAt = now();
+    });
+  }
+
+  async readLibraryItem(id: string, offset = 0) {
+    const item = this.store.get().library?.find((entry) => entry.id === id);
+    if (!item) throw new Error("Local Library item not found");
+    const text = await readLibraryText(item);
+    const start = Math.max(0, Math.trunc(offset));
+    return { item, content: text.slice(start, start + 12_000), nextOffset: start + 12_000 < text.length ? start + 12_000 : null, totalChars: text.length };
   }
 
   deleteLibraryItem(id: string) {
@@ -243,6 +326,7 @@ export class PrivateLocalRuntime {
     this.change((state) => {
       state.library = (state.library ?? []).filter((entry) => entry.id !== id);
       for (const conversation of state.conversations) conversation.artifacts = conversation.artifacts?.filter((artifact) => artifact.id !== id);
+      for (const project of state.projects ?? []) project.libraryItemIds = project.libraryItemIds.filter((itemId) => itemId !== id);
     });
     // Only delete copies owned by Commons. Project files remain in place.
     if (item.path.startsWith(this.layout.root + "/") && existsSync(item.path)) unlinkSync(item.path);
@@ -361,6 +445,7 @@ export class PrivateLocalRuntime {
   deleteAgent(id: string) {
     return this.change((state) => {
       state.agents = state.agents.filter((agent) => agent.id !== id);
+      for (const project of state.projects ?? []) if (project.agentId === id) delete project.agentId;
       state.conversations = state.conversations.filter((conversation) => conversation.agentId !== id);
       state.tasks = state.tasks.filter((task) => task.agentId !== id);
       state.workflows = state.workflows.filter((workflow) => workflow.agentId !== id);
@@ -425,15 +510,81 @@ export class PrivateLocalRuntime {
     });
   }
 
-  createConversation(agentId: string, title: string) {
-    if (!this.store.get().agents.some((agent) => agent.id === agentId)) throw new Error("Local agent not found");
+  createConversation(agentId: string, title: string, projectId?: string) {
+    const state = this.store.get();
+    if (!state.agents.some((agent) => agent.id === agentId)) throw new Error("Local agent not found");
+    if (projectId && !state.projects?.some((project) => project.id === projectId)) throw new Error("Local project not found");
     const timestamp = now();
     const conversation: LocalConversation = {
       id: randomUUID(), agentId, title: title.trim().slice(0, 160) || "New chat",
       workspaceRoot: homedir(), messages: [], createdAt: timestamp, updatedAt: timestamp,
+      ...(projectId ? { projectId } : {}),
     };
-    this.change((state) => state.conversations.unshift(conversation));
+    this.change((draft) => {
+      draft.conversations.unshift(conversation);
+      const project = draft.projects?.find((entry) => entry.id === projectId);
+      if (project) project.updatedAt = timestamp;
+    });
     return conversation;
+  }
+
+  saveProject(input: ProjectInput) {
+    const timestamp = now();
+    let savedId = input.id;
+    const state = this.change((draft) => {
+      const projects = draft.projects ?? (draft.projects = []);
+      const existing = input.id ? projects.find((project) => project.id === input.id) : undefined;
+      if (input.id && !existing) throw new Error("Local project not found");
+      const spaceIds = input.spaceIds?.filter((id) => draft.spaces.some((space) => space.id === id));
+      const libraryItemIds = input.libraryItemIds?.filter((id) => draft.library?.some((item) => item.id === id));
+      const agentId = input.agentId === null ? undefined : input.agentId && draft.agents.some((agent) => agent.id === input.agentId) ? input.agentId : existing?.agentId;
+      if (existing) {
+        if (input.name !== undefined) existing.name = input.name.trim().slice(0, 120) || existing.name;
+        if (input.description !== undefined) existing.description = input.description.trim().slice(0, 2_000);
+        if (input.instructions !== undefined) existing.instructions = input.instructions.trim().slice(0, 20_000);
+        if (spaceIds) existing.spaceIds = [...new Set(spaceIds)];
+        if (libraryItemIds) existing.libraryItemIds = [...new Set(libraryItemIds)];
+        if (input.agentId !== undefined) existing.agentId = agentId;
+        if (input.pinned !== undefined) existing.pinned = input.pinned;
+        existing.updatedAt = timestamp;
+      } else {
+        const name = input.name?.trim().slice(0, 120);
+        if (!name) throw new Error("Project name is required");
+        savedId = randomUUID();
+        projects.unshift({
+          id: savedId,
+          name,
+          description: input.description?.trim().slice(0, 2_000) || undefined,
+          instructions: input.instructions?.trim().slice(0, 20_000) || undefined,
+          spaceIds: [...new Set(spaceIds ?? [])],
+          libraryItemIds: [...new Set(libraryItemIds ?? [])],
+          agentId,
+          pinned: input.pinned,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      }
+    });
+    return state.projects!.find((project) => project.id === savedId)!;
+  }
+
+  deleteProject(id: string) {
+    return this.change((state) => {
+      if (!state.projects?.some((project) => project.id === id)) throw new Error("Local project not found");
+      state.projects = state.projects.filter((project) => project.id !== id);
+      // Chats stay available; they simply leave the project.
+      for (const conversation of state.conversations) if (conversation.projectId === id) delete conversation.projectId;
+    });
+  }
+
+  moveConversationToProject(conversationId: string, projectId: string | null) {
+    return this.change((state) => {
+      const conversation = state.conversations.find((entry) => entry.id === conversationId);
+      if (!conversation) throw new Error("Local conversation not found");
+      if (projectId && !state.projects?.some((project) => project.id === projectId)) throw new Error("Local project not found");
+      if (projectId) conversation.projectId = projectId;
+      else delete conversation.projectId;
+    });
   }
 
   async sendMessage(input: ChatRequest): Promise<ChatResult> {
@@ -448,6 +599,12 @@ export class PrivateLocalRuntime {
       available = await this.listModels();
     }
     if (!available.length && !directNameRequest) throw new Error("No model is available at the configured local model server. Check the Local model server address in Settings.");
+    const attachments = (input.attachmentIds ?? []).slice(0, 20).map((id) => {
+      const item = state.library?.find((entry) => entry.id === id);
+      if (!item) throw new Error("An attached file is no longer in the Local Library. Remove it and attach it again.");
+      return { id: item.id, name: item.name, mimeType: item.mimeType, sizeBytes: existsSync(item.path) ? statSync(item.path).size : undefined };
+    });
+    if (input.projectId && !state.projects?.some((project) => project.id === input.projectId)) throw new Error("Local project not found");
     const explicitModel = agent.model?.trim();
     const isCopilot = agent.id === "local-copilot" || agent.id === "commons-local" || agent.name === "Commons Copilot";
     if (explicitModel && !available.includes(explicitModel) && !isCopilot && !directNameRequest) {
@@ -480,6 +637,7 @@ export class PrivateLocalRuntime {
         messages: [],
         createdAt: timestamp,
         updatedAt: timestamp,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
       };
       this.change((draft) => draft.conversations.unshift(conversation!));
     }
@@ -488,8 +646,11 @@ export class PrivateLocalRuntime {
       const current = draft.conversations.find((candidate) => candidate.id === conversationId)!;
       current.workspaceRoot = input.workspaceRoot ?? current.workspaceRoot ?? homedir();
       if (input.spaceIds !== undefined) current.spaceIds = input.spaceIds;
-      current.messages.push({ id: randomUUID(), role: "user", content: input.prompt.trim(), createdAt: timestamp });
+      if (!current.messages.length && current.title === "New chat") current.title = input.prompt.trim().slice(0, 80) || current.title;
+      current.messages.push({ id: randomUUID(), role: "user", content: input.prompt.trim(), createdAt: timestamp, ...(attachments.length ? { attachments } : {}) });
       current.updatedAt = timestamp;
+      const project = draft.projects?.find((entry) => entry.id === current.projectId);
+      if (project) project.updatedAt = timestamp;
     });
 
     if (input.interactive) this.emit({ type: "chat-start", conversationId });
@@ -536,40 +697,73 @@ export class PrivateLocalRuntime {
     });
   }
 
-  async addKnowledgeSpace(name: string, folders: string[]) {
+  async addKnowledgeSpace(name: string, folders: string[], options: { description?: string; autoGrantNewAgents?: boolean } = {}) {
     if (!name.trim()) throw new Error("A name is required");
     const id = randomUUID();
-    const sources = folders.length ? folders : [this.layout.path("knowledge", id)];
-    if (!folders.length) mkdirSync(sources[0], { recursive: true, mode: 0o700 });
+    const linked = folders.length > 0;
+    const sources = linked ? folders : [this.layout.path("knowledge", id)];
+    if (!linked) mkdirSync(sources[0], { recursive: true, mode: 0o700 });
     const files = await indexFolders(sources);
-    return this.change((state) => {
-      state.spaces.push({ id, name: name.trim(), folders: sources, files, indexedAt: now(), autoGrantNewAgents: true, grants: [] });
+    const git = linked ? gitInfo(sources[0]) : undefined;
+    const state = this.change((draft) => {
+      draft.spaces.push({
+        id, name: name.trim(), description: options.description || undefined, folders: sources, files, indexedAt: now(),
+        linked, liveSync: linked ? true : undefined, source: git ? { git } : undefined,
+        autoGrantNewAgents: options.autoGrantNewAgents ?? true, grants: [],
+      });
     });
+    this.syncWatchers();
+    return state;
   }
 
+  /**
+   * Reindexes one space. Unchanged files are reused, concurrent requests share
+   * one pass, and the state is only rewritten when something changed.
+   */
   async reindexKnowledgeSpace(id: string) {
-    const space = this.store.get().spaces.find((candidate) => candidate.id === id);
-    if (!space) throw new Error("Knowledge Space not found");
-    const files = await indexFolders(space.folders);
-    return this.change((state) => {
-      const current = state.spaces.find((candidate) => candidate.id === id)!;
-      current.files = files;
-      current.indexedAt = now();
-    });
+    const running = this.reindexing.get(id);
+    if (running) return running;
+    const task = (async () => {
+      const space = this.store.get().spaces.find((candidate) => candidate.id === id);
+      if (!space) throw new Error("Knowledge Space not found");
+      const files = await indexFolders(space.folders, space.files);
+      const git = space.linked ? gitInfo(space.folders[0]) : undefined;
+      const unchanged = files.length === space.files.length &&
+        files.every((file, index) => file.path === space.files[index]?.path && file.modifiedAt === space.files[index]?.modifiedAt && file.size === space.files[index]?.size) &&
+        JSON.stringify(git ?? null) === JSON.stringify(space.source?.git ?? null);
+      if (unchanged) return this.store.get();
+      return this.change((state) => {
+        const current = state.spaces.find((candidate) => candidate.id === id);
+        if (!current) return;
+        current.files = files;
+        current.indexedAt = now();
+        current.source = git ? { git } : undefined;
+      });
+    })();
+    this.reindexing.set(id, task);
+    try { return await task; } finally { this.reindexing.delete(id); }
   }
 
   removeKnowledgeSpace(id: string) {
-    return this.change((state) => {
-      state.spaces = state.spaces.filter((space) => space.id !== id);
+    const state = this.change((draft) => {
+      draft.spaces = draft.spaces.filter((space) => space.id !== id);
+      for (const project of draft.projects ?? []) project.spaceIds = project.spaceIds.filter((spaceId) => spaceId !== id);
     });
+    this.syncWatchers();
+    return state;
   }
 
-  updateKnowledgeSpace(id: string, patch: { autoGrantNewAgents?: boolean }) {
-    return this.change((state) => {
-      const space = state.spaces.find((entry) => entry.id === id);
+  updateKnowledgeSpace(id: string, patch: { autoGrantNewAgents?: boolean; name?: string; description?: string; liveSync?: boolean }) {
+    const state = this.change((draft) => {
+      const space = draft.spaces.find((entry) => entry.id === id);
       if (!space) throw new Error("Knowledge Space not found");
       if (patch.autoGrantNewAgents !== undefined) space.autoGrantNewAgents = patch.autoGrantNewAgents;
+      if (patch.name !== undefined && patch.name.trim()) space.name = patch.name.trim().slice(0, 120);
+      if (patch.description !== undefined) space.description = patch.description.trim().slice(0, 2_000) || undefined;
+      if (patch.liveSync !== undefined && space.linked) space.liveSync = patch.liveSync;
     });
+    this.syncWatchers();
+    return state;
   }
 
   saveKnowledgeGrant(spaceId: string, input: { subjectType: "agent" | "user" | "workspace"; subjectId: string; permission: "read" | "write" | "manage"; autoRetrieve: boolean }) {
@@ -616,9 +810,17 @@ export class PrivateLocalRuntime {
     this.change((state) => Object.assign(state.tasks.find((candidate) => candidate.id === id)!, { status: "running", updatedAt: now() }));
     try {
       const result = await this.sendMessage({ agentId: task.agentId, conversationId: task.sessionId, prompt: task.prompt, workspaceRoot: task.workspaceRoot });
-      return this.change((state) => Object.assign(state.tasks.find((candidate) => candidate.id === id)!, {
-        status: "completed", result: result.response, updatedAt: now(),
-      }));
+      return this.change((state) => {
+        const current = state.tasks.find((candidate) => candidate.id === id)!;
+        Object.assign(current, { status: "completed", result: result.response, updatedAt: now() });
+        if (current.repeat) {
+          // Keep the same cadence from the scheduled time, skipping missed runs.
+          const step = current.repeat === "daily" ? 86_400_000 : 7 * 86_400_000;
+          let next = Date.parse(current.dueAt ?? now()) + step;
+          while (next <= Date.now()) next += step;
+          Object.assign(current, { status: "pending", dueAt: new Date(next).toISOString() });
+        }
+      });
     } catch (error) {
       this.change((state) => Object.assign(state.tasks.find((candidate) => candidate.id === id)!, {
         status: "failed", result: error instanceof Error ? error.message : String(error), updatedAt: now(),
@@ -691,17 +893,43 @@ export class PrivateLocalRuntime {
 
   saveApp(input: AppInput) {
     const timestamp = now();
-    ensureLocalPreview(input.previewUrl);
+    const command = input.command?.trim() ?? "";
+    // Built folders are served by Commons on a loopback port chosen at start.
+    const previewUrl = command ? ensureLocalPreview(input.previewUrl).toString() : "http://127.0.0.1/";
     return this.change((state) => {
       const existing = input.id ? state.apps.find((app) => app.id === input.id) : undefined;
-      if (existing) Object.assign(existing, input, { updatedAt: timestamp });
-      else state.apps.unshift({ ...input, id: randomUUID(), status: "stopped", createdAt: timestamp, updatedAt: timestamp });
+      if (existing) Object.assign(existing, input, { command, previewUrl, updatedAt: timestamp });
+      else state.apps.unshift({ ...input, command, args: input.args ?? [], previewUrl, id: randomUUID(), status: "stopped", createdAt: timestamp, updatedAt: timestamp });
+    });
+  }
+
+  /** Writes a published Cloud app's files into the Local workspace and registers it. */
+  importCloudApp(input: { pluginId: string; name: string; description?: string; manifest?: Record<string, unknown>; files: Array<{ path: string; bytes: Uint8Array }> }) {
+    const existing = this.store.get().apps.find((app) => app.cloudPluginId === input.pluginId);
+    const directory = existing?.directory ?? this.layout.path("apps", `cloud-${input.pluginId.replace(/[^a-zA-Z0-9_-]/g, "")}`);
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    for (const file of input.files) {
+      const target = safePath(directory, file.path);
+      mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+      writeFileSync(target, file.bytes, { mode: 0o600 });
+    }
+    return this.saveApp({
+      id: existing?.id, name: input.name, description: input.description, directory,
+      command: "", args: [], previewUrl: "", cloudPluginId: input.pluginId, manifest: input.manifest,
     });
   }
 
   async startApp(id: string) {
     const app = this.store.get().apps.find((candidate) => candidate.id === id);
     if (!app) throw new Error("Local app not found");
+    if (!app.command) {
+      this.staticApps.get(id)?.close();
+      const server = await serveStaticApp(app.directory);
+      this.staticApps.set(id, server);
+      return this.change((state) => Object.assign(state.apps.find((candidate) => candidate.id === id)!, {
+        status: "running", previewUrl: `${server.origin}/`, output: undefined, updatedAt: now(),
+      }));
+    }
     const config = this.toolsConfig(app.directory, undefined, undefined);
     const raw = await runLocalTool({ tool: "start_process", args: { command: app.command, args: app.args, cwd: "." } }, config);
     const result = JSON.parse(raw) as { processId?: string; error?: string };
@@ -713,6 +941,8 @@ export class PrivateLocalRuntime {
   }
 
   async stopApp(id: string) {
+    this.staticApps.get(id)?.close();
+    this.staticApps.delete(id);
     const processId = this.appProcesses.get(id);
     if (processId) {
       const app = this.store.get().apps.find((candidate) => candidate.id === id);
@@ -725,7 +955,7 @@ export class PrivateLocalRuntime {
   }
 
   async deleteApp(id: string) {
-    if (this.appProcesses.has(id)) await this.stopApp(id);
+    if (this.appProcesses.has(id) || this.staticApps.has(id)) await this.stopApp(id);
     return this.change((state) => { state.apps = state.apps.filter((app) => app.id !== id); });
   }
 
@@ -736,11 +966,17 @@ export class PrivateLocalRuntime {
     return app;
   }
 
-  resolveApproval(id: string, allow: boolean) {
+  resolveApproval(id: string, allow: boolean, remember = false) {
     const pending = this.approvals.get(id);
     if (!pending) return;
     clearTimeout(pending.timeout);
     this.approvals.delete(id);
+    if (allow && remember && pending.conversationId) {
+      const remembered = this.rememberedApprovals.get(pending.conversationId) ?? new Set<string>();
+      remembered.add(pending.permission);
+      this.rememberedApprovals.set(pending.conversationId, remembered);
+    }
+    this.emit({ type: "approval-resolved", id, allow });
     pending.resolve(allow);
   }
 
@@ -749,10 +985,13 @@ export class PrivateLocalRuntime {
       clearTimeout(pending.timeout);
       pending.resolve(false);
       this.approvals.delete(id);
+      this.emit({ type: "approval-resolved", id, allow: false });
     }
   }
 
   close() {
+    this.watcher.close();
+    for (const server of this.staticApps.values()) server.close();
     clearInterval(this.scheduler);
     this.modelManager.stop();
     this.cancelPendingApprovals();
@@ -780,8 +1019,35 @@ export class PrivateLocalRuntime {
     const identityRequest = assistantIdentityRequestKind(lastUser);
     if (identityRequest === "name") return assistantNameAnswer(agent.name);
     if (identityRequest === "about") return assistantIdentityAnswer(agent.name, agent.model || state.settings.defaultModel);
-    const spaces = accessibleSpaces(state.spaces, agent.id, spaceIds);
+    const project = conversation.projectId ? state.projects?.find((entry) => entry.id === conversation.projectId) : undefined;
+    // Project spaces are always in scope for its chats, alongside any the user picked for this turn.
+    const scopedSpaceIds = project?.spaceIds.length
+      ? [...new Set([...(spaceIds?.length ? spaceIds : []), ...project.spaceIds])]
+      : spaceIds;
+    const spaces = accessibleSpaces(state.spaces, agent.id, scopedSpaceIds);
     const knowledge = searchSpaces(spaces, lastUser);
+    const lastUserMessage = [...conversation.messages].reverse().find((message) => message.role === "user");
+    const attachmentBlocks = await Promise.all((lastUserMessage?.attachments ?? []).map(async (attachment) => {
+      const item = state.library?.find((entry) => entry.id === attachment.id);
+      if (!item) return `- ${attachment.name}: no longer available in the Local Library.`;
+      try {
+        const text = await readLibraryText(item);
+        return `### ${item.name} (itemId: ${item.id})\n${text.slice(0, 12_000)}${text.length > 12_000 ? `\n[Showing 12,000 of ${text.length.toLocaleString()} characters. Call read_library_item with offset 12000 to continue.]` : ""}`;
+      } catch (error) {
+        return `### ${item.name} (itemId: ${item.id})\n[Could not read: ${error instanceof Error ? error.message : String(error)}]`;
+      }
+    }));
+    const projectFiles = (project?.libraryItemIds ?? []).flatMap((id) => {
+      const item = state.library?.find((entry) => entry.id === id);
+      return item ? [`- ${item.name} (itemId: ${item.id}, ${item.mimeType})`] : [];
+    });
+    const projectBlock = project ? [
+      `## Project: ${project.name}`,
+      project.description ? `Goal: ${project.description}` : "",
+      project.instructions ? `Project instructions (follow them in every chat in this project):\n${project.instructions}` : "",
+      projectFiles.length ? `Project files. Read them with read_library_item when they are relevant:\n${projectFiles.join("\n")}` : "",
+      project.spaceIds.length ? `Project Knowledge Spaces: ${state.spaces.filter((space) => project.spaceIds.includes(space.id)).map((space) => `${space.name} (${space.id})`).join(", ")}. Search them before answering questions about the project.` : "",
+    ].filter(Boolean).join("\n") : "";
     const skills = (state.skills ?? []).filter((skill) => skill.assignedAgentIds === undefined || skill.assignedAgentIds.includes(agent.id));
     const skillsBlock = buildSkillPromptIndex(skills, findMatchingSkills(skills, lastUser));
     const workspace = conversation.workspaceRoot;
@@ -803,8 +1069,13 @@ Commands must be non-interactive: pass the executable as command and arguments a
       `Agent Commons Local data is organized at ${this.layout.root}. Use local_list_data and local_read_data to inspect agents, conversations, knowledge, artifacts, apps, skills, tasks, workflows, and uploads. The private state index is outside this workspace and must not be edited directly.`,
       `Available Knowledge Spaces: ${JSON.stringify(spaces.map((space) => ({ spaceId: space.id, name: space.name, documents: space.files.length })))}. Use list_knowledge_spaces, list_knowledge_documents, read_knowledge_document and search_knowledge for knowledge questions. These tools refer to the same spaces shown in the Knowledge page.`,
       skillsBlock,
+      projectBlock,
+      attachmentBlocks.length ? `## Files attached to the latest message\nThe files stay on this computer. Their text is below.\n\n${attachmentBlocks.join("\n\n")}` : "",
       knowledge.length
-        ? `Local Knowledge Space excerpts (use the Knowledge tools for full documents):\n${knowledge.slice(0, 4).map((entry) => `\n[${entry.space}] ${entry.path}\n${entry.excerpt.slice(0, 1_500)}`).join("\n")}`
+        ? `Local Knowledge passages (use the Knowledge tools for full documents):\n${knowledge.slice(0, 5).map((entry) => `\nSource: ${entry.source} (lines ${entry.lines}) in ${entry.space}${entry.heading ? ` · ${entry.heading}` : ""}\n${entry.excerpt.slice(0, 1_500)}`).join("\n")}`
+        : "",
+      spaces.length || attachmentBlocks.length || projectFiles.length
+        ? "Citations: when an answer uses Knowledge passages or files, cite them inline and finish with a Sources list giving each source's file path and line range, for example: [1] research/interviews.md (lines 12-40). Number sources from [1] in the order you first use them. Cite only sources you actually read. If the sources do not support a claim, say so."
         : "",
       `Current runtime: Private Local. Inference model: ${agent.model || state.settings.defaultModel}. Say this explicitly if the user asks about the current mode or model.`,
     ].filter(Boolean).join("\n\n");
@@ -818,7 +1089,7 @@ Commands must be non-interactive: pass the executable as command and arguments a
       })),
     ];
     const endpoint = ensureLoopback(state.settings.ollamaUrl);
-    const tools = (workspace ? LOCAL_TOOLS : LOCAL_TOOLS.filter((entry) => ["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge", "invoke_skill", "local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill"].includes(entry.function.name)))
+    const tools = (workspace ? LOCAL_TOOLS : LOCAL_TOOLS.filter((entry) => ["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge", "read_library_item", "invoke_skill", "local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill"].includes(entry.function.name)))
       .filter((entry) => entry.function.name !== "invoke_skill" || skills.length > 0);
 
     let repairAttempted = false;
@@ -910,8 +1181,25 @@ Commands must be non-interactive: pass the executable as command and arguments a
     if (commandError) result = commandError;
     else if (["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge"].includes(name)) {
       const state = this.store.get();
-      const agentId = state.conversations.find((item) => item.id === conversationId)!.agentId;
-      result = await knowledgeTool(accessibleSpaces(state.spaces, agentId, spaceIds), name, args);
+      const conversation = state.conversations.find((item) => item.id === conversationId)!;
+      const projectSpaces = state.projects?.find((project) => project.id === conversation.projectId)?.spaceIds ?? [];
+      const scoped = projectSpaces.length ? [...new Set([...(spaceIds ?? []), ...projectSpaces])] : spaceIds;
+      result = await knowledgeTool(accessibleSpaces(state.spaces, conversation.agentId, scoped), name, args);
+    } else if (name === "read_library_item") {
+      const state = this.store.get();
+      const conversation = state.conversations.find((item) => item.id === conversationId);
+      const itemId = String(args.itemId ?? "");
+      const project = state.projects?.find((entry) => entry.id === conversation?.projectId);
+      const permitted = Boolean(conversation?.messages.some((message) => message.attachments?.some((attachment) => attachment.id === itemId))) ||
+        Boolean(project?.libraryItemIds.includes(itemId)) ||
+        Boolean(conversation?.artifacts?.some((artifact) => artifact.id === itemId));
+      if (!permitted) result = "Error: that file is not attached to this chat or included in its project.";
+      else {
+        try {
+          const read = await this.readLibraryItem(itemId, Number(args.offset) || 0);
+          result = JSON.stringify({ itemId, name: read.item.name, content: read.content, nextOffset: read.nextOffset, totalChars: read.totalChars });
+        } catch (error) { result = `Error: ${error instanceof Error ? error.message : String(error)}`; }
+      }
     } else if (name === "invoke_skill") {
       const slug = String(args.skillSlug ?? "");
       const skill = (this.store.get().skills ?? []).find((candidate) => candidate.slug === slug);
@@ -923,7 +1211,7 @@ Commands must be non-interactive: pass the executable as command and arguments a
       }, this.toolsConfig(this.layout.root, conversationId));
     } else if (["local_create_knowledge_space", "local_create_note", "local_save_skill", "local_register_app"].includes(name)) {
       if (this.store.get().settings.permissionMode === "read-only") result = "Error: Local workspace is read only.";
-      else if (!(await this.requestApproval(`${name.replaceAll("_", " ")}: ${JSON.stringify({ ...args, content: typeof args.content === "string" ? args.content.slice(0, 1_000) : undefined, instructions: typeof args.instructions === "string" ? args.instructions.slice(0, 1_000) : undefined })}`, name))) result = "User denied the Local workspace change.";
+      else if (!(await this.requestApproval(`${name.replaceAll("_", " ")}: ${JSON.stringify({ ...args, content: typeof args.content === "string" ? args.content.slice(0, 1_000) : undefined, instructions: typeof args.instructions === "string" ? args.instructions.slice(0, 1_000) : undefined })}`, name, { conversationId, toolName: name }))) result = "User denied the Local workspace change.";
       else {
         try {
           if (name === "local_create_knowledge_space") {
@@ -945,7 +1233,7 @@ Commands must be non-interactive: pass the executable as command and arguments a
             if (!workspace) throw new Error("Select a workspace before registering an app.");
             const directory = safePath(workspace, String(args.directory ?? "."));
             if (!statSync(directory).isDirectory()) throw new Error("App directory does not exist.");
-            const state = this.saveApp({ name: String(args.name ?? ""), directory, command: String(args.command ?? ""), args: Array.isArray(args.args) ? args.args.map(String) : [], previewUrl: String(args.previewUrl ?? "") });
+            const state = this.saveApp({ name: String(args.name ?? ""), description: typeof args.description === "string" ? args.description : undefined, directory, command: String(args.command ?? ""), args: Array.isArray(args.args) ? args.args.map(String) : [], previewUrl: String(args.previewUrl ?? "") });
             const app = state.apps[0];
             result = JSON.stringify({ appId: app.id, name: app.name, directory: app.directory, status: app.status });
           }
@@ -1052,20 +1340,29 @@ Commands must be non-interactive: pass the executable as command and arguments a
           : [],
       ),
       appendLog: (record) => this.appendAudit(record),
-      confirm: (summary, permission) => this.requestApproval(summary.replace(/\x1b\[[0-9;]*m/g, ""), permission),
+      confirm: (summary, permission) => this.requestApproval(summary, permission, { conversationId: sessionId === "desktop" ? undefined : sessionId }),
     };
   }
 
-  private requestApproval(summary: string, permission: string) {
+  private requestApproval(summary: string, permission: string, context: { conversationId?: string; toolName?: string } = {}) {
     if (!this.target || this.target.isDestroyed()) return Promise.resolve(false);
+    if (context.conversationId && this.rememberedApprovals.get(context.conversationId)?.has(permission)) return Promise.resolve(true);
     const id = randomUUID();
+    const plain = plainSummary(summary);
     return new Promise<boolean>((resolve) => {
       const timeout = setTimeout(() => {
         this.approvals.delete(id);
+        this.emit({ type: "approval-resolved", id, allow: false });
         resolve(false);
-      }, 5 * 60_000);
-      this.approvals.set(id, { resolve, timeout });
-      this.emit({ type: "approval", approval: { id, permission, summary } });
+      }, 10 * 60_000);
+      this.approvals.set(id, { resolve, timeout, conversationId: context.conversationId, permission });
+      this.emit({ type: "approval", approval: {
+        id, permission, summary: plain, title: approvalTitle(plain, permission),
+        conversationId: context.conversationId, toolName: context.toolName,
+        note: permission === "run_command" || permission === "start_process"
+          ? "Runs on this computer with your account's permissions and may use the network."
+          : undefined,
+      } });
     });
   }
 

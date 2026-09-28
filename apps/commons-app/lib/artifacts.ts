@@ -192,3 +192,18 @@ export function collectArtifactRefs(value: unknown): ArtifactRef[] {
   visit(value, 0);
   return [...found.values()];
 }
+
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|css|scss|sql|sh|ya?ml|toml|json|xml|html?|vue|svelte)$/i;
+
+/** Source files and code projects, which get an icon instead of raw text. */
+export function isCodeArtifact(artifact: Pick<ArtifactRef, "name" | "mimeType" | "kind">) {
+  if (artifact.kind === "code" || artifact.kind === "code_project") return true;
+  const mime = artifact.mimeType || "";
+  return CODE_FILE.test(artifact.name || "") || /javascript|typescript|x-python|json|xml|html|css/.test(mime);
+}
+
+/** Documents that read best as a page, like a PDF thumbnail. */
+export function isPagedDocument(artifact: Pick<ArtifactRef, "name" | "mimeType" | "kind">) {
+  const kind = artifactKind(artifact);
+  return kind === "document" || kind === "pdf" || kind === "presentation";
+}

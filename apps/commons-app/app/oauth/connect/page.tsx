@@ -1,5 +1,9 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
+import { AuthShell, AuthTitle, authPrimaryButtonClass, authSecondaryButtonClass } from "@/components/auth/auth-shell";
+import { describeOAuthScope } from "@/lib/oauth-scope-labels";
+
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -152,12 +156,9 @@ function OAuthConnectContent() {
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
-        </div>
-      </div>
+      <AuthShell className="flex justify-center">
+        <Loader2 className="h-5 w-5 animate-spin text-stone-400" />
+      </AuthShell>
     );
   }
 
@@ -165,123 +166,56 @@ function OAuthConnectContent() {
     return null;
   }
 
+  const scopes = (requestedScopes ? requestedScopes.split(/\s+/).filter(Boolean) : provider.defaultScopes)
+    .map(describeOAuthScope)
+    .filter((scope, index, all) => all.indexOf(scope) === index);
+
   return (
-    <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-        <div className="text-center">
-          {/* Provider Logo */}
-          {provider.logoUrl && (
-            <div className="mb-6">
-              <img
-                src={provider.logoUrl}
-                alt={provider.displayName}
-                className="h-16 w-16 mx-auto rounded-lg"
-              />
-            </div>
-          )}
-
-          {/* Title */}
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            Connect {toolLabel || provider.displayName}
-          </h1>
-
-          {/* Description */}
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            {toolLabel
-              ? `Authorize the scopes needed for ${toolLabel}.`
-              : provider.description ||
-                `Connect your ${provider.displayName} account to enable tools that require access to your ${provider.displayName} data.`}
-          </p>
-
-          {status === "unauthenticated" && (
-            <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-left text-sm text-blue-900">
-              Preparing your secure connection...
-            </div>
-          )}
-
-          {error && (
-            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-left text-sm text-red-900">
-              {error}
-            </div>
-          )}
-
-          {/* Permissions */}
-          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-6 text-left">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
-              This will allow agents to:
-            </h2>
-            <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-              {(requestedScopes
-                ? requestedScopes.split(/\s+/).filter(Boolean)
-                : provider.defaultScopes
-              )
-                .slice(0, 3)
-                .map((scope, index) => (
-                  <li key={index} className="flex items-start">
-                    <span className="mr-2">•</span>
-                    <span className="break-all">{scope}</span>
-                  </li>
-                ))}
-              {(requestedScopes
-                ? requestedScopes.split(/\s+/).filter(Boolean)
-                : provider.defaultScopes
-              ).length > 3 && (
-                <li className="text-gray-500 dark:text-gray-500 italic">
-                  and{" "}
-                  {(requestedScopes
-                    ? requestedScopes.split(/\s+/).filter(Boolean)
-                    : provider.defaultScopes
-                  ).length - 3}{" "}
-                  more...
-                </li>
-              )}
-            </ul>
-          </div>
-
-          {/* Actions */}
-          <div className="space-y-3">
-            <button
-              onClick={handleConnect}
-              disabled={connecting}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
-            >
-              {connecting
-                ? "Connecting..."
-                : `Connect ${toolLabel || provider.displayName}`}
-            </button>
-
-            <button
-              onClick={() => router.push(returnUrl)}
-              disabled={connecting}
-              className="w-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold py-3 px-4 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-
-          {/* Security Note */}
-          <p className="mt-6 text-xs text-gray-500 dark:text-gray-500">
-            Your credentials are encrypted and stored securely. You can revoke
-            access at any time from your settings.
-          </p>
-        </div>
+    <AuthShell>
+      {provider.logoUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={provider.logoUrl} alt="" className="mb-4 h-10 w-10 rounded-[10px]" />
+      )}
+      <AuthTitle description="Your agents use this connection when a tool needs it. You can disconnect at any time in Settings.">
+        Connect {toolLabel || provider.displayName}
+      </AuthTitle>
+      {status === "unauthenticated" && (
+        <p className="mb-4 flex items-center gap-2 text-sm text-stone-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Preparing a secure connection
+        </p>
+      )}
+      {error && (
+        <p className="mb-4 rounded-[10px] border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700" role="alert">{error}</p>
+      )}
+      {scopes.length > 0 && (
+        <>
+          <p className="mb-2 text-[13px] text-stone-600">Agents will be able to:</p>
+          <ul className="mb-5 divide-y divide-stone-200 rounded-[12px] border border-stone-200">
+            {scopes.map((scope) => (
+              <li key={scope} className="flex items-start gap-2.5 px-3 py-2.5 text-[13px] text-stone-700">
+                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-stone-400" />
+                {scope}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <div className="flex gap-2">
+        <button onClick={() => router.push(returnUrl)} disabled={connecting} className={authSecondaryButtonClass}>
+          Cancel
+        </button>
+        <button onClick={handleConnect} disabled={connecting} className={authPrimaryButtonClass}>
+          {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {connecting ? "Connecting" : "Connect"}
+        </button>
       </div>
-    </div>
+    </AuthShell>
   );
 }
 
 export default function OAuthConnectPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
-            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading...</p>
-          </div>
-        </div>
-      }
-    >
+    <Suspense fallback={<AuthShell className="flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-stone-400" /></AuthShell>}>
       <OAuthConnectContent />
     </Suspense>
   );

@@ -1,48 +1,88 @@
+import Image from "next/image";
 import Link from "next/link";
+import { Cloud, Cpu, Laptop } from "lucide-react";
+import { PrimaryDownload } from "@/components/download/primary-download";
+import { DESKTOP_DOWNLOADS, DESKTOP_RELEASE_PAGE, DESKTOP_RELEASE_ROOT } from "@/lib/desktop-release";
 
-// Keep desktop downloads pinned to a desktop release. The repository also
-// publishes CLI and VS Code releases, so GitHub's repository-wide `latest`
-// redirect can point at a release that does not contain desktop installers.
-const desktopReleaseTag = "desktop-v0.3.3";
-const releaseRoot = `https://github.com/Arttribute/agent-commons/releases/download/${desktopReleaseTag}`;
+export const metadata = {
+  title: "Download for desktop",
+  description: "Agent Commons for macOS, Windows, and Linux. Work in Cloud or keep everything on your computer.",
+};
 
-const downloads = [
-  { label: "macOS — Apple silicon", detail: "M1, M2, M3, M4, and newer", file: "Agent-Commons-mac-arm64.dmg" },
-  { label: "macOS — Intel", detail: "Intel-based Macs", file: "Agent-Commons-mac-x64.dmg" },
-  { label: "Windows", detail: "64-bit installer", file: "Agent-Commons-win-x64.exe" },
-  { label: "Linux", detail: "64-bit AppImage", file: "Agent-Commons-linux-x86_64.AppImage" },
+const FEATURES = [
+  { icon: Cloud, title: "Cloud or Local", text: "Switch any time. Your agents and projects follow the mode you choose." },
+  { icon: Laptop, title: "Private when you want it", text: "Local chats, files, and knowledge stay on this computer." },
+  { icon: Cpu, title: "Local AI included", text: "A local model is set up the first time you use Local mode." },
 ];
 
 export default function DesktopDownloadPage() {
   return (
-    <main className="h-full overflow-y-auto">
-      <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center px-6 py-16">
-        <Link href="/" className="mb-12 text-sm text-muted-foreground hover:text-foreground">← Agent Commons</Link>
-        <p className="mb-3 text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Agent Commons Desktop · version 0.3.3</p>
-        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">One Commons workspace. Cloud or Private Local.</h1>
-        <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
-          Use the same Commons interface in Cloud or Private Local. Local chats, agents, files, Knowledge Spaces, and model inference stay on this computer. Cloud access to desktop files and commands is configurable.
+    <main className="min-h-full overflow-y-auto bg-page">
+      <header className="mx-auto flex max-w-5xl items-center justify-between px-5 pt-5 sm:px-6">
+        <Link href="/" aria-label="Agent Commons" className="flex items-center">
+          <Image src="/logo.jpg" alt="Agent Commons" width={131} height={60} priority className="h-8 w-auto rounded-md object-contain" />
+        </Link>
+        <nav className="flex items-center gap-1 text-sm">
+          <a href="https://docs.agentcommons.io/docs" target="_blank" rel="noreferrer" className="rounded-md px-3 py-1.5 text-stone-600 transition-colors hover:bg-muted hover:text-stone-950">Docs</a>
+          <Link href="/login" className="rounded-md px-3 py-1.5 font-medium text-stone-900 transition-colors hover:bg-muted">Log in</Link>
+        </nav>
+      </header>
+
+      <section className="mx-auto flex max-w-3xl flex-col items-center px-5 pb-10 pt-16 text-center sm:pt-24">
+        <h1 className="font-space text-[1.7rem] font-medium leading-[1.2] tracking-[-0.03em] text-stone-950 sm:text-[2.2rem] sm:leading-[1.2]">
+          Agent Commons for <span className="hl hl-mint">desktop</span>
+        </h1>
+        <p className="mt-4 max-w-xl text-[15px] leading-7 text-stone-600">
+          Your agents, projects, and knowledge in one app. Work in Commons Cloud, or keep everything on your computer.
         </p>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Local AI is set up automatically the first time you use it. The one-time verified runtime and model download is about 1 GB on macOS and can use up to 4 GB on Windows or Linux.
-        </p>
-        <aside className="mt-8 rounded-xl border border-amber-300/70 bg-amber-50 p-4 text-sm leading-6 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-          <strong>Early release:</strong> publisher enrollment is still in progress, so this version is not yet notarized or publisher-signed. On macOS, drag Agent Commons to Applications, Control-click it, and choose Open. If macOS still blocks it, use System Settings → Privacy &amp; Security → Open Anyway. If an older download says the app is damaged, delete that DMG and download this latest release. Windows SmartScreen may also ask you to confirm the download before opening it.
-        </aside>
-        <section className="mt-10 grid gap-3 sm:grid-cols-2">
-          {downloads.map((download) => (
-            <a key={download.file} href={`${releaseRoot}/${download.file}`} className="rounded-xl border border-border bg-card p-5 transition-colors hover:bg-accent">
-              <strong className="block text-sm">{download.label}</strong>
-              <span className="mt-1 block text-xs text-muted-foreground">{download.detail}</span>
-              <span className="mt-5 block text-sm font-medium">Download →</span>
+        <div className="mt-8">
+          <PrimaryDownload />
+        </div>
+      </section>
+
+      <section className="mx-auto grid max-w-3xl gap-3 px-5 sm:grid-cols-3">
+        {FEATURES.map(({ icon: Icon, title, text }) => (
+          <div key={title} className="rounded-xl border border-stone-200 bg-white p-4 shadow-card">
+            <Icon className="h-4 w-4 text-stone-500" strokeWidth={1.75} />
+            <p className="mt-3 text-sm font-medium text-stone-900">{title}</p>
+            <p className="mt-1 text-xs leading-5 text-stone-500">{text}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="mx-auto max-w-3xl px-5 pb-16 pt-10">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-stone-500">All downloads</h2>
+        <div className="mt-3 divide-y divide-stone-200 overflow-hidden rounded-xl border border-stone-200 bg-white">
+          {DESKTOP_DOWNLOADS.map((download) => (
+            <a
+              key={download.file}
+              href={`${DESKTOP_RELEASE_ROOT}/${download.file}`}
+              className="flex items-center justify-between px-4 py-3 text-sm transition-colors hover:bg-stone-50"
+            >
+              <span className="text-stone-900">
+                {download.label} <span className="text-stone-500">· {download.detail}</span>
+              </span>
+              <span className="text-xs text-stone-500">Download</span>
             </a>
           ))}
-        </section>
-        <p className="mt-6 text-xs leading-5 text-muted-foreground">
-          Private Local keeps Commons data and model inference on your computer. Agent commands require your permission and can use your computer&apos;s network. Verify the download against the release checksums. See all builds and release notes on the{" "}
-          <a className="underline" href={`https://github.com/Arttribute/agent-commons/releases/tag/${desktopReleaseTag}`}>desktop release</a>.
+        </div>
+
+        <details className="group mt-4 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm">
+          <summary className="cursor-pointer list-none text-stone-700 marker:hidden">
+            First time opening it?
+          </summary>
+          <div className="mt-3 space-y-2 text-xs leading-5 text-stone-600">
+            <p>This early release is not yet notarized. On macOS, drag Agent Commons to Applications, Control-click it, and choose Open. If macOS still blocks it, open System Settings, then Privacy &amp; Security, and choose Open Anyway.</p>
+            <p>If an older download says the app is damaged, delete that file and download this version. Windows may ask you to confirm the download before it opens.</p>
+            <p>Local AI downloads a verified runtime and model on first use: about 1 GB on macOS and up to 4 GB on Windows or Linux.</p>
+          </div>
+        </details>
+
+        <p className="mt-4 text-xs leading-5 text-stone-500">
+          Check downloads against the release checksums. Release notes and all builds are on the{" "}
+          <a className="underline underline-offset-2 hover:text-stone-900" href={DESKTOP_RELEASE_PAGE}>desktop release page</a>.
         </p>
-      </div>
+      </section>
     </main>
   );
 }

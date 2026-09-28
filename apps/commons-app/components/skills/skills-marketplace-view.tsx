@@ -19,6 +19,8 @@ import {
   Video,
   ShieldAlert,
   Square,
+  MoreVertical,
+  ChevronRight,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +41,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { SkillIcon } from "@/components/skills/skill-icon";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Skill } from "@agent-commons/sdk";
 
 interface SkillsMarketplaceViewProps {
@@ -102,6 +111,7 @@ function CreateChoice({
   );
 }
 
+/** Icon, name, and one line, like the Tools list. Details live on the skill page. */
 function SkillCard({
   skill,
   onDelete,
@@ -115,24 +125,11 @@ function SkillCard({
   onManageAgents: (skill: Skill) => void;
   isOwner: boolean;
 }) {
-  const VisibilityIcon = skill.isPublic ? Globe : Lock;
-  const enabledAgents = (skill.assignedAgents ?? []).filter(
-    (assignment) => assignment.isEnabled
-  );
-  const assignmentLabel = enabledAgents.length
-    ? `Available to ${enabledAgents
-        .slice(0, 2)
-        .map((assignment) => assignment.agentName)
-        .join(", ")}${
-        enabledAgents.length > 2 ? ` +${enabledAgents.length - 2}` : ""
-      }`
-    : "Not assigned to an agent";
-
   return (
     <div
       role="button"
       tabIndex={0}
-      className="group flex h-full cursor-pointer flex-col rounded-xl border border-border bg-background p-4 transition-colors hover:border-foreground/15 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none"
       onClick={() => onOpen(skill.skillId)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -141,75 +138,40 @@ function SkillCard({
         }
       }}
     >
-      <div className="flex min-w-0 items-start gap-3">
-        <SkillIcon icon={skill.icon} />
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-medium text-foreground">
-            {skill.name}
-          </h3>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-            {skill.description}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <VisibilityIcon
-            className="h-3.5 w-3.5 text-muted-foreground/60"
-            aria-label={skill.isPublic ? "Public" : "Private"}
-          />
+      <SkillIcon icon={skill.icon} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{skill.name}</p>
+        <p className="truncate text-xs text-muted-foreground">{skill.description}</p>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`${skill.name} actions`}
+          >
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44" onClick={(event) => event.stopPropagation()}>
+          <DropdownMenuItem onClick={() => onManageAgents(skill)}>
+            <Users className="h-4 w-4" />
+            Agents
+          </DropdownMenuItem>
           {isOwner && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete(skill.skillId);
-              }}
-              aria-label={`Delete ${skill.name}`}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete(skill.skillId)}>
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </>
           )}
-        </div>
-      </div>
-
-      <button
-        type="button"
-        className="mt-3 flex min-w-0 items-center gap-1.5 self-start rounded-md text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={(event) => {
-          event.stopPropagation();
-          onManageAgents(skill);
-        }}
-        title={assignmentLabel}
-      >
-        <Users className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
-        <span className="truncate">{assignmentLabel}</span>
-      </button>
-
-      <div className="mt-auto flex items-center justify-between gap-3 pt-3">
-        <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-          {skill.tags.slice(0, 3).map((tag) => (
-            <Badge
-              key={tag}
-              variant="secondary"
-              className="h-5 max-w-[7rem] truncate px-1.5 text-[10px] font-normal"
-            >
-              {tag}
-            </Badge>
-          ))}
-          {skill.tags.length > 3 && (
-            <Badge
-              variant="outline"
-              className="h-5 px-1.5 text-[10px] font-normal text-muted-foreground"
-            >
-              +{skill.tags.length - 3}
-            </Badge>
-          )}
-        </div>
-        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-          {skill.usageCount} {skill.usageCount === 1 ? "use" : "uses"}
-        </span>
-      </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
     </div>
   );
 }
@@ -643,7 +605,7 @@ export function SkillsMarketplaceView({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
           {filtered.map((skill) => (
             <SkillCard
               key={skill.skillId}

@@ -29,6 +29,8 @@ import { VoiceRecorderPanel } from "./voice-recorder";
 import { ComposerSendButton, ComposerTextArea } from "./composer-controls";
 import { cn } from "@/lib/utils";
 import { ArtifactIcon } from "@/components/artifacts/artifact-icon";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+import { notifySessionsChanged } from "@/hooks/sessions/use-user-sessions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,6 +91,22 @@ type KnowledgeSpaceOption = {
   counts?: { documents?: number };
 };
 
+/** Everything a new chat needs to send its first message in the session view. */
+export type ComposerLaunch = {
+  text: string;
+  attachments: Array<{
+    fileId: string;
+    name: string;
+    mimeType: string;
+    kind?: string;
+    sizeBytes: number;
+    textPreview?: string | null;
+    previewUrl?: string;
+  }>;
+  knowledgeSpaceIds: string[];
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+};
+
 export type ExternalComposerPrompt = {
   id: string;
   text: string;
@@ -118,6 +136,10 @@ export default function ChatInputBox({
   allowComputer = true,
   uiContext,
   externalPrompt,
+  initialLaunch,
+  onInitialLaunchSent,
+  projectId,
+  launching = false,
 }: {
   agentId: string;
   sessionId: string;
@@ -125,12 +147,18 @@ export default function ChatInputBox({
   disabled?: boolean;
   onSessionCreated?: (sessionId: string, title?: string) => void;
   /**
-   * Launch mode: when provided, submitting hands the typed message to this
-   * callback instead of streaming inline. Used by the agents overview launcher
-   * to route into an agent's new-session view. Streaming/attachment chrome is
-   * suppressed so the box reads as a lightweight composer.
+   * Launch mode: submitting hands the message, attachments, and selected
+   * Knowledge Spaces to this callback instead of streaming inline. Used by
+   * launchers that open the new chat in its session view.
    */
-  onLaunch?: (text: string) => void;
+  onLaunch?: (launch: ComposerLaunch) => void;
+  /** Auto-send this launch once on mount (the destination of a launcher). */
+  initialLaunch?: ComposerLaunch | null;
+  onInitialLaunchSent?: () => void;
+  /** Project for a chat started here without an existing session. */
+  projectId?: string;
+  /** Shows the send button as busy while a launcher opens the chat. */
+  launching?: boolean;
   /** Auto-send this message once on mount (destination of a launch). */
   initialPrompt?: string | null;
   /** Called after {@link initialPrompt} has been auto-sent. */
@@ -177,7 +205,7 @@ export default function ChatInputBox({
   }, []);
 
   useEffect(() => {
-    if (isLaunchMode || !userId) return;
+    if (!userId) return;
     let cancelled = false;
     setKnowledgeLoading(true);
     if (local) {
@@ -301,6 +329,7 @@ export default function ChatInputBox({
         payload?.content ?? payload?.data?.content ?? accumulatedRef.current;
       finalizeStreamingMessage(content, payload?.metadata);
       markCompleted(payload?.sessionId ?? activeRunSessionRef.current);
+      notifySessionsChanged({ sessionId: payload?.sessionId ?? activeRunSessionRef.current, title: payload?.title });
       if (payload?.sessionId && payload.sessionId !== sessionId) {
         onSessionCreated?.(payload.sessionId, payload.title ?? "");
       }
@@ -511,7 +540,7 @@ export default function ChatInputBox({
     onError: (message) => setVoiceError(message),
   });
 
-  const isLoading = streaming || disabled;
+  const isLoading = streaming || disabled || launching;
   const isUploading = attachments.some(
     (attachment) => attachment.status === "uploading",
   );
@@ -574,10 +603,19 @@ export default function ChatInputBox({
     computerSessionRef.current = { agentId, sessionId };
   }, [agentId, sessionId]);
 
-  const handleSend = async (overrideText?: string) => {
-    const baseText = (overrideText ?? inputText).trim();
+  const handleSend = async (overrideText?: string, launched?: ComposerLaunch) => {
+    const baseText = (overrideText ?? launched?.text ?? inputText).trim();
+    const sendAttachments = launched?.attachments ?? uploadedAttachments.map((attachment) => ({
+      fileId: attachment.fileId!,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      kind: attachment.kind,
+      sizeBytes: attachment.sizeBytes,
+      textPreview: attachment.textPreview,
+      previewUrl: attachment.previewUrl,
+    }));
     if (
-      (!baseText && uploadedAttachments.length === 0) ||
+      (!baseText && sendAttachments.length === 0) ||
       isLoading ||
       isUploading ||
       (!local && outOfCredits)
@@ -586,11 +624,18 @@ export default function ChatInputBox({
 
     const userMessage = baseText || "Please review the attached file(s).";
 
-    // Launch mode: hand off the message and let the caller route into the
-    // destination agent's session instead of streaming here.
+    // Launch mode: hand everything to the caller, which opens the new chat
+    // in its session view and sends it there.
     if (onLaunch) {
+      onLaunch({
+        text: userMessage,
+        attachments: sendAttachments,
+        knowledgeSpaceIds: [...knowledgeSpaceIds],
+        reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
+      });
       setInputText("");
-      onLaunch(userMessage);
+      setAttachments([]);
+      setKnowledgeSpaceIds([]);
       return;
     }
 
@@ -604,15 +649,9 @@ export default function ChatInputBox({
             enabled: true,
           }
         : undefined;
-    const messageAttachments = uploadedAttachments.map((attachment) => ({
-      fileId: attachment.fileId!,
-      name: attachment.name,
-      mimeType: attachment.mimeType,
-      kind: attachment.kind,
-      sizeBytes: attachment.sizeBytes,
-      textPreview: attachment.textPreview,
-    }));
-    const selectedKnowledgeSpaceIds = [...knowledgeSpaceIds];
+    const messageAttachments = sendAttachments.map(({ previewUrl: _previewUrl, ...attachment }) => attachment);
+    const selectedKnowledgeSpaceIds = launched?.knowledgeSpaceIds ?? [...knowledgeSpaceIds];
+    const effort = launched?.reasoningEffort ?? (thinkingLevel === "auto" ? undefined : thinkingLevel);
     setInputText("");
     setOutOfCredits(false);
     previewUrlsRef.current.forEach((previewUrl) =>
@@ -661,26 +700,33 @@ export default function ChatInputBox({
         attachments: messageAttachments.map((attachment) => ({ fileId: attachment.fileId })),
         computerRequest,
         knowledgeSpaceIds: selectedKnowledgeSpaceIds,
-        reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
+        reasoningEffort: effort,
         provenance,
         cliContext: cliContext ?? undefined,
         localWorkspaceRoot: local ? desktopWorkspace ?? undefined : undefined,
+        projectId: sessionId ? undefined : projectId,
       });
     } finally {
       sendInFlightRef.current = false;
     }
   };
 
-  // Auto-send a handed-off prompt exactly once (arriving from the launcher).
+  // Auto-send a handed-off prompt exactly once (arriving from a launcher).
   const autoSentRef = useRef(false);
   useEffect(() => {
     if (isLaunchMode || autoSentRef.current) return;
+    if (initialLaunch && (initialLaunch.text.trim() || initialLaunch.attachments.length)) {
+      autoSentRef.current = true;
+      void handleSend(undefined, initialLaunch);
+      onInitialLaunchSent?.();
+      return;
+    }
     if (!initialPrompt || !initialPrompt.trim()) return;
     autoSentRef.current = true;
     handleSend(initialPrompt);
     onInitialPromptSent?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPrompt]);
+  }, [initialPrompt, initialLaunch]);
 
   const externalPromptIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -727,7 +773,7 @@ export default function ChatInputBox({
   };
 
   const uploadFiles = async (files: FileList | File[]) => {
-    if (isLoading || isLaunchMode) return;
+    if (isLoading) return;
     const selected = Array.from(files).filter((file) => file.size > 0);
     if (!selected.length) return;
 
@@ -749,12 +795,14 @@ export default function ChatInputBox({
     setAttachments((current) => [...current, ...localAttachments]);
 
     const formData = new FormData();
-    formData.set("agentId", agentId);
+    if (agentId) formData.set("agentId", agentId);
     if (sessionId) formData.set("sessionId", sessionId);
     selected.forEach((file) => formData.append("files", file));
 
     try {
-      const response = await fetch("/api/files/upload", {
+      // Local mode keeps the file on this computer in the Local Library;
+      // Cloud mode uploads it to the Commons Library.
+      const response = await desktopApiFetch("/api/files/upload", {
         method: "POST",
         body: formData,
       });
@@ -764,15 +812,16 @@ export default function ChatInputBox({
           payload?.message || payload?.error || "File upload failed",
         );
       }
-      const uploaded = (payload?.data ?? []) as Array<{
-        fileId: string;
+      const uploaded = ((payload?.data ?? []) as Array<{
+        fileId?: string;
+        itemId?: string;
         name: string;
         mimeType: string;
         kind: string;
         sizeBytes: number;
         status: string;
         textPreview?: string | null;
-      }>;
+      }>).map((item) => ({ ...item, fileId: item.fileId ?? item.itemId ?? "" }));
       setAttachments((current) =>
         current.map((attachment) => {
           const index = localAttachments.findIndex(
@@ -1001,15 +1050,13 @@ export default function ChatInputBox({
             <p className="px-3 pb-1 text-xs text-red-500">{voiceError}</p>
           )}
           <div className="flex justify-between items-center px-2 pb-2">
-            {footerLeft ? (
-              <div className="min-w-0">{footerLeft}</div>
-            ) : (
-              <div className="flex items-center gap-1">
+            {(
+              <div className="flex min-w-0 items-center gap-1">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      disabled={!!isLoading || isLaunchMode}
+                      disabled={!!isLoading}
                       title="Add photos & files"
                       aria-label="Add photos & files"
                       className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
@@ -1115,7 +1162,7 @@ export default function ChatInputBox({
                     )}
                   </button>
                 )}
-                {!isLaunchMode && (
+                {(
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
@@ -1215,10 +1262,11 @@ export default function ChatInputBox({
                     <FolderOpen className="h-4 w-4" />
                   </button>
                 )}
+                {footerLeft && <div className="ml-1 min-w-0">{footerLeft}</div>}
               </div>
             )}
             <div className="flex items-center gap-1">
-              {!isLaunchMode && (
+              {(
                 <div className="relative">
                   <button
                     type="button"
