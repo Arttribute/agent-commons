@@ -36,6 +36,7 @@ import { execFile, spawn } from 'child_process';
 import * as readline from 'readline';
 import { editPreview } from './edit-preview.js';
 import { scanDiskUsage } from './disk-usage.js';
+import { extractOfficeOpenXmlText } from './office-text.js';
 // pdf-parse: pure-JS PDF text extractor, no system dependencies required.
 // Import from lib/pdf-parse.js to skip the test-file side-effect in the main entry.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -429,7 +430,7 @@ async function confirm(
 // ── Tool implementations ──────────────────────────────────────────────────────
 
 // Extensions that need special text extraction (not plain utf-8)
-const OFFICE_EXTS = new Set(['.docx', '.doc', '.rtf', '.odt', '.pages']);
+const OFFICE_EXTS = new Set(['.docx', '.doc', '.rtf', '.odt', '.pages', '.pptx', '.xlsx']);
 const PDF_EXTS = new Set(['.pdf']);
 const UNREADABLE_BINARY_EXTS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp', '.tiff',
@@ -437,7 +438,7 @@ const UNREADABLE_BINARY_EXTS = new Set([
   '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar',
   '.exe', '.dll', '.so', '.dylib', '.bin',
   '.psd', '.ai', '.sketch', '.figma',
-  '.xlsx', '.xls', '.pptx', '.ppt',
+  '.xls', '.ppt',
 ]);
 
 /** Use macOS textutil (built-in) or pdftotext (brew) to extract text. */
@@ -476,10 +477,31 @@ async function extractPdfText(abs: string): Promise<string> {
 }
 
 async function extractOfficeText(abs: string, ext: string): Promise<string> {
-  // macOS textutil is built-in and handles .docx, .doc, .rtf, .odt
+  // Office Open XML (.docx, .pptx, .xlsx) is read directly on every platform.
+  const openXml = extractOfficeOpenXmlText(readFileSync(abs), ext);
+  if (openXml) return openXml;
+  // macOS textutil is built-in and handles legacy .doc, .rtf, .odt
   const text = await extractViaCommand('textutil', ['-stdout', '-cat', 'txt', abs]);
   if (text) return text;
-  return `[Cannot extract ${ext} text: textutil failed or is unavailable on this system]`;
+  return `[Cannot extract ${ext} text: this document format is not supported on this system]`;
+}
+
+/** Document formats whose text is extracted rather than read as UTF-8. */
+export function isExtractableDocument(path: string) {
+  const ext = extname(path).toLowerCase();
+  return PDF_EXTS.has(ext) || OFFICE_EXTS.has(ext);
+}
+
+/**
+ * Reads the text of a PDF or Office document at an absolute path. Callers are
+ * responsible for authorizing the path. Returns an explanatory bracketed
+ * message when no text could be extracted.
+ */
+export async function extractDocumentText(abs: string): Promise<string> {
+  const ext = extname(abs).toLowerCase();
+  if (PDF_EXTS.has(ext)) return extractPdfText(abs);
+  if (OFFICE_EXTS.has(ext)) return extractOfficeText(abs, ext);
+  return readFileSync(abs, 'utf8');
 }
 
 async function toolReadFile(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {

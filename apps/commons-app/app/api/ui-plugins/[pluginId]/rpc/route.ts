@@ -163,8 +163,10 @@ function trustedRequestOrigin(request: NextRequest) {
     getAppBaseUrl(),
   );
 
+  // Local development and the desktop app's bundled server run on loopback.
   if (
-    process.env.NODE_ENV !== "production" &&
+    (process.env.NODE_ENV !== "production" ||
+      process.env.COMMONS_DESKTOP_SERVER === "1") &&
     ["localhost", "127.0.0.1", "[::1]"].includes(request.nextUrl.hostname)
   ) {
     trusted.add(requestOrigin);

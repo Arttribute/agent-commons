@@ -49,7 +49,7 @@ describe('public code project security headers', () => {
         "img-src 'self' data: blob:",
         "connect-src 'none'",
         "frame-src 'none'",
-        "frame-ancestors 'self' https://commons.example",
+        "frame-ancestors 'self' https://commons.example http://localhost:* http://127.0.0.1:*",
         "form-action 'none'",
         "base-uri 'none'",
         "object-src 'none'",
@@ -81,7 +81,7 @@ describe('public code project security headers', () => {
         "img-src 'self' data: blob:",
         "connect-src https://esm.sh",
         "frame-src 'none'",
-        "frame-ancestors 'self' https://commons.example",
+        "frame-ancestors 'self' https://commons.example http://localhost:* http://127.0.0.1:*",
         "form-action 'none'",
         "base-uri 'none'",
         "object-src 'none'",
@@ -115,7 +115,7 @@ describe('public code project security headers', () => {
         'frame-src https://preview.example',
       );
       expect(response.headers.get('Content-Security-Policy')).toContain(
-        'frame-ancestors https://commons.example',
+        'frame-ancestors https://commons.example http://localhost:* http://127.0.0.1:*',
       );
 
       const html = response.value.send.mock.calls[0][0] as string;

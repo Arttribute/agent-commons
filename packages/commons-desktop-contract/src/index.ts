@@ -36,6 +36,13 @@ export type LocalAgent = {
   updatedAt: string;
 };
 
+export type LocalMessageAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes?: number;
+};
+
 export type LocalMessage = {
   id: string;
   role: "user" | "assistant" | "tool";
@@ -43,6 +50,7 @@ export type LocalMessage = {
   createdAt: string;
   toolName?: string;
   toolArgs?: Record<string, unknown>;
+  attachments?: LocalMessageAttachment[];
 };
 
 export type LocalConversation = {
@@ -51,6 +59,8 @@ export type LocalConversation = {
   title: string;
   workspaceRoot?: string;
   spaceIds?: string[];
+  /** Chats in the same project share its instructions, files, and knowledge. */
+  projectId?: string;
   messages: LocalMessage[];
   artifacts?: LocalArtifact[];
   createdAt: string;
@@ -74,23 +84,71 @@ export type LocalLibraryItem = {
   agentId?: string;
   conversationId?: string;
   isFavorite?: boolean;
+  /** When true the file can never be copied to Commons Cloud. */
+  keepOnDevice?: boolean;
+  /** Cloud Library item created from this file with the user's consent. */
+  cloudItemId?: string;
+  cloudCopiedAt?: string;
   createdAt: string;
   updatedAt: string;
+};
+
+/**
+ * A project groups chats with shared context: instructions, files from the
+ * Library, and Knowledge Spaces. Every chat in the project receives it.
+ */
+export type LocalProject = {
+  id: string;
+  name: string;
+  description?: string;
+  instructions?: string;
+  spaceIds: string[];
+  libraryItemIds: string[];
+  /** Agent used for new chats started from the project page. */
+  agentId?: string;
+  pinned?: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProjectInput = {
+  id?: string;
+  name?: string;
+  description?: string;
+  instructions?: string;
+  spaceIds?: string[];
+  libraryItemIds?: string[];
+  agentId?: string | null;
+  pinned?: boolean;
 };
 
 export type KnowledgeFile = {
   path: string;
   size: number;
   modifiedAt: string;
+  /** Indexed text. PDF and Office documents store their extracted text. */
   excerpt: string;
+  /** How the text was produced. Absent means plain UTF-8. */
+  format?: "text" | "pdf" | "office";
+};
+
+export type KnowledgeSourceInfo = {
+  /** Git branch and commit the folder was indexed at, when it is a repository. */
+  git?: { branch?: string; commit?: string; root: string };
 };
 
 export type KnowledgeSpace = {
   id: string;
   name: string;
+  description?: string;
   folders: string[];
   files: KnowledgeFile[];
   indexedAt?: string;
+  /** True when the folders were chosen by the user rather than created by Commons. */
+  linked?: boolean;
+  /** Linked folders are watched and reindexed when files change outside Commons. */
+  liveSync?: boolean;
+  source?: KnowledgeSourceInfo;
   autoGrantNewAgents?: boolean;
   grants?: Array<{ id: string; subjectType: "agent" | "user" | "workspace"; subjectId: string; permission: "read" | "write" | "manage"; autoRetrieve: boolean }>;
 };
@@ -149,10 +207,16 @@ export type LocalWorkflow = {
 export type LocalApp = {
   id: string;
   name: string;
+  description?: string;
   directory: string;
+  /** Empty for a built folder that Commons serves itself. */
   command: string;
   args: string[];
   previewUrl: string;
+  /** Set when this app is a copy of a Cloud app kept on this computer. */
+  cloudPluginId?: string;
+  /** The reviewed Cloud manifest (surfaces, capabilities, data collections) of a kept copy. */
+  manifest?: Record<string, unknown>;
   status: "stopped" | "running" | "failed";
   output?: string;
   createdAt: string;
@@ -199,6 +263,7 @@ export type LocalState = {
   tasks: LocalTask[];
   workflows: LocalWorkflow[];
   apps: LocalApp[];
+  projects?: LocalProject[];
   settings: LocalSettings;
   account?: DesktopAccount;
   preferences?: WorkspacePreferences;
@@ -210,6 +275,10 @@ export type ChatRequest = {
   prompt: string;
   workspaceRoot?: string;
   spaceIds?: string[];
+  /** Local Library items attached to this message. Files never leave the computer. */
+  attachmentIds?: string[];
+  /** Project for a new conversation. Existing conversations keep their project. */
+  projectId?: string;
   interactive?: boolean;
 };
 
@@ -222,10 +291,17 @@ export type ApprovalRequest = {
   id: string;
   permission: string;
   summary: string;
+  /** One line describing the action, for the collapsed in-chat approval. */
+  title?: string;
+  conversationId?: string;
+  toolName?: string;
+  /** Extra risk context shown with the details. */
+  note?: string;
 };
 
 export type RuntimeEvent =
   | { type: "approval"; approval: ApprovalRequest }
+  | { type: "approval-resolved"; id: string; allow: boolean }
   | { type: "activity"; label: string; detail?: string; status: "running" | "done" | "error"; conversationId?: string; toolName?: string; args?: Record<string, unknown>; result?: string }
   | { type: "model"; model: LocalModelStatus }
   | { type: "chat-start"; conversationId: string }
@@ -265,6 +341,9 @@ export type WorkflowInput = Pick<LocalWorkflow, "name" | "agentId" | "steps"> & 
 
 export type AppInput = Pick<LocalApp, "name" | "directory" | "command" | "args" | "previewUrl"> & {
   id?: string;
+  description?: string;
+  cloudPluginId?: string;
+  manifest?: Record<string, unknown>;
 };
 
 export interface CloudDesktopBridge {
@@ -280,6 +359,14 @@ export interface CloudDesktopBridge {
   importCloudLibraryItemToLocal(itemId: string, name: string, mimeType: string): Promise<void>;
   listLocalTransferItems(): Promise<Array<{ id: string; name: string; mimeType: string }>>;
   readLocalTransferItem(id: string): Promise<{ name: string; mimeType: string; bytes: Uint8Array }>;
+  /** Downloads a published Cloud app into Private Local so it also runs there. */
+  saveAppLocally(app: { pluginId: string; name: string; description?: string; entryUrl: string; manifest?: Record<string, unknown> }): Promise<void>;
+  /** Records the Cloud copy of a Local Library file after a confirmed transfer. */
+  markLocalTransferred(id: string, cloudItemId: string): Promise<void>;
+  /** Computer-tool approvals for Cloud agents, answered inside the chat. */
+  onApproval(listener: (approval: ApprovalRequest) => void): () => void;
+  onApprovalResolved(listener: (id: string) => void): () => void;
+  answerApproval(id: string, allow: boolean, remember?: boolean): Promise<void>;
   syncAccount(account: DesktopAccount): Promise<void>;
   getPreferences(): Promise<WorkspacePreferences>;
   syncPreferences(preferences: WorkspacePreferences): Promise<WorkspacePreferences>;
@@ -308,7 +395,7 @@ export interface LocalDesktopBridge {
   sendMessage(input: ChatRequest): Promise<ChatResult>;
   deleteConversation(id: string): Promise<LocalState>;
   renameConversation(id: string, title: string): Promise<LocalState>;
-  approve(id: string, allow: boolean): Promise<void>;
+  approve(id: string, allow: boolean, remember?: boolean): Promise<void>;
   addKnowledgeSpace(name: string, folders: string[]): Promise<LocalState>;
   reindexKnowledgeSpace(id: string): Promise<LocalState>;
   removeKnowledgeSpace(id: string): Promise<LocalState>;

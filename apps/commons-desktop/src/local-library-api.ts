@@ -7,32 +7,41 @@ import type { LocalApiResult } from "./local-knowledge-api";
 const ok = (data: unknown): LocalApiResult => ({ status: 200, body: { data } });
 const bad = (message: string, status = 400): LocalApiResult => ({ status, body: { message } });
 
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|css|scss|sql|sh|ya?ml|toml|json|html?)$/i;
+
 function kind(item: LocalLibraryItem) {
   if (item.mimeType.startsWith("image/")) return "image";
-  if (item.mimeType.startsWith("video/") || item.mimeType.startsWith("audio/")) return "media";
-  if (item.mimeType === "application/pdf") return "pdf";
-  if (item.mimeType.startsWith("text/") || /\.(?:md|txt|json|tsx?|jsx?|py|html|css)$/i.test(item.name)) return "text";
+  if (item.mimeType.startsWith("video/")) return "video";
+  if (item.mimeType.startsWith("audio/")) return "audio";
+  if (item.mimeType === "application/pdf" || /\.pdf$/i.test(item.name)) return "pdf";
+  if (/wordprocessingml|msword/.test(item.mimeType) || /\.docx?$/i.test(item.name)) return "document";
+  if (/presentationml/.test(item.mimeType) || /\.pptx?$/i.test(item.name)) return "presentation";
+  if (/spreadsheetml/.test(item.mimeType) || /\.(?:xlsx?|csv)$/i.test(item.name)) return "spreadsheet";
+  if (CODE_FILE.test(item.name)) return "code";
+  if (item.mimeType.startsWith("text/") || /\.(?:md|mdx|txt)$/i.test(item.name)) return "text";
   return "document";
 }
 
 function view(item: LocalLibraryItem, runtime: PrivateLocalRuntime) {
   const session = runtime.state().conversations.find((entry) => entry.id === item.conversationId);
   const size = existsSync(item.path) ? statSync(item.path).size : 0;
-  const text = item.mimeType.startsWith("text/") && size < 1_000_000 && existsSync(item.path)
+  const itemKind = kind(item);
+  const text = itemKind === "text" && size < 1_000_000 && existsSync(item.path)
     ? readFileSync(item.path, "utf8").slice(0, 500) : null;
   const previewUrl = item.mimeType.startsWith("image/") && size < 2_000_000 && existsSync(item.path)
     ? `data:${item.mimeType};base64,${readFileSync(item.path).toString("base64")}` : null;
   return {
-    itemId: item.id, name: item.name, description: null, kind: kind(item), mimeType: item.mimeType,
+    itemId: item.id, fileId: item.id, name: item.name, description: null, kind: itemKind, mimeType: item.mimeType,
     sizeBytes: size, source: item.source, status: existsSync(item.path) ? "ready" : "missing",
     visibility: "private", sourceAgentId: item.agentId ?? null, sourceSessionId: item.conversationId ?? null,
     sessionTitle: session?.title ?? null, textPreview: text, previewUrl,
     metadata: { localPath: item.path }, isFavorite: Boolean(item.isFavorite),
+    location: "local", keepOnDevice: Boolean(item.keepOnDevice), cloudItemId: item.cloudItemId ?? null,
     createdAt: item.createdAt, updatedAt: item.updatedAt,
   };
 }
 
-export function handleLocalLibraryApi(runtime: PrivateLocalRuntime, url: URL, method: string, body: Record<string, unknown>): LocalApiResult {
+export async function handleLocalLibraryApi(runtime: PrivateLocalRuntime, url: URL, method: string, body: Record<string, unknown>): Promise<LocalApiResult> {
   try {
     if (url.pathname === "/api/files/upload" && method === "POST") {
       const files = Array.isArray(body.files) ? body.files : [];
@@ -53,8 +62,8 @@ export function handleLocalLibraryApi(runtime: PrivateLocalRuntime, url: URL, me
         if (agentId && item.agentId !== agentId) return false;
         if (url.searchParams.get("favorite") === "true" && !item.isFavorite) return false;
         if (viewFilter === "images" && kind(item) !== "image") return false;
-        if (viewFilter === "documents" && !["text", "document", "pdf"].includes(kind(item))) return false;
-        if (viewFilter === "media" && kind(item) !== "media") return false;
+        if (viewFilter === "documents" && !["text", "document", "pdf", "presentation", "spreadsheet", "code"].includes(kind(item))) return false;
+        if (viewFilter === "media" && !["video", "audio"].includes(kind(item))) return false;
         if (viewFilter === "apps") return false;
         return true;
       }).map((item) => view(item, runtime)));
@@ -64,7 +73,11 @@ export function handleLocalLibraryApi(runtime: PrivateLocalRuntime, url: URL, me
     if (parts.length === 1) {
       if (method === "GET") return { status: 200, body: { ...view(item, runtime), grants: [], blobs: [{ storageProvider: "local" }] } };
       if (method === "PATCH") {
-        runtime.updateLibraryItem(item.id, { name: typeof body.name === "string" ? body.name : undefined, isFavorite: typeof body.isFavorite === "boolean" ? body.isFavorite : undefined });
+        runtime.updateLibraryItem(item.id, {
+          name: typeof body.name === "string" ? body.name : undefined,
+          isFavorite: typeof body.isFavorite === "boolean" ? body.isFavorite : undefined,
+          keepOnDevice: typeof body.keepOnDevice === "boolean" ? body.keepOnDevice : undefined,
+        });
         return ok(view(runtime.state().library!.find((entry) => entry.id === item.id)!, runtime));
       }
       if (method === "DELETE") { runtime.deleteLibraryItem(item.id); return ok({ deleted: true }); }
@@ -72,13 +85,21 @@ export function handleLocalLibraryApi(runtime: PrivateLocalRuntime, url: URL, me
     if (!existsSync(item.path)) return bad("The Local file is missing from disk", 404);
     const stats = statSync(item.path);
     const inline = stats.size <= 5_000_000 ? `data:${item.mimeType};base64,${readFileSync(item.path).toString("base64")}` : undefined;
-    if (parts[1] === "preview" && method === "GET") return ok({
-      ...view(item, runtime), content: item.mimeType.startsWith("text/") && stats.size <= 2_000_000 ? readFileSync(item.path, "utf8") : undefined,
-      totalChars: item.mimeType.startsWith("text/") ? stats.size : undefined,
+    if (parts[1] === "preview" && method === "GET") {
+      const itemKind = kind(item);
+      let content: string | undefined;
+      if (["text", "code"].includes(itemKind) && stats.size <= 2_000_000) content = readFileSync(item.path, "utf8");
+      else if (["pdf", "document", "presentation", "spreadsheet"].includes(itemKind)) {
+        content = (await runtime.readLibraryItem(item.id).then((read) => read.content).catch(() => undefined)) || undefined;
+      }
+      return ok({
+      ...view(item, runtime), content,
+      totalChars: content?.length,
       truncated: false, artifacts: [],
       download: inline ? { itemId: item.id, name: item.name, mimeType: item.mimeType, url: inline, expiresInSeconds: 0 } : undefined,
       inline: inline ? { itemId: item.id, name: item.name, mimeType: item.mimeType, url: inline, expiresInSeconds: 0 } : undefined,
-    });
+      });
+    }
     if (parts[1] === "download" && method === "GET") return ok({ url: inline ?? "", localPath: item.path });
     if (parts[1] === "provenance" && method === "GET") {
       const hash = createHash("sha256").update(readFileSync(item.path)).digest("hex");
