@@ -1,0 +1,67 @@
+---
+title: Projects
+description: Keep related chats together with shared instructions, files, and knowledge.
+---
+
+A project groups chats around one piece of work. Every chat in a project
+receives the same context:
+
+- **Instructions** that apply in addition to the agent's own instructions.
+- **Files** from the [Library](/docs/guides/knowledge), such as briefs, PDFs, and Word documents.
+- **Knowledge Spaces** that the agent searches before answering.
+
+Agents cite what they use. Answers end with a Sources list that names each
+file, and for Knowledge Spaces the lines or section the claim came from.
+
+## Create a project
+
+Open **Projects** in the sidebar and choose **New project**. Give it a name and
+say what you are trying to achieve. You can also import a folder:
+
+- In **Local** mode the folder stays linked. Commons indexes Markdown, text,
+  PDF, Word, PowerPoint, and Excel files, and follows edits you make in other
+  apps. If the folder is a git repository, the index records the branch and
+  commit, and switching branches updates it.
+- In **Cloud** mode Markdown notes are imported into a connected Knowledge
+  Space and documents are uploaded to the Library as project files.
+
+Start a chat from the project page. It opens in the chat view and stays in the
+project.
+
+## Scheduled work
+
+Use **Scheduled** on the project page to run work on a timetable, for example
+a weekly brief that picks up anything new in the project files. The task runs
+in a project chat with the project's instructions and knowledge.
+
+Local tasks run while Agent Commons is open on the computer.
+
+## Cloud and Local
+
+Projects live in the mode where you create them. Local projects, chats, and
+files stay on the computer. A Local file can be marked **Never send to Cloud**;
+otherwise you can copy it to your Cloud Library from Settings. Cloud Library
+files can be copied to the computer from the Library.
+
+## API
+
+```bash
+# List projects
+curl https://api.agentcommons.io/v1/projects \
+  -H "Authorization: Bearer $COMMONS_API_KEY"
+
+# Create a project
+curl https://api.agentcommons.io/v1/projects \
+  -H "Authorization: Bearer $COMMONS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Acme brief","description":"Weekly market brief","knowledgeSpaceIds":["<spaceId>"]}'
+
+# Start a chat in the project
+curl https://api.agentcommons.io/v1/sessions \
+  -H "Authorization: Bearer $COMMONS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"agentId":"<agentId>","projectId":"<projectId>"}'
+```
+
+Runs in that session receive the project context. `PATCH /v1/sessions/:id`
+with `{"projectId": null}` removes a chat from its project.
