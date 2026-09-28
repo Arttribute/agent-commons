@@ -321,11 +321,19 @@ function previewContentSecurityPolicy(asset: {
   ].join('; ');
 }
 
+/**
+ * Agent Commons Desktop serves the Commons app from a loopback origin with a
+ * per-launch port, so loopback parents are allowed alongside configured web
+ * origins. This matches isAllowedPluginParent below.
+ */
+const DESKTOP_PARENT_SOURCES = ['http://localhost:*', 'http://127.0.0.1:*'];
+
 function pluginFrameAncestors(includeSelf: boolean) {
   const configured = pluginParentOrigins();
   const sources = [
     ...(includeSelf ? ["'self'"] : []),
     ...configured,
+    ...DESKTOP_PARENT_SOURCES,
   ];
   return sources.length
     ? [...new Set(sources)].join(' ')

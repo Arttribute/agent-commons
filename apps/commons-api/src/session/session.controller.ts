@@ -13,10 +13,14 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { SessionService } from './session.service';
+import { ProjectService } from '~/project/project.service';
 
 @Controller({ version: '1', path: 'sessions' })
 export class SessionController {
-  constructor(private readonly sessionService: SessionService) {}
+  constructor(
+    private readonly sessionService: SessionService,
+    private readonly projects: ProjectService,
+  ) {}
 
   /**
    * Create a new session
@@ -24,19 +28,23 @@ export class SessionController {
    */
   @Post()
   async createSession(
-    @Body() body: { agentId: string; initiator?: string; title?: string; source?: string },
+    @Body() body: { agentId: string; initiator?: string; title?: string; source?: string; projectId?: string },
     @Req() req: Request,
   ) {
     if (!body.agentId) throw new BadRequestException('agentId is required');
     const principal = (req as any).principal;
+    const initiator =
+      principal?.principalType === 'user' ? principal.principalId : body.initiator;
+    // A chat can only join a project its initiator owns.
+    const projectId = body.projectId
+      ? (await this.projects.requireProject(initiator ?? '', body.projectId)).projectId
+      : undefined;
     const session = await this.sessionService.createSession({
       value: {
         agentId: body.agentId,
-        initiator:
-          principal?.principalType === 'user'
-            ? principal.principalId
-            : body.initiator,
+        initiator,
         title: body.title,
+        projectId,
         // Accept 'cli' | 'web' from the caller; default to 'web' if not provided
         initiatorType: body.source === 'cli' ? 'cli' : (body.source ?? 'web'),
       },
@@ -89,17 +97,27 @@ export class SessionController {
   @Patch(':id')
   async renameSession(
     @Param('id') id: string,
-    @Body() body: { title?: string },
+    @Body() body: { title?: string; projectId?: string | null; initiator?: string },
     @Req() req: Request,
   ) {
-    if (typeof body.title !== 'string' || !body.title.trim()) {
+    const movesProject = body.projectId !== undefined;
+    if (!movesProject && (typeof body.title !== 'string' || !body.title.trim())) {
       throw new BadRequestException('title is required');
     }
     await this.assertOwnership(id, req);
-    const session = await this.sessionService.renameSession({
-      id,
-      title: body.title.trim(),
-    });
+    if (movesProject) {
+      const principal = (req as any).principal;
+      const owner =
+        principal?.principalType === 'user'
+          ? principal.principalId
+          : (req.headers['x-owner-id'] as string) ?? (req.headers['x-initiator'] as string) ?? body.initiator;
+      if (!owner) throw new BadRequestException('A signed-in user is required');
+      await this.projects.assignSession(owner, id, body.projectId || null);
+    }
+    const session =
+      typeof body.title === 'string' && body.title.trim()
+        ? await this.sessionService.renameSession({ id, title: body.title.trim() })
+        : await this.sessionService.getSessionWithContent({ id });
     return { data: session };
   }
 

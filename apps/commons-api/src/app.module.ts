@@ -35,6 +35,7 @@ import { UiPluginModule } from './ui-plugin';
 import { UiPluginGatewayModule } from './ui-plugin/ui-plugin-gateway.module';
 import { ProvenanceModule } from './provenance';
 import { BrainModule } from './brain';
+import { ProjectModule } from './project';
 import { MediaModule } from './media';
 
 @Module({
@@ -47,6 +48,7 @@ import { MediaModule } from './media';
     PinataModule,
     ProvenanceModule,
     BrainModule,
+    ProjectModule,
     MediaModule,
 
     // Feature modules
