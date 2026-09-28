@@ -16,6 +16,7 @@ import {
   FolderInput,
   FolderPlus,
   FolderSync,
+  GitBranch,
   Link2,
   Loader2,
   MoreHorizontal,
@@ -114,7 +115,7 @@ export function KnowledgeSpacesView() {
   const [graph, setGraph] = useState<KnowledgeGraph>({ nodes: [], edges: [] });
   const [view, setView] = useState<"notes" | "graph">("notes");
   const [editorMode, setEditorMode] = useState<EditorMode>("visual");
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftPath, setDraftPath] = useState("");
   const draftRef = useRef({ content: "", title: "", path: "" });
@@ -952,12 +953,9 @@ export function KnowledgeSpacesView() {
       <div className="flex h-screen">
         <DashboardSideBar username={userAddress} />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-[74px] shrink-0 items-center justify-between border-b border-stone-200/80 bg-white px-6">
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-stone-200/80 bg-white px-5">
             <div className="min-w-0">
               <PageTitle title="Knowledge" />
-              <p className="mt-1.5 truncate text-sm text-muted-foreground">
-                Connected context for you and your agents.
-              </p>
             </div>
             <div className="flex items-center gap-2.5">
               <div className="relative hidden w-[300px] lg:block">
@@ -1026,19 +1024,8 @@ export function KnowledgeSpacesView() {
                       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-teal-100 text-teal-800">
                         <Network className="h-3.5 w-3.5" />
                       </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">
-                          {activeSpace?.name || "Knowledge Spaces"}
-                        </span>
-                        <span className="block truncate text-[11px] text-muted-foreground">
-                          {activeSpace
-                            ? `${activeSpace.counts?.documents || 0} notes · ${
-                                activeSpace.provider === "native"
-                                  ? local ? "Local files" : "Commons native"
-                                  : "Connected folder"
-                              }`
-                            : "Select a space"}
-                        </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {activeSpace?.name || "Knowledge Spaces"}
                       </span>
                       <ChevronDown className="h-4 w-4 text-stone-400" />
                     </button>
@@ -1139,7 +1126,9 @@ export function KnowledgeSpacesView() {
                     <FolderInput className="h-3.5 w-3.5" />
                   )}
                   {local
-                    ? "Refresh local files"
+                    ? activeSpace?.linkedFolder
+                      ? activeSpace.liveSync === false ? "Refresh from folder" : "Kept in sync · refresh now"
+                      : "Refresh"
                     : activeSpace?.provider === "browser_filesystem"
                     ? connectedFolderIds.has(activeSpace.spaceId)
                       ? "Sync connected folder"
@@ -1150,12 +1139,12 @@ export function KnowledgeSpacesView() {
             </aside>
 
             <section className="flex min-w-0 flex-1 flex-col bg-white">
-              <div className="flex h-12 shrink-0 items-center justify-between border-b border-stone-200/80 bg-white px-4">
-                <div className="flex rounded-lg bg-stone-100 p-1">
+              <div className="flex h-11 shrink-0 items-center gap-3 border-b border-stone-200/80 bg-white px-3">
+                <div className="flex shrink-0 rounded-lg bg-stone-100 p-0.5">
                   <button
                     onClick={() => setView("notes")}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs",
+                      "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs",
                       view === "notes"
                         ? "bg-white font-medium shadow-sm"
                         : "text-muted-foreground",
@@ -1169,7 +1158,7 @@ export function KnowledgeSpacesView() {
                       if (spaceId) void loadGraph(spaceId);
                     }}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs",
+                      "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs",
                       view === "graph"
                         ? "bg-white font-medium shadow-sm"
                         : "text-muted-foreground",
@@ -1178,14 +1167,89 @@ export function KnowledgeSpacesView() {
                     <Network className="h-3.5 w-3.5" /> Graph
                   </button>
                 </div>
-                <div className="flex items-center gap-2">
+                {view === "notes" && document ? (
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-stone-400" />
+                    <span className="truncate font-mono text-xs text-stone-600" title={draftPath}>
+                      {draftPath}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="flex-1" />
+                )}
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {activeSpace?.source?.git?.branch && (
+                    <span
+                      className="hidden items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground md:flex"
+                      title={`Indexed at ${activeSpace.source.git.commit ?? "the current commit"}. Switching branches updates Knowledge automatically.`}
+                    >
+                      <GitBranch className="h-3 w-3" />
+                      {activeSpace.source.git.branch}
+                    </span>
+                  )}
                   {view === "notes" && document && (
                     <SaveIndicator state={saveState} dirty={dirty} />
+                  )}
+                  {view === "notes" && document && document.editable !== false && (
+                    <div className="flex rounded-md bg-stone-100 p-0.5">
+                      <button
+                        onClick={() => setEditorMode("visual")}
+                        className={cn(
+                          "rounded px-2 py-0.5 text-[11px]",
+                          editorMode === "visual"
+                            ? "bg-white font-medium shadow-sm"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        Visual
+                      </button>
+                      <button
+                        onClick={() => setEditorMode("markdown")}
+                        className={cn(
+                          "rounded px-2 py-0.5 text-[11px]",
+                          editorMode === "markdown"
+                            ? "bg-white font-medium shadow-sm"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        Markdown
+                      </button>
+                    </div>
+                  )}
+                  {view === "notes" && document && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100" aria-label="Note actions">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() =>
+                            navigator.clipboard.writeText(draft)
+                          }
+                        >
+                          <Link2 className="h-4 w-4" /> Copy Markdown
+                        </DropdownMenuItem>
+                        {canEdit && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-red-600"
+                              onClick={() => void removeDocument()}
+                            >
+                              <Trash2 className="h-4 w-4" /> Delete note
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   )}
                   <button
                     onClick={() => setInspectorOpen((open) => !open)}
                     className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100"
-                    title={inspectorOpen ? "Hide details" : "Show details"}
+                    title={inspectorOpen ? "Hide links and details" : "Show links and details"}
+                    aria-label={inspectorOpen ? "Hide details" : "Show details"}
                   >
                     {inspectorOpen ? (
                       <PanelRightClose className="h-4 w-4" />
@@ -1213,72 +1277,11 @@ export function KnowledgeSpacesView() {
                     />
                   ) : document ? (
                     <div className="flex h-full w-full flex-col bg-page">
-                      <div className="flex min-h-14 shrink-0 items-center justify-between gap-4 border-b border-stone-200/80 bg-white px-6 py-3">
-                        <div className="flex min-w-0 flex-1 items-center gap-2">
-                          <FileText className="h-4 w-4 shrink-0 text-stone-500" />
-                          <span className="truncate font-mono text-xs text-stone-700">
-                            {draftPath}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <div className="mr-1 flex rounded-md bg-stone-100 p-0.5">
-                            <button
-                              onClick={() => setEditorMode("visual")}
-                              className={cn(
-                                "rounded px-2 py-1 text-[11px]",
-                                editorMode === "visual"
-                                  ? "bg-white font-medium shadow-sm"
-                                  : "text-muted-foreground",
-                              )}
-                            >
-                              Visual
-                            </button>
-                            <button
-                              onClick={() => setEditorMode("markdown")}
-                              className={cn(
-                                "rounded px-2 py-1 text-[11px]",
-                                editorMode === "markdown"
-                                  ? "bg-white font-medium shadow-sm"
-                                  : "text-muted-foreground",
-                              )}
-                            >
-                              Markdown
-                            </button>
-                          </div>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  navigator.clipboard.writeText(draft)
-                                }
-                              >
-                                <Link2 className="h-4 w-4" /> Copy Markdown
-                              </DropdownMenuItem>
-                              {canEdit && (
-                                <>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    className="text-red-600"
-                                    onClick={() => void removeDocument()}
-                                  >
-                                    <Trash2 className="h-4 w-4" /> Delete note
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
                       {editorMode === "visual" ? (
                         <RichMarkdownEditor
                           value={draft}
                           onChange={updateDraft}
-                          editable={canEdit}
+                          editable={canEdit && document.editable !== false}
                           documentPath={draftPath}
                           documents={documents}
                           onOpenDocument={(id) =>

@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import {
   AppWindow,
   Download,
+  FileCode2,
   FileText,
   Film,
   Filter,
@@ -51,6 +52,8 @@ import { ArtifactSurface } from "@/components/artifacts/artifact-surface";
 import {
   artifactKind,
   artifactLabel,
+  isCodeArtifact,
+  isPagedDocument,
   prettyBytes,
   type ArtifactRef,
 } from "@/lib/artifacts";
@@ -675,6 +678,23 @@ function Artifact({
                 : "object-contain bg-stone-200 p-3",
             )}
           />
+        ) : isCodeArtifact(item) ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2.5 bg-gradient-to-br from-white to-stone-100">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-violet-500 shadow-sm">
+              <FileCode2 className="h-7 w-7" strokeWidth={1.6} />
+            </span>
+            <span className="max-w-[80%] truncate font-mono text-[10px] text-stone-400">
+              {item.name}
+            </span>
+          </div>
+        ) : item.textPreview && isPagedDocument(item) ? (
+          <div className="flex h-full items-start justify-center overflow-hidden bg-stone-200 px-6 pt-4">
+            <div className="h-[118%] w-[66%] overflow-hidden rounded-sm bg-white px-3 py-3 shadow-sm">
+              <p className="line-clamp-[14] whitespace-pre-wrap break-words font-serif text-[7.5px] leading-[1.45] text-stone-700">
+                {item.textPreview}
+              </p>
+            </div>
+          </div>
         ) : item.textPreview ? (
           <div className="h-full overflow-hidden whitespace-pre-wrap bg-white p-5 text-xs leading-5 text-stone-600 [mask-image:linear-gradient(to_bottom,black_70%,transparent)]">
             {item.textPreview}

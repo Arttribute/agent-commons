@@ -2,9 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Loader2, MessageSquare, Plus, Settings2 } from "lucide-react";
+import { ChevronRight, Laptop, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   CREATE_UI_PLUGIN_HASH,
@@ -13,23 +19,25 @@ import {
 import { notifyUiPluginsChanged } from "@/lib/ui-plugin-events";
 import { useCommonsAppsStore } from "@/lib/commons-apps-store";
 import { AppIcon } from "./app-icon";
-import { AppSettingsSheet, useAccessSummary } from "./app-settings-sheet";
-import { pluginHasSurface, type UiPlugin } from "./types";
+import { AppSettingsSheet } from "./app-settings-sheet";
+import { pluginGrants, pluginHasSurface, type UiPlugin } from "./types";
 import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+type LocalAppView = UiPlugin & {
+  location?: "local";
+  localDirectory?: string;
+  cloudPluginId?: string | null;
+  runState?: "stopped" | "running" | "failed";
+};
 
 export function UiPluginsView() {
-  const { mode: workspaceMode } = useWorkspaceMode();
+  const { mode: workspaceMode, desktop } = useWorkspaceMode();
   const local = workspaceMode === "private-local";
   const [plugins, setPlugins] = useState<UiPlugin[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<{
-    pluginId: string;
-    mode: "review" | "settings";
-  } | null>(null);
-  const [localDetails, setLocalDetails] = useState<UiPlugin | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -38,57 +46,67 @@ export function UiPluginsView() {
     setPlugins(response.ok && Array.isArray(payload.data) ? payload.data : []);
     setLoading(false);
   }, []);
-  useEffect(() => void load(), [load]);
+  useEffect(() => {
+    setLoading(true);
+    void load();
+  }, [load, workspaceMode]);
 
   const replace = useCallback((plugin: UiPlugin) => {
-    setPlugins((items) =>
-      items.map((item) => (item.pluginId === plugin.pluginId ? plugin : item)),
-    );
+    setPlugins((items) => items.map((item) => (item.pluginId === plugin.pluginId ? plugin : item)));
     useCommonsAppsStore.getState().replacePlugin(plugin);
   }, []);
 
-  const disable = async (plugin: UiPlugin) => {
-    setSavingId(plugin.pluginId);
-    notifyUiPluginsChanged({ pluginId: plugin.pluginId, status: "disabled" });
+  const setStatus = async (plugin: UiPlugin, status: "active" | "disabled") => {
+    setBusyId(plugin.pluginId);
     try {
       const response = await desktopApiFetch(`/api/ui-plugins/${plugin.pluginId}/status`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "disabled" }),
+        body: JSON.stringify({ status }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.message || "Please try again.");
       replace(payload.data);
-      notifyUiPluginsChanged({
-        pluginId: plugin.pluginId,
-        status: payload.data.status,
-        plugin: payload.data,
-      });
+      notifyUiPluginsChanged({ pluginId: plugin.pluginId, status: payload.data.status, plugin: payload.data });
     } catch (error) {
-      notifyUiPluginsChanged({ pluginId: plugin.pluginId, status: plugin.status, plugin });
       toast({
-        title: "Could not turn off app",
+        title: status === "active" ? "Could not start the app" : "Could not turn off the app",
         description: error instanceof Error ? error.message : undefined,
         variant: "destructive",
       });
     } finally {
-      setSavingId(null);
+      setBusyId(null);
     }
   };
 
-  const enableLocal = async (plugin: UiPlugin) => {
-    setSavingId(plugin.pluginId);
+  const keepOnComputer = async (plugin: UiPlugin) => {
+    if (!window.agentCommonsDesktop) return;
+    setBusyId(plugin.pluginId);
     try {
-      const response = await desktopApiFetch(`/api/ui-plugins/${plugin.pluginId}/status`, {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "active" }),
+      await window.agentCommonsDesktop.saveAppLocally({
+        pluginId: plugin.pluginId,
+        name: plugin.name,
+        description: plugin.description ?? undefined,
+        entryUrl: plugin.entryUrl,
+        manifest: { ...plugin.manifest, capabilities: pluginGrants(plugin) },
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message || "Could not start Local app");
-      replace(payload.data);
-      notifyUiPluginsChanged({ pluginId: plugin.pluginId, status: "active", plugin: payload.data });
-    } catch (cause) {
-      toast({ title: "Could not start Local app", description: cause instanceof Error ? cause.message : undefined, variant: "destructive" });
-    } finally { setSavingId(null); }
+      toast({ title: `${plugin.name} is on this computer`, description: "It now also works in Local mode." });
+    } catch (error) {
+      toast({ title: "Could not keep a copy", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const removeLocal = async (plugin: UiPlugin) => {
+    setBusyId(plugin.pluginId);
+    try {
+      await desktopApiFetch(`/api/ui-plugins/${plugin.pluginId}`, { method: "DELETE" });
+      setSelectedId(null);
+      await load();
+    } finally {
+      setBusyId(null);
+    }
   };
 
   if (loading) {
@@ -99,17 +117,36 @@ export function UiPluginsView() {
     );
   }
 
-  const active = plugins.filter((plugin) => plugin.status === "active");
-  const inactive = plugins.filter((plugin) => plugin.status !== "active");
-  const selected = plugins.find((plugin) => plugin.pluginId === sheet?.pluginId) ?? null;
+  const selected = plugins.find((plugin) => plugin.pluginId === selectedId) ?? null;
+  const ordered = [...plugins].sort((left, right) => Number(right.status === "active") - Number(left.status === "active") || left.name.localeCompare(right.name));
+
+  const overview = selected && (
+    <div className="space-y-3">
+      {selected.description && <p className="text-sm text-muted-foreground">{selected.description}</p>}
+      <div className="flex flex-wrap gap-2">
+        {selected.status === "active" && pluginHasSurface(selected, "page") && (
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/apps/${encodeURIComponent(selected.slug)}`}>Open</Link>
+          </Button>
+        )}
+        {selected.status === "active" && (
+          <Button size="sm" variant="outline" disabled={busyId === selected.pluginId} onClick={() => void setStatus(selected, "disabled")}>
+            Turn off
+          </Button>
+        )}
+        {desktop && !local && selected.status === "active" && selected.deploymentId && (
+          <Button size="sm" variant="outline" disabled={busyId === selected.pluginId} onClick={() => void keepOnComputer(selected)}>
+            {busyId === selected.pluginId ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Laptop className="mr-1.5 h-3.5 w-3.5" />}
+            Keep a copy on this computer
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-lg text-sm text-muted-foreground">
-          Apps run in isolated frames and can only use the access you give them.
-          Pin them to the apps bar at the top of each page.
-        </p>
+    <div className="mx-auto max-w-3xl">
+      <div className="mb-4 flex items-center justify-end">
         <Button asChild size="sm" variant="outline">
           <a
             href={CREATE_UI_PLUGIN_HASH}
@@ -129,146 +166,121 @@ export function UiPluginsView() {
         <div className="rounded-xl border border-dashed p-12 text-center">
           <p className="font-medium">No apps yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Ask Commons Copilot or any agent to build one. It appears here for
-            review.
+            {local
+              ? "Ask an agent to build one in a folder on this computer, or keep a copy of a Cloud app."
+              : "Ask Commons Copilot or any agent to build one. It appears here for review."}
           </p>
         </div>
       ) : (
-        <>
-          {inactive.length > 0 && (
-            <AppSection title="Needs review">
-              {inactive.map((plugin) => (
-                <AppRow
-                  key={plugin.pluginId}
-                  plugin={plugin}
-                  saving={savingId === plugin.pluginId}
-                  onToggle={() => local ? void enableLocal(plugin) : setSheet({ pluginId: plugin.pluginId, mode: "review" })}
-                  onSettings={() => local ? setLocalDetails(plugin) : setSheet({ pluginId: plugin.pluginId, mode: "review" })}
-                />
-              ))}
-            </AppSection>
-          )}
-          {active.length > 0 && (
-            <AppSection title="Enabled">
-              {active.map((plugin) => (
-                <AppRow
-                  key={plugin.pluginId}
-                  plugin={plugin}
-                  saving={savingId === plugin.pluginId}
-                  onToggle={() => void disable(plugin)}
-                  onSettings={() => local ? setLocalDetails(plugin) : setSheet({ pluginId: plugin.pluginId, mode: "settings" })}
-                />
-              ))}
-            </AppSection>
-          )}
-        </>
+        <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
+          {ordered.map((plugin) => (
+            <AppRow key={plugin.pluginId} plugin={plugin} local={local} busy={busyId === plugin.pluginId} onOpen={() => setSelectedId(plugin.pluginId)} />
+          ))}
+        </div>
       )}
 
-      {!local && <AppSettingsSheet
-        plugin={selected}
-        mode={sheet?.mode ?? "settings"}
-        open={Boolean(sheet && selected)}
-        onOpenChange={(open) => {
-          if (!open) setSheet(null);
-        }}
-        onUpdated={replace}
-      />}
-      <Dialog open={Boolean(localDetails)} onOpenChange={(open) => { if (!open) setLocalDetails(null); }}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{localDetails?.name}</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">This app runs from a folder on your computer. Its preview remains on loopback.</p>
-          <div className="space-y-2 text-xs">
-            <p><strong>Folder:</strong> <code className="break-all">{localDetails?.description?.replace(/^Local app in /, "")}</code></p>
-            <p><strong>Preview:</strong> <code className="break-all">{localDetails?.entryUrl}</code></p>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function AppSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h2>
-      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function AppRow({
-  plugin,
-  saving,
-  onToggle,
-  onSettings,
-}: {
-  plugin: UiPlugin;
-  saving: boolean;
-  onToggle: () => void;
-  onSettings: () => void;
-}) {
-  const summary = useAccessSummary(plugin);
-  const isActive = plugin.status === "active";
-  const tags = [
-    pluginHasSurface(plugin, "page") && "Page",
-    pluginHasSurface(plugin, "widget") && "Widget",
-  ].filter(Boolean) as string[];
-  const access = [
-    summary.read && `reads ${summary.read}`,
-    summary.write && `changes ${summary.write}`,
-    summary.services && `${summary.services} service${summary.services > 1 ? "s" : ""}`,
-  ].filter(Boolean) as string[];
-
-  return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <AppIcon plugin={plugin} size={36} />
-      <button type="button" onClick={onSettings} className="min-w-0 flex-1 text-left">
-        <span className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{plugin.name}</span>
-          <span className="text-[11px] text-muted-foreground">v{plugin.version}</span>
-          {plugin.manifest.chat && (
-            <MessageSquare className="h-3 w-3 text-muted-foreground" aria-label="Works in chat" />
-          )}
-        </span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {plugin.description || tags.join(" · ")}
-        </span>
-        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-          {[tags.join(" + "), access.length ? access.join(", ") : "no Commons access"]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
-      </button>
-      {isActive && pluginHasSurface(plugin, "page") && (
-        <Link
-          href={`/apps/${encodeURIComponent(plugin.slug)}`}
-          aria-label={`Open ${plugin.name}`}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <ExternalLink className="h-4 w-4" />
-        </Link>
+      {!local && (
+        <AppSettingsSheet
+          plugin={selected}
+          mode={selected && selected.status !== "active" ? "review" : "settings"}
+          open={Boolean(selected)}
+          onOpenChange={(open) => { if (!open) setSelectedId(null); }}
+          onUpdated={replace}
+          overview={overview}
+        />
       )}
-      <button
-        type="button"
-        onClick={onSettings}
-        aria-label={`${plugin.name} settings`}
-        className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <Settings2 className="h-4 w-4" />
-      </button>
-      {saving ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <Switch
-          checked={isActive}
-          onCheckedChange={onToggle}
-          aria-label={isActive ? `Turn off ${plugin.name}` : `Review and enable ${plugin.name}`}
+      {local && (
+        <LocalAppDialog
+          plugin={selected as LocalAppView | null}
+          busy={Boolean(selected && busyId === selected.pluginId)}
+          onClose={() => setSelectedId(null)}
+          onStart={(plugin) => void setStatus(plugin, "active")}
+          onStop={(plugin) => void setStatus(plugin, "disabled")}
+          onRemove={(plugin) => void removeLocal(plugin)}
         />
       )}
     </div>
+  );
+}
+
+/** Icon, name, and one line. Everything else is one click away. */
+function AppRow({ plugin, local, busy, onOpen }: { plugin: UiPlugin; local: boolean; busy: boolean; onOpen: () => void }) {
+  const active = plugin.status === "active";
+  const state = active ? null : local ? "Stopped" : plugin.status === "draft" ? "Needs review" : "Off";
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
+    >
+      <AppIcon plugin={plugin} size={36} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-foreground">{plugin.name}</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {plugin.description || (pluginHasSurface(plugin, "page") ? "App" : "Widget")}
+        </span>
+      </span>
+      {busy ? (
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+      ) : state ? (
+        <span className={`shrink-0 text-[11px] ${state === "Needs review" ? "text-amber-700" : "text-muted-foreground"}`}>{state}</span>
+      ) : null}
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
+    </button>
+  );
+}
+
+function LocalAppDialog({ plugin, busy, onClose, onStart, onStop, onRemove }: {
+  plugin: LocalAppView | null;
+  busy: boolean;
+  onClose: () => void;
+  onStart: (plugin: UiPlugin) => void;
+  onStop: (plugin: UiPlugin) => void;
+  onRemove: (plugin: UiPlugin) => void;
+}) {
+  const running = plugin?.status === "active";
+  return (
+    <Dialog open={Boolean(plugin)} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        {plugin && (
+          <>
+            <DialogHeader>
+              <div className="flex items-center gap-3">
+                <AppIcon plugin={plugin} size={36} />
+                <div className="min-w-0">
+                  <DialogTitle className="truncate">{plugin.name}</DialogTitle>
+                  <DialogDescription className="truncate">
+                    {plugin.cloudPluginId ? "Kept on this computer from Commons Cloud" : "Runs from a folder on this computer"}
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            {plugin.description && <p className="text-sm text-muted-foreground">{plugin.description}</p>}
+            {plugin.localDirectory && (
+              <p className="truncate rounded-md bg-muted px-2 py-1.5 font-mono text-[11px] text-muted-foreground" title={plugin.localDirectory}>
+                {plugin.localDirectory}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {running ? (
+                <>
+                  {pluginHasSurface(plugin, "page") && (
+                    <Button asChild size="sm"><Link href={`/apps/${encodeURIComponent(plugin.slug)}`}>Open</Link></Button>
+                  )}
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => onStop(plugin)}>Stop</Button>
+                </>
+              ) : (
+                <Button size="sm" disabled={busy} onClick={() => onStart(plugin)}>
+                  {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}Start
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => onRemove(plugin)}>
+                Remove
+              </Button>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -22,6 +22,20 @@ function kind(item: LocalLibraryItem) {
   return "document";
 }
 
+const documentPreviews = new Map<string, { modifiedAt: number; text: string }>();
+
+/** First lines of a PDF or Office file, cached until the file changes. */
+async function documentPreview(item: LocalLibraryItem, runtime: PrivateLocalRuntime) {
+  if (!["pdf", "document", "presentation"].includes(kind(item)) || !existsSync(item.path)) return null;
+  const modifiedAt = statSync(item.path).mtimeMs;
+  const cached = documentPreviews.get(item.path);
+  if (cached && cached.modifiedAt === modifiedAt) return cached.text;
+  const text = await runtime.readLibraryItem(item.id).then((read) => read.content.slice(0, 700)).catch(() => "");
+  const clean = /^\[Cannot extract/.test(text) ? "" : text;
+  documentPreviews.set(item.path, { modifiedAt, text: clean });
+  return clean || null;
+}
+
 function view(item: LocalLibraryItem, runtime: PrivateLocalRuntime) {
   const session = runtime.state().conversations.find((entry) => entry.id === item.conversationId);
   const size = existsSync(item.path) ? statSync(item.path).size : 0;
@@ -56,7 +70,7 @@ export async function handleLocalLibraryApi(runtime: PrivateLocalRuntime, url: U
       const viewFilter = url.searchParams.get("view") ?? "all";
       const source = url.searchParams.get("source") ?? "all";
       const agentId = url.searchParams.get("agentId");
-      return ok(items.filter((item) => {
+      const listed = items.filter((item) => {
         if (query && !item.name.toLowerCase().includes(query)) return false;
         if (source !== "all" && item.source !== source) return false;
         if (agentId && item.agentId !== agentId) return false;
@@ -66,7 +80,13 @@ export async function handleLocalLibraryApi(runtime: PrivateLocalRuntime, url: U
         if (viewFilter === "media" && !["video", "audio"].includes(kind(item))) return false;
         if (viewFilter === "apps") return false;
         return true;
-      }).map((item) => view(item, runtime)));
+      });
+      const views = [];
+      for (const item of listed) {
+        const base = view(item, runtime);
+        views.push(base.textPreview ? base : { ...base, textPreview: await documentPreview(item, runtime) });
+      }
+      return ok(views);
     }
     const item = items.find((entry) => entry.id === parts[0]);
     if (!item) return bad("Local artifact not found", 404);

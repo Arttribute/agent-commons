@@ -2,7 +2,7 @@
 
 import { useParams, usePathname } from "next/navigation";
 import type { NextPage } from "next";
-import { useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
 import { AgentsWorkspaceView } from "@/components/studio/agents-workspace-view";
 import { StudioAgentLauncher } from "@/components/studio/agent-launcher";
@@ -27,6 +27,8 @@ import {
   openUiPluginCreator,
 } from "@/lib/commons-copilot-events";
 import { CustomizeTabs } from "@/components/customize/customize-tabs";
+import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
+import { useAgentActivity } from "@/hooks/use-agent-activity";
 
 const StudioPage: NextPage = () => {
   const { tab } = useParams() as { tab: string };
@@ -44,6 +46,13 @@ const StudioPage: NextPage = () => {
       : pathname?.split("/")[2]) ||
     "agents";
   const isCustomize = pathname?.startsWith("/studio/customize/") ?? false;
+
+  // Tools, workflows, and skills live under Customize.
+  useEffect(() => {
+    if (!isCustomize && ["tools", "workflows", "skills", "apps"].includes(activeTab)) {
+      router.replace(`/studio/customize/${activeTab}`);
+    }
+  }, [activeTab, isCustomize, router]);
 
   const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] =
     useState(false);
@@ -63,6 +72,8 @@ const StudioPage: NextPage = () => {
     error: agentsError,
     refresh: refreshAgents,
   } = useAgents(activeTab === "agents" ? userAddress : undefined);
+  const { sessions } = useUserSessions(activeTab === "agents" ? userAddress : "");
+  const activity = useAgentActivity(sessions);
 
   const mainContent = useMemo(() => {
     switch (activeTab) {
@@ -116,6 +127,7 @@ const StudioPage: NextPage = () => {
             error={Boolean(agentsError)}
             onRetry={refreshAgents}
             onAgentClick={(id) => router.push(`/studio/agents/${id}`)}
+            activity={activity}
             launcher={<StudioAgentLauncher
               agents={agents.map((a) => ({
                 agentId: a.agentId,
@@ -153,6 +165,7 @@ const StudioPage: NextPage = () => {
     registerSkillCreate,
     registerTaskCreate,
     refreshAgents,
+    activity,
   ]);
 
   const createLabel = useMemo(() => {
@@ -231,7 +244,7 @@ const StudioPage: NextPage = () => {
 
   return (
     <div className="relative flex h-full min-w-0 flex-col bg-page">
-      <PageHeader title={pageCopy.title} description={pageCopy.description}>
+      <PageHeader title={isCustomize ? "Customize" : pageCopy.title} description={isCustomize ? undefined : pageCopy.description}>
         <CommonsAppsBar />
         {!(activeTab === "tools" && local) && (
           <CreateButton

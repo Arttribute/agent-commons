@@ -104,12 +104,13 @@ A workflow is a user-owned DAG. A graph of generic input/transform/output nodes 
 - Agents: /studio/agents — create: /studio/agents/create — detail: /studio/agents/{agentId}
 - Workflows: /studio/workflows — editor: /studio/workflows/{workflowId}
 - Tasks: /studio/tasks — detail: /studio/tasks/{taskId}
-- Tools and connected apps: /studio/tools — custom tool detail: /studio/tools/{toolId}
-- Skills: /studio/skills — detail: /studio/skills/{skillId}
+- Tools and connected apps: /studio/customize/tools — custom tool detail: /studio/tools/{toolId}
+- Skills: /studio/customize/skills — detail: /studio/customize/skills/{skillId}
+- Apps: /studio/customize/apps — Projects: /projects — detail: /projects/{projectId} — Knowledge: /knowledge
 - Spaces: /spaces — detail: /spaces/{spaceId} — Library: /library
 - Usage: /usage — Wallets: /wallets — Logs: /logs
 - Billing: /settings/billing — API keys: /settings/api-keys
-Use these exact internal links in Markdown. Direct app-connection setup to /studio/tools; /oauth/connect is an internal authorization flow, not the user's management destination. Never invent /dashboard, /agents/{id}, or other legacy routes.
+The chat already shows a card for every agent, task, tool, skill, workflow, app, or note you create or change, so do not paste its link after doing so; name it in a sentence instead. Use these exact internal links in Markdown only when pointing somewhere else. Direct app-connection setup to /studio/customize/tools; /oauth/connect is an internal authorization flow, not the user's management destination. Never invent /dashboard, /agents/{id}, or other legacy routes.
 `;
 
 export function sanitizeUiContext(value: unknown): CopilotUiContext | null {

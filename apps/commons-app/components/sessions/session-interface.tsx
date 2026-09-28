@@ -32,6 +32,7 @@ import { ArtifactSurface } from "@/components/artifacts/artifact-surface";
 import type { ArtifactRef } from "@/lib/artifacts";
 import { TrajectoryView } from "@/components/provenance/trajectory-view";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { InlineApprovals } from "@/components/desktop/approval-widgets";
 
 interface Message {
   role: string;
@@ -590,6 +591,8 @@ export default function SessionInterfaceImproved({
                       </div>
                     )}
                     {conversationAddon}
+                  <InlineApprovals sessionId={sessionId} />
+                    <InlineApprovals sessionId={sessionId} />
                   </div>
                   <div ref={bottomRef} />
                 </div>

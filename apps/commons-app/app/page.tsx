@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Github } from "lucide-react";
+import { Github, MonitorDown } from "lucide-react";
 import { FeatureCarousel } from "@/components/landing/feature-carousel";
 import { HeroComposer } from "@/components/landing/hero-composer";
 import { LandingSidebar } from "@/components/landing/landing-sidebar";
@@ -55,6 +55,14 @@ export default function Home() {
               >
                 Pricing
               </Link>
+              <Link
+                href="/download/desktop"
+                className="flex items-center gap-1.5 rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-stone-700 shadow-card transition-colors hover:bg-muted hover:text-stone-950 sm:px-3"
+              >
+                <MonitorDown className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Download app</span>
+                <span className="sm:hidden">App</span>
+              </Link>
               <a
                 href={GITHUB_URL}
                 target="_blank"
@@ -75,9 +83,9 @@ export default function Home() {
 
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-5 py-4 sm:px-8 sm:py-6">
             <h1 className="shrink-0 text-center text-[1.5rem] font-medium leading-[1.1] tracking-[-0.04em] text-stone-950 sm:text-[1.8rem]">
-              One home for all your{" "}
+              One space for your{" "}
               <span className="inline-block rounded-md border border-teal-300/70 bg-teal-200 px-[0.18em] leading-[1.15] text-stone-950">
-                agents
+                agents and knowledge
               </span>
               .
             </h1>
