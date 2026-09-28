@@ -51,7 +51,10 @@ function subscribeLocalRuns() {
 }
 
 const POLL_MS = 8_000;
+const UNAVAILABLE_BACKOFF_MS = 10 * 60_000;
 const RECENT_MS = 20 * 60_000;
+/** When the API does not offer run status yet, pause polling instead of retrying every few seconds. */
+let unavailableUntil = 0;
 
 /**
  * Recent runs per agent: what each agent is working on, waiting for, or just
@@ -74,12 +77,14 @@ export function useAgentActivity(sessions: Array<{ sessionId: string; agentId: s
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "visible" && Date.now() >= unavailableUntil) {
         try {
           const response = await fetch("/api/agents/runs/active", { cache: "no-store" });
           if (response.ok) {
             const payload = await response.json();
             if (!cancelled) setCloudRuns(Array.isArray(payload?.data) ? payload.data : []);
+          } else if (response.status === 404 || response.status === 501 || response.status === 401 || response.status === 403) {
+            unavailableUntil = Date.now() + UNAVAILABLE_BACKOFF_MS;
           }
         } catch {
           // The next poll tries again.

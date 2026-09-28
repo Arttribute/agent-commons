@@ -335,7 +335,7 @@ export class ProjectService {
         ? `Project Knowledge Spaces: ${spaces.map((space) => `${space.name} (${space.spaceId})`).join(', ')}. Use searchKnowledge with these spaceIds before answering questions about the project.`
         : '',
       files.length || spaces.length
-        ? 'Citations: when an answer uses project files or knowledge, cite them inline as [1], [2] and end with a Sources list naming each file or note (and page or section when known). Cite only what you actually read.'
+        ? 'Citations: when an answer uses project files or knowledge, cite them inline as [1], [2], numbered in the order you first use them, and end with a Sources list naming each file or note (and page or section when known). Cite only what you actually read.'
         : '',
     ]
       .filter(Boolean)

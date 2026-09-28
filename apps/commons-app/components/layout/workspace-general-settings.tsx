@@ -61,10 +61,11 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
       const body = new FormData();
       body.append("files", new File([new Uint8Array(file.bytes)], file.name, { type: file.mimeType }));
       const response = await desktopApiFetch("/api/files/upload", { method: "POST", body });
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        throw new Error(result.message || result.error || "Cloud upload failed");
-      }
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || result.error || "Cloud upload failed");
+      const cloudItemId = result?.data?.[0]?.fileId ?? result?.data?.[0]?.itemId;
+      // Remember the Cloud copy so the Local Library shows the file is in both places.
+      if (typeof cloudItemId === "string") await window.agentCommonsDesktop!.markLocalTransferred(transferId, cloudItemId).catch(() => undefined);
       setNotice(`${file.name} was copied to your Cloud Library.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not copy the file to Cloud"); }
     finally { setTransferBusy(false); }

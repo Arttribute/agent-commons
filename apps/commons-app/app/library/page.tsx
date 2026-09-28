@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   AppWindow,
+  Cloud,
   Download,
   FileCode2,
   FileText,
@@ -40,6 +41,7 @@ import {
   LibraryBig,
   Link2,
   Loader2,
+  Lock,
   MoreHorizontal,
   Search,
   Share2,
@@ -75,6 +77,10 @@ type LibraryItem = {
   previewUrl?: string | null;
   metadata?: Record<string, unknown>;
   isFavorite: boolean;
+  /** Private Local only: the file may never be copied to Cloud. */
+  keepOnDevice?: boolean;
+  /** Private Local only: a Cloud copy exists. */
+  cloudItemId?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -493,6 +499,10 @@ export default function LibraryPage() {
                               isFavorite: !item.isFavorite,
                             })
                           }
+                          onKeepOnDevice={local ? () =>
+                            mutate(item.itemId, "PATCH", {
+                              keepOnDevice: !item.keepOnDevice,
+                            }) : undefined}
                           onShare={() => shareLink(item)}
                           onAccess={() => openAccess(item)}
                           onDelete={() =>
@@ -583,6 +593,7 @@ function Artifact({
   onOpen,
   onDownload,
   onSaveToLocal,
+  onKeepOnDevice,
   onFavorite,
   onShare,
   onAccess,
@@ -594,6 +605,7 @@ function Artifact({
   onOpen(): void;
   onDownload(): void;
   onSaveToLocal?(): void;
+  onKeepOnDevice?(): void;
   onFavorite(): void;
   onShare(): void;
   onAccess(): void;
@@ -614,6 +626,10 @@ function Artifact({
         {onSaveToLocal && <DropdownMenuItem onClick={onSaveToLocal}>
           <Download />
           Copy to Local Library
+        </DropdownMenuItem>}
+        {onKeepOnDevice && <DropdownMenuItem onClick={onKeepOnDevice}>
+          <Lock />
+          {item.keepOnDevice ? "Allow copying to Cloud" : "Never send to Cloud"}
         </DropdownMenuItem>}
         <DropdownMenuItem onClick={onFavorite}>
           <Heart />
@@ -728,6 +744,12 @@ function Artifact({
               {new Date(item.updatedAt).toLocaleDateString()}
             </p>
           </div>
+          {local && item.keepOnDevice && (
+            <Lock className="mt-1 h-3.5 w-3.5 text-stone-500" aria-label="Never leaves this computer" />
+          )}
+          {local && item.cloudItemId && !item.keepOnDevice && (
+            <Cloud className="mt-1 h-3.5 w-3.5 text-stone-500" aria-label="Also in Commons Cloud" />
+          )}
           {item.isFavorite && (
             <Heart className="mt-1 h-3.5 w-3.5 fill-stone-800" />
           )}

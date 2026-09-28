@@ -1075,7 +1075,7 @@ Commands must be non-interactive: pass the executable as command and arguments a
         ? `Local Knowledge passages (use the Knowledge tools for full documents):\n${knowledge.slice(0, 5).map((entry, index) => `\n[${index + 1}] ${entry.space} · ${entry.source} (lines ${entry.lines})${entry.heading ? ` · ${entry.heading}` : ""}\n${entry.excerpt.slice(0, 1_500)}`).join("\n")}`
         : "",
       spaces.length || attachmentBlocks.length || projectFiles.length
-        ? "Citations: when an answer uses Knowledge passages or files, cite them inline as [1], [2] and finish with a Sources list giving each number's file path and line range, for example: [1] research/interviews.md (lines 12-40). Cite only sources you actually read. If the sources do not support a claim, say so."
+        ? "Citations: when an answer uses Knowledge passages or files, cite them inline and finish with a Sources list giving each source's file path and line range, for example: [1] research/interviews.md (lines 12-40). Number sources from [1] in the order you first use them, regardless of the passage numbers above. Cite only sources you actually read. If the sources do not support a claim, say so."
         : "",
       `Current runtime: Private Local. Inference model: ${agent.model || state.settings.defaultModel}. Say this explicitly if the user asks about the current mode or model.`,
     ].filter(Boolean).join("\n\n");
