@@ -819,6 +819,9 @@ export const session = pgTable(
     // Make this a UUID so we can reference session.sessionId
     parentSessionId: uuid('parent_session'),
 
+    // Chats in a project share its instructions, files, and Knowledge Spaces.
+    projectId: uuid('project_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .default(sql`timezone('utc', now())`)
       .notNull(),
@@ -838,6 +841,49 @@ export const session = pgTable(
       table.updatedAt,
       table.createdAt,
     ),
+    projectUpdatedIdx: index('idx_session_project_updated').on(
+      table.projectId,
+      table.updatedAt,
+    ),
+  }),
+);
+
+/**
+ * A project groups chats around shared context: instructions, Library files,
+ * and Knowledge Spaces. Every chat in the project receives that context.
+ */
+export const project = pgTable(
+  'project',
+  {
+    projectId: uuid('project_id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    ownerUserId: text('owner_user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    name: text('name').notNull(),
+    description: text('description'),
+    instructions: text('instructions'),
+    /** Agent used for new chats started from the project page. */
+    agentId: text('agent_id'),
+    knowledgeSpaceIds: jsonb('knowledge_space_ids')
+      .$type<string[]>()
+      .default([])
+      .notNull(),
+    libraryItemIds: jsonb('library_item_ids')
+      .$type<string[]>()
+      .default([])
+      .notNull(),
+    pinned: pgBoolean('pinned').default(false).notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .default(sql`timezone('utc', now())`)
+      .notNull(),
+  },
+  (table) => ({
+    ownerIdx: index('idx_project_owner').on(table.ownerUserId, table.updatedAt),
   }),
 );
 

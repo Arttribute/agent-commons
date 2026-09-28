@@ -51,6 +51,8 @@ interface RunBody {
   uiContext?: CopilotUiContext;
   /** Knowledge Spaces explicitly selected by the user for this turn. */
   knowledgeSpaceIds?: string[];
+  /** Project for a new session; existing sessions keep their project. */
+  projectId?: string;
   cliTools?: Array<{
     name: string;
     description: string;
@@ -193,8 +195,30 @@ export class AgentController {
             ? { workspaceId: principal.workspaceId ?? undefined }
             : {}),
         }),
+        initiator
+          ? { agentId: body.agentId, initiator, sessionId: body.sessionId }
+          : undefined,
       )
       .pipe(map((data) => ({ data })));
+  }
+
+  /**
+   * The caller's recent streamed runs, used for the working indicators on
+   * agent avatars. Runs are kept in memory for their resumable window only.
+   */
+  @Get('runs/active')
+  listActiveRuns(
+    @Headers('x-initiator') initiatorHeader: string,
+    @Req() req: any,
+  ) {
+    const principal = req.principal as
+      | { principalId: string; principalType: 'user' | 'agent' | 'service' }
+      | undefined;
+    const initiator =
+      principal?.principalType === 'user'
+        ? principal.principalId
+        : initiatorHeader || (req.headers['x-owner-id'] as string) || '';
+    return { data: initiator ? this.runStreams.listForInitiator(initiator) : [] };
   }
 
   /**

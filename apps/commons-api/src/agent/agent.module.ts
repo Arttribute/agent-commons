@@ -7,6 +7,7 @@ import { ToolModule } from '../tool';
 import { TaskModule } from '../task';
 import { AgentToolsController } from './agent-tools.controller';
 import { SessionModule } from '~/session';
+import { ProjectModule } from '~/project/project.module';
 import { LogModule } from '~/log';
 import { SpaceModule } from '~/space/space.module';
 import { OAuthModule } from '~/oauth/oauth.module';
@@ -33,6 +34,7 @@ import { CopilotService } from './copilot.service';
   imports: [
     forwardRef(() => ToolModule),
     SessionModule,
+    ProjectModule,
     LogModule,
     forwardRef(() => TaskModule),
     forwardRef(() => SpaceModule),

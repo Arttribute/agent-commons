@@ -19,6 +19,7 @@ import {
   OnModuleDestroy,
   forwardRef,
   Inject,
+  Optional,
 } from '@nestjs/common';
 import { ModelProviderFactory } from '~/modules/model-provider';
 import crypto from 'crypto';
@@ -46,6 +47,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from '~/modules/database/database.service';
 import { EncryptionService } from '~/modules/encryption';
 import { SessionService } from '~/session/session.service';
+import { ProjectService } from '~/project/project.service';
 import { ToolService } from '~/tool/tool.service';
 import { CommonTool } from '../tool/tools/common-tool.service';
 import { WalletTool } from '../tool/tools/ethereum-tool.service';
@@ -227,6 +229,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     @Inject(forwardRef(() => CopilotService))
     private copilotService: CopilotService,
     private uiPlugins: UiPluginService,
+    @Optional() private projects?: ProjectService,
   ) {}
 
   /* ─────────────────────────  INIT  ───────────────────────── */
@@ -765,6 +768,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     uiContext?: CopilotUiContext;
     /** Knowledge Spaces explicitly selected by the user for this turn. */
     knowledgeSpaceIds?: string[];
+    /** Project for a new session. Existing sessions keep their own project. */
+    projectId?: string;
     /**
      * Dynamic CLI tool catalog sent by the caller's own daemon/CLI process.
      * When present, this fully replaces the hardcoded CLI tool list below —
@@ -903,11 +908,18 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           if (!currentSessionId) {
             emitStatus('session', 'running', 'Opening a new conversation');
             if (!spaceId) {
+              const requestedProject =
+                props.projectId && this.projects
+                  ? await this.projects
+                      .requireProject(initiator, props.projectId)
+                      .catch(() => null)
+                  : null;
               const newSession = await this.session.createSession({
                 value: {
                   sessionId: uuidv4(),
                   agentId,
                   initiator: initiator,
+                  projectId: requestedProject?.projectId,
                   model: {
                     name: agent.modelId ?? 'gpt-5.4-mini', // legacy compat
                     provider: agent.modelProvider ?? 'openai',
@@ -2287,6 +2299,19 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                       `## Commons Copilot context\nLive context lookup failed: ${error.message}`,
                   )
               : '';
+          const projectContext = await this.projects
+            ?.buildRunContext(
+              (await this.session
+                .getSession({ id: currentSessionId! })
+                .then((row: any) => row?.projectId)
+                .catch(() => null)) ?? null,
+              initiator,
+              agentId,
+            )
+            .catch((error) => {
+              this.logger.warn(`Project context unavailable: ${error.message}`);
+              return null;
+            });
           const selectedKnowledgeSpaceIds = [
             ...new Set(
               (props.knowledgeSpaceIds ?? [])
@@ -2339,6 +2364,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           const extraSystemContent = [
             buildWorkspaceModeContext('cloud', Boolean(props.cliContext), props.uiContext?.desktopMode === 'cloud'),
             memoryBlock,
+            projectContext?.block,
             knowledgeSelectionBlock,
             copilotContext,
             props.cliContext,

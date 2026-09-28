@@ -96,4 +96,32 @@ describe('RunStreamRegistry', () => {
   it('returns undefined for unknown runs', () => {
     expect(registry.attach('nope', 0)).toBeUndefined();
   });
+
+  it('reports each person\'s runs with their current state', () => {
+    collect(registry.start('run-1', source, { agentId: 'a1', initiator: 'User-1' }));
+    source.next({ type: 'status', stage: 'session', sessionId: 's1', message: 'Conversation ready' });
+    source.next({ type: 'toolStart', toolName: 'searchKnowledge' });
+    let [run] = registry.listForInitiator('user-1');
+    expect(run).toMatchObject({ runId: 'run-1', agentId: 'a1', sessionId: 's1', state: 'running', activity: 'Using search knowledge' });
+
+    source.next({ type: 'cli_tool_request', tool: 'cli_run_command' });
+    [run] = registry.listForInitiator('user-1');
+    expect(run.state).toBe('awaiting_approval');
+
+    source.next({ type: 'final', payload: {} });
+    source.complete();
+    expect(registry.listForInitiator('USER-1')[0].state).toBe('awaiting_approval');
+    expect(registry.listForInitiator('someone-else')).toEqual([]);
+  });
+
+  it('marks a finished run complete and a failed run failed', () => {
+    const second = new Subject<any>();
+    collect(registry.start('run-1', source, { agentId: 'a1', initiator: 'u' }));
+    collect(registry.start('run-2', second, { agentId: 'a2', initiator: 'u' }));
+    source.next({ type: 'final', payload: {} });
+    source.complete();
+    second.error(new Error('model unavailable'));
+    const states = Object.fromEntries(registry.listForInitiator('u').map((run) => [run.runId, run.state]));
+    expect(states).toEqual({ 'run-1': 'completed', 'run-2': 'failed' });
+  });
 });
