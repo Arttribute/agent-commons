@@ -9,7 +9,7 @@ import { auth } from "../lib/auth.js";
 import { appEmailBrand, sendIdentityEmail } from "../lib/auth-config.js";
 import { pool } from "../lib/db.js";
 import { createCommonsId } from "../lib/ids.js";
-import { escapeHtml, page, safeReturnPath } from "./ui.js";
+import { clientName, escapeHtml, page, safeReturnPath, scopeList } from "./ui.js";
 import { createPlatformRouter } from "./platform.js";
 
 const baseUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:3010";
@@ -155,8 +155,8 @@ app.get("/", (c) =>
   c.html(
     page(
       "Commons Identity",
-      `<h1>Commons Identity</h1>
-       <p>One account for Commons Courses, Agent Commons, Common OS, CLI, SDKs, and future Commons applications.</p>
+      `<h1>Your Commons account</h1>
+       <p>One account for Agent Commons, CommonLab, the desktop app, the CLI, and the SDKs.</p>
        <div class="row"><a class="button" href="/sign-in">Sign in</a>
        <a class="button secondary" href="/platform">API platform</a></div>`,
     ),
@@ -254,15 +254,8 @@ app.get("/sign-in", (c) => {
   return c.html(
     page(
       "Sign in",
-      `<h1>Sign in to Commons</h1>
-       <p>Continue across every Commons application with one identity.</p>
-       <form id="email-form">
-         <label>Email<input id="email" type="email" autocomplete="email" required></label>
-         <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
-         <button type="submit">Sign in</button>
-       </form>
-       <p class="muted">New to Commons? <a href="/sign-up">Create an account</a></p>
-       <div class="divider">or</div>
+      `<h1>Sign in</h1>
+       <p>Use your Commons account. It works across every Commons app.</p>
        <button class="secondary google-button" id="google">
          <svg class="google-logo" viewBox="0 0 18 18" aria-hidden="true">
            <path fill="#4285F4" d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.482h4.844a4.14 4.14 0 0 1-1.797 2.715v2.258h2.909c1.702-1.567 2.684-3.876 2.684-6.614Z"/>
@@ -272,7 +265,14 @@ app.get("/sign-in", (c) => {
          </svg>
          Continue with Google
        </button>
-       <p id="message" class="error" role="alert"></p>`,
+       <div class="divider">or with email</div>
+       <form id="email-form" style="margin-top:0">
+         <label>Email<input id="email" type="email" autocomplete="email" required></label>
+         <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+         <button type="submit">Sign in</button>
+       </form>
+       <p id="message" class="error" role="alert"></p>
+       <p class="footnote">New to Commons? <a href="/sign-up${oauthQuery ? `?${escapeHtml(oauthQuery)}` : ""}">Create an account</a></p>`,
       `
       const redirect = ${JSON.stringify(redirect)};
       const oauthQuery = ${JSON.stringify(oauthQuery)};
@@ -383,16 +383,16 @@ app.get("/sign-up", (c) => {
   return c.html(
     page(
       "Create account",
-      `<h1>Create your Commons account</h1>
-       <p>This account works across every Commons application.</p>
+      `<h1>Create your account</h1>
+       <p>One Commons account for every Commons app.</p>
        <form id="signup-form">
          <label>Name<input id="name" autocomplete="name" required></label>
          <label>Email<input id="email" type="email" autocomplete="email" required></label>
          <label>Password<input id="password" type="password" minlength="8" autocomplete="new-password" required></label>
          <button type="submit">Create account</button>
        </form>
-       <p class="muted">Already registered? <a href="/sign-in">Sign in</a></p>
-       <p id="message" role="alert"></p>`,
+       <p id="message" role="alert"></p>
+       <p class="footnote">Already have an account? <a href="/sign-in${oauthQuery ? `?${escapeHtml(oauthQuery)}` : ""}">Sign in</a></p>`,
       `
       const redirect = ${JSON.stringify(redirect)};
       const oauthQuery = ${JSON.stringify(oauthQuery)};
@@ -417,21 +417,25 @@ app.get("/sign-up", (c) => {
           message.textContent=data.message||data.error||"Could not create account";
           return;
         }
-        message.className="success";
-        message.textContent="Check your email to verify your Commons account.";
+        document.querySelector("main").innerHTML = '<div class="done">✓</div><h1>Check your email</h1><p>We sent a link to verify your account. Open it on this device to continue.</p>';
       });`,
     ),
   );
 });
 
-app.get("/consent", (c) => {
+app.get("/consent", async (c) => {
   const oauthQuery = new URL(c.req.url).search.slice(1);
+  const session = await authService.api.getSession({ headers: c.req.raw.headers }).catch(() => null);
+  const appName = clientName(c.req.query("client_id"));
+  const email = session?.user?.email ?? "";
   return c.html(
     page(
-      "Authorize application",
-      `<h1>Authorize Commons application</h1>
-       <p>This application is requesting permission to access your Commons profile and act within the scopes shown during authorization.</p>
-       <div class="row"><button id="approve">Allow</button><button class="danger" id="deny">Deny</button></div>
+      "Allow access",
+      `<h1>${escapeHtml(appName)} wants to use your account</h1>
+       <p>Allowing this lets it:</p>
+       ${scopeList(c.req.query("scope"))}
+       ${email ? `<div class="account"><span class="avatar">${escapeHtml(email.slice(0, 1).toUpperCase())}</span><span>${escapeHtml(email)}</span></div>` : ""}
+       <div class="row"><button class="secondary" id="deny">Cancel</button><button id="approve">Allow</button></div>
        <p id="message" class="error"></p>`,
       `
       const oauthQuery = ${JSON.stringify(oauthQuery)};
@@ -459,8 +463,8 @@ app.get("/device", (c) => {
   return c.html(
     page(
       "Connect a device",
-      `<h1>Connect Agent Commons</h1><p>Enter the one-time code displayed by the app or command-line tool.</p>
-       <form id="device-form"><label>Device code<input id="code" value="${escapeHtml(initialCode)}" autocomplete="one-time-code" required></label>
+      `<h1>Connect a device</h1><p>Enter the code shown in the desktop app or the CLI.</p>
+       <form id="device-form"><label>Code<input id="code" class="code-input" value="${escapeHtml(initialCode)}" autocomplete="one-time-code" spellcheck="false" required></label>
        <button>Continue</button></form><p id="message" class="error"></p>`,
       `
       async function claimDevice(code) {
@@ -498,9 +502,11 @@ app.get("/device/approve", async (c) => {
   return c.html(
     page(
       "Approve device",
-      `<h1>Authorize Agent Commons</h1><p>Signed in as ${escapeHtml(session.user.email)}.</p>
-       <p>Code: <code>${escapeHtml(code)}</code></p>
-       <div class="row"><button id="approve">Approve</button><button class="danger" id="deny">Deny</button></div>
+      `<h1>Connect this device?</h1>
+       <p>Check that this code matches the one on your device.</p>
+       <span class="code">${escapeHtml(code)}</span>
+       <div class="account"><span class="avatar">${escapeHtml(session.user.email.slice(0, 1).toUpperCase())}</span><span>${escapeHtml(session.user.email)}</span></div>
+       <div class="row"><button class="secondary" id="deny">Deny</button><button id="approve">Connect</button></div>
        <p id="message"></p>`,
       `
       const code = ${JSON.stringify(code)};
@@ -512,8 +518,9 @@ app.get("/device/approve", async (c) => {
         const data = await response.json().catch(() => ({}));
         const message = document.querySelector("#message");
         if (!response.ok) { message.className="error"; message.textContent=data.message||data.error||"Request failed"; return; }
-        message.className="success";
-        message.textContent=action==="approve" ? "Approved. Return to Agent Commons." : "Device request denied.";
+        document.querySelector("main").innerHTML = action==="approve"
+          ? '<div class="done">✓</div><h1>You are connected</h1><p>Return to Agent Commons. It finishes signing in on its own.</p>'
+          : '<h1>Request denied</h1><p>The device was not connected. You can close this page.</p>';
       }
       document.querySelector("#approve").onclick=()=>decide("approve");
       document.querySelector("#deny").onclick=()=>decide("deny");`,

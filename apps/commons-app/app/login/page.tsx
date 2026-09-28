@@ -1,6 +1,12 @@
 import Link from "next/link";
-import Image from "next/image";
 import { Check, ChevronDown } from "lucide-react";
+import {
+  AuthShell,
+  AuthTitle,
+  authInputClass,
+  authPrimaryButtonClass,
+  authSecondaryButtonClass,
+} from "@/components/auth/auth-shell";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { GoogleLogo } from "@/components/auth/google-logo";
@@ -30,24 +36,16 @@ export default async function LoginPage({ searchParams }: Props) {
   }
 
   return (
-    <main className="h-screen overflow-y-auto bg-white text-stone-950">
-      <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center px-5 py-10 sm:px-6">
-        <Brand />
-        <section className="rounded-2xl border border-stone-200 bg-white p-6 shadow-[0_24px_65px_rgba(28,25,23,0.08)] sm:p-8">
-          <div className="mb-7">
-            <h1 className="text-3xl font-semibold tracking-[-0.04em]">Welcome back</h1>
-            <p className="mt-2 text-sm leading-6 text-stone-500">
-              Sign in to continue to your agents and workspace.
-            </p>
-          </div>
+    <AuthShell>
+      <AuthTitle description="Use your Commons account. It works across every Commons app.">Sign in</AuthTitle>
       {registered && (
-        <p className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+        <p className="mb-4 flex items-start gap-2 rounded-[10px] border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
           <Check className="mt-0.5 h-4 w-4 shrink-0" />
-          Check your email to verify your Agent Commons account.
+          Check your email to verify your account.
         </p>
       )}
       {(error || authJsError) && (
-        <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700" role="alert">
+        <p className="mb-4 rounded-[10px] border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700" role="alert">
           {error ||
             (authJsError === "Configuration"
               ? "Sign-in could not start because the server auth provider is not configured correctly."
@@ -55,67 +53,46 @@ export default async function LoginPage({ searchParams }: Props) {
         </p>
       )}
       <a
-        className="mb-5 flex w-full items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm font-semibold transition-colors hover:bg-stone-50"
+        className={authSecondaryButtonClass}
         href={`${identityUrl}/native/sign-in/google?app=agent-commons&oauth_query=${encodeURIComponent(oauthQuery)}&return_to=${encodeURIComponent(returnTo)}`}
       >
         <GoogleLogo /> Continue with Google
       </a>
-      <div className="mb-5 flex items-center gap-3 text-[11px] uppercase tracking-[0.14em] text-stone-400">
-        <span className="h-px flex-1 bg-stone-200" /> or <span className="h-px flex-1 bg-stone-200" />
+      <div className="my-4 flex items-center gap-3 text-xs text-stone-400">
+        <span className="h-px flex-1 bg-stone-200" /> or with email <span className="h-px flex-1 bg-stone-200" />
       </div>
-      <form method="post" action={`${identityUrl}/native/sign-in/email`} className="space-y-4">
+      <form method="post" action={`${identityUrl}/native/sign-in/email`} className="space-y-3">
         <input type="hidden" name="app" value="agent-commons" />
         <input type="hidden" name="oauth_query" value={oauthQuery} />
         <input type="hidden" name="return_to" value={returnTo} />
-        <label className="block text-sm font-medium text-stone-700">
-          Email
-          <input className="mt-1.5 h-11 w-full rounded-lg border border-stone-300 bg-white px-3 text-stone-950 outline-none transition focus:border-stone-500 focus:ring-4 focus:ring-stone-100" name="email" type="email" autoComplete="email" required />
+        <label className="block space-y-1.5 text-[13px] font-medium text-stone-700">
+          <span>Email</span>
+          <input className={authInputClass} name="email" type="email" autoComplete="email" required />
         </label>
-        <label className="block text-sm font-medium text-stone-700">
-          Password
-          <input className="mt-1.5 h-11 w-full rounded-lg border border-stone-300 bg-white px-3 text-stone-950 outline-none transition focus:border-stone-500 focus:ring-4 focus:ring-stone-100" name="password" type="password" autoComplete="current-password" required />
+        <label className="block space-y-1.5 text-[13px] font-medium text-stone-700">
+          <span>Password</span>
+          <input className={authInputClass} name="password" type="password" autoComplete="current-password" required />
         </label>
-        <button type="submit" className="w-full rounded-lg bg-stone-950 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-stone-700">
-          Sign in
-        </button>
+        <button type="submit" className={authPrimaryButtonClass}>Sign in</button>
       </form>
       <details className="group mt-5 text-sm">
-        <summary className="flex cursor-pointer list-none items-center justify-center gap-1.5 font-medium text-stone-600 transition-colors hover:text-stone-950">
-          Create an account · 500 credits included
+        <summary className="flex cursor-pointer list-none items-center justify-center gap-1.5 text-stone-600 transition-colors hover:text-stone-950">
+          New here? Create an account
           <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
         </summary>
-        <form method="post" action={`${identityUrl}/native/sign-up/email`} className="mt-4 space-y-4">
+        <form method="post" action={`${identityUrl}/native/sign-up/email`} className="mt-4 space-y-3">
           <input type="hidden" name="app" value="agent-commons" />
           <input type="hidden" name="oauth_query" value={oauthQuery} />
           <input type="hidden" name="return_to" value={returnTo} />
-          <input className="h-11 w-full rounded-lg border border-stone-300 bg-white px-3 outline-none transition focus:border-stone-500 focus:ring-4 focus:ring-stone-100" name="name" placeholder="Your name" autoComplete="name" required />
-          <input className="h-11 w-full rounded-lg border border-stone-300 bg-white px-3 outline-none transition focus:border-stone-500 focus:ring-4 focus:ring-stone-100" name="email" type="email" placeholder="you@example.com" autoComplete="email" required />
-          <input className="h-11 w-full rounded-lg border border-stone-300 bg-white px-3 outline-none transition focus:border-stone-500 focus:ring-4 focus:ring-stone-100" name="password" type="password" minLength={8} placeholder="At least 8 characters" autoComplete="new-password" required />
-          <button type="submit" className="w-full rounded-lg border border-stone-300 px-4 py-3 font-semibold transition-colors hover:bg-stone-50">Create account</button>
+          <input className={authInputClass} name="name" placeholder="Your name" autoComplete="name" required />
+          <input className={authInputClass} name="email" type="email" placeholder="you@example.com" autoComplete="email" required />
+          <input className={authInputClass} name="password" type="password" minLength={8} placeholder="At least 8 characters" autoComplete="new-password" required />
+          <button type="submit" className={authSecondaryButtonClass}>Create account · 500 credits included</button>
         </form>
       </details>
-        </section>
-        <p className="mt-5 text-center text-xs leading-5 text-stone-500">
-          One secure account works across Agent Commons, CommonLab, and CommonOS.
-          <br />
-          By continuing, you agree to our <Link className="underline underline-offset-2 hover:text-stone-800" href="/terms">terms</Link> and <Link className="underline underline-offset-2 hover:text-stone-800" href="/privacy">privacy policy</Link>.
-        </p>
-      </div>
-    </main>
-  );
-}
-
-function Brand() {
-  return (
-    <Link href="/" className="mb-7 flex items-center justify-center" aria-label="Agent Commons home">
-      <Image
-        src="/logo.jpg"
-        alt="Agent Commons"
-        width={116}
-        height={53}
-        className="h-10 w-auto mix-blend-multiply"
-        priority
-      />
-    </Link>
+      <p className="mt-5 text-center text-xs leading-5 text-stone-400">
+        By continuing, you agree to the <Link className="underline underline-offset-2 hover:text-stone-700" href="/terms">terms</Link> and <Link className="underline underline-offset-2 hover:text-stone-700" href="/privacy">privacy policy</Link>.
+      </p>
+    </AuthShell>
   );
 }
