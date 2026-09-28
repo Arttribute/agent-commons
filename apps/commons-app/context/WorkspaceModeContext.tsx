@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { DesktopInfo } from "@agent-commons/desktop-contract";
 import { useRouter } from "next/navigation";
 import { useCommonsAppsStore } from "@/lib/commons-apps-store";
-import { setDesktopApiMode } from "@/lib/desktop-api-fetch";
+import { installLocalApiFetch, setDesktopApiMode } from "@/lib/desktop-api-fetch";
 
 type Mode = DesktopInfo["mode"];
 type WorkspaceModeValue = {
@@ -28,6 +28,7 @@ export function WorkspaceModeProvider({ initialMode, children }: { initialMode: 
     const bridge = window.agentCommonsDesktop;
     setDesktop(Boolean(bridge));
     if (!bridge) return;
+    installLocalApiFetch();
     void bridge.getInfo().then((info) => { setDesktopApiMode(info.mode); setCurrentMode(info.mode); }).catch(() => undefined);
     return bridge.onModeChange((next, path) => {
       setDesktopApiMode(next);

@@ -21,8 +21,8 @@ import {
   Logs,
   Wallet,
   Loader2,
+  Clock,
 } from "lucide-react";
-import { ClipboardClock } from "@/components/icons/clipboard-clock";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { useAgents } from "@/hooks/use-agents";
@@ -38,7 +38,7 @@ interface GlobalSearchProps {
 const NAV_ITEMS = [
   { label: "Agents", path: "/studio/agents", icon: Bot, keywords: "agents" },
   { label: "Tools", path: "/studio/tools", icon: Wrench, keywords: "tools integrations" },
-  { label: "Scheduled tasks", path: "/studio/tasks", icon: ClipboardClock, keywords: "tasks queue scheduled cron recurring" },
+  { label: "Scheduled tasks", path: "/studio/tasks", icon: Clock, keywords: "tasks queue scheduled cron recurring" },
   { label: "Workflows", path: "/studio/workflows", icon: Workflow, keywords: "workflows automation" },
   { label: "Spaces", path: "/spaces", icon: Earth, keywords: "spaces rooms live" },
   { label: "Library", path: "/library", icon: LibraryBig, keywords: "library files documents collections" },
@@ -198,7 +198,7 @@ export function GlobalSearch({ open, onOpenChange }: GlobalSearchProps) {
                   value={`task ${t.title} ${t.taskId}`}
                   onSelect={() => go(`/studio/tasks/${t.taskId}`)}
                 >
-                  <ClipboardClock className="text-muted-foreground" />
+                  <Clock className="text-muted-foreground" />
                   <span className="truncate">{t.title}</span>
                 </CommandItem>
               ))}

@@ -11,6 +11,8 @@ import {
   Link2,
   Trash2,
   Loader2,
+  FolderClosed,
+  FolderMinus,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -18,6 +20,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
@@ -42,6 +47,7 @@ export interface SessionItemData {
   title?: string | null;
   initiatorType?: string;
   source?: string;
+  projectId?: string | null;
 }
 
 interface SessionItemProps {
@@ -63,6 +69,11 @@ interface SessionItemProps {
   onRename?: (sessionId: string, title: string) => Promise<boolean> | boolean;
   /** Deletes a session. Return true on success. Menu is hidden when omitted. */
   onDelete?: (sessionId: string) => Promise<boolean> | boolean;
+  /** Projects this chat can move into. */
+  projects?: Array<{ projectId: string; name: string }>;
+  onMoveToProject?: (sessionId: string, projectId: string | null) => void;
+  /** Tighter rows for chats nested under a project in the sidebar. */
+  nested?: boolean;
 }
 
 export function SessionItem({
@@ -75,6 +86,9 @@ export function SessionItem({
   onSelect,
   onRename,
   onDelete,
+  projects,
+  onMoveToProject,
+  nested = false,
 }: SessionItemProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -214,6 +228,38 @@ export function SessionItem({
               Rename
             </DropdownMenuItem>
           )}
+          {onMoveToProject && projects && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <FolderClosed className="mr-2 h-4 w-4" />
+                Move to project
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-48">
+                {projects.map((project) => (
+                  <DropdownMenuItem
+                    key={project.projectId}
+                    disabled={project.projectId === session.projectId}
+                    onSelect={() => onMoveToProject(session.sessionId, project.projectId)}
+                  >
+                    <FolderClosed className="mr-2 h-4 w-4" />
+                    <span className="truncate">{project.name}</span>
+                  </DropdownMenuItem>
+                ))}
+                {!projects.length && (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">No projects yet</p>
+                )}
+                {session.projectId && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => onMoveToProject(session.sessionId, null)}>
+                      <FolderMinus className="mr-2 h-4 w-4" />
+                      Remove from project
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
           <DropdownMenuItem
             onSelect={(e) => {
               e.preventDefault();
@@ -284,8 +330,9 @@ export function SessionItem({
   ) : (
     <span
       className={cn(
-        "flex min-w-0 items-center gap-1 truncate leading-tight text-foreground",
-        variant === "sidebar" ? "text-sm" : "text-sm font-medium"
+        "flex min-w-0 items-center gap-1 truncate leading-tight",
+        nested ? "text-[13px] text-foreground/80" : "text-foreground",
+        variant === "sidebar" ? (nested ? "" : "text-sm") : "text-sm font-medium"
       )}
     >
       <span className="truncate">{displayTitle}</span>
@@ -345,7 +392,8 @@ export function SessionItem({
       onClick={navigate}
       onKeyDown={(e) => e.key === "Enter" && navigate()}
       className={cn(
-        "group flex cursor-pointer items-center gap-1 rounded-md px-2 py-2 transition-colors",
+        "group flex cursor-pointer items-center gap-1 rounded-md px-2 transition-colors",
+        nested ? "py-1.5" : "py-2",
         isActive ? "bg-accent" : "hover:bg-accent/60"
       )}
     >

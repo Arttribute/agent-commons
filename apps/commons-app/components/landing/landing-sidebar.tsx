@@ -2,20 +2,22 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   Bot,
+  Brain,
+  Clock,
+  FolderClosed,
   LibraryBig,
   MoreHorizontal,
   Search,
-  Wrench,
-  Workflow,
+  Settings2,
 } from "lucide-react";
-import { ClipboardClock } from "@/components/icons/clipboard-clock";
 
 const NAV_ITEMS = [
   { label: "Agents", icon: Bot, target: "/studio/agents" },
-  { label: "Tools", icon: Wrench, target: "/studio/tools" },
-  { label: "Scheduled tasks", icon: ClipboardClock, target: "/studio/tasks" },
-  { label: "Workflows", icon: Workflow, target: "/studio/workflows" },
+  { label: "Projects", icon: FolderClosed, target: "/projects" },
+  { label: "Scheduled", icon: Clock, target: "/studio/tasks" },
+  { label: "Knowledge", icon: Brain, target: "/knowledge" },
   { label: "Library", icon: LibraryBig, target: "/library" },
+  { label: "Customize", icon: Settings2, target: "/studio/customize/apps" },
 ];
 
 const signInTo = (target: string) =>

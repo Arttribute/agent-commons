@@ -810,9 +810,17 @@ export class PrivateLocalRuntime {
     this.change((state) => Object.assign(state.tasks.find((candidate) => candidate.id === id)!, { status: "running", updatedAt: now() }));
     try {
       const result = await this.sendMessage({ agentId: task.agentId, conversationId: task.sessionId, prompt: task.prompt, workspaceRoot: task.workspaceRoot });
-      return this.change((state) => Object.assign(state.tasks.find((candidate) => candidate.id === id)!, {
-        status: "completed", result: result.response, updatedAt: now(),
-      }));
+      return this.change((state) => {
+        const current = state.tasks.find((candidate) => candidate.id === id)!;
+        Object.assign(current, { status: "completed", result: result.response, updatedAt: now() });
+        if (current.repeat) {
+          // Keep the same cadence from the scheduled time, skipping missed runs.
+          const step = current.repeat === "daily" ? 86_400_000 : 7 * 86_400_000;
+          let next = Date.parse(current.dueAt ?? now()) + step;
+          while (next <= Date.now()) next += step;
+          Object.assign(current, { status: "pending", dueAt: new Date(next).toISOString() });
+        }
+      });
     } catch (error) {
       this.change((state) => Object.assign(state.tasks.find((candidate) => candidate.id === id)!, {
         status: "failed", result: error instanceof Error ? error.message : String(error), updatedAt: now(),

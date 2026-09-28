@@ -176,6 +176,8 @@ export type LocalTask = {
   agentId: string;
   workspaceRoot?: string;
   dueAt?: string;
+  /** Repeating tasks are rescheduled after each run. */
+  repeat?: "daily" | "weekly";
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   result?: string;
   createdAt: string;
@@ -326,6 +328,7 @@ export type SkillInput = Pick<LocalSkill, "slug" | "name" | "description" | "ins
 export type TaskInput = Pick<LocalTask, "title" | "prompt" | "agentId"> & {
   id?: string;
   dueAt?: string;
+  repeat?: "daily" | "weekly";
   workspaceRoot?: string;
   description?: string;
   sessionId?: string;

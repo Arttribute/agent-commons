@@ -1000,6 +1000,17 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           const sessionRecord = await this.session.getSession({
             id: currentSessionId,
           });
+          // Chats opened before their first message (new chats and project
+          // chats) exist without history; their first run starts the
+          // conversation like any new session.
+          if (
+            !isNewSession &&
+            !spaceId &&
+            sessionRecord &&
+            !(sessionRecord.history as unknown[] | null)?.length
+          ) {
+            isNewSession = true;
+          }
           const decryptedApiKey = agent.modelApiKey
             ? this.decryptApiKey(agent.modelApiKey)
             : undefined;

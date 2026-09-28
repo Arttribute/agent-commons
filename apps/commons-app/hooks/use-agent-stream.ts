@@ -74,6 +74,8 @@ export function useAgentStream(
       reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
       cliContext?: string;
       localWorkspaceRoot?: string;
+      /** Project for a new session; existing sessions keep their project. */
+      projectId?: string;
       provenance?: {
         mode: "off" | "metadata" | "full";
         onchain?: boolean;
@@ -142,6 +144,8 @@ export function useAgentStream(
               prompt,
               spaceIds: params.knowledgeSpaceIds,
               workspaceRoot: params.localWorkspaceRoot,
+              attachmentIds: params.attachments?.map((attachment) => attachment.fileId),
+              projectId: params.projectId,
               interactive: true,
             });
             if (!abortRef.current) optionsRef.current.onFinal?.({

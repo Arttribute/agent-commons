@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 export type LibraryPickerItem = {
   itemId: string;
@@ -67,7 +68,7 @@ export function LibraryPickerDialog({
       const params = new URLSearchParams({ limit: "100" });
       if (query.trim()) params.set("query", query.trim());
       try {
-        const response = await fetch(`/api/library?${params}`, {
+        const response = await desktopApiFetch(`/api/library?${params}`, {
           cache: "no-store",
           signal: controller.signal,
         });

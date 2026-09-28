@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import ChatInputBox from "@/components/sessions/chat/chat-input-box";
+import ChatInputBox, { type ComposerLaunch } from "@/components/sessions/chat/chat-input-box";
+import { startChat } from "@/lib/start-chat";
+import { useToast } from "@/hooks/use-toast";
 import { AgentSidebarSwitcher } from "@/components/studio/agent-sidebar-switcher";
 import { useAgentContext } from "@/context/AgentContext";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
@@ -18,28 +20,43 @@ type LauncherAgent = {
 };
 
 /**
- * The agents-overview composer: type a message, pick an agent (defaults to the
- * one you most recently had a session with), and hit send to jump straight into
- * a fresh session that streams your message. Reuses {@link ChatInputBox} in
- * launch mode and the {@link AgentSidebarSwitcher} as a compact picker.
+ * The agents-overview composer: type a message, add files or knowledge, pick
+ * an agent, and send. The chat opens in its own session view and streams
+ * there. Reuses {@link ChatInputBox} in launch mode and the
+ * {@link AgentSidebarSwitcher} as a compact picker.
  */
 export function StudioAgentLauncher({
   agents,
   userAddress,
+  projectId,
+  preferredAgentId,
+  onAgentChange,
+  placeholder,
+  hideStarters = false,
 }: {
   agents: LauncherAgent[];
   userAddress: string;
+  /** Start chats inside this project. */
+  projectId?: string;
+  /** Agent to select first, e.g. the project's usual agent. */
+  preferredAgentId?: string | null;
+  onAgentChange?: (agentId: string) => void;
+  placeholder?: string;
+  hideStarters?: boolean;
 }) {
   const router = useRouter();
-  const { setPendingPrompt, setInputText } = useAgentContext();
+  const { toast } = useToast();
+  const { setInputText } = useAgentContext();
+  const [launching, setLaunching] = useState(false);
   const { isLoading: sessionsLoading } = useUserSessions(userAddress);
 
   const defaultAgentId = useMemo(
     () =>
+      (preferredAgentId && agents.some((agent) => agent.agentId === preferredAgentId) ? preferredAgentId : undefined) ??
       agents.find((agent) => agent.isDefault)?.agentId ??
       agents[0]?.agentId ??
       "",
-    [agents],
+    [agents, preferredAgentId],
   );
 
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
@@ -50,6 +67,12 @@ export function StudioAgentLauncher({
   useEffect(() => {
     if (!selectedAgentId && agents[0]) setSelectedAgentId(agents[0].agentId);
   }, [agents, selectedAgentId]);
+
+  // A project's usual agent wins until the person picks another one.
+  useEffect(() => {
+    if (manualPickRef.current || !preferredAgentId) return;
+    if (agents.some((agent) => agent.agentId === preferredAgentId)) setSelectedAgentId(preferredAgentId);
+  }, [agents, preferredAgentId]);
 
   // Once sessions have loaded, upgrade the default to the last-used agent —
   // unless the user has already picked one themselves.
@@ -62,6 +85,7 @@ export function StudioAgentLauncher({
   const handleSelect = (id: string) => {
     manualPickRef.current = true;
     setSelectedAgentId(id);
+    onAgentChange?.(id);
   };
 
   const selectedAgent = useMemo(
@@ -76,10 +100,20 @@ export function StudioAgentLauncher({
     [selectedAgent],
   );
 
-  const handleLaunch = (text: string) => {
-    if (!selectedAgentId) return;
-    setPendingPrompt(text);
-    router.push(`/studio/agents/${selectedAgentId}`);
+  const handleLaunch = async (launch: ComposerLaunch) => {
+    if (!selectedAgentId || launching) return;
+    setLaunching(true);
+    try {
+      router.push(await startChat({ agentId: selectedAgentId, projectId, launch }));
+    } catch (cause) {
+      setInputText(launch.text);
+      toast({
+        title: "Could not start the chat",
+        description: cause instanceof Error ? cause.message : undefined,
+        variant: "destructive",
+      });
+      setLaunching(false);
+    }
   };
 
   return (
@@ -88,11 +122,13 @@ export function StudioAgentLauncher({
         agentId={selectedAgentId}
         sessionId=""
         userId={userAddress}
-        onLaunch={handleLaunch}
+        onLaunch={(launch) => void handleLaunch(launch)}
+        launching={launching}
         placeholder={
-          selectedAgent
+          placeholder ??
+          (selectedAgent
             ? `Message ${selectedAgent.name}…`
-            : "Ask an agent anything…"
+            : "Ask an agent anything…")
         }
         footerLeft={
           <AgentSidebarSwitcher
@@ -113,7 +149,7 @@ export function StudioAgentLauncher({
           />
         }
       />
-      {starters.length > 0 && (
+      {!hideStarters && starters.length > 0 && (
         <div className="mt-3 flex flex-nowrap justify-center gap-2">
           {starters.map((starter) => (
             <button
