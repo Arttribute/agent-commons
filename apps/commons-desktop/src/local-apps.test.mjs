@@ -25,7 +25,10 @@ test("Local app data matches the Cloud record and query shapes", () => {
 });
 
 test("serves a built app folder on loopback without escaping it", async () => {
-  const root = mkdtempSync(join(tmpdir(), "commons-static-"));
+  const base = mkdtempSync(join(tmpdir(), "commons-static-"));
+  const root = join(base, "app");
+  mkdirSync(root);
+  writeFileSync(join(base, "secret.txt"), "TOP SECRET");
   const server = await (async () => {
     mkdirSync(join(root, "assets"));
     writeFileSync(join(root, "index.html"), "<script src=\"assets/app.js\"></script>");
@@ -38,10 +41,12 @@ test("serves a built app folder on loopback without escaping it", async () => {
     assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
     assert.equal(await script.text(), "console.log(1)");
     assert.match(await (await fetch(`${server.origin}/some/route`)).text(), /assets\/app\.js/);
-    assert.notEqual(await (await fetch(`${server.origin}/..%2f..%2fetc%2fhosts`)).text(), "");
+    const escape = await fetch(`${server.origin}/..%2fsecret.txt`);
+    assert.equal(escape.status, 404);
+    assert.doesNotMatch(await escape.text(), /TOP SECRET/);
   } finally {
     server.close();
-    rmSync(root, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
   }
 });
 
