@@ -9,12 +9,37 @@ export interface RunStreamEvent {
   [key: string]: unknown;
 }
 
+export type RunState =
+  | 'running'
+  | 'awaiting_approval'
+  | 'awaiting_input'
+  | 'completed'
+  | 'failed';
+
+export interface RunMeta {
+  agentId: string;
+  initiator: string;
+  sessionId?: string;
+}
+
+export interface RunSummary {
+  runId: string;
+  agentId: string;
+  sessionId?: string;
+  state: RunState;
+  /** Short, human-readable description of the latest step. */
+  activity?: string;
+  startedAt: string;
+  updatedAt: string;
+}
+
 interface RunStreamEntry {
   events: ReplaySubject<RunStreamEvent>;
   seq: number;
   done: boolean;
   subscription?: Subscription;
   cleanupTimer?: NodeJS.Timeout;
+  meta?: RunMeta & { state: RunState; activity?: string; startedAt: number; updatedAt: number };
 }
 
 /** How long a finished run stays resumable so a cut-off client can still collect the tail. */
@@ -45,11 +70,18 @@ export class RunStreamRegistry implements OnModuleDestroy {
    * the beginning. The first emitted event is `run_started`, which carries
    * the `runId` clients need in order to resume.
    */
-  start(runId: string, source: Observable<any>): Observable<RunStreamEvent> {
+  start(
+    runId: string,
+    source: Observable<any>,
+    meta?: RunMeta,
+  ): Observable<RunStreamEvent> {
     const entry: RunStreamEntry = {
       events: new ReplaySubject<RunStreamEvent>(),
       seq: 0,
       done: false,
+      meta: meta
+        ? { ...meta, initiator: meta.initiator.toLowerCase(), state: 'running', startedAt: Date.now(), updatedAt: Date.now() }
+        : undefined,
     };
     this.runs.set(runId, entry);
     this.scheduleCleanup(runId, entry, MAX_RUN_LIFETIME_MS);
@@ -88,17 +120,98 @@ export class RunStreamRegistry implements OnModuleDestroy {
       .pipe(filter((event) => event.seq > afterSeq));
   }
 
+  /**
+   * Recent runs started by one person: in progress, waiting on them, or
+   * finished within the resumable window. Newest first.
+   */
+  listForInitiator(initiator: string, limit = 50): RunSummary[] {
+    const owner = initiator.toLowerCase();
+    return [...this.runs.entries()]
+      .flatMap(([runId, entry]) =>
+        entry.meta && entry.meta.initiator === owner
+          ? [{
+              runId,
+              agentId: entry.meta.agentId,
+              sessionId: entry.meta.sessionId,
+              state: entry.meta.state,
+              activity: entry.meta.activity,
+              startedAt: new Date(entry.meta.startedAt).toISOString(),
+              updatedAt: new Date(entry.meta.updatedAt).toISOString(),
+            }]
+          : [],
+      )
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, limit);
+  }
+
+  private track(entry: RunStreamEntry, event: Record<string, any>) {
+    const meta = entry.meta;
+    if (!meta) return;
+    const sessionId = event.sessionId ?? event.payload?.sessionId;
+    if (typeof sessionId === 'string' && sessionId) meta.sessionId = sessionId;
+    meta.updatedAt = Date.now();
+    switch (event.type) {
+      case 'cli_tool_request':
+        meta.state = 'awaiting_approval';
+        meta.activity = `Waiting for approval: ${String(event.tool ?? event.toolName ?? 'computer action').replace(/^cli_/, '').replaceAll('_', ' ')}`;
+        return;
+      case 'toolStart':
+        meta.state = 'running';
+        meta.activity = humanizeTool(String(event.toolName ?? 'tool'));
+        return;
+      case 'tool':
+      case 'toolEnd': {
+        const name = String(event.toolName ?? event.tool ?? '');
+        const output = event.output ?? event.result ?? event.payload;
+        if (name === 'showCommonsApp' && event.status !== 'error') {
+          meta.state = 'awaiting_input';
+          meta.activity = 'Waiting for your response in an app';
+          return;
+        }
+        if (output?.requiresConfirmation || output?.data?.requiresConfirmation) {
+          meta.state = 'awaiting_approval';
+          meta.activity = 'A change is waiting for your review';
+          return;
+        }
+        meta.state = 'running';
+        return;
+      }
+      case 'status':
+        if (meta.state === 'awaiting_approval' && event.stage !== 'tool') return;
+        meta.state = 'running';
+        if (typeof event.message === 'string' && !['request', 'agent', 'session', 'tools', 'context', 'model'].includes(event.stage)) {
+          meta.activity = event.message.slice(0, 120);
+        }
+        return;
+      case 'final':
+      case 'completed':
+        if (meta.state !== 'awaiting_approval' && meta.state !== 'awaiting_input') meta.state = 'completed';
+        return;
+      case 'error':
+      case 'failed':
+      case 'cancelled':
+        meta.state = 'failed';
+        meta.activity = typeof event.message === 'string' ? event.message.slice(0, 120) : meta.activity;
+        return;
+    }
+  }
+
   private emit(
     entry: RunStreamEntry,
     runId: string,
     event: Record<string, unknown>,
   ) {
+    this.track(entry, event);
     entry.seq += 1;
     entry.events.next({ ...event, runId, seq: entry.seq } as RunStreamEvent);
   }
 
   private finish(runId: string, entry: RunStreamEntry) {
     entry.done = true;
+    if (entry.meta && entry.meta.state === 'running') {
+      entry.meta.state = 'completed';
+      entry.meta.updatedAt = Date.now();
+    }
     entry.events.complete();
     this.scheduleCleanup(runId, entry, FINISHED_RUN_TTL_MS);
   }
@@ -125,4 +238,13 @@ export class RunStreamRegistry implements OnModuleDestroy {
       this.runs.delete(runId);
     }
   }
+}
+
+function humanizeTool(name: string) {
+  const readable = name
+    .replace(/^cli_/, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replaceAll('_', ' ')
+    .toLowerCase();
+  return `Using ${readable}`;
 }
