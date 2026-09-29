@@ -10,7 +10,8 @@ function fixture(t: any) {
   const root = join(base, 'project');
   const outside = join(base, 'outside');
   mkdirSync(root); mkdirSync(outside);
-  t.after(() => rmSync(base, { recursive: true, force: true }));
+  // Windows can keep a just-stopped child's working directory busy briefly.
+  t.after(() => rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
   const cfg: LocalToolsConfig = { rootDir: root, sessionId: 'test', appendLog() {}, permissions: new Map() };
   return { base, root, outside, cfg };
 }
