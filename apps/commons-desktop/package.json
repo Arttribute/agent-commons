@@ -58,6 +58,13 @@
       {
         "from": "commons-app-dist",
         "to": "commons-app"
+      },
+      {
+        "from": "../commons-app/fonts",
+        "to": "licenses/fonts",
+        "filter": [
+          "OFL-*.txt"
+        ]
       }
     ],
     "mac": {

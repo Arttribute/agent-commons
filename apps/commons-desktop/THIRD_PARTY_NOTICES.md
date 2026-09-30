@@ -1,5 +1,9 @@
 # Third-party local AI components
 
+The web interface bundles Space Grotesk and Geist Mono fonts under the SIL
+Open Font License 1.1. Their license files are included with the desktop app
+in `licenses/fonts` and in `apps/commons-app/fonts` in the source tree.
+
 Agent Commons Desktop can automatically download and run the Ollama command-line
 runtime from the official Ollama GitHub releases. Ollama is licensed under the
 MIT License. Source and license: https://github.com/ollama/ollama
