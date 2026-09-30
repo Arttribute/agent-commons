@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -28,7 +29,7 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
     mcpWriteCalls += 1;
     return { content: [{ type: "text", text: "changed" }] };
   });
-  const mcpTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  const mcpTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID });
   await mcp.connect(mcpTransport);
   const mcpServer = createServer((request, response) => {
     void mcpTransport.handleRequest(request, response).catch((error) => { failures.push(error); response.writeHead(500); response.end(); });
@@ -174,7 +175,9 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
       const agentId = state.agents.find((agent) => agent.name === 'Commons Copilot').id;
       const originalSettings = state.settings;
       let revokeNextSearch = false;
+      const mcpConnectionErrors = [];
       const unsubscribe = bridge.onEvent(event => {
+        if (event.type === 'activity' && event.label?.includes('could not connect')) mcpConnectionErrors.push(event.detail);
         if (event.type !== 'approval') return;
         if (event.approval.permission === 'web_search' && revokeNextSearch) {
           revokeNextSearch = false;
@@ -209,7 +212,7 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
         await bridge.updateSettings({ defaultModel: 'qwen3:1.7b' });
         if ((await bridge.getState()).settings.defaultModel !== 'qwen3:1.7b') throw new Error('Downloaded model was not selected');
         await bridge.updateSettings({ mcpServers: [{ id: 'smoke', name: 'Smoke MCP', url: ${JSON.stringify(mcpUrl)}, mode: 'read', enabled: true }] });
-        const mcp = await bridge.sendMessage({ agentId, prompt: 'Read from MCP', mcpServerIds: ['smoke'] });
+        const mcp = await bridge.sendMessage({ agentId, prompt: 'Read from MCP', mcpServerIds: ['smoke'] }).catch(error => { throw new Error(String(error) + '; MCP connection: ' + mcpConnectionErrors.join(' | ')); });
         await bridge.updateSettings({ webSearchUrl: ${JSON.stringify(`${url}/searx`)}, webSearchApiKey: 'smoke-key' });
         const searchOff = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Search is off', webSearchEnabled: false });
         const searchOn = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Search for mango evidence', webSearchEnabled: true });
@@ -227,6 +230,8 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
     assert.equal(webSearchCalls, 1);
     assert.deepEqual(failures, []);
     console.log("Local command, steering, Knowledge, Web search and read-only MCP passed.");
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; MCP server errors: ${failures.map((failure) => failure instanceof Error ? failure.stack : String(failure)).join(" | ")}`);
   } finally {
     server.closeAllConnections();
     mcpServer.closeAllConnections();
