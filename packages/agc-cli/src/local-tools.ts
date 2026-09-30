@@ -378,8 +378,9 @@ export function safePath(root: string, userPath: string): string {
     const rel = relative(canonicalRoot, path);
     return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
   };
-  if (!inside(abs)) throw new Error(`Path "${userPath}" escapes the session root. Access denied.`);
-  // Check the existing ancestor too: a new file can escape through a symlinked directory.
+  // Check the canonical existing ancestor. On macOS, /var and /private/var
+  // can name the same file; a lexical check would reject that safe path.
+  // This also protects new files from escaping through a symlinked directory.
   let ancestor = abs;
   while (!existsSync(ancestor)) {
     // Dangling links must not become write destinations.

@@ -49,6 +49,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   readProvenancePreferences,
   writeProvenancePreferences,
   type ProvenancePreferences,
@@ -288,6 +296,11 @@ export default function ChatInputBox({
   const [desktopWorkspace, setDesktopWorkspace] = useState<string | null>(null);
   const [webSearchConfigured, setWebSearchConfigured] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [webSearchDialogOpen, setWebSearchDialogOpen] = useState(false);
+  const [webSearchUrl, setWebSearchUrl] = useState("");
+  const [webSearchApiKey, setWebSearchApiKey] = useState("");
+  const [webSearchSaving, setWebSearchSaving] = useState(false);
+  const [webSearchError, setWebSearchError] = useState("");
   const [mcpServers, setMcpServers] = useState<NonNullable<LocalSettings["mcpServers"]>>([]);
   const [mcpServerIds, setMcpServerIds] = useState<string[]>([]);
   const [workspaceRemoved, setWorkspaceRemoved] = useState(false);
@@ -300,13 +313,16 @@ export default function ChatInputBox({
     if (local) {
       const bridge = window.agentCommonsLocal;
       void bridge?.getState().then((state) => {
-        if (initialLaunch?.workspaceRoot === undefined) setDesktopWorkspace(state.conversations.find((conversation) => conversation.id === sessionId)?.workspaceRoot ?? null);
+        const conversation = state.conversations.find((item) => item.id === sessionId);
+        if (initialLaunch?.workspaceRoot === undefined) setDesktopWorkspace(conversation?.workspaceRoot ?? null);
         setWebSearchConfigured(Boolean(state.settings.webSearchUrl));
+        setWebSearchEnabled(Boolean(state.settings.webSearchUrl && conversation?.webSearchEnabled));
         setMcpServers(state.settings.mcpServers ?? []);
       }).catch(() => undefined);
       return bridge?.onEvent((event) => {
         if (event.type === "state") {
           setWebSearchConfigured(Boolean(event.state.settings.webSearchUrl));
+          if (!event.state.settings.webSearchUrl) setWebSearchEnabled(false);
           setMcpServers(event.state.settings.mcpServers ?? []);
         }
       });
@@ -314,6 +330,31 @@ export default function ChatInputBox({
       void window.agentCommonsDesktop?.getWorkspace().then(setDesktopWorkspace).catch(() => undefined);
     }
   }, [local, sessionId]);
+  const openWebSearchSettings = () => {
+    setWebSearchError("");
+    setWebSearchDialogOpen(true);
+    void window.agentCommonsLocal?.getState().then((state) => {
+      setWebSearchUrl(state.settings.webSearchUrl ?? "");
+      setWebSearchApiKey(state.settings.webSearchApiKey ?? "");
+    }).catch((cause) => setWebSearchError(cause instanceof Error ? cause.message : "Could not load web search settings."));
+  };
+  const saveWebSearchSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!window.agentCommonsLocal || webSearchSaving) return;
+    setWebSearchSaving(true);
+    setWebSearchError("");
+    try {
+      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl, webSearchApiKey });
+      const configured = Boolean(state.settings.webSearchUrl);
+      setWebSearchConfigured(configured);
+      setWebSearchEnabled(configured);
+      setWebSearchDialogOpen(false);
+    } catch (cause) {
+      setWebSearchError(cause instanceof Error ? cause.message : "Could not save web search settings.");
+    } finally {
+      setWebSearchSaving(false);
+    }
+  };
   const markRunning = useSessionRunStore((state) => state.markRunning);
   const markRunId = useSessionRunStore((state) => state.markRunId);
   const markCompleted = useSessionRunStore((state) => state.markCompleted);
@@ -1016,6 +1057,29 @@ export default function ChatInputBox({
         )}
         onAdd={addLibraryAttachments}
       />
+      {local && <Dialog open={webSearchDialogOpen} onOpenChange={setWebSearchDialogOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Web search</DialogTitle>
+            <DialogDescription>Connect a SearXNG search endpoint. Search is off until you turn it on for a chat. Every query asks for approval before it leaves this computer.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveWebSearchSettings} className="space-y-4">
+            <label className="block space-y-1.5 text-sm">
+              <span>Search endpoint</span>
+              <input type="url" required placeholder="https://search.example.com" value={webSearchUrl} onChange={(event) => setWebSearchUrl(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
+            </label>
+            <label className="block space-y-1.5 text-sm">
+              <span>API key <span className="text-muted-foreground">(if required)</span></span>
+              <input type="password" autoComplete="off" value={webSearchApiKey} onChange={(event) => setWebSearchApiKey(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
+            </label>
+            {webSearchError && <p role="alert" className="text-xs text-destructive">{webSearchError}</p>}
+            <DialogFooter>
+              <button type="button" onClick={() => setWebSearchDialogOpen(false)} className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted">Cancel</button>
+              <button type="submit" disabled={webSearchSaving} className="rounded-md bg-foreground px-3 py-2 text-sm text-background disabled:opacity-50">{webSearchSaving ? "Saving…" : "Save and turn on"}</button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>}
       {outOfCredits && (
         <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-border bg-stone-50/80 px-3.5 py-2.5">
           <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -1201,10 +1265,11 @@ export default function ChatInputBox({
                         )}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
-                    {local && <DropdownMenuCheckboxItem checked={webSearchEnabled} disabled={!webSearchConfigured} onCheckedChange={(checked) => setWebSearchEnabled(checked === true)}>
+                    {local && <DropdownMenuCheckboxItem checked={webSearchEnabled} onCheckedChange={(checked) => { if (checked && !webSearchConfigured) openWebSearchSettings(); else setWebSearchEnabled(checked === true); }}>
                       <Globe2 className="mr-2 h-4 w-4" />
-                      <span>Web search{!webSearchConfigured ? " · set up in Settings" : ""}</span>
+                      <span>Web search</span>
                     </DropdownMenuCheckboxItem>}
+                    {local && webSearchConfigured && <DropdownMenuItem onSelect={openWebSearchSettings} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
                     {local && <DropdownMenuSub>
                       <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />MCP connectors</DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="min-w-56">

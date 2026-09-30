@@ -148,6 +148,37 @@ try {
             }
           }
           if (!sessionVisible) throw new Error(`Saved Local session did not render: ${savedSession.id}`);
+          const webSearchDialog = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const buttons = [...document.querySelectorAll('button[aria-label="Add photos & files"]')];
+            buttons.find(button => !button.disabled)?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' }));
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const item = [...document.querySelectorAll('[role="menuitemcheckbox"]')].find(node => node.textContent?.includes('Web search'));
+            if (!item || item.getAttribute('aria-disabled') === 'true') return { item: item?.outerHTML ?? null, path: location.pathname, buttons: buttons.map(button => button.outerHTML.slice(0, 450)), menus: [...document.querySelectorAll('[role="menu"]')].map(menu => menu.innerText.slice(0, 450)), body: document.body.innerText.slice(-500) };
+            item.click();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            return { open: !!document.querySelector('[role="dialog"] input[type="url"]'), path: location.pathname, item: item.outerHTML, dialogs: [...document.querySelectorAll('[role="dialog"]')].map(dialog => dialog.innerText.slice(0, 300)) };
+          })()`);
+          if (!webSearchDialog?.open || webSearchDialog.path !== `/sessions/${savedSession.id}`) throw new Error(`Web search did not open configuration inside the chat: ${JSON.stringify(webSearchDialog)}`);
+          const webSearchConfigured = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const dialog = document.querySelector('[role="dialog"]');
+            const input = dialog.querySelector('input[type="url"]');
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'http://127.0.0.1:8585');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            dialog.querySelector('button[type="submit"]').click();
+            for (let attempt = 0; attempt < 20; attempt += 1) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              if ((await window.agentCommonsLocal.getState()).settings.webSearchUrl === 'http://127.0.0.1:8585' && !document.querySelector('[role="dialog"]')) return { pass: location.pathname === '/sessions/${savedSession.id}', path: location.pathname };
+            }
+            return { pass: false, path: location.pathname, endpoint: (await window.agentCommonsLocal.getState()).settings.webSearchUrl, dialog: document.querySelector('[role="dialog"]')?.innerText.slice(0, 500) };
+          })()`);
+          if (!webSearchConfigured?.pass) throw new Error(`Web search could not be saved and turned on from chat: ${JSON.stringify(webSearchConfigured)}`);
+          const webSearchChecked = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            document.querySelector('button[aria-label="Add photos & files"]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' }));
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const item = [...document.querySelectorAll('[role="menuitemcheckbox"]')].find(node => node.textContent?.includes('Web search'));
+            return item?.getAttribute('aria-checked') === 'true';
+          })()`);
+          if (!webSearchChecked) throw new Error("Web search was not enabled in the chat after setup");
           await evaluate(page.webSocketDebuggerUrl, "window.dispatchEvent(new CustomEvent('agent-computer-open', { detail: { tab: 'browser' } }))");
           let computerVisible = false;
           for (let attempt = 0; attempt < 10; attempt++) {
@@ -179,7 +210,10 @@ try {
           break;
         }
       }
-    } catch (error) { lastError = error; }
+    } catch (error) {
+      if (error.message !== lastError?.message) console.error(`Desktop smoke check: ${error.message}`);
+      lastError = error;
+    }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
   let diagnostics;

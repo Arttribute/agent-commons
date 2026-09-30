@@ -28,6 +28,7 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
   const [speechReady, setSpeechReady] = useState(false);
   const [imageStatus, setImageStatus] = useState<ImageModelStatus | null>(null);
   const [imageModels, setImageModels] = useState<Array<{ id: string; name: string; bytes: number }>>([]);
+  const [imageCatalog, setImageCatalog] = useState<Array<{ id: string; name: string; bytes: number; ramGiB: number; description: string }>>([]);
   const [voiceStatus, setVoiceStatus] = useState<VoiceModelStatus | null>(null);
   const [modelServerUnavailable, setModelServerUnavailable] = useState(false);
   const [modelStatus, setModelStatus] = useState<LocalModelStatus | null>(null);
@@ -99,7 +100,7 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
     if (!local || !window.agentCommonsLocal) return;
     const bridge = window.agentCommonsLocal;
     let active = true;
-    void Promise.all([bridge.getState(), bridge.getStorageRoot(), bridge.getModelStatus(), bridge.getHardwareInfo(), bridge.getImageModelStatus(), bridge.listImageModels(), bridge.getVoiceModelStatus()]).then(([state, root, status, hardwareInfo, imageModelStatus, installedImages, speechStatus]) => {
+    void Promise.all([bridge.getState(), bridge.getStorageRoot(), bridge.getModelStatus(), bridge.getHardwareInfo(), bridge.getImageModelStatus(), bridge.listImageModels(), bridge.getImageModelCatalog(), bridge.getVoiceModelStatus()]).then(([state, root, status, hardwareInfo, imageModelStatus, installedImages, availableImages, speechStatus]) => {
       if (!active) return;
       setLocalState(state);
       setStorageRoot(root);
@@ -107,6 +108,7 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
       setHardware(hardwareInfo);
       setImageStatus(imageModelStatus);
       setImageModels(installedImages);
+      setImageCatalog(availableImages);
       setVoiceStatus(speechStatus);
       setOllamaUrl(state.settings.ollamaUrl);
       setWebSearchUrl(state.settings.webSearchUrl ?? "");
@@ -264,9 +266,21 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
       </div>
       <div className="max-w-xl space-y-2 border-t border-border pt-4">
         <h3 className="font-semibold">Image generation</h3>
-        <p className="text-xs text-muted-foreground">Agents generate images on this computer with a small default model. Its verified 1 GB weights and runtime download automatically the first time you generate an image. Generated images stay in the Local Library. Add compatible single-file Stable Diffusion checkpoints to the model folder to use another model.</p>
+        <p className="text-xs text-muted-foreground">Agents generate images on this computer. The starter model downloads automatically when first used. Choose a smaller verified version below, or add a compatible single-file Stable Diffusion checkpoint to the model folder. Generated images stay in the Local Library.</p>
+        <div className="space-y-2">
+          {imageCatalog.map((model) => {
+            const installed = imageModels.some((item) => item.id === model.id);
+            const selected = (localState?.settings.imageModel || "tiny-sd.safetensors") === model.id;
+            const downloading = imageStatus?.state === "downloading";
+            return <div key={model.id} className="rounded-md border border-border p-3">
+              <div className="flex items-start justify-between gap-2"><strong className="text-sm">{model.name}</strong><span className="shrink-0 text-xs text-muted-foreground">{(model.bytes / 1024 ** 3).toFixed(1)} GB</span></div>
+              <p className="mt-1 text-xs text-muted-foreground">{model.description}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">Suggested {model.ramGiB} GB RAM{hardware && hardware.ramGiB < model.ramGiB ? " · May be slow here" : ""}{!installed && hardware && hardware.freeDiskGiB < model.bytes / 1024 ** 3 + 0.5 ? " · Low disk space" : ""}</p>
+              <button type="button" disabled={downloading || selected && installed} className="mt-2 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50" onClick={() => void (async () => { try { setError(""); if (!installed) { await window.agentCommonsLocal!.prepareImageModel(model.id); setImageModels(await window.agentCommonsLocal!.listImageModels()); } await saveLocalSettings({ imageModel: model.id }); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not prepare image model"); } })()}>{selected && installed ? "In use" : installed ? "Use as default" : "Download and use"}</button>
+            </div>;
+          })}
+        </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={imageStatus?.state === "downloading"} className="rounded-md border px-3 py-2 hover:bg-muted disabled:opacity-50" onClick={() => { setError(""); void window.agentCommonsLocal!.prepareImageModel().catch((cause) => setError(cause instanceof Error ? cause.message : "Could not download image model")); }}>{imageStatus?.state === "downloading" ? "Downloading…" : imageStatus?.state === "ready" ? "Image model ready" : "Download image model"}</button>
           <button type="button" className="rounded-md border px-3 py-2 hover:bg-muted" onClick={() => void window.agentCommonsLocal?.openImageModelFolder().catch((cause) => setError(cause instanceof Error ? cause.message : "Could not open model folder"))}>Open model folder</button>
           <button type="button" className="rounded-md border px-3 py-2 hover:bg-muted" onClick={() => void window.agentCommonsLocal?.listImageModels().then(setImageModels).catch((cause) => setError(cause instanceof Error ? cause.message : "Could not list image models"))}>Refresh models</button>
         </div>

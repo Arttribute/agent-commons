@@ -14,14 +14,37 @@ const RUNTIME_ASSETS: Record<string, { name: string; sha256: string }> = {
   "win32-x64": { name: "sd-master-3f8527a-bin-win-cpu-x64.zip", sha256: "5e7caca2080321b25a12c1fa4175cb7d953f2b182309f8f73bfc9c725231d26c" },
 };
 const DEFAULT_MODEL = {
-  id: "tiny-sd",
+  id: "tiny-sd.safetensors",
   name: "Tiny SD · local starter",
   source: "https://huggingface.co/turingevo/tiny-sd-safetensors/resolve/main/segmind_tiny-sd.safetensors",
   sha256: "92e00b860c409f8cfc521a94f779009c6ebd28bf07670bf50e747682ab7b3b72",
   bytes: 1_060_307_606,
+  ramGiB: 6,
+  description: "Balanced image generation at 512 × 512 pixels",
 };
+const IMAGE_CATALOG = [
+  DEFAULT_MODEL,
+  {
+    id: "tiny-sd-q4.gguf",
+    name: "Tiny SD · compact Q4",
+    source: "https://huggingface.co/turingevo/tiny-sd-gguf/resolve/c6e3414/segmind_tiny-sd-q4_K.gguf",
+    sha256: "69fe70e0b72f3ea22830b12ddabeb55ee8fe55a28ccc0b763ace4cf39af346d6",
+    bytes: 774_886_240,
+    ramGiB: 5,
+    description: "Smaller download and memory use; reduced image detail",
+  },
+  {
+    id: "tiny-sd-q8.gguf",
+    name: "Tiny SD · Q8",
+    source: "https://huggingface.co/turingevo/tiny-sd-gguf/resolve/89829af/segmind_tiny-sd-q8_0.gguf",
+    sha256: "f23cd08965d55fc0887da4146a4f0785850037420f73b7347b62eeb4be13a300",
+    bytes: 853_972_416,
+    ramGiB: 6,
+    description: "Smaller download with more detail than Q4",
+  },
+] as const;
 
-export type ImageModelStatus = { state: "idle" | "downloading" | "ready" | "error"; label: string; progress?: number; error?: string };
+export type ImageModelStatus = { state: "idle" | "downloading" | "ready" | "error"; label: string; modelId?: string; progress?: number; error?: string };
 
 async function downloadVerified(url: string, destination: string, sha256: string, onProgress: (progress: number) => void, maxBytes: number) {
   const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(30 * 60_000) });
@@ -53,6 +76,7 @@ export class LocalImageManager {
   private readonly models: string;
   private readonly runtime: string;
   private pending?: Promise<void>;
+  private modelPending?: Promise<void>;
   private status: ImageModelStatus = { state: "idle", label: "Image model downloads when first used" };
 
   constructor(storageRoot: string, private readonly onStatus: (status: ImageModelStatus) => void) {
@@ -60,16 +84,17 @@ export class LocalImageManager {
     this.models = join(this.root, "models");
     this.runtime = join(this.root, "runtime");
     mkdirSync(this.models, { recursive: true, mode: 0o700 });
-    const model = join(this.models, `${DEFAULT_MODEL.id}.safetensors`);
+    const model = join(this.models, DEFAULT_MODEL.id);
     if (existsSync(this.executable()) && existsSync(model) && statSync(model).size === DEFAULT_MODEL.bytes) {
-      this.status = { state: "ready", label: `${DEFAULT_MODEL.name} ready` };
+      this.status = { state: "ready", label: `${DEFAULT_MODEL.name} ready`, modelId: DEFAULT_MODEL.id };
     }
   }
 
   currentStatus() { return this.status; }
+  catalog() { return IMAGE_CATALOG.map(({ id, name, bytes, ramGiB, description }) => ({ id, name, bytes, ramGiB, description })); }
   listModels() {
     return readdirSync(this.models).filter((name) => [".safetensors", ".gguf", ".ckpt"].includes(extname(name).toLowerCase()))
-      .map((name) => ({ id: name, name, bytes: statSync(join(this.models, name)).size }));
+      .map((name) => ({ id: name, name: IMAGE_CATALOG.find((model) => model.id === name)?.name ?? name, bytes: statSync(join(this.models, name)).size }));
   }
   modelDirectory() { return this.models; }
   private update(status: ImageModelStatus) { this.status = status; this.onStatus(status); }
@@ -77,9 +102,9 @@ export class LocalImageManager {
 
   async prepare(installDefault = true) {
     if (this.pending) await this.pending;
-    const model = join(this.models, `${DEFAULT_MODEL.id}.safetensors`);
+    const model = join(this.models, DEFAULT_MODEL.id);
     if (existsSync(this.executable()) && (!installDefault || (existsSync(model) && statSync(model).size === DEFAULT_MODEL.bytes))) {
-      if (this.status.state !== "ready") this.update({ state: "ready", label: installDefault ? `${DEFAULT_MODEL.name} ready` : "Local image runtime ready" });
+      if (this.status.state !== "ready") this.update({ state: "ready", label: installDefault ? `${DEFAULT_MODEL.name} ready` : "Local image runtime ready", modelId: installDefault ? DEFAULT_MODEL.id : undefined });
       return;
     }
     this.pending = this.prepareOnce(installDefault).finally(() => { this.pending = undefined; });
@@ -90,7 +115,7 @@ export class LocalImageManager {
     const asset = RUNTIME_ASSETS[`${process.platform}-${process.arch}`];
     if (!asset) throw new Error("Local image generation currently supports macOS ARM, Linux x64, and Windows x64.");
     try {
-      const model = join(this.models, `${DEFAULT_MODEL.id}.safetensors`);
+      const model = join(this.models, DEFAULT_MODEL.id);
       const needsModel = installDefault && (!existsSync(model) || statSync(model).size !== DEFAULT_MODEL.bytes);
       const disk = statfsSync(this.root);
       const freeBytes = disk.bavail * disk.bsize;
@@ -115,13 +140,13 @@ export class LocalImageManager {
         rmSync(model, { force: true });
         const temp = join(this.models, `${randomUUID()}.download`);
         try {
-          this.update({ state: "downloading", label: `Downloading ${DEFAULT_MODEL.name}`, progress: 0.1 });
+          this.update({ state: "downloading", label: `Downloading ${DEFAULT_MODEL.name}`, modelId: DEFAULT_MODEL.id, progress: 0.1 });
           await downloadVerified(DEFAULT_MODEL.source, temp, DEFAULT_MODEL.sha256,
-            (progress) => this.update({ state: "downloading", label: `Downloading ${DEFAULT_MODEL.name}`, progress: 0.1 + 0.9 * progress }), DEFAULT_MODEL.bytes);
+            (progress) => this.update({ state: "downloading", label: `Downloading ${DEFAULT_MODEL.name}`, modelId: DEFAULT_MODEL.id, progress: 0.1 + 0.9 * progress }), DEFAULT_MODEL.bytes);
           renameSync(temp, model);
         } finally { rmSync(temp, { force: true }); }
       }
-      this.update({ state: "ready", label: installDefault ? `${DEFAULT_MODEL.name} ready` : "Local image runtime ready" });
+      this.update({ state: "ready", label: installDefault ? `${DEFAULT_MODEL.name} ready` : "Local image runtime ready", modelId: installDefault ? DEFAULT_MODEL.id : undefined });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.update({ state: "error", label: "Image model unavailable", error: message });
@@ -129,10 +154,40 @@ export class LocalImageManager {
     }
   }
 
-  async generate(prompt: string, modelId = `${DEFAULT_MODEL.id}.safetensors`) {
+  /** Download a reviewed checkpoint into the same model folder used by sd-cli. */
+  async prepareModel(modelId = DEFAULT_MODEL.id) {
+    if (modelId === DEFAULT_MODEL.id) return this.prepare(true);
+    const selected = IMAGE_CATALOG.find((model) => model.id === modelId);
+    if (!selected) return this.prepare(false); // User-added compatible checkpoint.
+    if (this.modelPending) await this.modelPending;
+    const destination = join(this.models, selected.id);
+    await this.prepare(false);
+    if (existsSync(destination) && statSync(destination).size === selected.bytes) return;
+    const disk = statfsSync(this.root);
+    if (disk.bavail * disk.bsize < selected.bytes + 500_000_000) {
+      throw new Error(`Free at least ${Math.ceil((selected.bytes + 500_000_000) / 1_000_000_000)} GB before downloading ${selected.name}.`);
+    }
+    this.modelPending = (async () => {
+      const temp = join(this.models, `${randomUUID()}.download`);
+      try {
+        this.update({ state: "downloading", label: `Downloading ${selected.name}`, modelId, progress: 0 });
+        await downloadVerified(selected.source, temp, selected.sha256,
+          (progress) => this.update({ state: "downloading", label: `Downloading ${selected.name}`, modelId, progress }), selected.bytes);
+        if (existsSync(destination)) rmSync(destination, { force: true });
+        renameSync(temp, destination);
+        this.update({ state: "ready", label: `${selected.name} ready`, modelId });
+      } catch (error) {
+        this.update({ state: "error", label: `${selected.name} unavailable`, modelId, error: error instanceof Error ? error.message : String(error) });
+        throw error;
+      } finally { rmSync(temp, { force: true }); }
+    })().finally(() => { this.modelPending = undefined; });
+    return this.modelPending;
+  }
+
+  async generate(prompt: string, modelId = DEFAULT_MODEL.id) {
     if (!prompt.trim() || prompt.length > 2_000) throw new Error("Image prompt must be 1 to 2,000 characters.");
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}\.(?:safetensors|gguf|ckpt)$/i.test(modelId)) throw new Error("Choose an installed image model.");
-    await this.prepare(modelId === `${DEFAULT_MODEL.id}.safetensors`);
+    await this.prepareModel(modelId);
     const model = join(this.models, modelId);
     if (!existsSync(model)) throw new Error("Image model is not installed. Add it in General settings.");
     const output = join(this.root, `generated-${randomUUID()}.png`);

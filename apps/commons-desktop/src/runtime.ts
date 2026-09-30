@@ -298,7 +298,8 @@ export class PrivateLocalRuntime {
   }
 
   imageModelStatus() { return this.imageManager.currentStatus(); }
-  prepareImageModel() { return this.imageManager.prepare(); }
+  prepareImageModel(modelId?: string) { return this.imageManager.prepareModel(modelId); }
+  imageModelCatalog() { return this.imageManager.catalog(); }
   listImageModels() { return this.imageManager.listModels(); }
   imageModelDirectory() { return this.imageManager.modelDirectory(); }
   voiceModelStatus() { return this.voiceManager.currentStatus(); }
@@ -869,6 +870,7 @@ export class PrivateLocalRuntime {
       if (input.workspaceRoot === null) current.workspaceRoot = undefined;
       else if (input.workspaceRoot) current.workspaceRoot = input.workspaceRoot;
       if (input.spaceIds !== undefined) current.spaceIds = input.spaceIds;
+      current.webSearchEnabled = Boolean(input.webSearchEnabled);
       current.messages.push({ id: randomUUID(), role: "user", content: input.prompt.trim(), createdAt: timestamp, ...(attachments.length ? { attachments } : {}) });
       current.updatedAt = timestamp;
       const project = draft.projects?.find((entry) => entry.id === current.projectId);

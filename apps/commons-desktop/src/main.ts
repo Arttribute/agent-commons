@@ -885,7 +885,8 @@ function registerIpc() {
   localHandler<[Float32Array]>("local:transcribe-audio", (samples) => transcribeLocalAudio(samples, app.getPath("userData"), runtime.state().settings.transcriptionModel));
   localHandler("local:prepare-transcription-model", () => prepareLocalTranscriber(app.getPath("userData"), runtime.state().settings.transcriptionModel));
   localHandler("local:get-image-model-status", () => runtime.imageModelStatus());
-  localHandler("local:prepare-image-model", () => runtime.prepareImageModel());
+  localHandler<[string?]>("local:prepare-image-model", (modelId) => runtime.prepareImageModel(modelId));
+  localHandler("local:get-image-model-catalog", () => runtime.imageModelCatalog());
   localHandler("local:list-image-models", () => runtime.listImageModels());
   localHandler("local:open-image-model-folder", async () => {
     const error = await shell.openPath(runtime.imageModelDirectory());

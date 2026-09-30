@@ -57,6 +57,8 @@ export type LocalConversation = {
   id: string;
   agentId: string;
   title: string;
+  /** Per-chat consent to offer the read-only Web search tool. */
+  webSearchEnabled?: boolean;
   workspaceRoot?: string;
   spaceIds?: string[];
   /** Chats in the same project share its instructions, files, and knowledge. */
@@ -325,7 +327,7 @@ export type RuntimeEvent =
   | { type: "chat-end"; conversationId: string }
   | { type: "state"; state: LocalState };
 
-export type ImageModelStatus = { state: "idle" | "downloading" | "ready" | "error"; label: string; progress?: number; error?: string };
+export type ImageModelStatus = { state: "idle" | "downloading" | "ready" | "error"; label: string; modelId?: string; progress?: number; error?: string };
 export type VoiceModelStatus = { state: "idle" | "downloading" | "ready" | "error"; label: string; model?: string; error?: string };
 
 export type AgentInput = Pick<LocalAgent, "name" | "instructions" | "model"> & {
@@ -414,7 +416,8 @@ export interface LocalDesktopBridge {
   transcribeAudio(samples: Float32Array): Promise<string>;
   prepareTranscriptionModel(): Promise<void>;
   getImageModelStatus(): Promise<ImageModelStatus>;
-  prepareImageModel(): Promise<void>;
+  prepareImageModel(modelId?: string): Promise<void>;
+  getImageModelCatalog(): Promise<Array<{ id: string; name: string; bytes: number; ramGiB: number; description: string }>>;
   listImageModels(): Promise<Array<{ id: string; name: string; bytes: number }>>;
   openImageModelFolder(): Promise<void>;
   getVoiceModelStatus(): Promise<VoiceModelStatus>;

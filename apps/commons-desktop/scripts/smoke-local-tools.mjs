@@ -16,6 +16,7 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
   const failures = [];
   let mcpReadCalls = 0;
   let mcpWriteCalls = 0;
+  let webSearchCalls = 0;
   let downloadedModel = false;
   const mcp = new McpServer({ name: "commons-smoke-mcp", version: "1.0.0" });
   mcp.registerTool("read_mango", { description: "Read the launch code", annotations: { readOnlyHint: true } }, async () => {
@@ -34,6 +35,12 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
   await new Promise((resolve) => mcpServer.listen(0, "127.0.0.1", resolve));
   const server = createServer(async (request, response) => {
     response.setHeader("Content-Type", "application/json");
+    if (request.url?.startsWith("/search?")) {
+      const query = new URL(request.url, "http://127.0.0.1").searchParams.get("q");
+      assert.equal(query, "mango evidence");
+      webSearchCalls += 1;
+      return response.end(JSON.stringify({ results: [{ title: "Mango research", url: "https://example.org/mango", content: "Mango evidence found." }] }));
+    }
     if (request.url === "/api/tags") return response.end(JSON.stringify({ models: [{ name: "commons-smoke" }, ...(downloadedModel ? [{ name: "qwen3:1.7b" }] : [])] }));
     try {
       let raw = "";
@@ -68,6 +75,9 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
       } else if (prompt === "Read the project page") {
         if (last.role === "user") answer = call("cli_read_file", { path: "app/page.tsx" });
         else { assert.match(last.content, /Shoes for everyone/); answer.content = "The project page sells shoes."; }
+      } else if (prompt === "Read the project page by absolute path") {
+        if (last.role === "user") answer = call("cli_read_file", { path: join(workspace, "app/page.tsx") });
+        else { assert.match(last.content, /Shoes for everyone/); answer.content = "The absolute workspace path works."; }
       } else if (prompt === "Check git command") {
         if (last.role === "user") answer = call("cli_run_command", { command: "git", args: ["--version"] });
         else { assert.match(last.content, /git version/i); answer.content = "Git works in the desktop app."; }
@@ -110,6 +120,13 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
         assert.ok(!body.tools.some((tool) => tool.function.name === "mcp_0_write_mango"), "write tool leaked into read mode");
         if (last.role === "user") answer = call("mcp_0_read_mango", {});
         else { assert.match(last.content, /mango-731/); answer.content = "MCP read returned mango-731."; }
+      } else if (prompt === "Search is off") {
+        assert.ok(!body.tools.some((tool) => tool.function.name === "web_search"), "Web search was offered without chat consent");
+        answer.content = "Web search is off.";
+      } else if (prompt === "Search for mango evidence") {
+        assert.ok(body.tools.some((tool) => tool.function.name === "web_search"), "Web search was not offered after chat consent");
+        if (last.role === "user") answer = call("web_search", { query: "mango evidence" });
+        else { assert.match(last.content, /Mango evidence found/); answer.content = "Web search found mango evidence."; }
       } else throw new Error(`Unexpected smoke prompt: ${prompt}`);
       response.end(JSON.stringify({ message: answer, done: true }) + "\n");
     } catch (error) { failures.push(error); response.statusCode = 500; response.end(JSON.stringify({ error: error.message })); }
@@ -129,6 +146,7 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
         const first = await bridge.sendMessage({ agentId, workspaceRoot: ${JSON.stringify(workspace)}, prompt: 'Run the smoke command' });
         const follow = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Remember the command result' });
         const projectPage = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Read the project page' });
+        const absolutePage = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Read the project page by absolute path' });
         const git = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Check git command' });
         const failure = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Run a failing smoke command' });
         const process = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Start and finish the smoke process' });
@@ -148,14 +166,19 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
         if ((await bridge.getState()).settings.defaultModel !== 'qwen3:1.7b') throw new Error('Downloaded model was not selected');
         await bridge.updateSettings({ mcpServers: [{ id: 'smoke', name: 'Smoke MCP', url: ${JSON.stringify(mcpUrl)}, mode: 'read', enabled: true }] });
         const mcp = await bridge.sendMessage({ agentId, prompt: 'Read from MCP', mcpServerIds: ['smoke'] });
-        return { first: first.response, follow: follow.response, projectPage: projectPage.response, git: git.response, failure: failure.response, process: process.response, stopped: stopped.response, steered: steered.response, knowledge: knowledge.response, mcp: mcp.response };
-      } finally { unsubscribe(); await bridge.updateSettings(originalSettings); }
+        await bridge.updateSettings({ webSearchUrl: ${JSON.stringify(url)} });
+        const searchOff = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Search is off', webSearchEnabled: false });
+        const searchOn = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Search for mango evidence', webSearchEnabled: true });
+        if (!(await bridge.getState()).conversations.find(item => item.id === first.conversation.id)?.webSearchEnabled) throw new Error('Web search selection was not saved with the chat');
+        return { first: first.response, follow: follow.response, projectPage: projectPage.response, absolutePage: absolutePage.response, git: git.response, failure: failure.response, process: process.response, stopped: stopped.response, steered: steered.response, knowledge: knowledge.response, mcp: mcp.response, searchOff: searchOff.response, searchOn: searchOn.response };
+      } finally { unsubscribe(); await bridge.updateSettings({ ...originalSettings, webSearchUrl: originalSettings.webSearchUrl ?? '', webSearchApiKey: originalSettings.webSearchApiKey ?? '', mcpServers: originalSettings.mcpServers ?? [] }); }
     })()`, 30_000);
-    assert.deepEqual(result, { first: "Command returned mango-731.", follow: "The previous output was mango-731.", projectPage: "The project page sells shoes.", git: "Git works in the desktop app.", failure: "Command failed with failure-731.", process: "Process completed with process-731.", stopped: "Process stopped cleanly.", steered: "Focused on mango.", knowledge: "Mango launch owner: Amina.", mcp: "MCP read returned mango-731." });
+    assert.deepEqual(result, { first: "Command returned mango-731.", follow: "The previous output was mango-731.", projectPage: "The project page sells shoes.", absolutePage: "The absolute workspace path works.", git: "Git works in the desktop app.", failure: "Command failed with failure-731.", process: "Process completed with process-731.", stopped: "Process stopped cleanly.", steered: "Focused on mango.", knowledge: "Mango launch owner: Amina.", mcp: "MCP read returned mango-731.", searchOff: "Web search is off.", searchOn: "Web search found mango evidence." });
     assert.equal(mcpReadCalls, 1);
     assert.equal(mcpWriteCalls, 0);
+    assert.equal(webSearchCalls, 1);
     assert.deepEqual(failures, []);
-    console.log("Local command, steering, Knowledge and read-only MCP passed.");
+    console.log("Local command, steering, Knowledge, Web search and read-only MCP passed.");
   } finally {
     server.closeAllConnections();
     mcpServer.closeAllConnections();
