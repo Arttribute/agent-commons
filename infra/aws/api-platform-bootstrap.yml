@@ -45,7 +45,7 @@ Resources:
       ImageTagMutability: MUTABLE
       LifecyclePolicy:
         LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep 30 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}
+          {"rules":[{"rulePriority":1,"description":"Keep 120 images for deployment rollback","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":120},"action":{"type":"expire"}}]}
 
   GatewayRepository:
     Type: AWS::ECR::Repository
@@ -56,7 +56,7 @@ Resources:
       ImageTagMutability: MUTABLE
       LifecyclePolicy:
         LifecyclePolicyText: |
-          {"rules":[{"rulePriority":1,"description":"Keep 30 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},"action":{"type":"expire"}}]}
+          {"rules":[{"rulePriority":1,"description":"Keep 120 images for deployment rollback","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":120},"action":{"type":"expire"}}]}
 
   IdentityRuntimeSecret:
     Type: AWS::SecretsManager::Secret
