@@ -936,6 +936,7 @@ function registerIpc() {
   localHandler<[string, string]>("local:steer-conversation", (conversationId, prompt) => runtime.steerConversation(conversationId, prompt));
   localHandler<[string]>("local:delete-conversation", (id) => runtime.deleteConversation(id));
   localHandler<[string, string]>("local:rename-conversation", (id, title) => runtime.renameConversation(id, title));
+  localHandler<[string, boolean]>("local:set-conversation-web-search", (id, enabled) => runtime.setConversationWebSearch(id, enabled));
   localHandler<[string, boolean, boolean | undefined]>("local:approve", (id, allow, remember) => runtime.resolveApproval(id, allow, Boolean(remember)));
   localHandler<[string, string[]]>("local:add-space", (name, folders) => runtime.addKnowledgeSpace(name, folders));
   localHandler<[string]>("local:reindex-space", (id) => runtime.reindexKnowledgeSpace(id));

@@ -239,6 +239,13 @@ export type LocalSettings = {
   mcpServers?: Array<{ id: string; name: string; url: string; apiKey?: string; mode: "read" | "write"; enabled: boolean }>;
 };
 
+export const BRAVE_SEARCH_BASE_URL = "https://api.search.brave.com/res/v1/web";
+
+export function hasConfiguredLocalWebSearch(settings: Pick<LocalSettings, "webSearchUrl" | "webSearchApiKey">) {
+  const endpoint = settings.webSearchUrl?.replace(/\/$/, "");
+  return Boolean(endpoint && (endpoint !== BRAVE_SEARCH_BASE_URL || settings.webSearchApiKey?.trim()));
+}
+
 export type LocalModelStatus = {
   state: "checking" | "downloading-runtime" | "starting" | "downloading-model" | "ready" | "error";
   label: string;
@@ -430,6 +437,7 @@ export interface LocalDesktopBridge {
   steerConversation(conversationId: string, prompt: string): Promise<void>;
   deleteConversation(id: string): Promise<LocalState>;
   renameConversation(id: string, title: string): Promise<LocalState>;
+  setConversationWebSearch(id: string, enabled: boolean): Promise<LocalState>;
   approve(id: string, allow: boolean, remember?: boolean): Promise<void>;
   addKnowledgeSpace(name: string, folders: string[]): Promise<LocalState>;
   reindexKnowledgeSpace(id: string): Promise<LocalState>;

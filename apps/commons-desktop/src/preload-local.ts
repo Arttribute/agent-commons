@@ -41,6 +41,7 @@ const bridge: LocalDesktopBridge = {
   steerConversation: (conversationId, prompt) => invoke("local:steer-conversation", conversationId, prompt),
   deleteConversation: (id) => invoke("local:delete-conversation", id),
   renameConversation: (id, title) => invoke("local:rename-conversation", id, title),
+  setConversationWebSearch: (id, enabled) => invoke("local:set-conversation-web-search", id, enabled),
   approve: (id, allow, remember) => invoke("local:approve", id, allow, remember),
   addKnowledgeSpace: (name, folders) => invoke("local:add-space", name, folders),
   reindexKnowledgeSpace: (id) => invoke("local:reindex-space", id),

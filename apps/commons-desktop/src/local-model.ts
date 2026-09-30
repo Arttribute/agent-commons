@@ -97,9 +97,7 @@ export class LocalModelManager {
   prepare() {
     this.preparation ??= this.prepareOnce().catch((error) => {
       const rawMessage = error instanceof Error ? error.message : "Local AI could not be prepared";
-      const storageMessage = process.platform === "win32" || process.platform === "linux"
-        ? "Agent Commons needs up to 4 GB of free space to prepare local AI on this computer."
-        : "Agent Commons needs about 1 GB of free space to prepare local AI on this computer.";
+      const storageMessage = "Agent Commons needs about 5 GB of free space to prepare Local AI on this computer.";
       const label = /no space left|not enough space|disk full/i.test(rawMessage) ? storageMessage : rawMessage;
       this.update({
         state: "error",

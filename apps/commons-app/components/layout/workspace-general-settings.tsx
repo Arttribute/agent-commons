@@ -7,12 +7,13 @@ import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 const LOCAL_CHAT_MODELS = [
   { id: "qwen3:0.6b", name: "Qwen 3 Light", size: "523 MB", ram: 3, use: "Simple chat on limited hardware", abilities: "Tools · Reasoning" },
-  { id: "qwen3:1.7b", name: "Qwen 3 Small", size: "1.4 GB", ram: 4, use: "Everyday chat on smaller computers", abilities: "Tools · Reasoning" },
-  { id: "qwen3:4b", name: "Qwen 3 Balanced", size: "2.5 GB", ram: 8, use: "Research, writing, and tool work", abilities: "Tools · Reasoning" },
-  { id: "qwen3:8b", name: "Qwen 3 Strong", size: "5.2 GB", ram: 12, use: "More demanding knowledge and coding work", abilities: "Tools · Reasoning" },
-  { id: "qwen2.5-coder:3b", name: "Qwen Coder", size: "1.9 GB", ram: 6, use: "Coding on modest hardware", abilities: "Tools · Code" },
+  { id: "qwen3:1.7b", name: "Qwen 3 Small", size: "1.4 GB", ram: 4, use: "Basic chat on smaller computers", abilities: "Tools · Reasoning" },
+  { id: "qwen3.5:2b", name: "Qwen 3.5 2B", size: "2.7 GB", ram: 8, use: "Default for research and tool work on 8 GB computers", abilities: "Tools · Reasoning" },
+  { id: "qwen3:4b", name: "Qwen 3 Balanced", size: "2.5 GB", ram: 12, use: "Research, writing, and tool work", abilities: "Tools · Reasoning" },
+  { id: "qwen3:8b", name: "Qwen 3 Strong", size: "5.2 GB", ram: 16, use: "More demanding knowledge and coding work", abilities: "Tools · Reasoning" },
+  { id: "qwen2.5-coder:3b", name: "Qwen Coder", size: "1.9 GB", ram: 8, use: "Code drafting; verify agent tool use", abilities: "Code · Experimental tools" },
   { id: "deepseek-r1:1.5b", name: "DeepSeek R1 Small", size: "1.1 GB", ram: 4, use: "Lightweight reasoning", abilities: "Reasoning" },
-  { id: "deepseek-r1:8b", name: "DeepSeek R1", size: "5.2 GB", ram: 12, use: "Deeper reasoning and analysis", abilities: "Tools · Reasoning" },
+  { id: "deepseek-r1:8b", name: "DeepSeek R1", size: "5.2 GB", ram: 16, use: "Deeper reasoning and analysis", abilities: "Tools · Reasoning" },
 ] as const;
 
 export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-local" }) {

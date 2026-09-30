@@ -668,6 +668,8 @@ function toolArgSummary(toolName: string, args: Record<string, any>): string {
   switch (toolName) {
     case 'read_file':
       return truncate(args.path ?? '', 60);
+    case 'search_file':
+      return truncate(`${args.path ?? ''} · ${args.query ?? ''}`, 60);
     case 'write_file':
       return truncate(args.path ?? '', 60);
     case 'delete_file':
@@ -707,6 +709,12 @@ function toolResultPreview(toolName: string, result: string): string {
     case 'read_file': {
       const lines = result.split('\n').length;
       return `${lines} lines`;
+    }
+    case 'search_file': {
+      try {
+        const matches = JSON.parse(result)?.matches;
+        return Array.isArray(matches) ? `${matches.length} passage${matches.length === 1 ? '' : 's'}` : '';
+      } catch { return ''; }
     }
     case 'write_file':
       return 'written';

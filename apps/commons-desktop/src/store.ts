@@ -1,10 +1,11 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statfsSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
+import { totalmem } from "node:os";
 import { safeStorage } from "electron";
 import type { LocalState } from "@agent-commons/desktop-contract";
 
-export const DEFAULT_LOCAL_MODEL = "qwen3:1.7b";
+export const DEFAULT_LOCAL_MODEL = totalmem() >= 8 * 1024 ** 3 ? "qwen3.5:2b" : "qwen3:1.7b";
 
 function starterAgent() {
   const timestamp = new Date().toISOString();

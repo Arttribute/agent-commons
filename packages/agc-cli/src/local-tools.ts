@@ -30,6 +30,7 @@ import {
   statSync,
   realpathSync,
   lstatSync,
+  type Stats,
 } from 'fs';
 import { join, resolve, relative, extname, dirname, isAbsolute, sep } from 'path';
 import { execFile, spawn } from 'child_process';
@@ -209,7 +210,8 @@ ${fileSection}
 | Tool | What it does |
 |------|-------------|
 | \`cli_list_directory\` | List files and folders at a path |
-| \`cli_read_file\` | Read a file (PDF and Word docs are extracted to text) |
+| \`cli_read_file\` | Read a bounded part of a file (PDF and Word docs are extracted to text) |
+| \`cli_search_file\` | Find passages and character offsets inside one large document |
 | \`cli_write_file\` | Write or overwrite a file (user confirmation required) |
 | \`cli_search_files\` | Find files matching a pattern |
 | \`cli_disk_usage\` | Measure and rank file and folder sizes inside the selected root (read only; bounded scan) |
@@ -519,6 +521,20 @@ export async function extractDocumentText(abs: string, options?: { maxChars?: nu
   return readFileSync(abs, 'utf8');
 }
 
+const documentTextCache = new Map<string, { size: number; mtimeMs: number; text: string }>();
+
+async function cachedDocumentText(abs: string, stat: Stats, ext: string) {
+  const cached = documentTextCache.get(abs);
+  if (cached?.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached.text;
+  const text = PDF_EXTS.has(ext)
+    ? await extractPdfText(abs, Number.MAX_SAFE_INTEGER)
+    : await extractOfficeText(abs, ext);
+  documentTextCache.delete(abs);
+  if (text.length <= 2_000_000) documentTextCache.set(abs, { size: stat.size, mtimeMs: stat.mtimeMs, text });
+  while (documentTextCache.size > 4) documentTextCache.delete(documentTextCache.keys().next().value!);
+  return text;
+}
+
 async function toolReadFile(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
   const { path: userPath } = args;
   if (!userPath) throw new Error('read_file requires a "path" argument');
@@ -536,11 +552,11 @@ async function toolReadFile(args: Record<string, any>, cfg: LocalToolsConfig): P
   // context window and must not be persisted as one session tool event.
   if (PDF_EXTS.has(ext)) {
     if (stat.size > 50_000_000) throw new Error(`PDF too large to read (${Math.round(stat.size / 1_000_000)} MB). Max 50 MB.`);
-    return pageFileText(await extractPdfText(abs, Number.MAX_SAFE_INTEGER), args.offset, userPath, true);
+    return pageFileText(await cachedDocumentText(abs, stat, ext), args.offset, userPath, true);
   }
   if (OFFICE_EXTS.has(ext)) {
     if (stat.size > 20_000_000) throw new Error(`Document too large to read (${Math.round(stat.size / 1_000_000)} MB). Max 20 MB.`);
-    return pageFileText(await extractOfficeText(abs, ext), args.offset, userPath, true);
+    return pageFileText(await cachedDocumentText(abs, stat, ext), args.offset, userPath, true);
   }
 
   if (UNREADABLE_BINARY_EXTS.has(ext)) {
@@ -550,6 +566,60 @@ async function toolReadFile(args: Record<string, any>, cfg: LocalToolsConfig): P
   // Plain text files: enforce 500 KB limit
   if (stat.size > 500_000) throw new Error(`File too large to read (${Math.round(stat.size / 1024)} KB). Max 500 KB.`);
   return pageFileText(readFileSync(abs, 'utf8'), args.offset, userPath, false);
+}
+
+async function toolSearchFile(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
+  const path = String(args.path ?? '').trim();
+  const query = String(args.query ?? '').trim().slice(0, 120);
+  if (!path || !query) throw new Error('search_file requires a path and search query');
+  const abs = safePath(cfg.rootDir, path);
+  assertNotSensitive(abs);
+  if (!existsSync(abs)) throw new Error(`File not found: ${path}`);
+  const stat = statSync(abs);
+  if (!stat.isFile()) throw new Error(`"${path}" is not a file`);
+  const ext = extname(abs).toLowerCase();
+  if (PDF_EXTS.has(ext) && stat.size > 50_000_000) throw new Error('PDF exceeds the 50 MB Local read limit');
+  if (OFFICE_EXTS.has(ext) && stat.size > 20_000_000) throw new Error('Document exceeds the 20 MB Local read limit');
+  if (UNREADABLE_BINARY_EXTS.has(ext)) throw new Error(`Cannot search binary file "${path}"`);
+  if (!PDF_EXTS.has(ext) && !OFFICE_EXTS.has(ext) && stat.size > 500_000) throw new Error('Text file exceeds the 500 KB Local read limit');
+  const text = PDF_EXTS.has(ext) || OFFICE_EXTS.has(ext)
+    ? await cachedDocumentText(abs, stat, ext)
+    : readFileSync(abs, 'utf8');
+  return JSON.stringify(searchTextPassages(text, path, query, 'Use cli_read_file with a matching offset for more context.'));
+}
+
+export function searchTextPassages(text: string, path: string, rawQuery: string, hint: string) {
+  const query = rawQuery.trim().slice(0, 120);
+  if (!query) throw new Error('A search query is required');
+  const lower = text.toLowerCase();
+  const phrase = query.toLowerCase();
+  const terms = [...new Set(phrase.match(/[\p{L}\p{N}]{3,}/gu) ?? [])].slice(0, 8);
+  const positions: number[] = [];
+  const collect = (needle: string) => {
+    let offset = 0;
+    while (positions.length < 5_000) {
+      const found = lower.indexOf(needle, offset);
+      if (found < 0) break;
+      positions.push(found);
+      offset = found + Math.max(needle.length, 1);
+    }
+  };
+  collect(phrase);
+  if (!positions.length) for (const term of terms) collect(term);
+  const ranked = positions.map((offset) => {
+    const start = Math.max(0, offset - 180);
+    const end = Math.min(text.length, offset + 320);
+    const excerpt = text.slice(start, end).replace(/\s+/g, ' ').trim();
+    const score = terms.filter((term) => excerpt.toLowerCase().includes(term)).length;
+    return { offset, score, excerpt };
+  }).sort((a, b) => b.score - a.score || b.offset - a.offset);
+  const selected: typeof ranked = [];
+  for (const match of ranked) {
+    if (selected.some((entry) => Math.abs(entry.offset - match.offset) < 250)) continue;
+    selected.push(match);
+    if (selected.length >= 8) break;
+  }
+  return { path, query, totalChars: text.length, matches: selected.map(({ offset, excerpt }) => ({ offset, excerpt })), hint };
 }
 
 function pageFileText(text: string, rawOffset: unknown, path: string, includeTail: boolean): string {
@@ -853,6 +923,7 @@ export async function runLocalTool(
   try {
     switch (tool) {
       case 'read_file':       result = await toolReadFile(args, cfg);       break;
+      case 'search_file':     result = await toolSearchFile(args, cfg);     break;
       case 'write_file':      result = await toolWriteFile(args, cfg);      break;
       case 'list_directory':  result = await toolListDirectory(args, cfg);  break;
       case 'search_files':    result = await toolSearchFiles(args, cfg);    break;
@@ -864,7 +935,7 @@ export async function runLocalTool(
       case 'kill_process':    result = await toolKillProcess(args, cfg);    break;
       case 'list_processes':  result = await toolListProcesses(args, cfg);  break;
       default:
-        result = `Unknown tool: "${tool}". Available: read_file, write_file, list_directory, search_files, disk_usage, run_command, start_process, wait_for_process, process_status, kill_process, list_processes`;
+        result = `Unknown tool: "${tool}". Available: read_file, search_file, write_file, list_directory, search_files, disk_usage, run_command, start_process, wait_for_process, process_status, kill_process, list_processes`;
     }
   } catch (err: any) {
     result = `Error: ${err?.message ?? String(err)}`;

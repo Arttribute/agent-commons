@@ -8,9 +8,12 @@ Agent Commons Desktop can automatically download and run the Ollama command-line
 runtime from the official Ollama GitHub releases. Ollama is licensed under the
 MIT License. Source and license: https://github.com/ollama/ollama
 
-The default private model is `qwen3:1.7b`, distributed through Ollama's
-model registry. Qwen3 is licensed under the Apache License 2.0. Model
-information and license: https://huggingface.co/Qwen/Qwen3-1.7B
+On computers with at least 8 GB RAM, the default private model is
+`qwen3.5:2b`. On smaller computers it is `qwen3:1.7b`. Both are downloaded
+through Ollama's model registry and licensed under Apache 2.0. Model
+information and licenses:
+https://huggingface.co/Qwen/Qwen3.5-2B
+https://huggingface.co/Qwen/Qwen3-1.7B
 
 Local image generation downloads the stable-diffusion.cpp runtime, licensed
 under the MIT License: https://github.com/leejet/stable-diffusion.cpp

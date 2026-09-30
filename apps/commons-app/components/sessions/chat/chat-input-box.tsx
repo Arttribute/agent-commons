@@ -25,7 +25,7 @@ import {
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
-import type { LocalSettings } from "@agent-commons/desktop-contract";
+import { BRAVE_SEARCH_BASE_URL, hasConfiguredLocalWebSearch, type LocalSettings } from "@agent-commons/desktop-contract";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
@@ -297,6 +297,7 @@ export default function ChatInputBox({
   const [webSearchConfigured, setWebSearchConfigured] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [webSearchDialogOpen, setWebSearchDialogOpen] = useState(false);
+  const [webSearchProvider, setWebSearchProvider] = useState<"brave" | "searxng">("brave");
   const [webSearchUrl, setWebSearchUrl] = useState("");
   const [webSearchApiKey, setWebSearchApiKey] = useState("");
   const [webSearchSaving, setWebSearchSaving] = useState(false);
@@ -315,26 +316,45 @@ export default function ChatInputBox({
       void bridge?.getState().then((state) => {
         const conversation = state.conversations.find((item) => item.id === sessionId);
         if (initialLaunch?.workspaceRoot === undefined) setDesktopWorkspace(conversation?.workspaceRoot ?? null);
-        setWebSearchConfigured(Boolean(state.settings.webSearchUrl));
-        setWebSearchEnabled(Boolean(state.settings.webSearchUrl && conversation?.webSearchEnabled));
+        setWebSearchConfigured(hasConfiguredLocalWebSearch(state.settings));
+        setWebSearchEnabled(Boolean(hasConfiguredLocalWebSearch(state.settings) && (conversation?.webSearchEnabled ?? initialLaunch?.webSearchEnabled)));
         setMcpServers(state.settings.mcpServers ?? []);
       }).catch(() => undefined);
       return bridge?.onEvent((event) => {
         if (event.type === "state") {
-          setWebSearchConfigured(Boolean(event.state.settings.webSearchUrl));
-          if (!event.state.settings.webSearchUrl) setWebSearchEnabled(false);
+          setWebSearchConfigured(hasConfiguredLocalWebSearch(event.state.settings));
+          if (!hasConfiguredLocalWebSearch(event.state.settings)) setWebSearchEnabled(false);
           setMcpServers(event.state.settings.mcpServers ?? []);
         }
       });
     } else {
       void window.agentCommonsDesktop?.getWorkspace().then(setDesktopWorkspace).catch(() => undefined);
     }
-  }, [local, sessionId]);
+  }, [local, sessionId, initialLaunch?.webSearchEnabled]);
+  const setChatWebSearch = async (enabled: boolean) => {
+    const bridge = window.agentCommonsLocal;
+    if (!bridge) return;
+    try {
+      const state = await bridge.getState();
+      if (enabled && !hasConfiguredLocalWebSearch(state.settings)) {
+        openWebSearchSettings();
+        return;
+      }
+      if (state.conversations.some((conversation) => conversation.id === sessionId)) {
+        await bridge.setConversationWebSearch(sessionId, enabled);
+      }
+      setWebSearchEnabled(enabled);
+    } catch (cause) {
+      setWebSearchError(cause instanceof Error ? cause.message : "Could not save Web search for this chat.");
+      setWebSearchDialogOpen(true);
+    }
+  };
   const openWebSearchSettings = () => {
     setWebSearchError("");
     setWebSearchDialogOpen(true);
     void window.agentCommonsLocal?.getState().then((state) => {
-      setWebSearchUrl(state.settings.webSearchUrl ?? "");
+      setWebSearchProvider(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL || !state.settings.webSearchUrl ? "brave" : "searxng");
+      setWebSearchUrl(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "" : state.settings.webSearchUrl ?? "");
       setWebSearchApiKey(state.settings.webSearchApiKey ?? "");
     }).catch((cause) => setWebSearchError(cause instanceof Error ? cause.message : "Could not load web search settings."));
   };
@@ -344,8 +364,12 @@ export default function ChatInputBox({
     setWebSearchSaving(true);
     setWebSearchError("");
     try {
-      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl, webSearchApiKey });
-      const configured = Boolean(state.settings.webSearchUrl);
+      if (webSearchProvider === "brave" && !webSearchApiKey.trim()) throw new Error("Enter your Brave Search API key.");
+      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl: webSearchProvider === "brave" ? BRAVE_SEARCH_BASE_URL : webSearchUrl, webSearchApiKey });
+      const configured = hasConfiguredLocalWebSearch(state.settings);
+      if (configured && state.conversations.some((conversation) => conversation.id === sessionId)) {
+        await window.agentCommonsLocal.setConversationWebSearch(sessionId, true);
+      }
       setWebSearchConfigured(configured);
       setWebSearchEnabled(configured);
       setWebSearchDialogOpen(false);
@@ -1061,16 +1085,23 @@ export default function ChatInputBox({
         <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Web search</DialogTitle>
-            <DialogDescription>Connect a SearXNG search endpoint. Search is off until you turn it on for a chat. Every query asks for approval before it leaves this computer.</DialogDescription>
+            <DialogDescription>Choose where web searches go. Every query asks for approval before it leaves this computer.</DialogDescription>
           </DialogHeader>
           <form onSubmit={saveWebSearchSettings} className="space-y-4">
             <label className="block space-y-1.5 text-sm">
+              <span>Provider</span>
+              <select value={webSearchProvider} onChange={(event) => { setWebSearchProvider(event.target.value as "brave" | "searxng"); setWebSearchApiKey(""); }} className="w-full rounded-md border border-border bg-background px-3 py-2">
+                <option value="brave">Brave Search · API key</option>
+                <option value="searxng">SearXNG · your endpoint</option>
+              </select>
+            </label>
+            {webSearchProvider === "searxng" && <label className="block space-y-1.5 text-sm">
               <span>Search endpoint</span>
               <input type="url" required placeholder="https://search.example.com" value={webSearchUrl} onChange={(event) => setWebSearchUrl(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
-            </label>
+            </label>}
             <label className="block space-y-1.5 text-sm">
-              <span>API key <span className="text-muted-foreground">(if required)</span></span>
-              <input type="password" autoComplete="off" value={webSearchApiKey} onChange={(event) => setWebSearchApiKey(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
+              <span>API key {webSearchProvider === "searxng" && <span className="text-muted-foreground">(if required)</span>}</span>
+              <input type="password" required={webSearchProvider === "brave"} autoComplete="off" value={webSearchApiKey} onChange={(event) => setWebSearchApiKey(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
             </label>
             {webSearchError && <p role="alert" className="text-xs text-destructive">{webSearchError}</p>}
             <DialogFooter>
@@ -1265,7 +1296,7 @@ export default function ChatInputBox({
                         )}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
-                    {local && <DropdownMenuCheckboxItem checked={webSearchEnabled} onCheckedChange={(checked) => { if (checked && !webSearchConfigured) openWebSearchSettings(); else setWebSearchEnabled(checked === true); }}>
+                    {local && <DropdownMenuCheckboxItem checked={webSearchEnabled} onCheckedChange={(checked) => { void setChatWebSearch(checked === true); }}>
                       <Globe2 className="mr-2 h-4 w-4" />
                       <span>Web search</span>
                     </DropdownMenuCheckboxItem>}
