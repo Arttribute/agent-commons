@@ -11,6 +11,7 @@
   "dependencies": {
     "@agent-commons/desktop-contract": "workspace:*",
     "@agent-commons/sdk": "workspace:*",
+    "@agent-commons/ui": "workspace:*",
     "@dnd-kit/core": "^6.3.1",
     "@hookform/resolvers": "^3.10.0",
     "@iconify-json/logos": "^1.2.11",
@@ -57,8 +58,8 @@
     "framer-motion": "^12.0.11",
     "lucide-react": "^0.474.0",
     "motion": "^12.4.1",
-    "next": "15.1.11",
-    "next-auth": "5.0.0-beta.30",
+    "next": "15.5.24",
+    "next-auth": "5.0.0-beta.32",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.54.2",
@@ -75,8 +76,7 @@
     "vaul": "^1.1.2",
     "viem": "^2.22.17",
     "zod": "^3.24.1",
-    "zustand": "^5.0.8",
-    "@agent-commons/ui": "workspace:*"
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
