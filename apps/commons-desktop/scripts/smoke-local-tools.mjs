@@ -2,21 +2,52 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 // Runs the packaged bridge, runtime, real processes and persistence against a
 // deterministic loopback model. No user's model or workspace is changed.
 export async function smokeLocalTools(evaluate, wsUrl, root) {
   const workspace = join(root, "tool-workspace");
   mkdirSync(workspace, { recursive: true });
+  mkdirSync(join(workspace, "app"), { recursive: true });
   writeFileSync(join(workspace, "launch.md"), "Mango launch owner: Amina. Launch code: mango-731.");
+  writeFileSync(join(workspace, "app", "page.tsx"), "export default function Page() { return <main>Shoes for everyone</main>; }");
   const failures = [];
+  let mcpReadCalls = 0;
+  let mcpWriteCalls = 0;
+  let downloadedModel = false;
+  const mcp = new McpServer({ name: "commons-smoke-mcp", version: "1.0.0" });
+  mcp.registerTool("read_mango", { description: "Read the launch code", annotations: { readOnlyHint: true } }, async () => {
+    mcpReadCalls += 1;
+    return { content: [{ type: "text", text: "mango-731" }] };
+  });
+  mcp.registerTool("write_mango", { description: "Change the launch code", annotations: { readOnlyHint: false, destructiveHint: true } }, async () => {
+    mcpWriteCalls += 1;
+    return { content: [{ type: "text", text: "changed" }] };
+  });
+  const mcpTransport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  await mcp.connect(mcpTransport);
+  const mcpServer = createServer((request, response) => {
+    void mcpTransport.handleRequest(request, response).catch((error) => { failures.push(error); response.writeHead(500); response.end(); });
+  });
+  await new Promise((resolve) => mcpServer.listen(0, "127.0.0.1", resolve));
   const server = createServer(async (request, response) => {
     response.setHeader("Content-Type", "application/json");
-    if (request.url === "/api/tags") return response.end(JSON.stringify({ models: [{ name: "commons-smoke" }] }));
+    if (request.url === "/api/tags") return response.end(JSON.stringify({ models: [{ name: "commons-smoke" }, ...(downloadedModel ? [{ name: "qwen3:1.7b" }] : [])] }));
     try {
       let raw = "";
       for await (const chunk of request) raw += chunk;
       const body = JSON.parse(raw);
+      if (request.url === "/api/pull") {
+        assert.equal(body.name, "qwen3:1.7b");
+        downloadedModel = true;
+        return response.end('{"status":"pulling manifest"}\n{"status":"downloading","completed":5,"total":10}\n{"status":"success"}\n');
+      }
+      if (body.messages?.[0]?.content?.startsWith("Write a specific title")) {
+        assert.equal(body.stream, false);
+        return response.end(JSON.stringify({ message: { role: "assistant", content: "Mango workspace task" } }));
+      }
       assert.ok(body.options.num_ctx >= 16_384);
       const messages = body.messages;
       const last = messages.at(-1);
@@ -34,6 +65,12 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
       } else if (prompt === "Remember the command result") {
         assert.ok(messages.some((message) => message.role === "tool" && message.tool_name === "cli_run_command" && message.content.includes("mango-731")), "saved tool history was lost on follow-up");
         answer.content = "The previous output was mango-731.";
+      } else if (prompt === "Read the project page") {
+        if (last.role === "user") answer = call("cli_read_file", { path: "app/page.tsx" });
+        else { assert.match(last.content, /Shoes for everyone/); answer.content = "The project page sells shoes."; }
+      } else if (prompt === "Check git command") {
+        if (last.role === "user") answer = call("cli_run_command", { command: "git", args: ["--version"] });
+        else { assert.match(last.content, /git version/i); answer.content = "Git works in the desktop app."; }
       } else if (prompt === "Run a failing smoke command") {
         if (last.role === "user") answer = call("cli_run_command", { command: process.execPath, args: ["-e", "console.error('failure-731'); process.exit(3)"] });
         else { assert.match(last.content, /^Error:[\s\S]*failure-731/); answer.content = "Command failed with failure-731."; }
@@ -44,6 +81,14 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
           if (last.tool_name === "cli_start_process" || result.status === "running") answer = call("cli_wait_for_process", { processId: result.processId, wait_seconds: 1 });
           else { assert.equal(result.status, "done"); assert.match(result.stdout, /process-731/); answer.content = "Process completed with process-731."; }
         }
+      } else if (prompt === "Stop the smoke process") {
+        if (last.role === "user") answer = call("cli_start_process", { command: process.execPath, args: ["-e", "setInterval(() => {}, 1000)"] });
+        else {
+          const result = JSON.parse(last.content);
+          if (last.tool_name === "cli_start_process") answer = call("cli_kill_process", { processId: result.processId });
+          else if (last.tool_name === "cli_kill_process") answer = call("cli_process_status", { processId: result.processId });
+          else { assert.equal(result.status, "killed"); answer.content = "Process stopped cleanly."; }
+        }
       } else if (prompt === "Read the smoke knowledge") {
         if (last.role === "user") answer = call("list_knowledge_spaces", {});
         else if (last.tool_name === "list_knowledge_spaces") {
@@ -51,8 +96,20 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
           assert.ok(space); answer = call("list_knowledge_documents", { spaceId: space.spaceId });
         } else if (last.tool_name === "list_knowledge_documents") {
           const result = JSON.parse(last.content);
-          answer = call("read_knowledge_document", { spaceId: result.spaceId, path: result.documents[0].path });
+          const note = result.documents.find((document) => document.path.endsWith("launch.md"));
+          assert.ok(note, "launch note was not indexed");
+          answer = call("read_knowledge_document", { spaceId: result.spaceId, path: note.path });
         } else { assert.match(last.content, /Amina/); answer.content = "Mango launch owner: Amina."; }
+      } else if (prompt === "Start slowly") {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        answer.content = "Original direction.";
+      } else if (prompt === "Focus on mango instead") {
+        answer.content = "Focused on mango.";
+      } else if (prompt === "Read from MCP") {
+        assert.ok(body.tools.some((tool) => tool.function.name === "mcp_0_read_mango"));
+        assert.ok(!body.tools.some((tool) => tool.function.name === "mcp_0_write_mango"), "write tool leaked into read mode");
+        if (last.role === "user") answer = call("mcp_0_read_mango", {});
+        else { assert.match(last.content, /mango-731/); answer.content = "MCP read returned mango-731."; }
       } else throw new Error(`Unexpected smoke prompt: ${prompt}`);
       response.end(JSON.stringify({ message: answer, done: true }) + "\n");
     } catch (error) { failures.push(error); response.statusCode = 500; response.end(JSON.stringify({ error: error.message })); }
@@ -60,6 +117,7 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const url = `http://127.0.0.1:${server.address().port}`;
+    const mcpUrl = `http://127.0.0.1:${mcpServer.address().port}/mcp`;
     const result = await evaluate(wsUrl, `(async () => {
       const bridge = window.agentCommonsLocal;
       const state = await bridge.getState();
@@ -70,15 +128,38 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
         await bridge.updateSettings({ ollamaUrl: ${JSON.stringify(url)}, defaultModel: 'commons-smoke' });
         const first = await bridge.sendMessage({ agentId, workspaceRoot: ${JSON.stringify(workspace)}, prompt: 'Run the smoke command' });
         const follow = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Remember the command result' });
+        const projectPage = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Read the project page' });
+        const git = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Check git command' });
         const failure = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Run a failing smoke command' });
         const process = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Start and finish the smoke process' });
+        const stopped = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Stop the smoke process' });
+        const started = new Promise((resolve) => {
+          const stop = bridge.onEvent(event => { if (event.type === 'chat-start' && event.conversationId === first.conversation.id) { stop(); resolve(); } });
+        });
+        const steeringRun = bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Start slowly', interactive: true });
+        await started;
+        await bridge.steerConversation(first.conversation.id, 'Focus on mango instead');
+        const steered = await steeringRun;
         await bridge.addKnowledgeSpace('Smoke notes', [${JSON.stringify(workspace)}]);
         const knowledge = await bridge.sendMessage({ agentId, prompt: 'Read the smoke knowledge' });
-        return { first: first.response, follow: follow.response, failure: failure.response, process: process.response, knowledge: knowledge.response };
+        await bridge.downloadModel('qwen3:1.7b');
+        if (!(await bridge.listModels()).includes('qwen3:1.7b')) throw new Error('Downloaded model not found');
+        await bridge.updateSettings({ defaultModel: 'qwen3:1.7b' });
+        if ((await bridge.getState()).settings.defaultModel !== 'qwen3:1.7b') throw new Error('Downloaded model was not selected');
+        await bridge.updateSettings({ mcpServers: [{ id: 'smoke', name: 'Smoke MCP', url: ${JSON.stringify(mcpUrl)}, mode: 'read', enabled: true }] });
+        const mcp = await bridge.sendMessage({ agentId, prompt: 'Read from MCP', mcpServerIds: ['smoke'] });
+        return { first: first.response, follow: follow.response, projectPage: projectPage.response, git: git.response, failure: failure.response, process: process.response, stopped: stopped.response, steered: steered.response, knowledge: knowledge.response, mcp: mcp.response };
       } finally { unsubscribe(); await bridge.updateSettings(originalSettings); }
     })()`, 30_000);
-    assert.deepEqual(result, { first: "Command returned mango-731.", follow: "The previous output was mango-731.", failure: "Command failed with failure-731.", process: "Process completed with process-731.", knowledge: "Mango launch owner: Amina." });
+    assert.deepEqual(result, { first: "Command returned mango-731.", follow: "The previous output was mango-731.", projectPage: "The project page sells shoes.", git: "Git works in the desktop app.", failure: "Command failed with failure-731.", process: "Process completed with process-731.", stopped: "Process stopped cleanly.", steered: "Focused on mango.", knowledge: "Mango launch owner: Amina.", mcp: "MCP read returned mango-731." });
+    assert.equal(mcpReadCalls, 1);
+    assert.equal(mcpWriteCalls, 0);
     assert.deepEqual(failures, []);
-    console.log("Local command, process polling, saved tool history and Knowledge reading passed.");
-  } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
+    console.log("Local command, steering, Knowledge and read-only MCP passed.");
+  } finally {
+    server.closeAllConnections();
+    mcpServer.closeAllConnections();
+    await Promise.all([new Promise((resolve) => server.close(resolve)), new Promise((resolve) => mcpServer.close(resolve))]);
+    await mcp.close();
+  }
 }

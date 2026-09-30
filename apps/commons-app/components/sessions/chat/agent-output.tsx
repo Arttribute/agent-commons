@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ReactMarkdown from "react-markdown";
@@ -24,7 +24,7 @@ import { collectEntityRefs, EntityCard } from "./entity-cards";
 import { collectVideoEmbeds, VideoEmbedCard } from "./link-embeds";
 import { useRouter } from "next/navigation";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
-import { collectArtifactRefs, type ArtifactRef } from "@/lib/artifacts";
+import { artifactKind, collectArtifactRefs, type ArtifactRef } from "@/lib/artifacts";
 import {
   AlertCircle,
   Brain,
@@ -45,6 +45,23 @@ interface ToolCall {
   timestamp?: string;
 }
 
+function LocalMediaArtifact({ artifact, conversationId, onOpen }: { artifact: ArtifactRef; conversationId: string; onOpen: (artifact: ArtifactRef) => void }) {
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!conversationId) return;
+    let active = true;
+    void window.agentCommonsLocal?.getArtifactPreview(conversationId, artifact.fileId)
+      .then((data) => { if (active) setPreview(data); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [conversationId, artifact.fileId]);
+  return <div className="max-w-[28rem] space-y-2">
+    {preview?.startsWith("data:image/") && <button type="button" onClick={() => onOpen(artifact)} className="block overflow-hidden rounded-xl border border-border bg-muted"><img src={preview} alt={artifact.name || "Generated image"} className="max-h-80 w-full object-contain" /></button>}
+    {preview?.startsWith("data:audio/") && <audio controls preload="metadata" src={preview} className="w-full" aria-label={artifact.name || "Generated audio"} />}
+    <ArtifactCard artifact={artifact} onOpen={onOpen} previewUrl={preview} />
+  </div>;
+}
+
 interface AgentCall {
   agentId: string;
   message: string;
@@ -60,6 +77,7 @@ interface AgentOutputProps {
     toolCalls?: ToolCall[];
     agentCalls?: AgentCall[];
     artifacts?: ArtifactRef[];
+    localConversationId?: string;
   };
   className?: string;
   isStreaming?: boolean;
@@ -350,13 +368,9 @@ export default function AgentOutput({
           ))}
           {onOpenArtifact && generatedArtifacts.length > 0 && (
             <div className="not-prose mt-3 grid gap-2">
-              {generatedArtifacts.map((artifact) => (
-                <ArtifactCard
-                  key={artifact.fileId}
-                  artifact={artifact}
-                  onOpen={onOpenArtifact}
-                />
-              ))}
+              {generatedArtifacts.map((artifact) => mode === "private-local" && ["image", "audio"].includes(artifactKind(artifact)) ? (
+                <LocalMediaArtifact key={artifact.fileId} artifact={artifact} conversationId={metadata?.localConversationId || sessionId || ""} onOpen={onOpenArtifact} />
+              ) : <ArtifactCard key={artifact.fileId} artifact={artifact} onOpen={onOpenArtifact} />)}
             </div>
           )}
           {isStreaming && Boolean(content) && (

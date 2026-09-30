@@ -3,6 +3,7 @@
 import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BookOpen,
@@ -101,6 +102,10 @@ type EditorMode = "visual" | "markdown";
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function KnowledgeSpacesView() {
+  const searchParams = useSearchParams();
+  const requestedSpaceId = searchParams.get("spaceId");
+  const requestedDocumentId = searchParams.get("documentId");
+  const requestedDocumentPath = searchParams.get("documentPath");
   const { authState } = useAuth();
   const { mode: workspaceMode } = useWorkspaceMode();
   const local = workspaceMode === "private-local";
@@ -166,14 +171,21 @@ export function KnowledgeSpacesView() {
     const next = Array.isArray(payload.data) ? payload.data : [];
     setSpaces(next);
     setSpaceId((current) =>
-      next.some((space: KnowledgeSpace) => space.spaceId === current)
+      next.some((space: KnowledgeSpace) => space.spaceId === requestedSpaceId)
+        ? requestedSpaceId!
+        : next.some((space: KnowledgeSpace) => space.spaceId === current)
         ? current
         : next.find((space: KnowledgeSpace) => space.isDefault)?.spaceId ||
           next[0]?.spaceId ||
           "",
     );
     return next as KnowledgeSpace[];
-  }, []);
+  }, [requestedSpaceId]);
+
+  useEffect(() => {
+    if (requestedSpaceId && spaces.some((space) => space.spaceId === requestedSpaceId)) setSpaceId(requestedSpaceId);
+    if (requestedDocumentId) setDocumentId(requestedDocumentId);
+  }, [requestedSpaceId, requestedDocumentId, spaces]);
 
   useEffect(() => {
     if (!userAddress) return;
@@ -200,16 +212,19 @@ export function KnowledgeSpacesView() {
       const next = Array.isArray(payload.data) ? payload.data : [];
       setDocuments(next);
       setDocumentId((current) =>
-        next.some((item: KnowledgeDocument) => item.documentId === current)
+        next.some((item: KnowledgeDocument) => item.documentId === requestedDocumentId)
+          ? requestedDocumentId!
+          : next.find((item: KnowledgeDocument) => item.path === requestedDocumentPath)?.documentId ||
+        (next.some((item: KnowledgeDocument) => item.documentId === current)
           ? current
-          : next[0]?.documentId || "",
+          : next[0]?.documentId || ""),
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load notes");
     } finally {
       setDocumentsLoading(false);
     }
-  }, []);
+  }, [requestedDocumentId, requestedDocumentPath]);
 
   const loadGraph = useCallback(async (nextSpaceId: string) => {
     if (!nextSpaceId) return;

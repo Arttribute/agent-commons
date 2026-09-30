@@ -43,7 +43,7 @@ async function localApiRequest(input: RequestInfo | URL, init?: RequestInit): Pr
     const files: Array<{ name: string; mimeType: string; bytes: Uint8Array }> = [];
     for (const [key, value] of init.body.entries()) {
       if (value instanceof File) {
-        if (value.size > 20_000_000) throw new Error("Local uploads are limited to 20 MB per file.");
+        if (value.size > 25 * 1024 * 1024) throw new Error("Local uploads are limited to 25 MB per file.");
         files.push({ name: value.name, mimeType: value.type, bytes: new Uint8Array(await value.arrayBuffer()) });
       } else fields[key] = value;
     }
@@ -60,8 +60,38 @@ export async function desktopApiFetch(input: RequestInfo | URL, init?: RequestIn
   if (observedDesktopMode === null && typeof window !== "undefined" && window.agentCommonsDesktop) {
     observedDesktopMode = (await window.agentCommonsDesktop.getInfo()).mode;
   }
-  if (!isLocalDesktopMode()) return originalFetch()(input, init);
+  if (!isLocalDesktopMode()) {
+    if (requestPath(input).split("?")[0] === "/api/files/upload" && init?.body instanceof FormData) {
+      return uploadCloudFiles(init.body);
+    }
+    return originalFetch()(input, init);
+  }
   return localApiRequest(input, init);
+}
+
+async function uploadCloudFiles(form: FormData): Promise<Response> {
+  const uploaded: unknown[] = [];
+  const files = form.getAll("files").filter((value): value is File => value instanceof File);
+  for (const file of files) {
+    if (file.size < 1 || file.size > 25 * 1024 * 1024) {
+      return Response.json({ message: `${file.name} must be 25 MB or smaller` }, { status: 413 });
+    }
+    const ticketResponse = await originalFetch()("/api/files/upload-ticket", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: file.name, mimeType: file.type, size: file.size, agentId: form.get("agentId"), sessionId: form.get("sessionId"), storageProvider: form.get("storageProvider") }),
+    });
+    const ticket = await ticketResponse.json().catch(() => ({}));
+    if (!ticketResponse.ok || !ticket?.data?.url) {
+      return Response.json(ticket, { status: ticketResponse.status });
+    }
+    const body = new FormData();
+    body.append("files", file);
+    const response = await originalFetch()(ticket.data.url, { method: "POST", body });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return Response.json(result, { status: response.status });
+    if (Array.isArray(result?.data)) uploaded.push(...result.data);
+  }
+  return Response.json({ data: uploaded });
 }
 
 /**

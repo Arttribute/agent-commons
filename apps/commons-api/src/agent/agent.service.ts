@@ -13,6 +13,7 @@ import { ToolNode } from '@langchain/langgraph/prebuilt';
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   OnModuleInit,
@@ -197,11 +198,16 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
   >();
 
   /** Called by the controller when the CLI POSTs a tool result. */
-  resolveCliToolRequest(requestId: string, result: string): boolean {
+  async resolveCliToolRequest(requestId: string, result: string): Promise<boolean> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId) || typeof result !== 'string' || result.length > 1_000_000) return false;
     const resolve = this.pendingCliToolRequests.get(requestId);
-    if (!resolve) return false;
-    resolve(result);
-    return true;
+    if (resolve) { resolve(result); return true; }
+    const rows = (await this.db.execute(sql`
+      UPDATE agent_cli_tool_result SET result = ${result}
+      WHERE request_id = ${requestId}::uuid AND result IS NULL AND expires_at > now()
+      RETURNING request_id
+    `)) as any;
+    return Boolean(rows[0]);
   }
 
   constructor(
@@ -760,6 +766,10 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     workspaceId?: string;
     parentSessionId?: string;
     stream?: boolean; // ✅ stream flag
+    /** User messages accepted while this stream is active, consumed at graph boundaries. */
+    consumeSteers?: () => string[] | Promise<string[]>;
+    closeSteering?: () => void | Promise<void>;
+    openSteering?: () => void | Promise<void>;
     turnCount?: number;
     maxTurns?: number;
     /** Extra text appended to the agent's system prompt (used by CLI for local tool manifest). */
@@ -1018,7 +1028,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             sessionRecord?.model as any,
             this.encryption,
           );
-          const effectiveModel = props.model
+          let effectiveModel = props.model
             ? this.modelProviderFactory.resolveRunModel(props.model)
             : this.modelProviderFactory.resolveSessionModel(sessionModel, {
                 provider: (agent.modelProvider as any) ?? 'openai',
@@ -1038,6 +1048,41 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             props.reasoningEffort,
           );
           if (requestedEffort) effectiveModel.reasoningEffort = requestedEffort;
+
+          const billingOwnerId = agent.ownerUserId ?? agent.owner;
+          if (
+            !billingOwnerId &&
+            process.env.CREDIT_DEBITS_ENABLED !== 'false'
+          ) {
+            throw new ForbiddenException(
+              'This agent has no billable account owner.',
+            );
+          }
+          if (billingOwnerId) {
+            const authorize = () => this.usageService.authorizeAgentRun({
+              principalId: billingOwnerId,
+              workspaceId: agent.workspaceId,
+              agentId,
+              sessionId: currentSessionId,
+              traceId,
+              provider: effectiveModel.provider,
+              modelId: effectiveModel.modelId,
+              isByok: !!effectiveModel.apiKey,
+            });
+            let reservation;
+            try {
+              reservation = await authorize();
+            } catch (error) {
+              const response = error instanceof HttpException ? error.getResponse() : undefined;
+              const insufficient = typeof response === 'object' && response !== null && 'code' in response && response.code === 'insufficient_credits';
+              if (!insufficient || !process.env.HOSTED_FREE_MODEL_BASE_URL || !process.env.HOSTED_FREE_MODEL_API_KEY || effectiveModel.provider === 'hosted-free') throw error;
+              effectiveModel = this.modelProviderFactory.resolveRunModel({ provider: 'hosted-free', modelId: 'Qwen/Qwen3-4B-Instruct-2507' });
+              effectiveModel.maxTokens = 2048;
+              emitStatus('model', 'running', 'Credits exhausted; using Commons Free model');
+              reservation = await authorize();
+            }
+            creditReservationId = reservation?.reservationId;
+          }
 
           this.provenanceService.startRun({
             traceId,
@@ -1060,29 +1105,6 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             },
             lineage: props.provenanceContext?.lineage,
           });
-
-          const billingOwnerId = agent.ownerUserId ?? agent.owner;
-          if (
-            !billingOwnerId &&
-            process.env.CREDIT_DEBITS_ENABLED !== 'false'
-          ) {
-            throw new ForbiddenException(
-              'This agent has no billable account owner.',
-            );
-          }
-          if (billingOwnerId) {
-            const reservation = await this.usageService.authorizeAgentRun({
-              principalId: billingOwnerId,
-              workspaceId: agent.workspaceId,
-              agentId,
-              sessionId: currentSessionId,
-              traceId,
-              provider: effectiveModel.provider,
-              modelId: effectiveModel.modelId,
-              isByok: !!effectiveModel.apiKey,
-            });
-            creditReservationId = reservation?.reservationId;
-          }
 
           if (computerRequest?.enabled) {
             const selectedComputerIds = [
@@ -1847,15 +1869,10 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               tool(
                 async (args) => {
                   const requestId = uuidv4();
-                  subscriber.next({
-                    type: 'cli_tool_request',
-                    phase: 'commentary',
-                    requestId,
-                    tool: name,
-                    args,
-                    sessionId: currentSessionId,
-                    timestamp: new Date().toISOString(),
-                  });
+                  await this.db.execute(sql`
+                    INSERT INTO agent_cli_tool_result (request_id, expires_at)
+                    VALUES (${requestId}::uuid, now() + interval '6 minutes')
+                  `);
                   return new Promise<string>((resolve) => {
                     // Keepalive pings prevent GCP from closing the idle SSE stream
                     const pingInterval = setInterval(() => {
@@ -1869,7 +1886,10 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                     const cleanup = () => {
                       clearTimeout(timer);
                       clearInterval(pingInterval);
+                      clearInterval(resultPoll);
                       this.pendingCliToolRequests.delete(requestId);
+                      void this.db.execute(sql`DELETE FROM agent_cli_tool_result WHERE request_id = ${requestId}::uuid`)
+                        .catch((error) => this.logger.warn(`Could not clean up CLI result ${requestId}: ${error.message}`));
                     };
 
                     const timer = setTimeout(() => {
@@ -1888,6 +1908,26 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                         resolve(result);
                       },
                     );
+                    let checking = false;
+                    const resultPoll = setInterval(() => {
+                      if (checking) return;
+                      checking = true;
+                      void this.db.execute(sql`
+                        SELECT result FROM agent_cli_tool_result WHERE request_id = ${requestId}::uuid
+                      `).then((rows: any) => {
+                        if (rows[0]?.result !== null && rows[0]?.result !== undefined) {
+                          cleanup();
+                          resolve(String(rows[0].result));
+                        }
+                      }).catch((error) => this.logger.warn(`Could not check CLI result ${requestId}: ${error.message}`))
+                        .finally(() => { checking = false; });
+                    }, 1_000);
+                    resultPoll.unref?.();
+                    subscriber.next({
+                      type: 'cli_tool_request', phase: 'commentary', requestId,
+                      tool: name, args, sessionId: currentSessionId,
+                      timestamp: new Date().toISOString(),
+                    });
                   });
                 },
                 { name, description, schema: schema as any },
@@ -2408,6 +2448,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           let loop = 0;
           const maxTaskCycles = Number(process.env.AGENT_MAX_TASK_CYCLES ?? 20);
           let finalResult = null;
+          await props.openSteering?.();
 
           while (loop++ < maxTaskCycles) {
             // ✅ Check for next executable task using new TaskExecutionService
@@ -2555,8 +2596,15 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               agentId,
               currentSessionId,
             );
+            const steering = (await props.consumeSteers?.()) ?? [];
+            if (steering.length) {
+              messages.push(...steering.map((content) => ({ role: 'user', content } as any)));
+              emitStatus('steer', 'running', 'Working on your new prompt');
+              continue;
+            }
             if (!pending) break;
           }
+          await props.closeSteering?.();
 
           const toolCalls = collectedToolCalls.filter(
             (call) => call.name !== 'interactWithAgent',
@@ -2642,17 +2690,10 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               toolCalls,
               agentCalls: resolvedAgentCalls,
               computerRequest,
+              model: { provider: effectiveModel.provider, modelId: effectiveModel.modelId },
               durationMs: runDurationMs,
             },
           });
-
-          if (stream) {
-            subscriber.next({
-              type: 'final',
-              phase: 'final_answer',
-              payload: buildFinalPayload(),
-            });
-          }
 
           if (currentSessionId) {
             const messageHistories =
@@ -2721,7 +2762,6 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 const rawContent = this.serializeHistoryContent(m.content);
                 const content = this.stripAttachmentManifest(rawContent);
                 const isCurrentAttachmentTurn =
-                  index === lastHumanIndex &&
                   Boolean(attachmentContext?.attachments?.length) &&
                   rawContent.includes('## Uploaded Files');
 
@@ -2807,6 +2847,14 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 sessionId: currentSessionId,
               },
             );
+          }
+
+          if (stream) {
+            subscriber.next({
+              type: 'final',
+              phase: 'final_answer',
+              payload: buildFinalPayload(),
+            });
           }
 
           await this.logService.createLogEntry({
@@ -3045,12 +3093,10 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
   }
 
   private generateFallbackSessionTitle(userMessage: string): string {
-    const cleaned = userMessage
-      .replace(/\s+/g, ' ')
-      .replace(/## Uploaded Files.*$/i, '')
-      .trim();
-    const words = cleaned.split(' ').filter(Boolean).slice(0, 6);
-    return words.join(' ') || 'New Conversation';
+    if (/\b(?:pdf|document|paper|report|file)\b/i.test(userMessage)) return /summari[sz]|key points/i.test(userMessage) ? 'Document Summary' : 'Document Analysis';
+    if (/\b(?:bug|fix|debug|code|function|build|app)\b/i.test(userMessage)) return 'Development Task';
+    if (/\b(?:project|plan|strategy)\b/i.test(userMessage)) return 'Project Planning';
+    return 'New Conversation';
   }
 
   private async generateSessionTitle(userMessage: string): Promise<string> {
@@ -3080,13 +3126,13 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
         },
       ]);
 
-      const title = response.content?.toString()?.trim();
-      return title && title.length > 0 ? title : 'New Conversation';
+      const title = this.contentToText(response.content)
+        .replace(/^[\s"'`#*-]+|[\s"'`#*.!]+$/g, '')
+        .replace(/\s+/g, ' ').trim().split(' ').slice(0, 6).join(' ').slice(0, 80);
+      return title || this.generateFallbackSessionTitle(userMessage);
     } catch (error) {
       console.error('Failed to generate session title:', error);
-      // Fallback: use first few words of user message
-      const words = userMessage.split(' ').slice(0, 4);
-      return words.join(' ') || 'New Conversation';
+      return this.generateFallbackSessionTitle(userMessage);
     }
   }
 

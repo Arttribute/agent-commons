@@ -28,6 +28,7 @@
   },
   "pnpm": {
     "overrides": {
+      "kokoro-js>@huggingface/transformers": "3.5.1",
       "@xenova/transformers>sharp": "0.33.5",
       "@langchain/core": "1.1.33",
       "@langchain/community": "1.1.24",

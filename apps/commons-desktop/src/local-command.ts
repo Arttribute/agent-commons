@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, delimiter } from "node:path";
 import { execFile } from "node:child_process";
 
 // Small local models sometimes put the entire command line in `command`.
@@ -60,4 +60,7 @@ export async function initializeCommandPath() {
       resolve();
     });
   });
+  // Finder can also start the app while a login shell is misconfigured or
+  // slow. Keep standard system and package-manager locations available.
+  process.env.PATH = [...new Set([...(process.env.PATH ?? "").split(delimiter), "/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin"].filter(Boolean))].join(delimiter);
 }

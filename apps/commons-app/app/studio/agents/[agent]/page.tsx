@@ -236,6 +236,7 @@ function SetupView({
   onOpenSection?: (section: SectionKey) => void;
 }) {
   const { mode } = useWorkspaceMode();
+  const [installedLocalModels, setInstalledLocalModels] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -263,6 +264,11 @@ function SetupView({
     presencePenalty: String((agent as any).presencePenalty ?? 0),
     frequencyPenalty: String((agent as any).frequencyPenalty ?? 0),
   });
+
+  useEffect(() => {
+    if (mode !== "private-local") return;
+    void window.agentCommonsLocal?.listModels().then(setInstalledLocalModels).catch(() => undefined);
+  }, [mode]);
 
   useEffect(() => {
     setForm({
@@ -634,7 +640,14 @@ function SetupView({
                 : "Native model"
             }
           >
-            <div className="grid gap-3 md:grid-cols-2">
+            {mode === "private-local" ? <div className="space-y-2">
+              <Label>Installed model for this agent</Label>
+              <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={form.modelId} disabled={!isOwner} onChange={(event) => setForm((current) => ({ ...current, modelId: event.target.value }))}>
+                {form.modelId && !installedLocalModels.includes(form.modelId) && <option value={form.modelId}>{form.modelId} · unavailable</option>}
+                {installedLocalModels.map((model) => <option key={model} value={model}>{model}</option>)}
+              </select>
+              <p className="text-xs text-muted-foreground">Download more models in General settings. Changes to this agent apply to its next run.</p>
+            </div> : <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-1.5">
                 <Label>Provider</Label>
                 <Select
@@ -730,7 +743,7 @@ function SetupView({
                   ))}
                 </>
               )}
-            </div>
+            </div>}
           </Panel>
           {!isManagedRuntime && (
             <AgentAutonomy agentId={agent.agentId} isOwner={isOwner} />

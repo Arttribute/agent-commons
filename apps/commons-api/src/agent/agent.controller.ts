@@ -162,7 +162,7 @@ export class AgentController {
   @Sse('run/stream')
   @Header('X-Accel-Buffering', 'no')
   @Header('Cache-Control', 'no-cache, no-transform')
-  runAgentStream(
+  async runAgentStream(
     @Body() body: RunBody & { initiator?: string; initiatorId?: string },
     @Headers('x-initiator') initiatorHeader: string,
     @Req() req: any,
@@ -184,30 +184,30 @@ export class AgentController {
     // well below how long a run can take, and clients re-attach via
     // POST /v1/agents/runs/:runId/stream using the runId from `run_started`.
     const runId = uuidv4();
-    return this.runStreams
-      .start(
-        runId,
-        this.runtimeDispatcher.runAgent({
+    const source = this.runtimeDispatcher.runAgent({
           ...body,
           stream: true,
           initiator,
+          consumeSteers: () => this.runStreams.takeSteersShared(runId),
+          closeSteering: () => this.runStreams.closeSteeringShared(runId),
+          openSteering: () => this.runStreams.openSteeringShared(runId),
           ...(principal?.principalType === 'user'
             ? { workspaceId: principal.workspaceId ?? undefined }
             : {}),
-        }),
-        initiator
-          ? { agentId: body.agentId, initiator, sessionId: body.sessionId }
-          : undefined,
-      )
-      .pipe(map((data) => ({ data })));
+        });
+    const stream$ = initiator
+      ? await this.runStreams.startPersisted(runId, source, { agentId: body.agentId, initiator, sessionId: body.sessionId, steeringReady: false })
+      : this.runStreams.start(runId, source);
+    return stream$.pipe(map((data) => ({ data })));
   }
 
   /**
    * The caller's recent streamed runs, used for the working indicators on
-   * agent avatars. Runs are kept in memory for their resumable window only.
+   * agent avatars. Live work remains on its worker; replay and status are
+   * available through the shared run store during the recovery window.
    */
   @Get('runs/active')
-  listActiveRuns(
+  async listActiveRuns(
     @Headers('x-initiator') initiatorHeader: string,
     @Req() req: any,
   ) {
@@ -218,7 +218,7 @@ export class AgentController {
       principal?.principalType === 'user'
         ? principal.principalId
         : initiatorHeader || (req.headers['x-owner-id'] as string) || '';
-    return { data: initiator ? this.runStreams.listForInitiator(initiator) : [] };
+    return { data: initiator ? await this.runStreams.listForInitiatorShared(initiator) : [] };
   }
 
   /**
@@ -229,11 +229,15 @@ export class AgentController {
   @Sse('runs/:runId/stream')
   @Header('X-Accel-Buffering', 'no')
   @Header('Cache-Control', 'no-cache, no-transform')
-  resumeAgentRunStream(
+  async resumeAgentRunStream(
     @Param('runId') runId: string,
     @Body() body: { after?: number },
+    @Headers('x-initiator') initiatorHeader: string,
+    @Req() req: any,
   ) {
-    const stream$ = this.runStreams.attach(runId, Number(body?.after) || 0);
+    const initiator = req.principal?.principalType === 'user' ? req.principal.principalId : initiatorHeader;
+    if (!initiator) throw new NotFoundException('Agent run not found');
+    const stream$ = await this.runStreams.attachShared(runId, Number(body?.after) || 0, initiator);
     if (!stream$) {
       throw new NotFoundException(
         `Run "${runId}" is not resumable (unknown or expired).`,
@@ -242,13 +246,27 @@ export class AgentController {
     return stream$.pipe(map((data) => ({ data })));
   }
 
+  @Post('runs/:runId/steer')
+  async steerAgentRun(
+    @Param('runId') runId: string,
+    @Body() body: { prompt?: string },
+    @Headers('x-initiator') initiatorHeader: string,
+    @Req() req: any,
+  ) {
+    const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : '';
+    if (!prompt || prompt.length > 8_000) throw new BadRequestException('A prompt up to 8,000 characters is required');
+    const initiator = req.principal?.principalType === 'user' ? req.principal.principalId : initiatorHeader;
+    if (!initiator || !(await this.runStreams.enqueueSteerShared(runId, initiator, prompt))) throw new NotFoundException('This agent run is no longer accepting prompts');
+    return { data: { accepted: true } };
+  }
+
   /**
    * CLI posts the result of a local tool execution back here so the waiting
    * LangGraph tool node can complete and the agent run can continue.
    */
   @Post('cli-tool-result')
-  submitCliToolResult(@Body() body: { requestId: string; result: string }) {
-    const resolved = this.agent.resolveCliToolRequest(
+  async submitCliToolResult(@Body() body: { requestId: string; result: string }) {
+    const resolved = await this.agent.resolveCliToolRequest(
       body.requestId,
       body.result,
     );

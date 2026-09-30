@@ -106,9 +106,9 @@ export function artifactKind(
   if (artifact.kind) return artifact.kind;
   const mime = artifact.mimeType || "";
   const name = artifact.name || "";
-  if (mime.startsWith("image/")) return "image";
-  if (mime.startsWith("video/")) return "video";
-  if (mime.startsWith("audio/")) return "audio";
+  if (mime.startsWith("image/") || /\.(png|jpe?g|webp|gif|avif)$/i.test(name)) return "image";
+  if (mime.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(name)) return "video";
+  if (mime.startsWith("audio/") || /\.(wav|mp3|m4a|ogg|flac)$/i.test(name)) return "audio";
   if (mime === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
   if (/presentation|powerpoint/.test(mime) || /\.(pptx?|odp)$/i.test(name)) {
     return "presentation";

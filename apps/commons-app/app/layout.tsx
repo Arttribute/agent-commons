@@ -16,6 +16,7 @@ import { getAppBaseUrl } from "@/lib/app-url";
 import { cookies } from "next/headers";
 import { DesktopApprovalBridge } from "@/components/desktop/approval-widgets";
 import { WorkspaceModeProvider } from "@/context/WorkspaceModeContext";
+import { AgentProvider } from "@/context/AgentContext";
 
 const spaceGrotesk = Space_Grotesk({
   weight: ["400", "500", "600", "700"],
@@ -110,9 +111,11 @@ export default async function RootLayout({
           <AuthProvider>
             <SidebarProvider>
               <GlobalSearchProvider>
+                <AgentProvider>
                 <div id="app-shell-content" className="h-full min-w-0">
                   {children}
                 </div>
+                </AgentProvider>
                 <FloatingCommonsCopilot />
                 <CommonsAppWindows />
                 <DesktopApprovalBridge />

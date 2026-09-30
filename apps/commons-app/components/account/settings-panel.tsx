@@ -68,7 +68,48 @@ const SECTION_ICONS: Record<SettingsSection, React.ElementType> = {
 
 // ─── Profile Section ──────────────────────────────────────────────────────────
 function ProfileSection({ walletAddress, local }: { walletAddress: string; local: boolean }) {
-  const { authState } = useAuth();
+  const { authState, refresh } = useAuth();
+  const [profile, setProfile] = useState<{ name: string | null; image: string | null; providerImage: string | null; hasCustomImage: boolean } | null>(null);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState("");
+  useEffect(() => {
+    if (local) return;
+    let active = true;
+    void fetch('/api/profile', { cache: 'no-store' }).then(async (response) => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not load profile');
+      if (active) { setProfile(result.data); setName(result.data.name || ''); }
+    }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Could not load profile'); });
+    return () => { active = false; };
+  }, [local, authState.userId]);
+  const save = async (path: string, body: BodyInit, contentType?: string) => {
+    setBusy(true); setError(''); setSaved('');
+    try {
+      const response = await fetch(path, { method: 'POST', headers: contentType ? { 'Content-Type': contentType } : undefined, body });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || result.message || 'Could not update profile');
+      setProfile(result.data);
+      setName(result.data.name || '');
+      await refresh();
+      setSaved('Profile updated');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not update profile'); }
+    finally { setBusy(false); }
+  };
+  const patch = async (input: Record<string, unknown>) => {
+    setBusy(true); setError(''); setSaved('');
+    try {
+      const response = await fetch('/api/profile', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || result.message || 'Could not update profile');
+      setProfile(result.data);
+      setName(result.data.name || '');
+      await refresh();
+      setSaved('Profile updated');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not update profile'); }
+    finally { setBusy(false); }
+  };
   return (
     <div className="space-y-6 max-w-lg">
       <div>
@@ -78,9 +119,22 @@ function ProfileSection({ walletAddress, local }: { walletAddress: string; local
         </p>
       </div>
       <div className="space-y-4">
+        {(profile?.image || authState.profileImage) && <img src={profile?.image || authState.profileImage} alt="Profile" className="h-16 w-16 rounded-full object-cover" referrerPolicy="no-referrer" />}
+        {!local && <div className="space-y-2">
+          <Label htmlFor="profile-photo" className="text-xs">Profile photo</Label>
+          <Input id="profile-photo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy} onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            if (file.size > 2 * 1024 * 1024) { setError('Choose an image under 2 MB.'); return; }
+            const form = new FormData(); form.append('file', file);
+            void save('/api/profile/avatar', form);
+            event.target.value = '';
+          }} />
+          {profile?.hasCustomImage && <button type="button" className="text-xs text-muted-foreground underline" disabled={busy} onClick={() => void patch({ imageUrl: null })}>Use account photo</button>}
+        </div>}
         <div className="space-y-1.5">
           <Label className="text-xs">Name</Label>
-          <p className="rounded-md bg-muted px-3 py-2 text-sm">{authState.username || "Not available"}</p>
+          {local ? <p className="rounded-md bg-muted px-3 py-2 text-sm">{authState.username || "Not available"}</p> : <div className="flex gap-2"><Input aria-label="Profile name" value={name} maxLength={100} disabled={busy} onChange={(event) => setName(event.target.value)} /><Button type="button" variant="outline" disabled={busy || !name.trim() || name.trim() === profile?.name} onClick={() => void patch({ name: name.trim() })}>Save</Button></div>}
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Email</Label>
@@ -97,6 +151,9 @@ function ProfileSection({ walletAddress, local }: { walletAddress: string; local
             ? "Your Local workspace can use account details cached on this computer. Local chats and files stay in this workspace."
             : "This is your stable Commons account ID. It is shared across Agent Commons products."}</p>
         </div>
+        {local && <p className="text-xs text-muted-foreground">Switch to Cloud mode to update your shared account name or photo. Local workspace data stays on this computer.</p>}
+        {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+        {saved && <p role="status" className="text-xs text-muted-foreground">{saved}</p>}
         {!local && <div className="pt-2">
           <p className="text-xs text-muted-foreground">
             To use the CLI with this account, run{" "}

@@ -7,7 +7,8 @@ export type ModelProviderName =
   | 'ollama'
   | 'openrouter'
   | 'xai'
-  | 'custom';
+  | 'custom'
+  | 'hosted-free';
 
 export interface ModelConfig {
   provider: ModelProviderName;

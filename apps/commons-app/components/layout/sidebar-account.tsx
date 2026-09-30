@@ -77,9 +77,10 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
         userId: principalId,
         displayName,
         email: authState.email,
+        profileImage: authState.profileImage,
       });
     }
-  }, [mode, isAuthenticated, principalId, displayName, authState.email]);
+  }, [mode, isAuthenticated, principalId, displayName, authState.email, authState.profileImage]);
 
   const openSettings = (section: SettingsSection) => {
     setSettingsSection(section);
@@ -128,7 +129,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
             }
           >
             <div className="rounded-full overflow-hidden shrink-0 ring-1 ring-border">
-              <RandomPixelAvatar username={principalId || displayName} size={28} />
+              {authState.profileImage ? <img src={authState.profileImage} alt="" className="h-7 w-7 object-cover" referrerPolicy="no-referrer" /> : <RandomPixelAvatar username={principalId || displayName} size={28} />}
             </div>
             {!collapsed && (
               <>
@@ -196,12 +197,11 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
               Download desktop app
             </a>
           )}
-          {mode === "cloud" && <div className="my-1 h-px bg-border" />}
-          {mode === "cloud" && <button
+          {(mode === "cloud" || principalId !== "local-workspace") && <div className="my-1 h-px bg-border" />}
+          {(mode === "cloud" || principalId !== "local-workspace") && <button
             onClick={() => {
               setMenuOpen(false);
-              logout();
-              router.push("/");
+              void logout().then(() => router.push("/"));
             }}
             className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-accent"
           >

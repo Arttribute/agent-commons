@@ -20,7 +20,7 @@ export type PlanKey = 'free' | 'plus' | 'pro' | 'max';
 export type ComputeProfile = 'starter' | 'standard' | 'performance' | 'gpu';
 
 /** Model capability tiers from the model registry (frontier|standard|fast|local). */
-export type ModelTier = 'frontier' | 'standard' | 'fast' | 'local';
+export type ModelTier = 'frontier' | 'standard' | 'fast' | 'local' | 'free';
 
 export interface PlanEntitlements {
   computerUse: boolean;
@@ -54,7 +54,7 @@ export const PLANS: Record<PlanKey, Plan> = {
       allowedProfiles: [],
       maxComputerAgents: 0,
       maxConcurrentComputers: 0,
-      modelTiers: ['fast', 'standard', 'local'],
+      modelTiers: ['fast', 'standard', 'local', 'free'],
       maxConcurrentRuns: 2,
     },
   },
@@ -69,7 +69,7 @@ export const PLANS: Record<PlanKey, Plan> = {
       allowedProfiles: ['starter', 'standard'],
       maxComputerAgents: 1,
       maxConcurrentComputers: 1,
-      modelTiers: ['fast', 'standard', 'local', 'frontier'],
+      modelTiers: ['fast', 'standard', 'local', 'frontier', 'free'],
       maxConcurrentRuns: 4,
     },
   },
@@ -84,7 +84,7 @@ export const PLANS: Record<PlanKey, Plan> = {
       allowedProfiles: ['starter', 'standard', 'performance'],
       maxComputerAgents: 3,
       maxConcurrentComputers: 2,
-      modelTiers: ['fast', 'standard', 'local', 'frontier'],
+      modelTiers: ['fast', 'standard', 'local', 'frontier', 'free'],
       maxConcurrentRuns: 8,
     },
   },
@@ -99,7 +99,7 @@ export const PLANS: Record<PlanKey, Plan> = {
       allowedProfiles: ['starter', 'standard', 'performance', 'gpu'],
       maxComputerAgents: 10,
       maxConcurrentComputers: 5,
-      modelTiers: ['fast', 'standard', 'local', 'frontier'],
+      modelTiers: ['fast', 'standard', 'local', 'frontier', 'free'],
       maxConcurrentRuns: 16,
     },
   },

@@ -12,6 +12,13 @@ import {
 describe('FilesService document support', () => {
   const service = new FilesService({} as any, {} as any, {} as any);
 
+  it('keeps a large extracted PDF readable in chunks instead of cutting it at 250,000 characters', () => {
+    const extracted = 'A'.repeat(690_000);
+    expect((service as any).capExtractedText(extracted)).toHaveLength(extracted.length);
+    const beyondLimit = (service as any).capExtractedText('B'.repeat(1_000_100)) as string;
+    expect(beyondLimit).toContain('[truncated: showing first 1000000');
+  });
+
   it('reuses an identical Library upload and links it to the current agent session', async () => {
     const existing = {
       itemId: 'existing-file',

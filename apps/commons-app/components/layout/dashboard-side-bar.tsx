@@ -6,14 +6,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import {
-  ChevronDown,
-  ChevronRight,
-  FolderClosed,
-  FolderOpen,
   Loader2,
   PanelLeft,
   PanelRight,
-  Plus,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DashboardBar } from "./dashboard-bar";
@@ -29,10 +24,6 @@ import { projectsApi, useProjects } from "@/hooks/use-projects";
 import { isLockedStudioDetailRoute, navigationSection } from "@/lib/workspace-routes";
 import { WorkspaceModeSwitch } from "./workspace-mode-switch";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
-import { CreateProjectDialog } from "@/components/projects/create-project-dialog";
-
-const PROJECTS_SHOWN = 5;
-const OPEN_PROJECTS_KEY = "commons.sidebarProjectsOpen";
 
 /** Routes where the sidebar starts collapsed to give the page room. */
 function isFocusRoute(pathname: string) {
@@ -51,22 +42,7 @@ export function DashboardSideBar({ username }: { username: string }) {
     useUserSessions(username);
   const { renameSession, deleteSession } = useSessionMutations();
   const { projects } = useProjects(Boolean(username));
-  const [createProjectOpen, setCreateProjectOpen] = useState(false);
-  const [projectsOpen, setProjectsOpen] = useState(true);
   const [focusExpanded, setFocusExpanded] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(OPEN_PROJECTS_KEY);
-      if (saved !== null) setProjectsOpen(saved === "true");
-    } catch { /* Default open. */ }
-  }, []);
-  const toggleProjects = () => {
-    setProjectsOpen((open) => {
-      try { localStorage.setItem(OPEN_PROJECTS_KEY, String(!open)); } catch { /* Per-viewer only. */ }
-      return !open;
-    });
-  };
 
   const isLockedDetailRoute = isLockedStudioDetailRoute(pathname);
   const focusRoute = isFocusRoute(pathname);
@@ -75,20 +51,10 @@ export function DashboardSideBar({ username }: { username: string }) {
   const setOpen = (open: boolean) => (focusRoute ? setFocusExpanded(open) : setIsOpen(open));
 
   const currentSessionId = useMemo(() => pathname.match(/^\/sessions\/([^/]+)/)?.[1], [pathname]);
-  const currentProjectId = useMemo(() => {
-    const direct = pathname.match(/^\/projects\/([^/]+)/)?.[1];
-    if (direct) return decodeURIComponent(direct);
-    return sessions.find((session) => session.sessionId === currentSessionId)?.projectId ?? undefined;
-  }, [pathname, sessions, currentSessionId]);
 
   const activeSection = navigationSection(pathname);
   const projectOptions = useMemo(() => projects.map(({ projectId, name }) => ({ projectId, name })), [projects]);
   const recents = useMemo(() => sessions.filter((session) => !session.projectId), [sessions]);
-  const shownProjects = useMemo(() => {
-    const first = projects.slice(0, PROJECTS_SHOWN);
-    const current = projects.find((project) => project.projectId === currentProjectId);
-    return current && !first.includes(current) ? [...first, current] : first;
-  }, [projects, currentProjectId]);
 
   const handleRename = async (sessionId: string, title: string) => {
     const prev = sessions;
@@ -181,82 +147,6 @@ export function DashboardSideBar({ username }: { username: string }) {
 
       {sidebarOpen && (
         <ScrollArea className="mt-4 min-h-0 flex-1 px-3">
-          <section aria-label="Projects" className="mb-3">
-            <div className="group flex items-center justify-between px-2 py-1">
-              <button
-                type="button"
-                onClick={toggleProjects}
-                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-                aria-expanded={projectsOpen}
-              >
-                Projects
-                {projectsOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => setCreateProjectOpen(true)}
-                className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                aria-label="New project"
-                title="New project"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            {projectsOpen && (
-              <div className="space-y-0.5">
-                {shownProjects.map((project) => {
-                  const active = project.projectId === currentProjectId;
-                  const projectChats = active
-                    ? sessions.filter((session) => session.projectId === project.projectId).slice(0, 6)
-                    : [];
-                  const Icon = active ? FolderOpen : FolderClosed;
-                  return (
-                    <div key={project.projectId}>
-                      <Link
-                        href={`/projects/${encodeURIComponent(project.projectId)}`}
-                        className={cn(
-                          "flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors",
-                          active && pathname.startsWith("/projects/") ? "bg-accent text-accent-foreground" : "text-foreground/80 hover:bg-accent/60",
-                        )}
-                      >
-                        <Icon className="h-4 w-4 shrink-0 text-foreground/60" strokeWidth={1.75} />
-                        <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                      </Link>
-                      {projectChats.length > 0 && (
-                        <div className="ml-[15px] border-l border-border pl-2">
-                          <SessionsList
-                            sessions={projectChats}
-                            currentSessionId={currentSessionId}
-                            onRename={handleRename}
-                            onDelete={handleDelete}
-                            projects={projectOptions}
-                            onMoveToProject={handleMove}
-                            nested
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {!projects.length && (
-                  <button
-                    type="button"
-                    onClick={() => setCreateProjectOpen(true)}
-                    className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                  >
-                    <Plus className="h-4 w-4" strokeWidth={1.75} />
-                    New project
-                  </button>
-                )}
-                {projects.length > PROJECTS_SHOWN && (
-                  <Link href="/projects" className="block rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground">
-                    All projects
-                  </Link>
-                )}
-              </div>
-            )}
-          </section>
-
           <div className="flex items-center justify-between px-2 py-1">
             <span className="text-xs font-medium text-muted-foreground">Recents</span>
             {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
@@ -309,11 +199,6 @@ export function DashboardSideBar({ username }: { username: string }) {
         <SidebarAccount collapsed={!sidebarOpen} />
       </div>
 
-      <CreateProjectDialog
-        open={createProjectOpen}
-        onOpenChange={setCreateProjectOpen}
-        onCreated={(project) => router.push(`/projects/${encodeURIComponent(project.projectId)}`)}
-      />
     </div>
   );
 }

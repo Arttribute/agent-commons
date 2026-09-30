@@ -15,7 +15,7 @@ export interface ModelRegistryEntry {
   longContextThreshold?: number;
   longContextInputMultiplier?: number;
   longContextOutputMultiplier?: number;
-  tier: 'frontier' | 'standard' | 'fast' | 'local';
+  tier: 'frontier' | 'standard' | 'fast' | 'local' | 'free';
 }
 
 export const MODEL_REGISTRY: ModelRegistryEntry[] = [
@@ -195,6 +195,19 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
     inputPricePer1kTokens: 0.00059,
     outputPricePer1kTokens: 0.00079,
     tier: 'fast',
+  },
+  // ── Hosted free fallback ───────────────────────────────────────────────────
+  {
+    provider: 'hosted-free',
+    modelId: 'Qwen/Qwen3-4B-Instruct-2507',
+    displayName: 'Commons Free · Qwen3 4B',
+    contextWindow: 32768,
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsVision: false,
+    inputPricePer1kTokens: 0,
+    outputPricePer1kTokens: 0,
+    tier: 'free',
   },
   // ── Ollama (local) ─────────────────────────────────────────────────────────
   {

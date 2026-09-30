@@ -34,10 +34,13 @@ export type StreamActivity = {
 interface AgentContextType {
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  addMessage: (newMessage: Message) => void;
-  updateStreamingMessage: (content: string) => void;
-  upsertStreamingActivity: (activity: StreamActivity) => void;
-  finalizeStreamingMessage: (content: string, metadata?: any) => void;
+  addMessage: (newMessage: Message, sessionId?: string) => void;
+  updateStreamingMessage: (content: string, sessionId?: string) => void;
+  upsertStreamingActivity: (activity: StreamActivity, sessionId?: string) => void;
+  finalizeStreamingMessage: (content: string, metadata?: any, sessionId?: string) => void;
+  activateSession: (sessionId: string) => void;
+  setSessionHistory: (sessionId: string, history: Message[]) => void;
+  getSessionMessages: (sessionId: string) => Message[] | undefined;
   clearMessages: () => void;
   sessions: any[];
   setSessions: React.Dispatch<React.SetStateAction<any[]>>;
@@ -62,6 +65,8 @@ const AgentContext = createContext<AgentContextType | undefined>(undefined);
 
 export const AgentProvider = ({ children }: { children: ReactNode }) => {
   const [messages, setMessages] = useState<Message[]>([]);
+  const sessionMessagesRef = useRef<Record<string, Message[]>>({});
+  const activeSessionRef = useRef("");
   const [sessions, setSessions] = useState<any[]>([]);
   const [inputText, setInputText] = useState<string>("");
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
@@ -69,16 +74,48 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
   const [streamingTitleText, setStreamingTitleText] = useState<string>("");
   const titleIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const addMessage = useCallback((newMessage: Message) => {
-    setMessages((prevMessages) => [...prevMessages, newMessage]);
+  const mutateMessages = useCallback((sessionId: string | undefined, update: (messages: Message[]) => Message[]) => {
+    if (sessionId) {
+      const next = update(sessionMessagesRef.current[sessionId] ?? []);
+      sessionMessagesRef.current[sessionId] = next;
+      if (activeSessionRef.current === sessionId) setMessages(next);
+    } else {
+      setMessages(update);
+    }
   }, []);
+
+  const activateSession = useCallback((sessionId: string) => {
+    activeSessionRef.current = sessionId;
+    setMessages(sessionMessagesRef.current[sessionId] ?? []);
+  }, []);
+
+  const setSessionHistory = useCallback((sessionId: string, history: Message[]) => {
+    const current = sessionMessagesRef.current[sessionId];
+    if (current?.some((message) => message.isStreaming)) return;
+    sessionMessagesRef.current[sessionId] = history;
+    if (activeSessionRef.current === sessionId) setMessages(history);
+  }, []);
+
+  const getSessionMessages = useCallback((sessionId: string) => sessionMessagesRef.current[sessionId], []);
+
+  const addMessage = useCallback((newMessage: Message, sessionId?: string) => {
+    mutateMessages(sessionId, (prevMessages) => {
+      const last = prevMessages.at(-1);
+      // A steer appears immediately in the conversation while the current
+      // assistant response continues to stream into its existing bubble.
+      if (newMessage.role === "human" && last?.role === "ai" && last.isStreaming) {
+        return [...prevMessages.slice(0, -1), newMessage, last];
+      }
+      return [...prevMessages, newMessage];
+    });
+  }, [mutateMessages]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
   }, []);
 
-  const updateStreamingMessage = useCallback((content: string) => {
-    setMessages((prevMessages) => {
+  const updateStreamingMessage = useCallback((content: string, sessionId?: string) => {
+    mutateMessages(sessionId, (prevMessages) => {
       const lastMessage = prevMessages[prevMessages.length - 1];
       if (lastMessage && lastMessage.isStreaming) {
         return [
@@ -98,10 +135,10 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
         ];
       }
     });
-  }, []);
+  }, [mutateMessages]);
 
-  const upsertStreamingActivity = useCallback((activity: StreamActivity) => {
-    setMessages((prevMessages) => {
+  const upsertStreamingActivity = useCallback((activity: StreamActivity, sessionId?: string) => {
+    mutateMessages(sessionId, (prevMessages) => {
       const lastMessage = prevMessages[prevMessages.length - 1];
       const targetMessage =
         lastMessage && lastMessage.isStreaming
@@ -138,10 +175,10 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
       }
       return [...prevMessages, nextMessage];
     });
-  }, []);
+  }, [mutateMessages]);
 
-  const finalizeStreamingMessage = useCallback((content: string, metadata?: any) => {
-    setMessages((prevMessages) => {
+  const finalizeStreamingMessage = useCallback((content: string, metadata?: any, sessionId?: string) => {
+    mutateMessages(sessionId, (prevMessages) => {
       const lastMessage = prevMessages[prevMessages.length - 1];
       if (lastMessage && lastMessage.isStreaming) {
         const mergedMetadata = {
@@ -163,7 +200,7 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
       }
       return prevMessages;
     });
-  }, []);
+  }, [mutateMessages]);
 
   const addSession = useCallback((session: any) => {
     setSessions((prev) => {
@@ -207,6 +244,9 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
         updateStreamingMessage,
         upsertStreamingActivity,
         finalizeStreamingMessage,
+        activateSession,
+        setSessionHistory,
+        getSessionMessages,
         clearMessages,
         sessions,
         setSessions,

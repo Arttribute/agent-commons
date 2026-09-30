@@ -135,6 +135,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.3.15",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.24.0",
     "@img/sharp-win32-x64": "0.33.5",

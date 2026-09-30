@@ -79,6 +79,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         idToken: "local-workspace",
         username: localAccount?.displayName ?? "Local workspace",
         email: localAccount?.email,
+        profileImage: localAccount?.profileImage,
         walletAddress: id,
         userId: id,
       };
@@ -128,7 +129,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = async () => {
     if (local) {
-      await setMode("cloud");
+      await window.agentCommonsLocal?.clearAccount();
+      await commonsSignOut({ redirect: false });
+      setLocalAccount(undefined);
       return;
     }
     try {

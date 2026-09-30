@@ -598,7 +598,7 @@ async function compileCommonsStyles(
         },
       },
       plugins: [],
-    }),
+    }) as unknown as postcss.AcceptedPlugin,
   ]).process(
     `${COMMONS_UI_STYLES}\n${projectCss.replace(/@tailwind\s+(?:base|components|utilities)\s*;/gi, '')}`,
     { from: undefined },

@@ -9,7 +9,8 @@ export type ModelProvider =
   | "ollama"
   | "openrouter"
   | "xai"
-  | "custom";
+  | "custom"
+  | "hosted-free";
 
 export interface ModelConfig {
   provider: ModelProvider;
@@ -1658,7 +1659,7 @@ export type PlanKey = "free" | "plus" | "pro" | "max";
 
 export type ComputeProfile = "starter" | "standard" | "performance" | "gpu";
 
-export type ModelTier = "frontier" | "standard" | "fast" | "local";
+export type ModelTier = "frontier" | "standard" | "fast" | "local" | "free";
 
 export interface PlanEntitlements {
   computerUse: boolean;

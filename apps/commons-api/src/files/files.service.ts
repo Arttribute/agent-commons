@@ -72,6 +72,8 @@ export type FileAttachmentRef = {
   status: string;
   textPreview?: string | null;
   extractedTextChars: number;
+  /** Extraction is partial; the original document remains available for inspection. */
+  textTruncated?: boolean;
   /** True when the upload reused an existing Library item with identical bytes. */
   reused?: boolean;
   artifacts?: Array<{
@@ -179,7 +181,7 @@ export type PresentationSlideSpec = {
   accentColor?: string;
 };
 
-const DEFAULT_MAX_TEXT_CHARS = 250_000;
+const DEFAULT_MAX_TEXT_CHARS = 1_000_000;
 const DEFAULT_PREVIEW_CHARS = 2_000;
 const DEFAULT_MAX_READ_CHARS = 12_000;
 const ABSOLUTE_MAX_READ_CHARS = 50_000;
@@ -1031,7 +1033,7 @@ export class FilesService {
           file.status
         }). Extracted text chars: ${
           file.extractedTextChars
-        }.${artifactSummary}${preview}`;
+        }.${file.textTruncated ? ' Extraction is partial; do not claim to have read the full original. Request a signed download URL for full inspection.' : ''}${artifactSummary}${preview}`;
       }),
     ];
 
@@ -1364,7 +1366,8 @@ export class FilesService {
         storageProvider,
         maxExtractedTextChars: this.maxExtractedTextChars(),
         originalTextChars: extraction.text.length,
-        textTruncated: extraction.text.length > text.length,
+        textTruncated: extraction.text.length > this.maxExtractedTextChars() ||
+          (Number(extraction.metadata?.pages) > Number(extraction.metadata?.textPagesExtracted)),
       },
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -1528,7 +1531,7 @@ export class FilesService {
     const pdf = await loadingTask.promise;
     const maxTextPages = Math.min(
       pdf.numPages,
-      Number(process.env.AGENT_FILE_PDF_TEXT_PAGES ?? 120),
+      Number(process.env.AGENT_FILE_PDF_TEXT_PAGES ?? 500),
     );
     const pageTexts: string[] = [];
     const artifacts: ExtractedArtifact[] = [];
@@ -2524,6 +2527,7 @@ export class FilesService {
       status: file.status,
       textPreview: file.textPreview,
       extractedTextChars: file.extractedTextChars,
+      textTruncated: (file.metadata as Record<string, unknown> | null)?.textTruncated === true,
       artifacts: artifacts.map((artifact) => ({
         artifactId: artifact.blobId,
         kind: artifact.role,

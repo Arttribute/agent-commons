@@ -56,7 +56,7 @@ describe('UsageService', () => {
           useValue: {
             getEntitlements: jest.fn().mockResolvedValue({
               maxConcurrentRuns: 2,
-              modelTiers: ['frontier', 'standard', 'fast', 'local'],
+              modelTiers: ['frontier', 'standard', 'fast', 'local', 'free'],
             }),
           },
         },
@@ -67,6 +67,54 @@ describe('UsageService', () => {
   });
 
   describe('credit authorization', () => {
+    it('reserves hosted free requests and model tokens without touching credits', async () => {
+      const previousUrl = process.env.HOSTED_FREE_MODEL_BASE_URL;
+      const previousKey = process.env.HOSTED_FREE_MODEL_API_KEY;
+      process.env.HOSTED_FREE_MODEL_BASE_URL = 'http://free-model.internal/v1';
+      process.env.HOSTED_FREE_MODEL_API_KEY = 'test-key';
+      const healthFetch = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+      try {
+        const startExecute = jest.fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([{ user_count: 0, global_count: 0 }])
+          .mockResolvedValueOnce([{ request_count: 1 }])
+          .mockResolvedValueOnce([{ request_count: 1 }])
+          .mockResolvedValueOnce([]);
+        const tokenExecute = jest.fn()
+          .mockResolvedValueOnce([{ reserved_tokens: 2050 }])
+          .mockResolvedValueOnce([{ reserved_tokens: 2050 }]);
+        const transaction = jest.fn()
+          .mockImplementationOnce((callback) => callback({ execute: startExecute }))
+          .mockImplementationOnce((callback) => callback({ execute: tokenExecute }));
+        const execute = jest.fn()
+          .mockResolvedValueOnce([{ principal_id: 'user-1' }])
+          .mockResolvedValueOnce([]);
+        Object.assign(db, { transaction, execute });
+
+        const reservation = await service.authorizeAgentRun({
+          principalId: 'user-1', agentId: 'agent-1', traceId: 'trace-free',
+          provider: 'hosted-free', modelId: 'Qwen/Qwen3-4B-Instruct-2507', isByok: false,
+        });
+        expect(reservation?.reservationId).toBe('hosted-free:trace-free');
+        await service.authorizeModelCall({
+          reservationId: reservation?.reservationId, provider: 'hosted-free',
+          modelId: 'Qwen/Qwen3-4B-Instruct-2507', prompts: ['Hello'], isByok: false,
+        });
+        await service.finalizeAgentRun(reservation?.reservationId);
+        expect(startExecute).toHaveBeenCalledTimes(5);
+        expect(tokenExecute).toHaveBeenCalledTimes(2);
+        expect(credits.reserve).not.toHaveBeenCalled();
+        expect(credits.ensureReservationCapacity).not.toHaveBeenCalled();
+        expect(credits.finalizeReservation).not.toHaveBeenCalled();
+      } finally {
+        healthFetch.mockRestore();
+        if (previousUrl === undefined) delete process.env.HOSTED_FREE_MODEL_BASE_URL;
+        else process.env.HOSTED_FREE_MODEL_BASE_URL = previousUrl;
+        if (previousKey === undefined) delete process.env.HOSTED_FREE_MODEL_API_KEY;
+        else process.env.HOSTED_FREE_MODEL_API_KEY = previousKey;
+      }
+    });
+
     it('reserves a run slot before managed agent work begins', async () => {
       await service.authorizeAgentRun({
         principalId: 'user-1',

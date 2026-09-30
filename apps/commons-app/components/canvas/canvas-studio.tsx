@@ -1,4 +1,5 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 import {
   CompiledArtifactFrame,
@@ -129,7 +130,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
           type: "application/gzip",
         }),
       );
-      const response = await fetch("/api/files/upload", {
+      const response = await desktopApiFetch("/api/files/upload", {
         method: "POST",
         body: form,
       });
@@ -556,7 +557,7 @@ export function CanvasStudio({ artifactId }: { artifactId: string }) {
     try {
       const body = new FormData();
       [...files].forEach((file) => body.append("files", file));
-      const response = await fetch("/api/files/upload", {
+      const response = await desktopApiFetch("/api/files/upload", {
         method: "POST",
         body,
       });

@@ -97,6 +97,17 @@ describe('RunStreamRegistry', () => {
     expect(registry.attach('nope', 0)).toBeUndefined();
   });
 
+  it('accepts steering only from the run owner and drains it once', () => {
+    registry.start('run-1', source, { agentId: 'a1', initiator: 'owner' });
+    expect(registry.attach('run-1', 0, 'other')).toBeUndefined();
+    expect(registry.enqueueSteer('run-1', 'other', 'change direction')).toBe(false);
+    expect(registry.enqueueSteer('run-1', 'OWNER', 'change direction')).toBe(true);
+    expect(registry.takeSteers('run-1')).toEqual(['change direction']);
+    expect(registry.takeSteers('run-1')).toEqual([]);
+    source.complete();
+    expect(registry.enqueueSteer('run-1', 'owner', 'too late')).toBe(false);
+  });
+
   it('reports each person\'s runs with their current state', () => {
     collect(registry.start('run-1', source, { agentId: 'a1', initiator: 'User-1' }));
     source.next({ type: 'status', stage: 'session', sessionId: 's1', message: 'Conversation ready' });

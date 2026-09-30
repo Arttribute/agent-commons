@@ -1,6 +1,6 @@
 import electron from "electron";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
@@ -99,6 +99,37 @@ try {
             throw new Error(`Local agent identity failed: ${JSON.stringify(identities)}`);
           }
           await smokeLocalTools(evaluate, page.webSocketDebuggerUrl, temp);
+          if (process.env.COMMONS_DESKTOP_STRESS_MODEL) {
+            const workspace = join(temp, "stress-workspace");
+            mkdirSync(workspace);
+            writeFileSync(join(workspace, "sum.js"), "export function sum(a, b) { return a - b; }\n");
+            if (process.env.COMMONS_DESKTOP_STRESS_PDF) copyFileSync(process.env.COMMONS_DESKTOP_STRESS_PDF, join(workspace, "report.pdf"));
+            const stress = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+              const bridge = window.agentCommonsLocal;
+              const commands = [];
+              const unsubscribe = bridge.onEvent((event) => {
+                if (event.type === 'approval') void bridge.approve(event.approval.id, true);
+                if (event.type === 'activity' && event.toolName && event.status !== 'running') commands.push({ name: event.toolName, args: event.args, result: event.result });
+              });
+              try {
+                await bridge.updateSettings({ defaultModel: ${JSON.stringify(process.env.COMMONS_DESKTOP_STRESS_MODEL)}, permissionMode: 'ask' });
+                const agentId = (await bridge.getState()).agents.find(agent => agent.name === 'Commons Copilot').id;
+                const code = await bridge.sendMessage({ agentId, workspaceRoot: ${JSON.stringify(workspace)}, prompt: 'Fix sum.js so sum(2, 3) is 5. Run a Node command to verify the fix, and report the observed result.' });
+                const document = ${process.env.COMMONS_DESKTOP_STRESS_PDF ? `await bridge.sendMessage({ agentId, workspaceRoot: ${JSON.stringify(workspace)}, prompt: 'Read report.pdf and summarize its final recommendation in two sentences.' })` : 'null'};
+                return { code: code.response, document: document?.response, commands };
+              } finally { unsubscribe(); }
+            })()`, 300_000);
+            const updated = (await import("node:fs")).readFileSync(join(workspace, "sum.js"), "utf8");
+            if (!updated.includes("a + b")) throw new Error(`Real model did not fix sum.js: ${JSON.stringify(stress)}`);
+            if (!stress.commands.some((entry) => entry.name === "cli_run_command" && /(?:^|\D)5(?:\D|$)/.test(entry.result ?? "") && !/"exitCode":(?:[1-9]|null)/.test(entry.result ?? ""))) {
+              throw new Error(`Real model did not verify the result: ${JSON.stringify(stress)}`);
+            }
+            if (process.env.COMMONS_DESKTOP_STRESS_PDF && !stress.document) throw new Error("Real model did not read the PDF");
+            if (process.env.COMMONS_DESKTOP_STRESS_PDF && !stress.commands.some((entry) => entry.name === "cli_read_file" && entry.args?.path === "report.pdf")) {
+              throw new Error(`Real model answered without reading the PDF: ${JSON.stringify(stress)}`);
+            }
+            console.log(`Real local model task passed: ${JSON.stringify(stress).slice(0, 800)}`);
+          }
           const savedSession = await evaluate(page.webSocketDebuggerUrl, `(async () => {
             const bridge = window.agentCommonsLocal;
             const conversation = (await bridge.getState()).conversations[0];

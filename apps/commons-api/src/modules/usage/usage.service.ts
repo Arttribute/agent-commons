@@ -42,7 +42,7 @@ export class UsageService {
     modelId: string;
     isByok: boolean;
   }) {
-    if (process.env.CREDIT_DEBITS_ENABLED === 'false') return null;
+    if (process.env.CREDIT_DEBITS_ENABLED === 'false' && input.provider !== 'hosted-free') return null;
     const entitlements = await this.entitlements.getEntitlements(
       input.principalId,
     );
@@ -69,6 +69,20 @@ export class UsageService {
         HttpStatus.PAYMENT_REQUIRED,
       );
     }
+    if (input.provider === 'hosted-free') {
+      if (!process.env.HOSTED_FREE_MODEL_BASE_URL || !process.env.HOSTED_FREE_MODEL_API_KEY) {
+        throw new HttpException({ code: 'free_model_unavailable', message: 'The Commons Free model is unavailable.' }, HttpStatus.SERVICE_UNAVAILABLE);
+      }
+      try {
+        const health = new URL(process.env.HOSTED_FREE_MODEL_BASE_URL);
+        health.pathname = '/health';
+        health.search = '';
+        if (!(await fetch(health, { signal: AbortSignal.timeout(2_000) })).ok) throw new Error('Unhealthy model service');
+      } catch {
+        throw new HttpException({ code: 'free_model_unavailable', message: 'The Commons Free model is temporarily unavailable. Try again shortly.' }, HttpStatus.SERVICE_UNAVAILABLE);
+      }
+      return this.startHostedFreeRun(input.principalId, input.traceId);
+    }
     return this.credits.reserve({
       principalId: input.principalId,
       amount: Number(process.env.AGENT_RUN_RESERVATION_CREDITS || 1),
@@ -94,6 +108,9 @@ export class UsageService {
     maxOutputTokens?: number;
     isByok: boolean;
   }) {
+    if (input.reservationId?.startsWith('hosted-free:')) {
+      return this.reserveHostedFreeTokens(input.reservationId.slice('hosted-free:'.length), input.prompts, input.maxOutputTokens);
+    }
     if (!input.reservationId || input.isByok) return null;
     const model = getModelInfo(input.provider as any, input.modelId);
     if (!model) {
@@ -123,10 +140,82 @@ export class UsageService {
 
   async finalizeAgentRun(reservationId?: string | null) {
     if (!reservationId) return null;
+    if (reservationId.startsWith('hosted-free:')) {
+      await this.db.execute(sql`UPDATE hosted_free_run SET finished_at = now() WHERE trace_id = ${reservationId.slice('hosted-free:'.length)} AND finished_at IS NULL`);
+      return null;
+    }
     return this.credits.finalizeReservation(
       reservationId,
       Number(process.env.AGENT_RUN_MINIMUM_CREDITS || 1),
     );
+  }
+
+  private quotaError(code: string, message: string) {
+    const reset = new Date();
+    reset.setUTCHours(24, 0, 0, 0);
+    return new HttpException({ code, message, retryAt: reset.toISOString() }, HttpStatus.TOO_MANY_REQUESTS);
+  }
+
+  private async startHostedFreeRun(principalId: string, traceId: string) {
+    const day = new Date().toISOString().slice(0, 10);
+    const userRequests = Math.max(1, Number(process.env.HOSTED_FREE_DAILY_REQUESTS || 20));
+    const globalRequests = Math.max(1, Number(process.env.HOSTED_FREE_GLOBAL_DAILY_REQUESTS || 1000));
+    await this.db.transaction(async (tx) => {
+      // A short transaction lock makes the concurrency check and both daily
+      // counters one atomic decision across all API replicas.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(64821, 1)`);
+      const active = (await tx.execute(sql`
+        SELECT count(*) FILTER (WHERE principal_id = ${principalId})::integer AS user_count,
+               count(*)::integer AS global_count
+        FROM hosted_free_run
+        WHERE finished_at IS NULL AND started_at > now() - interval '6 hours'
+      `)) as any;
+      if (Number(active[0]?.user_count || 0) >= 2 || Number(active[0]?.global_count || 0) >= 8) {
+        throw new HttpException({ code: 'free_model_busy', message: 'The Commons Free model has reached its concurrent run limit. Try again shortly.' }, HttpStatus.TOO_MANY_REQUESTS);
+      }
+      for (const [scope, scopeId, limit] of [['global', '*', globalRequests], ['user', principalId, userRequests]] as const) {
+        const updated = (await tx.execute(sql`
+          INSERT INTO hosted_free_daily_quota (scope, scope_id, quota_day, request_count)
+          VALUES (${scope}, ${scopeId}, ${day}::date, 1)
+          ON CONFLICT (scope, scope_id, quota_day) DO UPDATE
+          SET request_count = hosted_free_daily_quota.request_count + 1
+          WHERE hosted_free_daily_quota.request_count < ${limit}
+          RETURNING request_count
+        `)) as any;
+        if (!updated[0]) throw this.quotaError('free_model_daily_limit', 'The Commons Free model daily request allowance is exhausted.');
+      }
+      await tx.execute(sql`INSERT INTO hosted_free_run (trace_id, principal_id) VALUES (${traceId}, ${principalId})`);
+    });
+    return { reservationId: `hosted-free:${traceId}` };
+  }
+
+  private async reserveHostedFreeTokens(traceId: string, prompts: string[], maxOutputTokens?: number) {
+    const inputTokens = Math.max(1, Math.ceil(prompts.reduce((total, prompt) => total + String(prompt).length, 0) / 4));
+    const outputTokens = Math.min(Math.max(maxOutputTokens ?? 2048, 1), 2048);
+    const tokens = inputTokens + outputTokens;
+    if (tokens > 24_000) {
+      throw new HttpException({ code: 'free_model_context_limit', message: 'This request is too large for the Commons Free model. Shorten the context or choose another model.' }, HttpStatus.PAYLOAD_TOO_LARGE);
+    }
+    const day = new Date().toISOString().slice(0, 10);
+    const principalRows = (await this.db.execute(sql`SELECT principal_id FROM hosted_free_run WHERE trace_id = ${traceId} AND finished_at IS NULL`)) as any;
+    const principalId = principalRows[0]?.principal_id as string | undefined;
+    if (!principalId) throw new HttpException({ code: 'free_model_run_expired', message: 'The Commons Free model run has ended.' }, HttpStatus.CONFLICT);
+    const userLimit = Math.max(24_000, Number(process.env.HOSTED_FREE_DAILY_TOKENS || 120_000));
+    const globalLimit = Math.max(24_000, Number(process.env.HOSTED_FREE_GLOBAL_DAILY_TOKENS || 2_000_000));
+    await this.db.transaction(async (tx) => {
+      for (const [scope, scopeId, limit] of [['global', '*', globalLimit], ['user', principalId, userLimit]] as const) {
+        const updated = (await tx.execute(sql`
+          INSERT INTO hosted_free_daily_quota (scope, scope_id, quota_day, reserved_tokens)
+          VALUES (${scope}, ${scopeId}, ${day}::date, ${tokens})
+          ON CONFLICT (scope, scope_id, quota_day) DO UPDATE
+          SET reserved_tokens = hosted_free_daily_quota.reserved_tokens + ${tokens}
+          WHERE hosted_free_daily_quota.reserved_tokens + ${tokens} <= ${limit}
+          RETURNING reserved_tokens
+        `)) as any;
+        if (!updated[0]) throw this.quotaError('free_model_token_limit', 'The Commons Free model daily token allowance is exhausted.');
+      }
+    });
+    return null;
   }
 
   /**
@@ -243,6 +332,7 @@ export class UsageService {
     reservationId?: string,
   ) {
     if (process.env.CREDIT_DEBITS_ENABLED === 'false') return;
+    if (event.provider === 'hosted-free') return;
     if (event.isByok) return;
 
     const creditAmount = this.credits.creditsForUsd(Number(event.costUsd || 0));

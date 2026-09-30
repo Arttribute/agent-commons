@@ -51,8 +51,11 @@ async function bootstrap() {
       'CORS_ORIGIN must be set in production (comma-separated origin allowlist)',
     );
   }
+  // The packaged desktop app serves its Cloud UI from a loopback port. Its
+  // browser must reach the direct-upload endpoint without a Next.js body proxy.
+  const desktopOrigins = [/^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/];
   app.enableCors({
-    origin: corsOrigins ?? [/^https?:\/\/localhost(:\d+)?$/],
+    origin: [...(corsOrigins ?? []), ...desktopOrigins],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',

@@ -29,6 +29,9 @@ await database.query(
 await database.query(
   await readFile(resolve("migrations/002-api-platform.sql"), "utf8"),
 );
+await database.query(
+  await readFile(resolve("migrations/005-profile-overrides.sql"), "utf8"),
+);
 
 const { commonsAuthOptions } = await import("../lib/auth-config");
 const { ensureOAuthClient } = await import("../lib/oauth-client-store");
@@ -147,6 +150,18 @@ await database.query(
     JSON.stringify(["openid", "profile"]),
   ],
 );
+const profileBefore = await app.request("http://identity.test/api/identity/me/profile", {
+  headers: { Authorization: `Bearer ${platformAccessToken}` },
+});
+assert(profileBefore.ok, `profile read failed: ${profileBefore.status}`);
+const profileUpdated = await app.request("http://identity.test/api/identity/me/profile", {
+  method: "PATCH",
+  headers: { Authorization: `Bearer ${platformAccessToken}`, "Content-Type": "application/json" },
+  body: JSON.stringify({ name: "Updated Commons Name" }),
+});
+const updatedProfile = (await profileUpdated.json()) as { data?: { name?: string } };
+assert(profileUpdated.ok, `profile update failed: ${profileUpdated.status} ${JSON.stringify(updatedProfile)}`);
+assert(updatedProfile.data?.name === "Updated Commons Name", "profile name did not persist");
 const projectsResponse = await app.request(
   "http://identity.test/api/platform/projects",
   { headers: { Authorization: `Bearer ${platformAccessToken}` } },

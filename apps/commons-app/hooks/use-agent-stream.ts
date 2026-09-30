@@ -6,6 +6,7 @@ import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { localToolCalls, mapLocalTool } from "@/lib/local-tool-calls";
 
 interface UseAgentStreamOptions {
+  onRunStarted?: (runId: string) => void;
   onToken?: (token: string) => void;
   onReset?: () => void;
   onStatus?: (event: StreamEvent) => void;
@@ -73,7 +74,9 @@ export function useAgentStream(
       /** Per-turn thinking depth chosen in the composer; omit for auto. */
       reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
       cliContext?: string;
-      localWorkspaceRoot?: string;
+      localWorkspaceRoot?: string | null;
+      webSearchEnabled?: boolean;
+      mcpServerIds?: string[];
       /** Project for a new session; existing sessions keep their project. */
       projectId?: string;
       provenance?: {
@@ -146,6 +149,8 @@ export function useAgentStream(
               workspaceRoot: params.localWorkspaceRoot,
               attachmentIds: params.attachments?.map((attachment) => attachment.fileId),
               projectId: params.projectId,
+              webSearchEnabled: params.webSearchEnabled,
+              mcpServerIds: params.mcpServerIds,
               interactive: true,
             });
             if (!abortRef.current) optionsRef.current.onFinal?.({
@@ -283,6 +288,9 @@ export function useAgentStream(
 
 function handleEvent(event: StreamEvent, options: UseAgentStreamOptions) {
   switch (event.type) {
+    case "run_started":
+      if ((event as StreamEvent & { runId?: string }).runId) options.onRunStarted?.((event as StreamEvent & { runId: string }).runId);
+      break;
     case "token":
       if (event.content) options.onToken?.(event.content);
       break;

@@ -1,9 +1,10 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statfsSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import { safeStorage } from "electron";
 import type { LocalState } from "@agent-commons/desktop-contract";
 
-export const DEFAULT_LOCAL_MODEL = "qwen2.5-coder:0.5b";
+export const DEFAULT_LOCAL_MODEL = "qwen3:1.7b";
 
 function starterAgent() {
   const timestamp = new Date().toISOString();
@@ -82,6 +83,7 @@ export class LocalStore {
       this.persist();
     }
     if (!Array.isArray(this.state.library)) this.state.library = [];
+    this.ensureEmergencyReserve();
   }
 
   private readState(path: string): LocalState {
@@ -126,6 +128,7 @@ export class LocalStore {
 
   private persist(backup = true, state = this.state) {
     const temporary = `${this.path}.tmp`;
+    const emergencyReserve = `${this.path}.reserve`;
     const plaintext = `${JSON.stringify(state)}\n`;
     // The readable Local workspace already contains user data protected by
     // owner-only permissions. On macOS, safeStorage may synchronously wait for
@@ -133,13 +136,61 @@ export class LocalStore {
     const bytes = process.platform !== "darwin" && safeStorage.isEncryptionAvailable()
       ? safeStorage.encryptString(plaintext)
       : Buffer.from(plaintext, "utf8");
-    writeFileSync(temporary, bytes, { mode: 0o600 });
-    if (backup && existsSync(this.path)) copyFileSync(this.path, `${this.path}.bak`);
-    renameSync(temporary, this.path);
+    try {
+      try {
+        writeFileSync(temporary, bytes, { mode: 0o600 });
+      } catch (error) {
+        if (!this.isDiskFull(error)) throw error;
+        if (existsSync(emergencyReserve)) unlinkSync(emergencyReserve);
+        writeFileSync(temporary, bytes, { mode: 0o600 });
+      }
+      if (backup && existsSync(this.path)) {
+        const backupTemporary = `${this.path}.bak.tmp`;
+        try {
+          copyFileSync(this.path, backupTemporary);
+          renameSync(backupTemporary, `${this.path}.bak`);
+        } catch (error) {
+          if (existsSync(backupTemporary)) unlinkSync(backupTemporary);
+          if (!this.isDiskFull(error)) throw error;
+          // Keep the previous backup and save the current state while there
+          // is still room for this small atomic rename.
+        }
+      }
+      renameSync(temporary, this.path);
+      this.ensureEmergencyReserve();
+    } catch (error) {
+      if (existsSync(temporary)) unlinkSync(temporary);
+      if (this.isDiskFull(error)) throw new Error("This computer is out of disk space. Free space and continue; the last saved Local workspace is intact.");
+      throw error;
+    }
+  }
+
+  private isDiskFull(error: unknown): error is NodeJS.ErrnoException {
+    return error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOSPC";
+  }
+
+  private ensureEmergencyReserve() {
+    const reserve = `${this.path}.reserve`;
+    if (existsSync(reserve)) return;
+    try {
+      const disk = statfsSync(dirname(this.path));
+      if (disk.bavail * disk.bsize > 12_000_000) {
+        writeFileSync(reserve, randomBytes(2_000_000), { flag: "wx", mode: 0o600 });
+      }
+    } catch (error) {
+      // The reserve is optional. A partial write has no value as emergency
+      // headroom, and must not make an otherwise successful state save fail.
+      if ((error as NodeJS.ErrnoException)?.code !== "EEXIST" && existsSync(reserve)) {
+        try { unlinkSync(reserve); } catch { /* next startup may clean it */ }
+      }
+    }
   }
 
   private normalize() {
     this.state.settings.defaultModel ||= DEFAULT_LOCAL_MODEL;
+    if (!["female", "male", "kokoro-heart", "kokoro-bella", "kokoro-michael", "kokoro-george"].includes(this.state.settings.voiceModel ?? "")) {
+      this.state.settings.voiceModel = "female";
+    }
     if (!this.state.agents.length) this.state.agents.push(starterAgent());
   }
 }

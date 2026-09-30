@@ -8,6 +8,7 @@ import {
   Clock,
   Cloud,
   FolderInput,
+  Eye,
   GitBranch,
   HardDriveUpload,
   Laptop,
@@ -56,7 +57,9 @@ import { projectsApi, type ProjectDetail } from "@/hooks/use-projects";
 import { SESSIONS_CHANGED } from "@/hooks/sessions/use-user-sessions";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { desktopApiFetch } from "@/lib/desktop-api-fetch";
-import { importProjectFolder, canImportProjectFolder } from "@/lib/project-folder-import";
+import { importProjectFolder, importProjectFiles, canImportProjectFolder } from "@/lib/project-folder-import";
+import { supportsBrowserFolders } from "@/components/brains/browser-folder";
+import { ArtifactSurface } from "@/components/artifacts/artifact-surface";
 import { relativeTime } from "@/lib/relative-time";
 import { artifactLabel, prettyBytes } from "@/lib/artifacts";
 import { cn } from "@/lib/utils";
@@ -148,7 +151,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 pb-16 pt-5">
+    <div className="mx-auto w-full max-w-6xl px-6 pb-8 pt-5">
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground" aria-label="Breadcrumb">
         <Link href="/projects" className="hover:text-foreground">Projects</Link>
         <span className="text-muted-foreground/50">/</span>
@@ -214,7 +217,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
             {sessions.length ? (
               <>
                 <h2 className="mb-2 px-1 text-sm text-muted-foreground">Recents</h2>
-                <div className="divide-y divide-border/70 overflow-hidden rounded-xl border border-border bg-white">
+                <div className="h-64 divide-y divide-border/70 overflow-y-auto rounded-xl border border-border bg-white">
                   {sessions.map((session) => {
                     const agent = agents.find((candidate: any) => candidate.agentId === session.agentId) as any;
                     return (
@@ -362,7 +365,9 @@ function ContextSection({ project, local, onChange, onReload }: {
 }) {
   const { toast } = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<ProjectDetail["files"][number] | null>(null);
   const [spaces, setSpaces] = useState<Array<{ spaceId: string; name: string }>>([]);
   const [busy, setBusy] = useState(false);
 
@@ -393,6 +398,7 @@ function ContextSection({ project, local, onChange, onReload }: {
   };
 
   const importFolder = async () => {
+    if (!local && !supportsBrowserFolders()) { folderInput.current?.click(); return; }
     setBusy(true);
     try {
       const imported = await importProjectFolder(local);
@@ -482,6 +488,22 @@ function ContextSection({ project, local, onChange, onReload }: {
           event.target.value = "";
         }}
       />
+      <input
+        ref={folderInput}
+        type="file"
+        multiple
+        {...{ webkitdirectory: "" }}
+        className="hidden"
+        onChange={(event) => {
+          const files = event.target.files ? Array.from(event.target.files) : [];
+          event.target.value = "";
+          if (!files.length) return;
+          setBusy(true);
+          void importProjectFiles(files).then((imported) => onChange({ libraryItemIds: [...new Set([...project.libraryItemIds, ...imported.libraryItemIds])] }).then(() => toast({ title: `${imported.name} added`, description: imported.summary })))
+            .catch((cause) => toast({ title: "The folder could not be imported", description: cause instanceof Error ? cause.message : undefined, variant: "destructive" }))
+            .finally(() => setBusy(false));
+        }}
+      />
       <LibraryPickerDialog
         open={libraryOpen}
         onOpenChange={setLibraryOpen}
@@ -491,13 +513,13 @@ function ContextSection({ project, local, onChange, onReload }: {
       {empty ? (
         <p className="text-sm text-muted-foreground">Add files, a folder, or a Knowledge Space. Agents use them in every chat here.</p>
       ) : (
-        <div className="space-y-3">
+        <div className="h-80 space-y-3 overflow-y-auto pr-1">
           {project.knowledgeSpaces.length > 0 && (
             <ul className="space-y-1">
               {project.knowledgeSpaces.map((space) => (
                 <li key={space.spaceId} className="group flex items-center gap-2 rounded-lg px-1 py-1">
                   <Brain className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
-                  <Link href="/knowledge" className="min-w-0 flex-1">
+                  <Link href={`/knowledge?spaceId=${encodeURIComponent(space.spaceId)}`} className="min-w-0 flex-1">
                     <span className="block truncate text-sm">{space.name}</span>
                     <span className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
                       {space.git?.branch && <><GitBranch className="h-3 w-3" />{space.git.branch}{space.git.commit ? ` · ${space.git.commit.slice(0, 7)}` : ""} · </>}
@@ -528,6 +550,7 @@ function ContextSection({ project, local, onChange, onReload }: {
                     </span>
                     {local && file.keepOnDevice && <Lock className="h-3 w-3 text-muted-foreground" aria-label="Never leaves this computer" />}
                   </span>
+                  <button type="button" onClick={() => setPreviewFile(file)} className="absolute bottom-1 right-1 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`Preview ${file.name}`} title="Preview document"><Eye className="h-3.5 w-3.5" /></button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button type="button" className="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted group-hover:opacity-100 data-[state=open]:opacity-100" aria-label={`${file.name} actions`}>
@@ -554,6 +577,7 @@ function ContextSection({ project, local, onChange, onReload }: {
           )}
         </div>
       )}
+      {previewFile && <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={() => setPreviewFile(null)}><div className="h-full" onClick={(event) => event.stopPropagation()}><ArtifactSurface artifact={{ fileId: previewFile.itemId, name: previewFile.name, mimeType: previewFile.mimeType }} onClose={() => setPreviewFile(null)} /></div></div>}
     </PanelSection>
   );
 }
