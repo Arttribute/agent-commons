@@ -67,6 +67,11 @@ export function selectModelTools<T extends NamedTool>(
   });
   const availableNames = new Set(seen);
   const allowGoalCreation = explicitlyRequestsGoalCreation(requestText);
+  const allowGoalProgress =
+    allowGoalCreation ||
+    /\b(?:update|complete|finish|mark|recompute|recalculate)\b.{0,80}\b(?:goal|objective|milestone)s?\b|\b(?:goal|objective|milestone)s?\b.{0,80}\b(?:progress|complete|finish|recompute|recalculate)\b/i.test(
+      requestText,
+    );
   const allowTaskCreation = explicitlyRequestsTaskCreation(requestText);
   const allowTaskProgress =
     allowTaskCreation ||
@@ -78,12 +83,14 @@ export function selectModelTools<T extends NamedTool>(
     if (!name || availableNames.has(name)) return false;
     // An informational request must not expose a state-changing goal tool.
     // Model instructions alone did not prevent a title request from invoking it.
-    if (
-      tool.category === 'platform' &&
-      name === 'createGoal' &&
-      !allowGoalCreation
-    )
-      return false;
+    if (tool.category === 'platform') {
+      if (name === 'createGoal' && !allowGoalCreation) return false;
+      if (
+        (name === 'updateGoalProgress' || name === 'recomputeGoalProgress') &&
+        !allowGoalProgress
+      )
+        return false;
+    }
     if (
       tool.category === 'platform' &&
       name === 'createTask' &&

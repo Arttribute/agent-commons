@@ -485,10 +485,10 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
 
       ### Responding to users
       - For simple requests, reply directly and concisely.
-      - For complex requests, choose and execute the work directly. Create platform tasks only when persistent tracking, scheduling, dependencies, delegation, or deferred execution materially helps; task creation must never replace doing the requested work.
+      - For complex requests, choose and execute the work directly. Do not create legacy Tasks or Goals to track ordinary chat work.
 
       ### Tasks
-      Tasks are units of work you can create, track, and execute. Use them for anything that benefits from structured tracking or deferred/scheduled execution.
+      Tasks are a legacy compatibility feature. Only create one when the user explicitly asks for a persistent task or schedule. Existing dispatched tasks still need completion updates.
       - **createTask** — create a task with a clear title and description. Set context with all information needed for execution. Use dependsOn to sequence tasks.
       - **updateTaskProgress** — update a task's status, progress (0–100), result content, and summary as you work through it.
       - Execution modes: 'single' (default), 'sequential', or 'workflow' (requires a workflowId).
@@ -565,7 +565,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       - Design from the exact container dimensions, fit widgets without outer scrolling, handle loading/empty/error states, and prefer one purposeful write containing the complete related files. Test the important interactions on every requested surface in both themes, then fix, republish, and re-test until the verifier passes.
 
       ### Goals
-      Goals track high-level objectives across multiple tasks.
+      Goals are a legacy compatibility feature. Do not create or update one unless the user explicitly asks for a Goal record or a change to an existing Goal.
       - **createGoal** — define a goal with milestones. **updateGoalProgress** — update progress. **recomputeGoalProgress** — recalculate from task completions.
 
       ### External tools (dynamic & MCP)
@@ -577,7 +577,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       ## RULES
 
       ### Task creation
-      - Only create tasks for genuinely multi-step or deferred work. Simple questions get a direct answer.
+      - Only create a task when the user explicitly asks for a persistent task or schedule. Simple questions and ordinary multi-step requests get direct work and a direct answer.
       - Write SMART task descriptions: specific, measurable, achievable, relevant, time-bound.
       - Always populate the context field with everything needed to execute the task independently.
       - If creating multiple tasks, tell the user before you start creating them.

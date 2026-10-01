@@ -88,7 +88,12 @@ describe('model tool selection', () => {
   });
 
   it('exposes goal creation only for an explicit goal request', () => {
-    const available = [tool('createGoal'), tool('listProjectChats')];
+    const available = [
+      tool('createGoal'),
+      tool('updateGoalProgress'),
+      tool('recomputeGoalProgress'),
+      tool('listProjectChats'),
+    ];
     const informational = selectModelTools(
       available,
       [],
@@ -97,7 +102,7 @@ describe('model tool selection', () => {
     expect(informational.tools.map((entry) => entry.function.name)).toEqual([
       'listProjectChats',
     ]);
-    expect(informational.omitted).toBe(1);
+    expect(informational.omitted).toBe(3);
 
     const intentional = selectModelTools(
       available,
@@ -106,6 +111,19 @@ describe('model tool selection', () => {
     );
     expect(intentional.tools.map((entry) => entry.function.name)).toEqual([
       'createGoal',
+      'updateGoalProgress',
+      'recomputeGoalProgress',
+      'listProjectChats',
+    ]);
+
+    const progress = selectModelTools(
+      available,
+      [],
+      'Update progress on the existing launch goal.',
+    );
+    expect(progress.tools.map((entry) => entry.function.name)).toEqual([
+      'updateGoalProgress',
+      'recomputeGoalProgress',
       'listProjectChats',
     ]);
   });
