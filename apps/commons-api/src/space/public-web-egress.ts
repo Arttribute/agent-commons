@@ -33,18 +33,16 @@ function isPublicAddress(address: string): boolean {
   }
 }
 
-/** Reject mixed DNS answers, then connect to the checked address directly. */
-export async function resolvePublicIpv4(hostname: string, resolver: AddressResolver = systemResolver): Promise<string> {
+/** Reject mixed DNS answers, then connect to one checked address directly. */
+export async function resolvePublicAddress(hostname: string, resolver: AddressResolver = systemResolver): Promise<ResolvedAddress> {
   const host = hostname.replace(/^\[|\]$/g, '');
   const answers = isIP(host)
     ? [{ address: host, family: isIP(host) }]
     : await resolver(host);
-  if (!answers.length || answers.some((answer) => !isPublicAddress(answer.address))) {
+  if (!answers.length || answers.some((answer) => !isPublicAddress(answer.address) || isIP(answer.address) !== answer.family)) {
     throw new Error('Web capture cannot access a private network address.');
   }
-  const ipv4 = answers.find((answer) => answer.family === 4 && isIP(answer.address) === 4);
-  if (!ipv4) throw new Error('Web capture requires a public IPv4 address.');
-  return ipv4.address;
+  return answers.find((answer) => answer.family === 4) ?? answers[0];
 }
 
 /** Chrome's HTTP proxy validates every page request, including redirects and subresources. */
@@ -89,7 +87,7 @@ export class PublicWebEgressProxy {
       if (!request.url || request.method === 'CONNECT') throw new Error('Invalid proxy request.');
       const url = validatePublicWebUrl(request.url);
       if (url.protocol !== 'http:') throw new Error('HTTPS requires a CONNECT tunnel.');
-      const address = await resolvePublicIpv4(url.hostname, this.resolver);
+      const { address } = await resolvePublicAddress(url.hostname, this.resolver);
       const { 'proxy-authorization': _authorization, 'proxy-connection': _connection, ...headers } = request.headers;
       const upstream = httpRequest({
         hostname: address,
@@ -116,8 +114,8 @@ export class PublicWebEgressProxy {
     try {
       const url = validatePublicWebUrl(`https://${request.url || ''}`);
       if (Number(url.port || 443) !== 443) throw new Error('Invalid HTTPS port.');
-      const address = await resolvePublicIpv4(url.hostname, this.resolver);
-      const upstream = connect({ host: address, port: 443 });
+      const { address, family } = await resolvePublicAddress(url.hostname, this.resolver);
+      const upstream = connect({ host: address, family, port: 443 });
       this.tunnels.add(client);
       this.tunnels.add(upstream);
       const cleanup = () => { this.tunnels.delete(client); this.tunnels.delete(upstream); };
@@ -141,8 +139,8 @@ export class PublicWebEgressProxy {
       const target = (request.url || '').replace(/^ws:/i, 'http:');
       const url = validatePublicWebUrl(target);
       if (url.protocol !== 'http:') throw new Error('Secure WebSockets require CONNECT.');
-      const address = await resolvePublicIpv4(url.hostname, this.resolver);
-      const upstream = connect({ host: address, port: Number(url.port || 80) });
+      const { address, family } = await resolvePublicAddress(url.hostname, this.resolver);
+      const upstream = connect({ host: address, family, port: Number(url.port || 80) });
       this.tunnels.add(client);
       this.tunnels.add(upstream);
       const cleanup = () => { this.tunnels.delete(client); this.tunnels.delete(upstream); };
@@ -172,13 +170,13 @@ export class PublicWebEgressProxy {
 /** Fetch the optional tool manifest without redirects or a second DNS resolution. */
 export async function fetchPublicJson(urlString: string, resolver: AddressResolver = systemResolver): Promise<unknown | null> {
   const url = validatePublicWebUrl(urlString);
-  const address = await resolvePublicIpv4(url.hostname, resolver);
+  const { address, family } = await resolvePublicAddress(url.hostname, resolver);
   const request = url.protocol === 'https:' ? httpsRequest : httpRequest;
   return new Promise((resolve, reject) => {
     const client = request(url, {
       method: 'GET',
       timeout: 8_000,
-      lookup: (_hostname: string, _options: unknown, callback: (error: NodeJS.ErrnoException | null, address: string, family: number) => void) => callback(null, address, 4),
+      lookup: (_hostname: string, _options: unknown, callback: (error: NodeJS.ErrnoException | null, address: string, family: number) => void) => callback(null, address, family),
     }, (response) => {
       if (response.statusCode !== 200) { response.resume(); resolve(null); return; }
       const chunks: Buffer[] = [];

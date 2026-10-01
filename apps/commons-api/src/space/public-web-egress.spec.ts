@@ -1,6 +1,6 @@
 import { request } from 'node:http';
 import { connect } from 'node:net';
-import { fetchPublicJson, PublicWebEgressProxy, resolvePublicIpv4, validatePublicWebUrl } from './public-web-egress';
+import { fetchPublicJson, PublicWebEgressProxy, resolvePublicAddress, validatePublicWebUrl } from './public-web-egress';
 
 describe('public Web capture egress', () => {
   it('rejects private, metadata, credentialed, and non-web URLs', () => {
@@ -16,16 +16,23 @@ describe('public Web capture egress', () => {
     expect(validatePublicWebUrl('https://example.com/page').host).toBe('example.com');
   });
 
-  it('pins a public IPv4 answer and rejects mixed or private DNS', async () => {
-    expect(await resolvePublicIpv4('example.com', async () => [
+  it('pins a public address and rejects mixed or private DNS', async () => {
+    expect(await resolvePublicAddress('example.com', async () => [
       { address: '2606:4700:4700::1111', family: 6 },
       { address: '1.1.1.1', family: 4 },
-    ])).toBe('1.1.1.1');
-    await expect(resolvePublicIpv4('example.com', async () => [
+    ])).toEqual({ address: '1.1.1.1', family: 4 });
+    expect(await resolvePublicAddress('example.com', async () => [
+      { address: '2606:4700:4700::1111', family: 6 },
+    ])).toEqual({ address: '2606:4700:4700::1111', family: 6 });
+    await expect(resolvePublicAddress('example.com', async () => [
       { address: '1.1.1.1', family: 4 },
       { address: '192.168.1.5', family: 4 },
     ])).rejects.toThrow('private network');
-    await expect(resolvePublicIpv4('169.254.169.254')).rejects.toThrow('private network');
+    await expect(resolvePublicAddress('example.com', async () => [
+      { address: '2606:4700:4700::1111', family: 6 },
+      { address: '::1', family: 6 },
+    ])).rejects.toThrow('private network');
+    await expect(resolvePublicAddress('169.254.169.254')).rejects.toThrow('private network');
     await expect(fetchPublicJson('http://127.0.0.1/data')).rejects.toThrow('private network');
   });
 
