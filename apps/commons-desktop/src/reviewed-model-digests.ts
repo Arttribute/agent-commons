@@ -9,6 +9,6 @@ const REVIEWED_DEFAULT_DIGESTS: Record<string, string> = {
 export function assertReviewedModelDigest(model: string, digest: string | undefined) {
   const expected = REVIEWED_DEFAULT_DIGESTS[model];
   if (expected && digest !== expected) {
-    throw new Error(`The installed ${model} differs from the reviewed default. Remove it in Local settings and download the reviewed release again.`);
+    throw new Error(`The installed ${model} differs from the reviewed default. Choose another installed model in General settings or update Agent Commons for a newer reviewed release.`);
   }
 }
