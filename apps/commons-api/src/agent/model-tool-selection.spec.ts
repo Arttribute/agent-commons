@@ -164,4 +164,33 @@ describe('model tool selection', () => {
       'listProjectChats',
     ]);
   });
+
+  it('does not create a file just to remember a fact or title a chat', () => {
+    const fileTools = [
+      tool('createTextFile'),
+      tool('createDocumentFile'),
+      tool('createPresentationFile'),
+      tool('createPdfFile'),
+      tool('createSpreadsheetFile'),
+    ];
+    const informational = selectModelTools(
+      [...fileTools, tool('listProjectChats')],
+      [],
+      'Remember the launch date and give this chat a concise title.',
+    );
+    expect(informational.tools.map((entry) => entry.function.name)).toEqual([
+      'listProjectChats',
+    ]);
+
+    expect(
+      selectModelTools(fileTools, [], 'Create a PDF summary.').tools.map(
+        (entry) => entry.function.name,
+      ),
+    ).toHaveLength(fileTools.length);
+    expect(
+      selectModelTools(fileTools, [], 'Save the summary as a .txt file.').tools.map(
+        (entry) => entry.function.name,
+      ),
+    ).toHaveLength(fileTools.length);
+  });
 });

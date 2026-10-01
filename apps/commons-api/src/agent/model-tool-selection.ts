@@ -46,6 +46,25 @@ function explicitlyRequestsTaskCreation(requestText: string): boolean {
   ).test(requestText);
 }
 
+function explicitlyRequestsFileArtifact(requestText: string): boolean {
+  const action =
+    '\\b(?:create|make|write|draft|generate|produce|export|save|build|convert|want|need|send|give)\\b';
+  const artifact =
+    '\\b(?:file|document|docx|pdf|presentation|slides?|deck|pptx|spreadsheet|xlsx|csv|markdown|readme|html|artifact|download)\\b|\\.(?:txt|md|pdf|docx|pptx|xlsx|csv|json|html)\\b';
+  return new RegExp(
+    `${action}.{0,100}(?:${artifact})|(?:${artifact}).{0,100}${action}`,
+    'is',
+  ).test(requestText);
+}
+
+const FILE_ARTIFACT_TOOLS = new Set([
+  'createTextFile',
+  'createDocumentFile',
+  'createPresentationFile',
+  'createPdfFile',
+  'createSpreadsheetFile',
+]);
+
 /** Keep caller-provided and local tools ahead of the broad platform catalog. */
 export function selectModelTools<T extends NamedTool>(
   available: T[],
@@ -73,6 +92,7 @@ export function selectModelTools<T extends NamedTool>(
       requestText,
     );
   const allowTaskCreation = explicitlyRequestsTaskCreation(requestText);
+  const allowFileArtifact = explicitlyRequestsFileArtifact(requestText);
   const allowTaskProgress =
     allowTaskCreation ||
     /⫷⫷(?:TASK_DISPATCH|AUTOMATED_USER_TRIGGER)⫸⫸|\b(?:update|complete|finish|mark|resume)\b.{0,80}\btask\b/i.test(
@@ -84,6 +104,7 @@ export function selectModelTools<T extends NamedTool>(
     // An informational request must not expose a state-changing goal tool.
     // Model instructions alone did not prevent a title request from invoking it.
     if (tool.category === 'platform') {
+      if (FILE_ARTIFACT_TOOLS.has(name) && !allowFileArtifact) return false;
       if (name === 'createGoal' && !allowGoalCreation) return false;
       if (
         (name === 'updateGoalProgress' || name === 'recomputeGoalProgress') &&
