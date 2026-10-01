@@ -84,6 +84,7 @@ import { SkillService } from '~/skill/skill.service';
 import { ProvenanceService, ProvenanceRunOptions } from '~/provenance';
 import { durableRole, restoreSessionMessages } from '~/session/session-history';
 import { filterPlatformToolsForAgent } from './copilot-tool-policy';
+import { selectModelTools } from './model-tool-selection';
 import { AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
 
 const got = import('got');
@@ -1681,8 +1682,24 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               ])
             : [];
 
+          const latestUserMessage = [...(props.messages ?? [])]
+            .reverse()
+            .find((message) => message.role === 'user');
+          const requestText = typeof latestUserMessage?.content === 'string'
+            ? latestUserMessage.content.slice(0, 4_000)
+            : '';
+          const selectedTools = selectModelTools(
+            toolDefs,
+            cliToolSchemas,
+            requestText,
+          );
+          if (selectedTools.omitted) {
+            this.logger.warn(
+              `Selected ${selectedTools.tools.length + selectedTools.localTools.length} of ${toolDefs.length + cliToolSchemas.length} tools for run ${traceId}; ${selectedTools.omitted} omitted to fit the model tool limit`,
+            );
+          }
           const llmWithTools = (llm as any).bindTools(
-            [...toolDefs, ...cliToolSchemas] as any,
+            [...selectedTools.tools, ...selectedTools.localTools] as any,
             {
               parallel_tool_calls: true,
               strict: false,
@@ -1843,7 +1860,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               },
             );
 
-          const toolRunners = toolDefs.map((def) =>
+          const toolRunners = selectedTools.tools.map((def) =>
             makeRunner(def as ChatCompletionTool & { endpoint: string }),
           );
 
