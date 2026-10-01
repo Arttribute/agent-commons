@@ -2,7 +2,7 @@ import { CommonsAppWindows } from "@/components/plugins/app-windows";
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import Providers from "@/Providers"; // The file with your <PrivyProvider> from earlier
+import Providers from "@/Providers";
 import { AuthProvider } from "@/context/AuthContext";
 import { Analytics } from "@vercel/analytics/react";
 import { Toaster } from "@/components/ui/toaster";

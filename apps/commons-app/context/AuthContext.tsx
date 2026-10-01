@@ -8,20 +8,6 @@ import {
 import { DEFAULT_AUTH_CALLBACK } from "@/lib/auth-callback";
 import { useWorkspaceMode } from "./WorkspaceModeContext";
 
-declare module "@privy-io/react-auth" {
-  interface Google {
-    picture?: string;
-  }
-
-  interface Discord {
-    picture?: string;
-  }
-
-  interface Twitter {
-    picture?: string;
-  }
-}
-
 // Define the shape of the data we'll store about the user
 export interface AuthState {
   idToken?: string | null;
