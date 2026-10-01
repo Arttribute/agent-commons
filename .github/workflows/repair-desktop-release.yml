@@ -26,7 +26,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           name: desktop-macOS
           path: desktop
-      - name: Upload the Intel macOS installers and checksums
+      - name: Upload missing macOS assets and checksums
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -35,13 +35,20 @@ jobs:
           set -euo pipefail
           [[ "$RELEASE_TAG" == desktop-v* ]]
           find desktop -type f -print
-          dmg=$(find desktop -type f -name 'Agent-Commons-mac-x64.dmg' -print -quit)
-          zip=$(find desktop -type f -name 'Agent-Commons-mac-x64.zip' -print -quit)
-          test -n "$dmg"
-          test -n "$zip"
-          cp "$dmg" .
-          cp "$zip" .
-          gh release upload "$RELEASE_TAG" Agent-Commons-mac-x64.dmg Agent-Commons-mac-x64.zip --clobber
+          assets=(
+            Agent-Commons-mac-x64.dmg
+            Agent-Commons-mac-x64.zip
+            Agent-Commons-mac-x64.dmg.blockmap
+            Agent-Commons-mac-x64.zip.blockmap
+            Agent-Commons-mac-arm64.dmg.blockmap
+            Agent-Commons-mac-arm64.zip.blockmap
+            latest-mac.yml
+          )
+          for asset in "${assets[@]}"; do
+            test -f "desktop/$asset"
+            cp "desktop/$asset" .
+          done
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
           gh release download "$RELEASE_TAG" --pattern SHA256SUMS --dir .
-          sha256sum Agent-Commons-mac-x64.dmg Agent-Commons-mac-x64.zip >> SHA256SUMS
+          sha256sum "${assets[@]}" >> SHA256SUMS
           gh release upload "$RELEASE_TAG" SHA256SUMS --clobber
