@@ -29,7 +29,7 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
   const [speechReady, setSpeechReady] = useState(false);
   const [imageStatus, setImageStatus] = useState<ImageModelStatus | null>(null);
   const [imageModels, setImageModels] = useState<Array<{ id: string; name: string; bytes: number }>>([]);
-  const [imageCatalog, setImageCatalog] = useState<Array<{ id: string; name: string; bytes: number; ramGiB: number; description: string }>>([]);
+  const [imageCatalog, setImageCatalog] = useState<Array<{ id: string; name: string; bytes: number; ramGiB: number; description: string; recommended: boolean }>>([]);
   const [voiceStatus, setVoiceStatus] = useState<VoiceModelStatus | null>(null);
   const [modelServerUnavailable, setModelServerUnavailable] = useState(false);
   const [modelStatus, setModelStatus] = useState<LocalModelStatus | null>(null);
@@ -48,6 +48,7 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
   const [transferId, setTransferId] = useState("");
   const [transferBusy, setTransferBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const starterImageModel = imageCatalog.find((model) => model.recommended)?.id ?? "tiny-sd.safetensors";
 
   useEffect(() => { setDesktop(Boolean(window.agentCommonsDesktop)); }, []);
 
@@ -267,17 +268,17 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
       </div>
       <div className="max-w-xl space-y-2 border-t border-border pt-4">
         <h3 className="font-semibold">Image generation</h3>
-        <p className="text-xs text-muted-foreground">Agents generate images on this computer. The starter model downloads automatically when first used. Choose a smaller verified version below, or add a compatible single-file Stable Diffusion checkpoint to the model folder. Generated images stay in the Local Library.</p>
+        <p className="text-xs text-muted-foreground">Agents generate images on this computer. A verified model suited to this computer downloads when first used; automatic generation needs at least 8 GB RAM alongside chat. You can choose another version below or add a compatible single-file Stable Diffusion checkpoint. Generated images stay in the Local Library.</p>
         <div className="space-y-2">
           {imageCatalog.map((model) => {
             const installed = imageModels.some((item) => item.id === model.id);
-            const selected = (localState?.settings.imageModel || "tiny-sd.safetensors") === model.id;
+            const selected = (localState?.settings.imageModel || starterImageModel) === model.id;
             const downloading = imageStatus?.state === "downloading";
             return <div key={model.id} className="rounded-md border border-border p-3">
-              <div className="flex items-start justify-between gap-2"><strong className="text-sm">{model.name}</strong><span className="shrink-0 text-xs text-muted-foreground">{(model.bytes / 1024 ** 3).toFixed(1)} GB</span></div>
+              <div className="flex items-start justify-between gap-2"><strong className="text-sm">{model.name}{model.recommended && hardware && hardware.ramGiB >= 8 ? " · Recommended here" : ""}</strong><span className="shrink-0 text-xs text-muted-foreground">{(model.bytes / 1024 ** 3).toFixed(1)} GB</span></div>
               <p className="mt-1 text-xs text-muted-foreground">{model.description}</p>
               <p className="mt-1 text-[11px] text-muted-foreground">Suggested {model.ramGiB} GB RAM{hardware && hardware.ramGiB < model.ramGiB ? " · May be slow here" : ""}{!installed && hardware && hardware.freeDiskGiB < model.bytes / 1024 ** 3 + 0.5 ? " · Low disk space" : ""}</p>
-              <button type="button" disabled={downloading || selected && installed} className="mt-2 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50" onClick={() => void (async () => { try { setError(""); if (!installed) { await window.agentCommonsLocal!.prepareImageModel(model.id); setImageModels(await window.agentCommonsLocal!.listImageModels()); } await saveLocalSettings({ imageModel: model.id }); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not prepare image model"); } })()}>{selected && installed ? "In use" : installed ? "Use as default" : "Download and use"}</button>
+              <button type="button" disabled={downloading || selected && installed || Boolean(model.recommended && hardware && hardware.ramGiB < 8)} className="mt-2 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50" onClick={() => void (async () => { try { setError(""); if (!installed) { await window.agentCommonsLocal!.prepareImageModel(model.id); setImageModels(await window.agentCommonsLocal!.listImageModels()); } await saveLocalSettings({ imageModel: model.id }); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not prepare image model"); } })()}>{selected && installed ? "In use" : installed ? "Use as default" : "Download and use"}</button>
             </div>;
           })}
         </div>
@@ -287,7 +288,7 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
         </div>
         {imageStatus && <p role="status" className="text-xs text-muted-foreground">{imageStatus.error || imageStatus.label}{imageStatus.progress !== undefined ? ` · ${Math.round(imageStatus.progress * 100)}%` : ""}</p>}
         {imageStatus?.state === "downloading" && <progress className="w-full" value={imageStatus.progress ?? 0} max={1} />}
-      {imageModels.length > 0 && <label className="block space-y-1 text-xs"><span>Default image model</span><select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={localState?.settings.imageModel || "tiny-sd.safetensors"} onChange={(event) => void saveLocalSettings({ imageModel: event.target.value })}>{imageModels.map((model) => <option key={model.id} value={model.id}>{model.name} · {(model.bytes / 1024 ** 3).toFixed(1)} GB</option>)}</select></label>}
+      {imageModels.length > 0 && <label className="block space-y-1 text-xs"><span>Default image model</span><select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm" value={localState?.settings.imageModel || starterImageModel} onChange={(event) => void saveLocalSettings({ imageModel: event.target.value })}>{imageModels.map((model) => <option key={model.id} value={model.id}>{model.name} · {(model.bytes / 1024 ** 3).toFixed(1)} GB</option>)}</select></label>}
       </div>
       <div className="max-w-xl space-y-2 border-t border-border pt-4">
         <h3 className="font-semibold">Voice generation</h3>

@@ -424,7 +424,7 @@ export interface LocalDesktopBridge {
   prepareTranscriptionModel(): Promise<void>;
   getImageModelStatus(): Promise<ImageModelStatus>;
   prepareImageModel(modelId?: string): Promise<void>;
-  getImageModelCatalog(): Promise<Array<{ id: string; name: string; bytes: number; ramGiB: number; description: string }>>;
+  getImageModelCatalog(): Promise<Array<{ id: string; name: string; bytes: number; ramGiB: number; description: string; recommended: boolean }>>;
   listImageModels(): Promise<Array<{ id: string; name: string; bytes: number }>>;
   openImageModelFolder(): Promise<void>;
   getVoiceModelStatus(): Promise<VoiceModelStatus>;

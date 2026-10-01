@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { totalmem } from "node:os";
 import { createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, statfsSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import { join, basename, extname } from "node:path";
@@ -6,6 +7,7 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { spawn } from "node:child_process";
 import { extractVerifiedRuntimeZip } from "./verified-runtime-zip";
+import { recommendedImageModelId, supportsImageStarter } from "./local-image-model-choice";
 
 const RELEASE = "master-929-3f8527a";
 const RUNTIME_ASSETS: Record<string, { name: string; sha256: string }> = {
@@ -19,8 +21,8 @@ const DEFAULT_MODEL = {
   source: "https://huggingface.co/turingevo/tiny-sd-safetensors/resolve/main/segmind_tiny-sd.safetensors",
   sha256: "92e00b860c409f8cfc521a94f779009c6ebd28bf07670bf50e747682ab7b3b72",
   bytes: 1_060_307_606,
-  ramGiB: 6,
-  description: "Balanced image generation at 512 × 512 pixels",
+  ramGiB: 12,
+  description: "Higher image detail at 512 × 512 pixels",
 };
 const IMAGE_CATALOG = [
   DEFAULT_MODEL,
@@ -30,7 +32,7 @@ const IMAGE_CATALOG = [
     source: "https://huggingface.co/turingevo/tiny-sd-gguf/resolve/c6e3414/segmind_tiny-sd-q4_K.gguf",
     sha256: "69fe70e0b72f3ea22830b12ddabeb55ee8fe55a28ccc0b763ace4cf39af346d6",
     bytes: 774_886_240,
-    ramGiB: 5,
+    ramGiB: 8,
     description: "Smaller download and memory use; reduced image detail",
   },
   {
@@ -39,7 +41,7 @@ const IMAGE_CATALOG = [
     source: "https://huggingface.co/turingevo/tiny-sd-gguf/resolve/89829af/segmind_tiny-sd-q8_0.gguf",
     sha256: "f23cd08965d55fc0887da4146a4f0785850037420f73b7347b62eeb4be13a300",
     bytes: 853_972_416,
-    ramGiB: 6,
+    ramGiB: 12,
     description: "Smaller download with more detail than Q4",
   },
 ] as const;
@@ -72,6 +74,7 @@ async function downloadVerified(url: string, destination: string, sha256: string
 
 /** Runs image generation entirely on the user's computer with verified model weights. */
 export class LocalImageManager {
+  private readonly starter = IMAGE_CATALOG.find((model) => model.id === recommendedImageModelId(totalmem()))!;
   private readonly root: string;
   private readonly models: string;
   private readonly runtime: string;
@@ -84,14 +87,14 @@ export class LocalImageManager {
     this.models = join(this.root, "models");
     this.runtime = join(this.root, "runtime");
     mkdirSync(this.models, { recursive: true, mode: 0o700 });
-    const model = join(this.models, DEFAULT_MODEL.id);
-    if (existsSync(this.executable()) && existsSync(model) && statSync(model).size === DEFAULT_MODEL.bytes) {
-      this.status = { state: "ready", label: `${DEFAULT_MODEL.name} ready`, modelId: DEFAULT_MODEL.id };
+    const model = join(this.models, this.starter.id);
+    if (existsSync(this.executable()) && existsSync(model) && statSync(model).size === this.starter.bytes) {
+      this.status = { state: "ready", label: `${this.starter.name} ready`, modelId: this.starter.id };
     }
   }
 
   currentStatus() { return this.status; }
-  catalog() { return IMAGE_CATALOG.map(({ id, name, bytes, ramGiB, description }) => ({ id, name, bytes, ramGiB, description })); }
+  catalog() { return IMAGE_CATALOG.map(({ id, name, bytes, ramGiB, description }) => ({ id, name, bytes, ramGiB, description, recommended: id === this.starter.id })); }
   listModels() {
     return readdirSync(this.models).filter((name) => [".safetensors", ".gguf", ".ckpt"].includes(extname(name).toLowerCase()))
       .map((name) => ({ id: name, name: IMAGE_CATALOG.find((model) => model.id === name)?.name ?? name, bytes: statSync(join(this.models, name)).size }));
@@ -101,10 +104,13 @@ export class LocalImageManager {
   private executable() { return join(this.runtime, process.platform === "win32" ? "sd-cli.exe" : "sd-cli"); }
 
   async prepare(installDefault = true) {
+    if (installDefault && !supportsImageStarter(totalmem())) {
+      throw new Error("Automatic local image generation needs at least 8 GB RAM while the chat model is running.");
+    }
     if (this.pending) await this.pending;
-    const model = join(this.models, DEFAULT_MODEL.id);
-    if (existsSync(this.executable()) && (!installDefault || (existsSync(model) && statSync(model).size === DEFAULT_MODEL.bytes))) {
-      if (this.status.state !== "ready") this.update({ state: "ready", label: installDefault ? `${DEFAULT_MODEL.name} ready` : "Local image runtime ready", modelId: installDefault ? DEFAULT_MODEL.id : undefined });
+    const model = join(this.models, this.starter.id);
+    if (existsSync(this.executable()) && (!installDefault || (existsSync(model) && statSync(model).size === this.starter.bytes))) {
+      if (this.status.state !== "ready") this.update({ state: "ready", label: installDefault ? `${this.starter.name} ready` : "Local image runtime ready", modelId: installDefault ? this.starter.id : undefined });
       return;
     }
     this.pending = this.prepareOnce(installDefault).finally(() => { this.pending = undefined; });
@@ -115,12 +121,13 @@ export class LocalImageManager {
     const asset = RUNTIME_ASSETS[`${process.platform}-${process.arch}`];
     if (!asset) throw new Error("Local image generation currently supports macOS ARM, Linux x64, and Windows x64.");
     try {
-      const model = join(this.models, DEFAULT_MODEL.id);
-      const needsModel = installDefault && (!existsSync(model) || statSync(model).size !== DEFAULT_MODEL.bytes);
+      const model = join(this.models, this.starter.id);
+      const needsModel = installDefault && (!existsSync(model) || statSync(model).size !== this.starter.bytes);
       const disk = statfsSync(this.root);
       const freeBytes = disk.bavail * disk.bsize;
-      if (freeBytes < (needsModel ? 1_700_000_000 : 600_000_000)) {
-        throw new Error("Free more disk space before downloading the local image model. At least 1.7 GB is needed for the default model and temporary files.");
+      const neededBytes = needsModel ? this.starter.bytes + 700_000_000 : 600_000_000;
+      if (freeBytes < neededBytes) {
+        throw new Error(`Free more disk space before downloading the local image model. At least ${(neededBytes / 1_000_000_000).toFixed(1)} GB is needed for the model and temporary files.`);
       }
       this.update({ state: "downloading", label: "Preparing local image runtime" });
       if (!existsSync(this.executable())) {
@@ -140,13 +147,13 @@ export class LocalImageManager {
         rmSync(model, { force: true });
         const temp = join(this.models, `${randomUUID()}.download`);
         try {
-          this.update({ state: "downloading", label: `Downloading ${DEFAULT_MODEL.name}`, modelId: DEFAULT_MODEL.id, progress: 0.1 });
-          await downloadVerified(DEFAULT_MODEL.source, temp, DEFAULT_MODEL.sha256,
-            (progress) => this.update({ state: "downloading", label: `Downloading ${DEFAULT_MODEL.name}`, modelId: DEFAULT_MODEL.id, progress: 0.1 + 0.9 * progress }), DEFAULT_MODEL.bytes);
+          this.update({ state: "downloading", label: `Downloading ${this.starter.name}`, modelId: this.starter.id, progress: 0.1 });
+          await downloadVerified(this.starter.source, temp, this.starter.sha256,
+            (progress) => this.update({ state: "downloading", label: `Downloading ${this.starter.name}`, modelId: this.starter.id, progress: 0.1 + 0.9 * progress }), this.starter.bytes);
           renameSync(temp, model);
         } finally { rmSync(temp, { force: true }); }
       }
-      this.update({ state: "ready", label: installDefault ? `${DEFAULT_MODEL.name} ready` : "Local image runtime ready", modelId: installDefault ? DEFAULT_MODEL.id : undefined });
+      this.update({ state: "ready", label: installDefault ? `${this.starter.name} ready` : "Local image runtime ready", modelId: installDefault ? this.starter.id : undefined });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.update({ state: "error", label: "Image model unavailable", error: message });
@@ -155,8 +162,8 @@ export class LocalImageManager {
   }
 
   /** Download a reviewed checkpoint into the same model folder used by sd-cli. */
-  async prepareModel(modelId = DEFAULT_MODEL.id) {
-    if (modelId === DEFAULT_MODEL.id) return this.prepare(true);
+  async prepareModel(modelId = this.starter.id) {
+    if (modelId === this.starter.id) return this.prepare(true);
     const selected = IMAGE_CATALOG.find((model) => model.id === modelId);
     if (!selected) return this.prepare(false); // User-added compatible checkpoint.
     if (this.modelPending) await this.modelPending;
@@ -184,7 +191,7 @@ export class LocalImageManager {
     return this.modelPending;
   }
 
-  async generate(prompt: string, modelId = DEFAULT_MODEL.id) {
+  async generate(prompt: string, modelId = this.starter.id) {
     if (!prompt.trim() || prompt.length > 2_000) throw new Error("Image prompt must be 1 to 2,000 characters.");
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}\.(?:safetensors|gguf|ckpt)$/i.test(modelId)) throw new Error("Choose an installed image model.");
     await this.prepareModel(modelId);
