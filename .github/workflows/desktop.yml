@@ -56,7 +56,7 @@ jobs:
         if: runner.os == 'Windows' || runner.os == 'Linux'
         timeout-minutes: 8
         run: |
-          pnpm --filter commons-desktop exec esbuild src/local-image.ts --bundle --platform=node --format=cjs --outfile=.image-smoke/local-image.cjs
+          pnpm --filter commons-desktop exec tsup src/local-image.ts --format cjs --platform node --out-dir .image-smoke --no-splitting
           node apps/commons-desktop/scripts/smoke-image-runtime.mjs
       - run: pnpm --filter commons-desktop build:commons-app
       - run: pnpm --filter commons-desktop build
