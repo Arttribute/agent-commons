@@ -167,11 +167,11 @@ describe('model tool selection', () => {
 
   it('does not create a file just to remember a fact or title a chat', () => {
     const fileTools = [
-      tool('createTextFile'),
-      tool('createDocumentFile'),
-      tool('createPresentationFile'),
-      tool('createPdfFile'),
-      tool('createSpreadsheetFile'),
+      tool('createTextFile', 'files'),
+      tool('createDocumentFile', 'files'),
+      tool('createPresentationFile', 'files'),
+      tool('createPdfFile', 'files'),
+      tool('createSpreadsheetFile', 'files'),
     ];
     const informational = selectModelTools(
       [...fileTools, tool('listProjectChats')],
