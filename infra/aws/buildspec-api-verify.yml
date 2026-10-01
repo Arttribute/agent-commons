@@ -1,0 +1,14 @@
+version: 0.2
+
+# Build the exact API container without deploying it. This catches runtime
+# library and browser dependencies that TypeScript/unit tests cannot load.
+env:
+  shell: bash
+
+phases:
+  build:
+    commands:
+      - set -euo pipefail
+      - docker build --platform linux/amd64 -f apps/commons-api/Dockerfile -t agent-commons-api-verify:local .
+      - docker run --rm --entrypoint /opt/chrome-linux64/chrome agent-commons-api-verify:local --version
+      - docker run --rm --entrypoint node agent-commons-api-verify:local -e "require('sharp'); require('puppeteer'); console.log('API runtime modules loaded')"
