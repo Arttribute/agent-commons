@@ -27,6 +27,10 @@ on:
         description: Generate an image with the verified local Q4 model on Windows and Linux
         type: boolean
         default: false
+      local_speech_inference:
+        description: Generate and transcribe local speech on Windows and Linux
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -69,6 +73,12 @@ jobs:
         run: |
           pnpm --filter commons-desktop exec tsup src/local-image.ts --format cjs --platform node --out-dir .image-smoke --no-splitting
           node apps/commons-desktop/scripts/smoke-image-inference.mjs
+      - name: Generate and transcribe local speech on Windows and Linux
+        if: github.event_name == 'workflow_dispatch' && inputs.local_speech_inference && (runner.os == 'Windows' || runner.os == 'Linux')
+        timeout-minutes: 20
+        run: |
+          pnpm --filter commons-desktop exec tsup src/local-voice.ts src/local-transcription.ts --format cjs --platform node --out-dir .speech-smoke --no-splitting
+          node apps/commons-desktop/scripts/smoke-speech-inference.mjs
       - run: pnpm --filter commons-desktop build:commons-app
       - run: pnpm --filter commons-desktop build
       - name: Smoke test unified desktop (Linux)
