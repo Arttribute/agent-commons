@@ -31,48 +31,45 @@ phases:
       - docker push "$GATEWAY_IMAGE"
   post_build:
     commands:
-      # The ECS Express rollback alarm counts 4XX responses on the old target
-      # group. Expected authentication failures can trip it before new code
-      # receives traffic. Keep health and circuit-breaker checks active while
-      # the canary runs, then restore the normal alarm threshold.
+      # Keep the guard and CloudFormation wait in one CodeBuild command: a trap
+      # in a separate command ends before the canary and restores the alarm.
       - |
+        set -euo pipefail
         IDENTITY_SERVICE_NAME="commons-identity-${ENVIRONMENT}"
         GATEWAY_SERVICE_NAME="commons-api-gateway-${ENVIRONMENT}"
+        # The managed alarm counts 4XX on the old target group. Expected auth
+        # failures can trip it before the replacement receives traffic.
+        # ECS health checks and its deployment circuit breaker stay active.
         trap 'kill "${ALARM_GUARD_PID:-}" 2>/dev/null || true; wait "${ALARM_GUARD_PID:-}" 2>/dev/null || true; for service_name in "$IDENTITY_SERVICE_NAME" "$GATEWAY_SERVICE_NAME"; do infra/aws/set-express-alarm-threshold.sh "$service_name" 1 || true; done' EXIT
         for service_name in "$IDENTITY_SERVICE_NAME" "$GATEWAY_SERVICE_NAME"; do
-          infra/aws/set-express-alarm-threshold.sh "$service_name" 100 || true
+          infra/aws/set-express-alarm-threshold.sh "$service_name" 100
         done
         (while sleep 20; do
           for service_name in "$IDENTITY_SERVICE_NAME" "$GATEWAY_SERVICE_NAME"; do
             infra/aws/set-express-alarm-threshold.sh "$service_name" 100 || true
           done
         done) & ALARM_GUARD_PID=$!
-      - >-
-        aws cloudformation deploy
-        --stack-name "$STACK_NAME"
-        --template-file infra/aws/api-platform-services.yml
-        --capabilities CAPABILITY_NAMED_IAM
-        --parameter-overrides
-        Environment="$ENVIRONMENT"
-        IdentityIssuerUrl="${IDENTITY_ISSUER_URL:-https://auth.agentcommons.io/api/auth}"
-        IdentityImageUri="$IDENTITY_IMAGE"
-        GatewayImageUri="$GATEWAY_IMAGE"
-        ExecutionRoleArn="$TASK_EXECUTION_ROLE_ARN"
-        InfrastructureRoleArn="$INFRASTRUCTURE_ROLE_ARN"
-        IdentityRuntimeSecretArn="$IDENTITY_RUNTIME_SECRET_ARN"
-        GatewayRuntimeSecretArn="$GATEWAY_RUNTIME_SECRET_ARN"
-        AgentCommonsInternalUrl="$AGENT_COMMONS_INTERNAL_URL"
-        CommonOsInternalUrl="$COMMON_OS_INTERNAL_URL"
-        --region "$AWS_REGION"
-      - IDENTITY_ENDPOINT=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`IdentityEndpoint`].OutputValue' --output text --region "$AWS_REGION")
-      - GATEWAY_ENDPOINT=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`GatewayEndpoint`].OutputValue' --output text --region "$AWS_REGION")
-      - curl --fail --silent --show-error --retry 20 --retry-delay 10 --retry-all-errors "https://${IDENTITY_ENDPOINT#https://}/health"
-      - curl --fail --silent --show-error --retry 20 --retry-delay 10 --retry-all-errors "https://${GATEWAY_ENDPOINT#https://}/health"
-      - kill "$ALARM_GUARD_PID" 2>/dev/null || true
-      - wait "$ALARM_GUARD_PID" 2>/dev/null || true
-      - for service_name in "$IDENTITY_SERVICE_NAME" "$GATEWAY_SERVICE_NAME"; do infra/aws/set-express-alarm-threshold.sh "$service_name" 1 || true; done
-      - trap - EXIT
-      - printf '{"identityEndpoint":"%s","gatewayEndpoint":"%s","environment":"%s"}\n' "$IDENTITY_ENDPOINT" "$GATEWAY_ENDPOINT" "$ENVIRONMENT" > deployment.json
+        aws cloudformation deploy \
+          --stack-name "$STACK_NAME" \
+          --template-file infra/aws/api-platform-services.yml \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --parameter-overrides \
+          Environment="$ENVIRONMENT" \
+          IdentityIssuerUrl="${IDENTITY_ISSUER_URL:-https://auth.agentcommons.io/api/auth}" \
+          IdentityImageUri="$IDENTITY_IMAGE" \
+          GatewayImageUri="$GATEWAY_IMAGE" \
+          ExecutionRoleArn="$TASK_EXECUTION_ROLE_ARN" \
+          InfrastructureRoleArn="$INFRASTRUCTURE_ROLE_ARN" \
+          IdentityRuntimeSecretArn="$IDENTITY_RUNTIME_SECRET_ARN" \
+          GatewayRuntimeSecretArn="$GATEWAY_RUNTIME_SECRET_ARN" \
+          AgentCommonsInternalUrl="$AGENT_COMMONS_INTERNAL_URL" \
+          CommonOsInternalUrl="$COMMON_OS_INTERNAL_URL" \
+          --region "$AWS_REGION"
+        IDENTITY_ENDPOINT=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`IdentityEndpoint`].OutputValue' --output text --region "$AWS_REGION")
+        GATEWAY_ENDPOINT=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`GatewayEndpoint`].OutputValue' --output text --region "$AWS_REGION")
+        curl --fail --silent --show-error --retry 20 --retry-delay 10 --retry-all-errors "https://${IDENTITY_ENDPOINT#https://}/health"
+        curl --fail --silent --show-error --retry 20 --retry-delay 10 --retry-all-errors "https://${GATEWAY_ENDPOINT#https://}/health"
+        printf '{"identityEndpoint":"%s","gatewayEndpoint":"%s","environment":"%s"}\n' "$IDENTITY_ENDPOINT" "$GATEWAY_ENDPOINT" "$ENVIRONMENT" > deployment.json
 
 artifacts:
   files:
