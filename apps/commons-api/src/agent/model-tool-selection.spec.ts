@@ -200,4 +200,34 @@ describe('model tool selection', () => {
       expect(selectModelTools(fileTools, [], request).tools).toEqual([]);
     }
   });
+
+  it('keeps fact and title requests in the conversation', () => {
+    const request =
+      'For our blue cedar study, remember that the launch date is 12 November and the decision owner is Maya. Give this chat a concise title.';
+    const selected = selectModelTools(
+      [
+        tool('writeKnowledgeDocument', 'dynamic'),
+        tool('createSpace', 'platform'),
+        tool('createTextFile', 'files'),
+        tool('listProjectChats'),
+        tool('readProjectChat'),
+      ],
+      [tool('cli_run_command'), tool('cli_read_file')] as ChatCompletionTool[],
+      request,
+    );
+    expect(selected.tools.map((entry) => entry.function.name)).toEqual([
+      'listProjectChats',
+      'readProjectChat',
+    ]);
+    expect(selected.localTools.map((entry) => entry.function.name)).toEqual([
+      'cli_read_file',
+    ]);
+
+    const explicit = selectModelTools(
+      [tool('createSpace'), tool('writeKnowledgeDocument', 'dynamic')],
+      [],
+      'Create a Knowledge Space for the blue cedar study and give this chat a title.',
+    );
+    expect(explicit.tools).toHaveLength(2);
+  });
 });

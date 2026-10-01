@@ -68,6 +68,27 @@ const FILE_ARTIFACT_TOOLS = new Set([
   'createSpreadsheetFile',
 ]);
 
+function isConversationOnlyRequest(requestText: string): boolean {
+  const asksForMemory = /\b(?:remember|keep in mind|note that)\b/i.test(
+    requestText,
+  );
+  const asksForTitle =
+    /\b(?:chat|conversation)\b.{0,50}\b(?:title|name)\b|\b(?:title|name)\b.{0,50}\b(?:chat|conversation)\b/i.test(
+      requestText,
+    );
+  const explicitlyCreatesResource =
+    /\b(?:create|make|write|save|add|upload|publish|send|schedule|set up)\b.{0,100}\b(?:space|knowledge|document|file|task|goal|reminder|email|message|artifact)\b/i.test(
+      requestText,
+    ) || explicitlyRequestsFileArtifact(requestText);
+  return (asksForMemory || asksForTitle) && !explicitlyCreatesResource;
+}
+
+function isReadOnlyToolName(name: string): boolean {
+  return /^(?:get|list|read|search|find|query|inspect|preview|fetch|lookup|browse|webSearch)(?:[A-Z_]|$)|^cli_(?:read|search|list|browser_snapshot)(?:_|$)/.test(
+    name,
+  );
+}
+
 /** Keep caller-provided and local tools ahead of the broad platform catalog. */
 export function selectModelTools<T extends NamedTool>(
   available: T[],
@@ -80,10 +101,12 @@ export function selectModelTools<T extends NamedTool>(
       `The local tool catalog has ${local.length} tools; this model accepts at most ${limit}.`,
     );
   }
+  const conversationOnly = isConversationOnlyRequest(requestText);
   const seen = new Set<string>();
   const localTools = local.filter((tool) => {
     const name = tool.function.name;
-    if (!name || seen.has(name)) return false;
+    if (!name || seen.has(name) || (conversationOnly && !isReadOnlyToolName(name)))
+      return false;
     seen.add(name);
     return true;
   });
@@ -104,6 +127,7 @@ export function selectModelTools<T extends NamedTool>(
   const uniqueAvailable = available.filter((tool) => {
     const name = tool.function.name;
     if (!name || availableNames.has(name)) return false;
+    if (conversationOnly && !isReadOnlyToolName(name)) return false;
     // Built-in actions may be registered under different tool categories.
     // Gate their stable function names before ranking the model catalog.
     if (FILE_ARTIFACT_TOOLS.has(name) && !allowFileArtifact) return false;
