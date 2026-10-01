@@ -2,6 +2,7 @@ FROM public.ecr.aws/docker/library/node:22-alpine AS build
 WORKDIR /workspace
 RUN corepack enable && corepack prepare pnpm@9.15.3 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
 COPY apps/commons-api-gateway/package.json apps/commons-api-gateway/package.json
 RUN pnpm install --filter commons-api-gateway... --frozen-lockfile
 COPY apps/commons-api-gateway apps/commons-api-gateway

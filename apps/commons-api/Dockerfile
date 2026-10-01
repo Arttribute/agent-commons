@@ -15,6 +15,7 @@ RUN corepack enable && corepack prepare pnpm@9.15.3 --activate
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
 COPY apps/commons-api/package.json apps/commons-api/package.json
 COPY packages/commons-agent-core/package.json packages/commons-agent-core/package.json
 COPY vendor/sheetjs/xlsx-0.20.3.tgz vendor/sheetjs/xlsx-0.20.3.tgz
