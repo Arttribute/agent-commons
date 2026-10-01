@@ -3,6 +3,7 @@ import {
   forwardRef,
   Inject,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs';
@@ -1654,7 +1655,10 @@ export class CommonToolService {
     scheduledEnd?: Date;
     estimatedDuration?: number;
     metadata?: Record<string, any>;
-  }) {
+  }, toolMetadata?: ToolExecutionMetadata) {
+    const agentId = this.requireToolAgentId(undefined, toolMetadata);
+    const task = await this.tasks.get(props.taskId);
+    if (task.agentId !== agentId) throw new NotFoundException('Task not found');
     return await this.tasks.updateProgress(
       props.taskId,
       props.progress,

@@ -30,7 +30,20 @@ function relevance(tool: NamedTool, request: Set<string>): number {
 function explicitlyRequestsGoalCreation(requestText: string): boolean {
   const action = '\\b(?:create|add|set|save|track|start|define|make|record)\\b';
   const object = '\\b(?:goal|objective|milestone)s?\\b';
-  return new RegExp(`${action}.{0,80}${object}|${object}.{0,80}${action}`, 'is').test(requestText);
+  return new RegExp(
+    `${action}.{0,80}${object}|${object}.{0,80}${action}`,
+    'is',
+  ).test(requestText);
+}
+
+function explicitlyRequestsTaskCreation(requestText: string): boolean {
+  const action =
+    '\\b(?:create|add|set|save|track|start|define|make|record|schedule|assign)\\b';
+  const object = '\\b(?:task|to-?do|reminder|recurring job)s?\\b';
+  return new RegExp(
+    `${action}.{0,80}${object}|${object}.{0,80}${action}`,
+    'is',
+  ).test(requestText);
 }
 
 /** Keep caller-provided and local tools ahead of the broad platform catalog. */
@@ -41,7 +54,9 @@ export function selectModelTools<T extends NamedTool>(
   limit = MAX_MODEL_TOOLS,
 ): { tools: T[]; localTools: ChatCompletionTool[]; omitted: number } {
   if (local.length > limit) {
-    throw new Error(`The local tool catalog has ${local.length} tools; this model accepts at most ${limit}.`);
+    throw new Error(
+      `The local tool catalog has ${local.length} tools; this model accepts at most ${limit}.`,
+    );
   }
   const seen = new Set<string>();
   const localTools = local.filter((tool) => {
@@ -52,12 +67,35 @@ export function selectModelTools<T extends NamedTool>(
   });
   const availableNames = new Set(seen);
   const allowGoalCreation = explicitlyRequestsGoalCreation(requestText);
+  const allowTaskCreation = explicitlyRequestsTaskCreation(requestText);
+  const allowTaskProgress =
+    allowTaskCreation ||
+    /⫷⫷(?:TASK_DISPATCH|AUTOMATED_USER_TRIGGER)⫸⫸|\b(?:update|complete|finish|mark|resume)\b.{0,80}\btask\b/i.test(
+      requestText,
+    );
   const uniqueAvailable = available.filter((tool) => {
     const name = tool.function.name;
     if (!name || availableNames.has(name)) return false;
     // An informational request must not expose a state-changing goal tool.
     // Model instructions alone did not prevent a title request from invoking it.
-    if (tool.category === 'platform' && name === 'createGoal' && !allowGoalCreation) return false;
+    if (
+      tool.category === 'platform' &&
+      name === 'createGoal' &&
+      !allowGoalCreation
+    )
+      return false;
+    if (
+      tool.category === 'platform' &&
+      name === 'createTask' &&
+      !allowTaskCreation
+    )
+      return false;
+    if (
+      tool.category === 'platform' &&
+      name === 'updateTaskProgress' &&
+      !allowTaskProgress
+    )
+      return false;
     availableNames.add(name);
     return true;
   });
@@ -65,18 +103,24 @@ export function selectModelTools<T extends NamedTool>(
     return {
       tools: uniqueAvailable,
       localTools,
-      omitted: available.length + local.length - uniqueAvailable.length - localTools.length,
+      omitted:
+        available.length +
+        local.length -
+        uniqueAvailable.length -
+        localTools.length,
     };
   }
   const request = words(requestText);
   const candidates = uniqueAvailable
     .map((tool, index) => ({ tool, index, score: relevance(tool, request) }))
-    .sort((a, b) =>
-      // Account, agent, space, and MCP tools are configured for this agent;
-      // the platform catalog is shared by every agent and can be trimmed.
-      Number(b.tool.category !== 'platform') - Number(a.tool.category !== 'platform') ||
-      b.score - a.score ||
-      a.index - b.index,
+    .sort(
+      (a, b) =>
+        // Account, agent, space, and MCP tools are configured for this agent;
+        // the platform catalog is shared by every agent and can be trimmed.
+        Number(b.tool.category !== 'platform') -
+          Number(a.tool.category !== 'platform') ||
+        b.score - a.score ||
+        a.index - b.index,
     );
   const selected: T[] = [];
   for (const { tool } of candidates) {
@@ -88,6 +132,7 @@ export function selectModelTools<T extends NamedTool>(
   return {
     tools: selected,
     localTools,
-    omitted: available.length + local.length - selected.length - localTools.length,
+    omitted:
+      available.length + local.length - selected.length - localTools.length,
   };
 }

@@ -69,8 +69,8 @@ export function resolveCallerId(req: Request): string | undefined {
     (req.headers['x-owner-id'] as string) ??
     (req.headers['x-initiator'] as string);
   return principal?.principalType === 'service'
-    ? (delegatedCallerId ?? principal.principalId)
-    : (principal?.principalId ?? delegatedCallerId);
+    ? delegatedCallerId ?? principal.principalId
+    : principal?.principalId ?? delegatedCallerId;
 }
 
 /** Scopes that may mutate platform-owned (null-owner) resources. */
@@ -90,10 +90,9 @@ export class OwnerGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (!this.enforced) return true;
 
-    const opts = this.reflector.getAllAndOverride<OwnerResourceOptions | undefined>(
-      OWNER_RESOURCE_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const opts = this.reflector.getAllAndOverride<
+      OwnerResourceOptions | undefined
+    >(OWNER_RESOURCE_KEY, [context.getHandler(), context.getClass()]);
     if (!opts) return true; // No @OwnerOnly decorator — pass through
 
     const req = context.switchToHttp().getRequest<Request>();
@@ -107,7 +106,9 @@ export class OwnerGuard implements CanActivate {
     const callerId = resolveCallerId(req);
 
     if (!callerId) {
-      throw new ForbiddenException('Owner identity required (x-owner-id or x-initiator header missing)');
+      throw new ForbiddenException(
+        'Owner identity required (x-owner-id or x-initiator header missing)',
+      );
     }
 
     // Resolve resource ID from route params
@@ -222,8 +223,17 @@ export class OwnerGuard implements CanActivate {
           where: (t) => eq(t.taskId, id),
         });
         if (!row) return null;
+        const agent = await this.db.query.agent.findFirst({
+          where: (a) => eq(a.agentId, row.agentId),
+          columns: { ownerUserId: true, workspaceId: true, owner: true },
+        });
         return {
-          legacyOwner: (row as any).owner ?? (row as any).createdBy,
+          ownerUserId: agent?.ownerUserId,
+          workspaceId: agent?.workspaceId,
+          legacyOwner:
+            row.createdByType === 'user'
+              ? row.createdBy
+              : agent?.owner ?? row.createdBy,
         };
       }
       case 'workflow': {

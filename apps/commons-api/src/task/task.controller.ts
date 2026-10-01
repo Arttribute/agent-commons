@@ -9,6 +9,7 @@ import {
   Param,
   Query,
   BadRequestException,
+  NotFoundException,
   Sse,
   Req,
   UseGuards,
@@ -20,7 +21,7 @@ import { TaskService, TaskContext } from './task.service';
 import { TaskExecutionService } from './task-execution.service';
 import { DatabaseService } from '../modules/database';
 import * as schema from '../../models/schema';
-import { OwnerGuard, OwnerOnly } from '~/modules/auth';
+import { OwnerGuard, OwnerOnly, resolveCallerId } from '~/modules/auth';
 
 @Controller({ version: '1', path: 'tasks' })
 export class TaskController {
@@ -29,6 +30,54 @@ export class TaskController {
     private readonly taskExecution: TaskExecutionService,
     private readonly db: DatabaseService,
   ) {}
+
+  private scopedCaller(req: Request): {
+    userId?: string;
+    agentId?: string;
+    workspaceId?: string;
+  } {
+    const principal = (req as any).principal;
+    if (principal?.principalType === 'user') {
+      return {
+        userId: principal.principalId,
+        workspaceId: principal.workspaceId,
+      };
+    }
+    if (principal?.principalType === 'agent')
+      return { agentId: principal.principalId };
+    if (
+      principal?.principalType === 'service' &&
+      (req.headers['x-owner-id'] || req.headers['x-initiator'])
+    ) {
+      return { userId: resolveCallerId(req) };
+    }
+    return {};
+  }
+
+  private async assertAgentAccess(agentId: string, req: Request) {
+    const caller = this.scopedCaller(req);
+    if (!caller.userId && !caller.agentId) return;
+    if (caller.agentId) {
+      if (caller.agentId !== agentId)
+        throw new NotFoundException('Agent not found');
+      return;
+    }
+    const agent = await this.db.query.agent.findFirst({
+      where: (a) => eq(a.agentId, agentId),
+      columns: { ownerUserId: true, owner: true, workspaceId: true },
+    });
+    if (
+      !agent ||
+      !(
+        [agent.ownerUserId, agent.owner].some(
+          (value) => value?.toLowerCase() === caller.userId?.toLowerCase(),
+        ) ||
+        (caller.workspaceId &&
+          agent.workspaceId?.toLowerCase() === caller.workspaceId.toLowerCase())
+      )
+    )
+      throw new NotFoundException('Agent not found');
+  }
 
   /**
    * Create a new task (with enhanced features and workflow support)
@@ -61,6 +110,24 @@ export class TaskController {
     },
     @Req() req: Request,
   ) {
+    if (!body.agentId || !body.sessionId) {
+      throw new BadRequestException('agentId and sessionId are required');
+    }
+    await this.assertAgentAccess(body.agentId, req);
+    const session = await this.db.query.session.findFirst({
+      where: (s) => eq(s.sessionId, body.sessionId),
+      columns: { agentId: true, initiator: true },
+    });
+    if (!session || session.agentId !== body.agentId) {
+      throw new NotFoundException('Session not found');
+    }
+    const caller = this.scopedCaller(req);
+    if (
+      caller.userId &&
+      session.initiator?.toLowerCase() !== caller.userId.toLowerCase()
+    ) {
+      throw new NotFoundException('Session not found');
+    }
     const principal = (req as any).principal;
     const task = await this.taskExecution.createTask({
       ...body,
@@ -88,6 +155,7 @@ export class TaskController {
     @Req() req?: Request,
   ) {
     const principal = (req as any)?.principal;
+    const caller = req ? this.scopedCaller(req) : {};
     if (!sessionId && !agentId && principal?.principalType === 'user') {
       const tasks = await this.taskExecution.listTasksByOwner(
         principal.principalId,
@@ -97,16 +165,38 @@ export class TaskController {
     }
 
     if (sessionId) {
+      const session = await this.db.query.session.findFirst({
+        where: (s) => eq(s.sessionId, sessionId),
+        columns: { agentId: true, initiator: true },
+      });
+      if (!session) throw new NotFoundException('Session not found');
+      if (caller.userId?.toLowerCase() !== session.initiator?.toLowerCase()) {
+        await this.assertAgentAccess(session.agentId, req!);
+      }
+      if (caller.agentId && caller.agentId !== session.agentId)
+        throw new NotFoundException('Session not found');
       const tasks = await this.taskExecution.listSessionTasks(sessionId);
       return { data: tasks };
     }
 
     if (agentId) {
+      await this.assertAgentAccess(agentId, req!);
       const tasks = await this.taskExecution.listAgentTasks(agentId);
       return { data: tasks };
     }
 
     if (ownerId && ownerType) {
+      if (
+        caller.userId &&
+        (ownerType !== 'user' ||
+          ownerId.toLowerCase() !== caller.userId.toLowerCase())
+      )
+        throw new NotFoundException('Tasks not found');
+      if (
+        caller.agentId &&
+        (ownerType !== 'agent' || ownerId !== caller.agentId)
+      )
+        throw new NotFoundException('Tasks not found');
       const tasks = await this.taskExecution.listTasksByOwner(
         ownerId,
         ownerType,
@@ -124,6 +214,8 @@ export class TaskController {
    * GET /v1/tasks/:id
    */
   @Get(':id')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'task', idParam: 'id' })
   async getTask(@Param('id') taskId: string) {
     const task = await this.tasks.get(taskId);
     return { data: task };
@@ -224,6 +316,8 @@ export class TaskController {
    * POST /v1/tasks/:id/execute
    */
   @Post(':id/execute')
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'task', idParam: 'id' })
   async executeTask(@Param('id') taskId: string) {
     const result = await this.taskExecution.executeTask(taskId);
     return {
@@ -244,39 +338,85 @@ export class TaskController {
    */
   @Get(':id/stream')
   @Sse(':id/stream')
-  streamTask(@Param('id') taskId: string, @Req() req: Request): Observable<MessageEvent> {
+  @UseGuards(OwnerGuard)
+  @OwnerOnly({ table: 'task', idParam: 'id' })
+  streamTask(
+    @Param('id') taskId: string,
+    @Req() req: Request,
+  ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       let lastStatus = '';
       let closed = false;
 
       const keepalive = setInterval(() => {
-        if (!closed) subscriber.next({ data: JSON.stringify({ type: 'keepalive' }) } as any);
+        if (!closed)
+          subscriber.next({
+            data: JSON.stringify({ type: 'keepalive' }),
+          } as any);
       }, 5000);
 
       const poll = setInterval(async () => {
         if (closed) return;
         try {
-          const task = await this.db.query.task.findFirst({ where: (t: any) => eq(t.taskId, taskId) });
-          if (!task) { subscriber.next({ data: JSON.stringify({ type: 'error', message: 'Task not found' }) } as any); subscriber.complete(); return; }
+          const task = await this.db.query.task.findFirst({
+            where: (t: any) => eq(t.taskId, taskId),
+          });
+          if (!task) {
+            subscriber.next({
+              data: JSON.stringify({
+                type: 'error',
+                message: 'Task not found',
+              }),
+            } as any);
+            subscriber.complete();
+            return;
+          }
           if (task.status !== lastStatus) {
             lastStatus = task.status;
-            subscriber.next({ data: JSON.stringify({ type: 'status', status: task.status, progress: task.progress }) } as any);
+            subscriber.next({
+              data: JSON.stringify({
+                type: 'status',
+                status: task.status,
+                progress: task.progress,
+              }),
+            } as any);
           }
           if (task.status === 'completed') {
-            subscriber.next({ data: JSON.stringify({ type: 'completed', resultContent: task.resultContent, summary: task.summary }) } as any);
+            subscriber.next({
+              data: JSON.stringify({
+                type: 'completed',
+                resultContent: task.resultContent,
+                summary: task.summary,
+              }),
+            } as any);
             subscriber.complete();
           } else if (task.status === 'failed' || task.status === 'cancelled') {
-            subscriber.next({ data: JSON.stringify({ type: task.status, errorMessage: task.errorMessage }) } as any);
+            subscriber.next({
+              data: JSON.stringify({
+                type: task.status,
+                errorMessage: task.errorMessage,
+              }),
+            } as any);
             subscriber.complete();
           }
         } catch (err: any) {
-          subscriber.next({ data: JSON.stringify({ type: 'error', message: err.message }) } as any);
+          subscriber.next({
+            data: JSON.stringify({ type: 'error', message: err.message }),
+          } as any);
           subscriber.complete();
         }
       }, 750);
 
-      req.on('close', () => { closed = true; clearInterval(keepalive); clearInterval(poll); });
-      return () => { closed = true; clearInterval(keepalive); clearInterval(poll); };
+      req.on('close', () => {
+        closed = true;
+        clearInterval(keepalive);
+        clearInterval(poll);
+      });
+      return () => {
+        closed = true;
+        clearInterval(keepalive);
+        clearInterval(poll);
+      };
     });
   }
 }
