@@ -23,4 +23,30 @@ describe('CommonToolService library discovery', () => {
       limit: 12,
     });
   });
+
+  it('uses the authenticated agent and session for a file search when the model omits them', async () => {
+    const searchFileForAgent = jest.fn().mockResolvedValue({ matches: [] });
+    const service = Object.create(CommonToolService.prototype) as any;
+    service.files = { searchFileForAgent };
+
+    await service.searchUploadedFile(
+      { fileId: 'file-1', query: 'conclusion' },
+      { agentId: 'agent-1', ownerId: 'user-1', sessionId: 'session-1' },
+    );
+
+    expect(searchFileForAgent).toHaveBeenCalledWith({
+      fileId: 'file-1', query: 'conclusion', maxResults: undefined,
+      agentId: 'agent-1', ownerId: 'user-1', sessionId: 'session-1',
+    });
+  });
+
+  it('rejects an agent ID supplied by the model that conflicts with the authenticated agent', async () => {
+    const service = Object.create(CommonToolService.prototype) as any;
+    service.files = { readFileForAgent: jest.fn() };
+    await expect(service.readUploadedFile(
+      { fileId: 'file-1', agentId: 'another-agent' },
+      { agentId: 'agent-1', ownerId: 'user-1' },
+    )).rejects.toThrow('agentId must match the authenticated calling agent');
+    expect(service.files.readFileForAgent).not.toHaveBeenCalled();
+  });
 });

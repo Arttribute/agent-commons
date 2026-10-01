@@ -85,6 +85,7 @@ import { ProvenanceService, ProvenanceRunOptions } from '~/provenance';
 import { durableRole, restoreSessionMessages } from '~/session/session-history';
 import { filterPlatformToolsForAgent } from './copilot-tool-policy';
 import { selectModelTools } from './model-tool-selection';
+import { MAX_CONSECUTIVE_TOOL_SCHEMA_FAILURES, nextToolSchemaFailureCount } from './tool-schema-retry';
 import { AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
 
 const got = import('got');
@@ -2136,9 +2137,17 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           const toolNode = new ToolNode(toolRunners);
           const collectedToolCalls = executedCalls;
 
-          const callModel = async (s: typeof MessagesAnnotation.State) => ({
-            messages: await llmWithTools.invoke(s.messages),
-          });
+          let consecutiveToolSchemaFailures = 0;
+          const callModel = async (s: typeof MessagesAnnotation.State) => {
+            consecutiveToolSchemaFailures = nextToolSchemaFailureCount(
+              consecutiveToolSchemaFailures,
+              s.messages.at(-1),
+            );
+            if (consecutiveToolSchemaFailures >= MAX_CONSECUTIVE_TOOL_SCHEMA_FAILURES) {
+              throw new Error('The agent repeatedly sent invalid tool input. This run stopped before further model requests.');
+            }
+            return { messages: await llmWithTools.invoke(s.messages) };
+          };
 
           const shouldCont = (s: typeof MessagesAnnotation.State) => {
             const last = s.messages.at(-1);

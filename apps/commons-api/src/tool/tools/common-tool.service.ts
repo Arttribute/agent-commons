@@ -495,7 +495,8 @@ export interface CommonTool {
     includeImageUrls?: boolean;
     includeDownloadUrl?: boolean;
     pageNumber?: number;
-    agentId: string;
+    /** Supplied by the server when the model omits it. */
+    agentId?: string;
     sessionId?: string;
   }): Promise<{
     fileId: string;
@@ -531,7 +532,8 @@ export interface CommonTool {
     fileId: string;
     query: string;
     maxResults?: number;
-    agentId: string;
+    /** Supplied by the server when the model omits it. */
+    agentId?: string;
     sessionId?: string;
   }): Promise<{
     fileId: string;
@@ -1934,15 +1936,15 @@ export class CommonToolService {
       includeImageUrls?: boolean;
       includeDownloadUrl?: boolean;
       pageNumber?: number;
-      agentId: string;
+      agentId?: string;
       sessionId?: string;
     },
     metadata?: ToolExecutionMetadata,
   ) {
     return this.files.readFileForAgent({
       fileId: props.fileId,
-      agentId: props.agentId,
-      sessionId: props.sessionId,
+      agentId: this.requireToolAgentId(props.agentId, metadata),
+      sessionId: props.sessionId ?? metadata?.sessionId,
       ownerId: metadata?.ownerId,
       offset: props.offset,
       maxChars: props.maxChars,
@@ -1953,15 +1955,15 @@ export class CommonToolService {
   }
 
   async searchUploadedFile(
-    props: { fileId: string; query: string; maxResults?: number; agentId: string; sessionId?: string },
+    props: { fileId: string; query: string; maxResults?: number; agentId?: string; sessionId?: string },
     metadata?: ToolExecutionMetadata,
   ) {
     return this.files.searchFileForAgent({
       fileId: props.fileId,
       query: props.query,
       maxResults: props.maxResults,
-      agentId: props.agentId,
-      sessionId: props.sessionId,
+      agentId: this.requireToolAgentId(props.agentId, metadata),
+      sessionId: props.sessionId ?? metadata?.sessionId,
       ownerId: metadata?.ownerId,
     });
   }
