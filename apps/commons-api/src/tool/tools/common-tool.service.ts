@@ -466,6 +466,27 @@ export interface CommonTool {
   }): Promise<Record<string, unknown>>;
 
   /**
+   * Record a Library file you created as the next version of a canvas
+   * artifact, so it appears in the artifact's history and becomes current.
+   * Use it after writing a revised document, deck, sheet, PDF, or text file.
+   */
+  addCanvasVersion(props: {
+    projectId: string;
+    fileId: string;
+    /** One sentence on what changed, shown in the version history. */
+    summary?: string;
+    agentId: string;
+  }): Promise<Record<string, unknown>>;
+
+  /** Mark canvas notes resolved after addressing them, or reopen them. */
+  updateCanvasNotes(props: {
+    projectId: string;
+    annotationIds: string[];
+    status: 'open' | 'resolved';
+    agentId: string;
+  }): Promise<Record<string, unknown>>;
+
+  /**
    * Upload a file directly to IPFS via Pinata.
    */
   uploadFileToIPFS(props: {
@@ -1870,6 +1891,59 @@ export class CommonToolService {
         startMs: props.startMs,
         endMs: props.endMs,
       },
+    );
+  }
+
+  async addCanvasVersion(
+    props: {
+      projectId: string;
+      fileId: string;
+      summary?: string;
+      agentId: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    const result = await this.canvas.addVersion(
+      props.projectId,
+      {
+        principalId: owner.principalId,
+        principalType: 'user',
+        workspaceId: owner.workspaceId,
+        actorId: agentId,
+      },
+      { itemId: props.fileId, summary: props.summary },
+    );
+    return {
+      projectId: props.projectId,
+      fileId: props.fileId,
+      revisionId: result.revision?.revisionId,
+      created: result.created,
+    };
+  }
+
+  async updateCanvasNotes(
+    props: {
+      projectId: string;
+      annotationIds: string[];
+      status: 'open' | 'resolved';
+      agentId: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    return this.canvas.setNotesStatus(
+      props.projectId,
+      {
+        principalId: owner.principalId,
+        principalType: 'user',
+        workspaceId: owner.workspaceId,
+        actorId: agentId,
+      },
+      Array.isArray(props.annotationIds) ? props.annotationIds : [],
+      props.status,
     );
   }
 

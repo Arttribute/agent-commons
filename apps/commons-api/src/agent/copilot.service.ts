@@ -1466,7 +1466,7 @@ export class CopilotService {
           name: value.name,
           description: value.description,
           activeItemId: value.activeItemId,
-          studioUrl: `/studio/canvas/${encodeURIComponent(value.activeItemId)}`,
+          studioUrl: `/library/${encodeURIComponent(value.activeItemId)}`,
         };
       }
     }
@@ -1477,7 +1477,10 @@ export class CopilotService {
     }
     return {
       ...value,
-      studioUrl: resourceStudioUrl(resourceType, resourceId),
+      studioUrl:
+        typeof value.studioUrl === 'string'
+          ? value.studioUrl
+          : resourceStudioUrl(resourceType, resourceId),
     };
   }
 

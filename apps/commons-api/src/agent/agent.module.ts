@@ -17,6 +17,7 @@ import { UsageModule } from '~/modules/usage';
 import { MemoryModule } from '~/memory/memory.module';
 import { WalletModule } from '~/wallet/wallet.module';
 import { FilesModule } from '~/files';
+import { MediaModule } from '~/media/media.module';
 import { ComputerModule } from '~/computer';
 import { PinataModule } from '~/pinata/pinata.module';
 import { SkillModule } from '~/skill/skill.module';
@@ -44,6 +45,7 @@ import { CopilotService } from './copilot.service';
     MemoryModule,
     WalletModule,
     FilesModule,
+    MediaModule,
     ComputerModule,
     PinataModule,
     SkillModule,

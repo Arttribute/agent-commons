@@ -1,4 +1,6 @@
 import * as schema from '#/models/schema';
+import { CanvasService } from '~/media/canvas.service';
+import { canvasContextRequest } from '~/media/canvas-context';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import {
@@ -241,6 +243,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     private copilotService: CopilotService,
     private uiPlugins: UiPluginService,
     @Optional() private projects?: ProjectService,
+    @Optional() private canvas?: CanvasService,
   ) {}
 
   /* ─────────────────────────  INIT  ───────────────────────── */
@@ -521,6 +524,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       - **listMediaModels** — inspect exact creative model keys, provider availability, supported controls, and price basis before choosing a model.
       - **getCanvasProject** — load a Canvas project's active artifact, revision history, annotations, and generation state before analysing or changing it. Read the active artifact with readUploadedFile when its actual media contents are needed.
       - **annotateCanvas** — add precise normalized spatial notes or millisecond time-range notes that users and other agents can inspect and drag into chat.
+      - **addCanvasVersion** — after writing a revised document, deck, sheet, PDF, or text file for an artifact open in the canvas, record the new fileId as its next version.
+      - **updateCanvasNotes** — mark canvas notes resolved once you have addressed them.
       - **generateMedia** — generate or transform images, video, speech, and music with a listed creative modelKey. Attach input Library item IDs for edits, and pass a Canvas project ID to create a recoverable revision with provenance. Media usage is pre-authorized in Commons credits and settled once from actual provider usage when available.
       - **uploadFileToIPFS** — explicit-only public IPFS publishing. Never call this for ordinary uploads, generated files, or library storage unless the user specifically asks for IPFS.
 
@@ -2384,6 +2389,21 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                       `## Commons Copilot context\nLive context lookup failed: ${error.message}`,
                   )
               : '';
+          const canvasRequest = canvasContextRequest(props.uiContext);
+          const canvasContext = canvasRequest
+            ? await this.canvas
+                ?.buildAgentContext(canvasRequest, {
+                  principalId: initiator,
+                  principalType: 'user',
+                  workspaceId: null,
+                })
+                .catch((error) => {
+                  this.logger.warn(
+                    `Canvas context unavailable: ${error.message}`,
+                  );
+                  return null;
+                })
+            : null;
           const projectContext = await this.projects
             ?.buildRunContext(
               (await this.session
@@ -2452,6 +2472,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             projectContext?.block,
             knowledgeSelectionBlock,
             copilotContext,
+            canvasContext,
             props.cliContext,
             computerSelectionBlock,
             computerPreparationBlock,
