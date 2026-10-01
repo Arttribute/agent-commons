@@ -52,6 +52,12 @@ jobs:
       - run: pnpm --filter @agent-commons/cli typecheck
       - run: pnpm --filter commons-desktop typecheck
       - run: pnpm --filter commons-desktop test
+      - name: Verify local image runtime on Windows and Linux
+        if: runner.os == 'Windows' || runner.os == 'Linux'
+        timeout-minutes: 8
+        run: |
+          pnpm --filter commons-desktop exec esbuild src/local-image.ts --bundle --platform=node --format=cjs --outfile=.image-smoke/local-image.cjs
+          node apps/commons-desktop/scripts/smoke-image-runtime.mjs
       - run: pnpm --filter commons-desktop build:commons-app
       - run: pnpm --filter commons-desktop build
       - name: Smoke test unified desktop (Linux)
