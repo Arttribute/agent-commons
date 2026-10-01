@@ -106,7 +106,6 @@ export class WebCaptureService extends EventEmitter {
       headless: (process.env.PUPPETEER_HEADLESS_MODE as any) || 'new',
       args: [
         '--disable-dev-shm-usage',
-        '--disable-web-security',
         '--disable-extensions',
         '--disable-gpu',
         '--disable-sync',
@@ -117,7 +116,6 @@ export class WebCaptureService extends EventEmitter {
         '--password-store=basic',
         '--use-mock-keychain',
         '--autoplay-policy=no-user-gesture-required',
-        '--allow-running-insecure-content',
         '--force-device-scale-factor=1',
         '--enable-webgl',
         '--use-gl=swiftshader',
@@ -143,7 +141,6 @@ export class WebCaptureService extends EventEmitter {
       handleSIGINT: false,
       handleSIGTERM: false,
       handleSIGHUP: false,
-      ignoreHTTPSErrors: true, // Add this for better compatibility
     };
 
     // Ensure proper flags for Cloud Run/rootless environments
