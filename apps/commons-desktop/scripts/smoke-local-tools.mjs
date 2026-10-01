@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -15,6 +16,12 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
   writeFileSync(join(workspace, "launch.md"), "Mango launch owner: Amina. Launch code: mango-731.");
   writeFileSync(join(workspace, "app", "page.tsx"), "export default function Page() { return <main>Shoes for everyone</main>; }");
   writeFileSync(join(workspace, "long-report.txt"), `${"Background evidence without conclusions. ".repeat(2_000)}\nFinal recommendation: Keep an offline backup of the research notes.`);
+  const gitRemote = join(root, "smoke-remote.git");
+  execFileSync("git", ["init", "--bare", "--initial-branch=main", gitRemote]);
+  execFileSync("git", ["init", "--initial-branch=main", workspace]);
+  execFileSync("git", ["config", "user.name", "Commons Smoke"], { cwd: workspace });
+  execFileSync("git", ["config", "user.email", "commons-smoke@example.invalid"], { cwd: workspace });
+  execFileSync("git", ["remote", "add", "origin", gitRemote], { cwd: workspace });
   const failures = [];
   let mcpReadCalls = 0;
   let mcpWriteCalls = 0;
@@ -84,6 +91,28 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
       } else if (prompt === "Check git command") {
         if (last.role === "user") answer = call("cli_run_command", { command: "git", args: ["--version"] });
         else { assert.match(last.content, /git version/i); answer.content = "Git works in the desktop app."; }
+      } else if (prompt === "Publish the smoke repository") {
+        const commandResults = messages.filter((message) => message.role === "tool" && message.tool_name === "cli_run_command");
+        switch (commandResults.length) {
+          case 0:
+            answer = call("cli_run_command", { command: "git", args: ["status", "--short", "--", "launch.md"] });
+            break;
+          case 1:
+            assert.match(last.content, /\?\? launch\.md/);
+            answer = call("cli_run_command", { command: "git", args: ["add", "--", "launch.md"] });
+            break;
+          case 2:
+            assert.equal(last.content, "(no output)");
+            answer = call("cli_run_command", { command: "git", args: ["commit", "-m", "Add launch note"] });
+            break;
+          case 3:
+            assert.match(last.content, /Add launch note/);
+            answer = call("cli_run_command", { command: "git", args: ["push", "origin", "HEAD:refs/heads/main"] });
+            break;
+          default:
+            assert.match(last.content, /HEAD -> main/);
+            answer.content = "The launch note was committed and pushed.";
+        }
       } else if (prompt === "Find the report recommendation") {
         if (last.role === "user") {
           assert.ok(body.tools.some((tool) => tool.function.name === "cli_search_file"));
@@ -191,6 +220,7 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
         const projectPage = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Read the project page' });
         const absolutePage = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Read the project page by absolute path' });
         const git = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Check git command' });
+        const gitPush = await bridge.sendMessage({ agentId, workspaceRoot: ${JSON.stringify(workspace)}, prompt: 'Publish the smoke repository' });
         const searched = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Find the report recommendation' });
         const upload = await bridge.apiRequest({ path: '/api/files/upload', method: 'POST', body: { files: [{ name: 'attached-report.txt', mimeType: 'text/plain', bytes: new TextEncoder().encode('Background evidence without conclusions. '.repeat(2_000) + '\\nFinal recommendation: Keep an offline backup of the research notes.') }] } });
         if (upload.status !== 200 || !upload.body?.data?.[0]?.itemId) throw new Error('Could not upload a large Local Library fixture');
@@ -221,10 +251,11 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
         const revoked = await bridge.sendMessage({ agentId, conversationId: first.conversation.id, prompt: 'Revoke search before approval', webSearchEnabled: true });
         await bridge.updateSettings({ webSearchUrl: ${JSON.stringify(`${url}/other`)} });
         if ((await bridge.getState()).settings.webSearchApiKey) throw new Error('Search API key was carried to a different endpoint');
-        return { first: first.response, follow: follow.response, projectPage: projectPage.response, absolutePage: absolutePage.response, git: git.response, searched: searched.response, attached: attached.response, failure: failure.response, process: process.response, stopped: stopped.response, steered: steered.response, knowledge: knowledge.response, mcp: mcp.response, searchOff: searchOff.response, searchOn: searchOn.response, revoked: revoked.response };
+        return { first: first.response, follow: follow.response, projectPage: projectPage.response, absolutePage: absolutePage.response, git: git.response, gitPush: gitPush.response, searched: searched.response, attached: attached.response, failure: failure.response, process: process.response, stopped: stopped.response, steered: steered.response, knowledge: knowledge.response, mcp: mcp.response, searchOff: searchOff.response, searchOn: searchOn.response, revoked: revoked.response };
       } finally { unsubscribe(); await bridge.updateSettings({ ...originalSettings, webSearchUrl: originalSettings.webSearchUrl ?? '', webSearchApiKey: originalSettings.webSearchApiKey ?? '', mcpServers: originalSettings.mcpServers ?? [] }); }
     })()`, 30_000);
-    assert.deepEqual(result, { first: "Command returned mango-731.", follow: "The previous output was mango-731.", projectPage: "The project page sells shoes.", absolutePage: "The absolute workspace path works.", git: "Git works in the desktop app.", searched: "The report recommends an offline backup.", attached: "The attached report recommends an offline backup.", failure: "Command failed with failure-731.", process: "Process completed with process-731.", stopped: "Process stopped cleanly.", steered: "Focused on mango.", knowledge: "Mango launch owner: Amina.", mcp: "MCP read returned mango-731.", searchOff: "Web search is off.", searchOn: "Web search found mango evidence.", revoked: "Web search stopped before sending." });
+    assert.deepEqual(result, { first: "Command returned mango-731.", follow: "The previous output was mango-731.", projectPage: "The project page sells shoes.", absolutePage: "The absolute workspace path works.", git: "Git works in the desktop app.", gitPush: "The launch note was committed and pushed.", searched: "The report recommends an offline backup.", attached: "The attached report recommends an offline backup.", failure: "Command failed with failure-731.", process: "Process completed with process-731.", stopped: "Process stopped cleanly.", steered: "Focused on mango.", knowledge: "Mango launch owner: Amina.", mcp: "MCP read returned mango-731.", searchOff: "Web search is off.", searchOn: "Web search found mango evidence.", revoked: "Web search stopped before sending." });
+    assert.match(execFileSync("git", ["--git-dir", gitRemote, "show", "main:launch.md"], { encoding: "utf8" }), /Mango launch owner: Amina/);
     assert.equal(mcpReadCalls, 1);
     assert.equal(mcpWriteCalls, 0);
     assert.equal(webSearchCalls, 1);
