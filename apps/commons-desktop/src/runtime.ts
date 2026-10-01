@@ -830,6 +830,13 @@ export class PrivateLocalRuntime {
       await this.prepareLocalModel();
       available = await this.listModels();
     }
+    const preferredModel = agent.model?.trim() || state.settings.defaultModel;
+    const isCopilot = agent.id === "local-copilot" || agent.id === "commons-local" || agent.name === "Commons Copilot";
+    if (!directNameRequest && isCopilot && preferredModel === state.settings.defaultModel &&
+        !available.includes(preferredModel) && state.settings.ollamaUrl === "http://127.0.0.1:11434") {
+      await this.downloadModel(preferredModel);
+      available = await this.listModels();
+    }
     if (!available.length && !directNameRequest) throw new Error("No model is available at the configured local model server. Check the Local model server address in Settings.");
     const attachments = (input.attachmentIds ?? []).slice(0, 20).map((id) => {
       const item = state.library?.find((entry) => entry.id === id);
@@ -838,13 +845,16 @@ export class PrivateLocalRuntime {
     });
     if (input.projectId && !state.projects?.some((project) => project.id === input.projectId)) throw new Error("Local project not found");
     const explicitModel = agent.model?.trim();
-    const isCopilot = agent.id === "local-copilot" || agent.id === "commons-local" || agent.name === "Commons Copilot";
-    if (explicitModel && !available.includes(explicitModel) && !isCopilot && !directNameRequest) {
+    if (explicitModel && !available.includes(explicitModel) && !directNameRequest) {
       throw new Error(`The model ${explicitModel} is not installed on this computer. Choose an installed model in Private settings.`);
     }
-    const selectedModel = explicitModel && available.includes(explicitModel)
-      ? explicitModel
-      : available.includes(state.settings.defaultModel) ? state.settings.defaultModel : available[0] ?? state.settings.defaultModel;
+    const selectedModel = explicitModel || state.settings.defaultModel;
+    if (!directNameRequest && !available.includes(selectedModel)) {
+      throw new Error(`The model ${selectedModel} is not installed on this computer. Choose or download it in Private settings.`);
+    }
+    if (!directNameRequest && state.settings.ollamaUrl === "http://127.0.0.1:11434") {
+      await this.modelManager.verifyInstalledModel(selectedModel);
+    }
     if (state.settings.defaultModel !== selectedModel || (isCopilot && agent.model !== selectedModel)) {
       this.change((draft) => {
         draft.settings.defaultModel = selectedModel;

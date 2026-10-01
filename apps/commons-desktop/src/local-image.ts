@@ -5,7 +5,7 @@ import { join, basename, extname } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { spawn } from "node:child_process";
-import extract from "extract-zip";
+import { extractVerifiedRuntimeZip } from "./verified-runtime-zip";
 
 const RELEASE = "master-929-3f8527a";
 const RUNTIME_ASSETS: Record<string, { name: string; sha256: string }> = {
@@ -129,7 +129,7 @@ export class LocalImageManager {
         try {
           await downloadVerified(`https://github.com/leejet/stable-diffusion.cpp/releases/download/${RELEASE}/${asset.name}`, zip, asset.sha256,
             (progress) => this.update({ state: "downloading", label: "Downloading local image runtime", progress: progress * 0.1 }), 500_000_000);
-          await extract(zip, { dir: temp });
+          await extractVerifiedRuntimeZip(zip, temp);
           if (!existsSync(join(temp, basename(this.executable())))) throw new Error("Image runtime archive is incomplete.");
           rmSync(this.runtime, { recursive: true, force: true });
           renameSync(temp, this.runtime);

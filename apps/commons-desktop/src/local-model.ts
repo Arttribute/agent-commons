@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import type { LocalModelStatus } from "@agent-commons/desktop-contract";
+import { assertReviewedModelDigest } from "./reviewed-model-digests";
 
 const execFileAsync = promisify(execFile);
 const OLLAMA_VERSION = "0.34.3";
@@ -94,6 +95,11 @@ export class LocalModelManager {
     return { ...this.status };
   }
 
+  async verifyInstalledModel(model: string) {
+    const installed = (await this.listModels()).find((candidate) => candidate.name === model || candidate.name === `${model}:latest`);
+    assertReviewedModelDigest(model, installed?.digest);
+  }
+
   prepare() {
     this.preparation ??= this.prepareOnce().catch((error) => {
       const rawMessage = error instanceof Error ? error.message : "Local AI could not be prepared";
@@ -125,13 +131,17 @@ export class LocalModelManager {
       await this.startServer(executable);
     }
 
-    const models = await this.listModels();
-    if (!models.length) {
+    let models = await this.listModels();
+    let selected = models.find((candidate) => candidate.name === this.model || candidate.name === `${this.model}:latest`);
+    if (!selected) {
       await this.pullModel();
-      if (!(await this.listModels()).some((candidate) => candidate === this.model || candidate === `${this.model}:latest`)) {
+      models = await this.listModels();
+      selected = models.find((candidate) => candidate.name === this.model || candidate.name === `${this.model}:latest`);
+      if (!selected) {
         throw new Error("The local model download did not complete. Try again from Local settings.");
       }
     }
+    assertReviewedModelDigest(this.model, selected.digest);
     this.update({ state: "ready", label: "Local AI ready", progress: 1 });
   }
 
@@ -147,8 +157,10 @@ export class LocalModelManager {
   private async listModels() {
     const response = await fetch(`${OLLAMA_ORIGIN}/api/tags`, { signal: AbortSignal.timeout(5_000) });
     if (!response.ok) throw new Error(`Local AI returned ${response.status}`);
-    const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string }> };
-    return (payload.models ?? []).map((item) => item.name ?? item.model ?? "").filter(Boolean);
+    const payload = (await response.json()) as { models?: Array<{ name?: string; model?: string; digest?: string }> };
+    return (payload.models ?? [])
+      .map((item) => ({ name: item.name ?? item.model ?? "", digest: item.digest }))
+      .filter((item) => Boolean(item.name));
   }
 
   private findInstalledRuntime() {
