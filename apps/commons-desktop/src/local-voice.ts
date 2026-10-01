@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import speakerVectors from "./speaker-vectors.json";
+import { SPEECHT5_REVISION, SPEECHT5_VOCODER_REVISION, SPEECHT5_WEIGHT_FILES } from "./local-speech-model-revisions";
+import { assertSpeechDownloadFits, repairSpeechArtifacts, verifySpeechArtifacts } from "./local-speech-model-cache";
 
 export const LOCAL_VOICES = [
   { id: "female", label: "SpeechT5 · female" },
@@ -78,12 +80,10 @@ export class LocalVoiceManager {
   private kokoro?: Promise<Kokoro>;
   private status: VoiceModelStatus = { state: "idle", label: "Voice model downloads when first used" };
   constructor(private readonly userData: string, private readonly onStatus: (status: VoiceModelStatus) => void) {
-    const cache = join(userData, "private-local", "voice-models", "Xenova");
-    if (existsSync(join(cache, "speecht5_tts", "onnx", "encoder_model_quantized.onnx")) &&
-        existsSync(join(cache, "speecht5_tts", "onnx", "decoder_model_merged_quantized.onnx")) &&
-        existsSync(join(cache, "speecht5_hifigan", "onnx", "model.onnx"))) {
-      this.status = { state: "ready", label: "Local voice model ready" };
-    }
+    const cache = join(userData, "private-local", "voice-models");
+    void verifySpeechArtifacts(cache, SPEECHT5_WEIGHT_FILES).then(() => {
+      if (this.status.state === "idle") this.update({ state: "ready", label: "Local voice model ready" });
+    }).catch(() => {});
   }
   currentStatus() { return this.status; }
   private update(status: VoiceModelStatus) { this.status = status; this.onStatus(status); }
@@ -114,12 +114,25 @@ export class LocalVoiceManager {
     if (!this.speechT5) {
       this.speechT5 = (async () => {
         this.update({ state: "downloading", label: "Preparing local voice model", model });
-        const { env, pipeline } = await import("@xenova/transformers");
+        const { pipeline, AutoModel } = await import("@xenova/transformers");
         const cache = join(this.userData, "private-local", "voice-models");
         mkdirSync(cache, { recursive: true, mode: 0o700 });
-        env.cacheDir = cache;
-        env.allowRemoteModels = true;
-        const synth = await pipeline("text-to-speech", "Xenova/speecht5_tts", { quantized: true }) as unknown as Synthesizer;
+        await repairSpeechArtifacts(cache, SPEECHT5_WEIGHT_FILES);
+        assertSpeechDownloadFits(cache, SPEECHT5_WEIGHT_FILES);
+        const speechPipeline = await pipeline("text-to-speech", "Xenova/speecht5_tts", {
+          quantized: true,
+          revision: SPEECHT5_REVISION,
+          cache_dir: cache,
+        });
+        // Transformers.js loads this second model from mutable main on first speech otherwise.
+        const vocoder = await AutoModel.from_pretrained("Xenova/speecht5_hifigan", {
+          quantized: false,
+          revision: SPEECHT5_VOCODER_REVISION,
+          cache_dir: cache,
+        });
+        (speechPipeline as unknown as { vocoder: typeof vocoder }).vocoder = vocoder;
+        await verifySpeechArtifacts(cache, SPEECHT5_WEIGHT_FILES);
+        const synth = speechPipeline as unknown as Synthesizer;
         this.update({ state: "ready", label: "Local voice model ready", model });
         return synth;
       })().catch((error) => {

@@ -1,20 +1,32 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { WHISPER_REVISIONS, WHISPER_WEIGHT_FILES } from "./local-speech-model-revisions";
+import { assertSpeechDownloadFits, repairSpeechArtifacts, verifySpeechArtifacts } from "./local-speech-model-cache";
 
 type Transcriber = (audio: Float32Array, options?: Record<string, unknown>) => Promise<{ text?: string } | string>;
-export const TRANSCRIPTION_MODELS = ["Xenova/whisper-tiny", "Xenova/whisper-base", "Xenova/whisper-small"] as const;
+export const TRANSCRIPTION_MODELS = Object.keys(WHISPER_REVISIONS) as Array<keyof typeof WHISPER_REVISIONS>;
 let loaded: { model: string; promise: Promise<Transcriber> } | undefined;
 
 async function getLocalTranscriber(userData: string, model: string): Promise<Transcriber> {
   if (!TRANSCRIPTION_MODELS.includes(model as typeof TRANSCRIPTION_MODELS[number])) throw new Error("Choose a supported speech model.");
   if (loaded?.model !== model) {
     const promise = (async () => {
-      const { env, pipeline } = await import("@xenova/transformers");
+      const { pipeline } = await import("@xenova/transformers");
       const cache = join(userData, "private-local", "transcription-models");
       mkdirSync(cache, { recursive: true, mode: 0o700 });
-      env.cacheDir = cache;
-      env.allowRemoteModels = true; // Downloads public model weights; audio stays local.
-      return await pipeline("automatic-speech-recognition", model) as unknown as Transcriber;
+      const revision = WHISPER_REVISIONS[model as keyof typeof WHISPER_REVISIONS];
+      const artifacts = WHISPER_WEIGHT_FILES[model as keyof typeof WHISPER_WEIGHT_FILES]
+        .map((weight) => ({ ...weight, model, revision }));
+      await repairSpeechArtifacts(cache, artifacts);
+      assertSpeechDownloadFits(cache, artifacts);
+      // Downloads public model weights; audio stays local. Pass the cache per call so
+      // simultaneous voice and transcription setup cannot switch each other's cache.
+      const transcriber = await pipeline("automatic-speech-recognition", model, {
+        revision,
+        cache_dir: cache,
+      }) as unknown as Transcriber;
+      await verifySpeechArtifacts(cache, artifacts);
+      return transcriber;
     })().catch((error) => { if (loaded?.model === model) loaded = undefined; throw error; });
     loaded = { model, promise };
   }
