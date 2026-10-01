@@ -140,6 +140,7 @@ Resources:
                   - cloudformation:GetTemplateSummary
                   - cloudwatch:DescribeAlarms
                   - cloudwatch:PutMetricAlarm
+                  - cloudwatch:SetAlarmState
                   - ecs:CreateCluster
                   - ecs:RegisterTaskDefinition
                   - ecs:CreateExpressGatewayService
