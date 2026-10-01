@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import puppeteer, { Browser, Page } from 'puppeteer';
 import { EventEmitter } from 'events';
 import { SpaceToolsService, SpaceToolSpec } from './space-tools.service';
+import { fetchPublicJson, PublicWebEgressProxy, validatePublicWebUrl } from './public-web-egress';
 
 interface CaptureSession {
   id: string;
@@ -21,6 +22,7 @@ export class WebCaptureService extends EventEmitter {
   private readonly logger = new Logger(WebCaptureService.name);
   private sessions = new Map<string, CaptureSession>();
   private browser: Browser | null = null;
+  private readonly egressProxy = new PublicWebEgressProxy();
 
   constructor(private spaceTools: SpaceToolsService) {
     super();
@@ -47,6 +49,7 @@ export class WebCaptureService extends EventEmitter {
 
   async onModuleDestroy() {
     await this.cleanup();
+    await this.egressProxy.close();
   }
 
   private findChromiumExecutable(): string | null {
@@ -100,12 +103,17 @@ export class WebCaptureService extends EventEmitter {
     }
 
     const executablePath = this.findChromiumExecutable();
+    const proxyPort = await this.egressProxy.listen();
 
     const launchOptions: any = {
       // Use modern headless for newer Chromium; fall back to boolean for older versions
       headless: (process.env.PUPPETEER_HEADLESS_MODE as any) || 'new',
       args: [
         '--disable-dev-shm-usage',
+        `--proxy-server=http://127.0.0.1:${proxyPort}`,
+        '--proxy-bypass-list=<-loopback>',
+        '--dns-prefetch-disable',
+        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
         '--disable-extensions',
         '--disable-gpu',
         '--disable-sync',
@@ -221,6 +229,9 @@ export class WebCaptureService extends EventEmitter {
   }
 
   private async ensureBrowser(): Promise<void> {
+    if (process.env.DISABLE_WEB_CAPTURE === 'true') {
+      throw new Error('Web capture is disabled in this environment.');
+    }
     if (this.browser) return;
     try {
       await this.initBrowserWithRetry();
@@ -380,10 +391,6 @@ export class WebCaptureService extends EventEmitter {
       `;
       await page.evaluateOnNewDocument(AUTOPLAY_INIT);
 
-      // Set permissions (valid puppeteer Permission strings; 'autoplay' is NOT valid)
-      const context = this.browser.defaultBrowserContext();
-      await context.overridePermissions(validUrl, ['camera', 'microphone']);
-
       // Navigate with staged fallbacks for faster first paint in constrained envs
       const navStart = Date.now();
       const primaryTimeout = Number(
@@ -432,9 +439,8 @@ export class WebCaptureService extends EventEmitter {
           : toolsEndpoint.pathname;
         const discoverUrl = `${baseOrigin}${basePath}/common-agent-tools/`;
         this.logger.log(`Attempting space tools discovery at ${discoverUrl}`);
-        const resp = await fetch(discoverUrl, { method: 'GET' });
-        if (resp.ok) {
-          const json = await resp.json();
+        const json = await fetchPublicJson(discoverUrl);
+        if (json) {
           // Accept single tool object or array
           const specs: SpaceToolSpec[] = Array.isArray(json) ? json : [json];
           const validSpecs = specs.filter((t) => t && t.name && t.apiSpec);
@@ -452,10 +458,6 @@ export class WebCaptureService extends EventEmitter {
               `No valid tool specs found at discovery endpoint for space ${params.spaceId}.`,
             );
           }
-        } else {
-          this.logger.debug(
-            `Space tools discovery endpoint returned status ${resp.status} for ${discoverUrl}`,
-          );
         }
       } catch (discErr) {
         this.logger.debug(
@@ -537,11 +539,9 @@ export class WebCaptureService extends EventEmitter {
       u = 'https://' + u;
     }
     try {
-      // throws on invalid
-      // eslint-disable-next-line no-new
-      new URL(u);
-      return u;
-    } catch {
+      return validatePublicWebUrl(u).toString();
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Web capture')) throw error;
       throw new Error('Invalid URL format');
     }
   }
