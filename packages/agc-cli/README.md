@@ -98,6 +98,8 @@ agc agents runtime status agt_...
 
 # Run and chat
 agc run --agent agt_... "Summarize this week"
+agc run --agent agt_... --file ./report.pdf "Summarize the attached report with page references"
+agc run --agent agt_... --attach <library-file-id> "Compare this with our earlier report"
 agc chat --agent agt_...
 
 # Sessions and tasks
@@ -177,6 +179,10 @@ agc connections revoke conn_...
 operations to an agent. Use the relevant local-tool flags shown by
 `agc run --help` and review the requested scope before enabling write or
 execution access.
+
+`agc run --file` uploads and attaches up to ten files, each at most 25 MB.
+Use `--attach` to reuse a Library file without uploading it again. Both flags
+can be repeated; attached files remain available in the session.
 
 ## Configuration and environment variables
 

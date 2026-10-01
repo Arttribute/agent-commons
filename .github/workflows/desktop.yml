@@ -111,9 +111,8 @@ jobs:
         if: runner.os == 'Linux'
         timeout-minutes: 4
         run: |
-          package_dir="$PWD/apps/commons-desktop/release/linux-unpacked"
-          desktop_executable="$(find "$package_dir" -maxdepth 1 -type f -perm /111 ! -name chrome-sandbox -print -quit)"
-          test -n "$desktop_executable"
+          desktop_executable="$PWD/apps/commons-desktop/release/linux-unpacked/agent-commons"
+          test -x "$desktop_executable"
           COMMONS_DESKTOP_SMOKE_EXECUTABLE="$desktop_executable" xvfb-run -a pnpm --filter commons-desktop smoke
       - uses: actions/upload-artifact@v4
         if: always()

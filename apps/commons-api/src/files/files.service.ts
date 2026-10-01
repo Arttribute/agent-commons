@@ -191,6 +191,59 @@ const DEFAULT_PDF_EMBEDDED_IMAGES_PER_PAGE = 4;
 const DEFAULT_PDF_EMBEDDED_IMAGE_MIN_PIXELS = 40_000;
 const DEFAULT_SIGNED_URL_SECONDS = 60 * 30;
 
+/** PDF extraction stores explicit one-based page markers in the text blob. */
+export function extractedPdfPage(text: string, pageNumber: number): string | null {
+  const marker = `--- Page ${pageNumber} ---\n`;
+  const start = text.startsWith(marker) ? 0 : text.indexOf(`\n${marker}`);
+  if (start < 0) return null;
+  const contentStart = start === 0 ? 0 : start + 1;
+  const next = text.indexOf('\n\n--- Page ', contentStart + marker.length);
+  return text.slice(contentStart, next < 0 ? text.length : next).trimEnd();
+}
+
+export function searchExtractedText(text: string, rawQuery: string, maxResults = 8) {
+  const query = rawQuery.trim().slice(0, 120);
+  if (!query) throw new BadRequestException('A file search query is required.');
+  const lower = text.toLowerCase();
+  const phrase = query.toLowerCase();
+  const terms = [...new Set(phrase.match(/[\p{L}\p{N}]{3,}/gu) ?? [])].slice(0, 8);
+  const positions: number[] = [];
+  const collect = (needle: string) => {
+    if (!needle) return;
+    let offset = 0;
+    while (positions.length < 5_000) {
+      const found = lower.indexOf(needle, offset);
+      if (found < 0) break;
+      positions.push(found);
+      offset = found + needle.length;
+    }
+  };
+  collect(phrase);
+  if (!positions.length) for (const term of terms) collect(term);
+  const pages = [...text.matchAll(/^--- Page (\d+) ---\n/gm)]
+    .map((match) => ({ offset: match.index ?? 0, pageNumber: Number(match[1]) }));
+  const pageAt = (offset: number) => {
+    let index = -1;
+    for (let page = 0; page < pages.length && pages[page].offset <= offset; page += 1) index = page;
+    return index;
+  };
+  const ranked = positions.map((offset) => {
+    const pageIndex = pageAt(offset);
+    const start = Math.max(pageIndex < 0 ? 0 : pages[pageIndex].offset, offset - 180);
+    const end = Math.min(pageIndex < 0 || pageIndex + 1 >= pages.length ? text.length : pages[pageIndex + 1].offset, offset + 320);
+    const excerpt = text.slice(start, end).replace(/\s+/g, ' ').trim();
+    const score = terms.filter((term) => excerpt.toLowerCase().includes(term)).length;
+    return { offset, pageNumber: pageIndex < 0 ? undefined : pages[pageIndex].pageNumber, score, excerpt };
+  }).sort((a, b) => b.score - a.score || b.offset - a.offset);
+  const selected: typeof ranked = [];
+  for (const match of ranked) {
+    if (selected.some((entry) => Math.abs(entry.offset - match.offset) < 250)) continue;
+    selected.push(match);
+    if (selected.length >= Math.min(8, Math.max(1, maxResults))) break;
+  }
+  return { query, totalChars: text.length, matches: selected.map(({ offset, pageNumber, excerpt }) => ({ offset, pageNumber, excerpt })) };
+}
+
 export function rawImageChannels(
   width: number,
   height: number,
@@ -905,7 +958,13 @@ export class FilesService {
           extractedText.storagePath,
         )
       : (file.textPreview ?? '');
-    const content = fullText.slice(offset, offset + maxChars);
+    if (input.pageNumber !== undefined && (!Number.isSafeInteger(input.pageNumber) || input.pageNumber < 1)) {
+      throw new BadRequestException('Page number must be a positive integer.');
+    }
+    const selectedText = input.pageNumber !== undefined && file.kind === 'pdf'
+      ? extractedPdfPage(fullText, input.pageNumber) ?? ''
+      : fullText;
+    const content = selectedText.slice(offset, offset + maxChars);
     const nextOffset = offset + content.length;
     const artifacts = await this.getArtifacts(file.itemId);
     const filteredArtifacts = input.pageNumber
@@ -940,10 +999,12 @@ export class FilesService {
       status: file.status,
       content,
       offset,
-      nextOffset: nextOffset < fullText.length ? nextOffset : null,
-      totalChars: fullText.length,
-      truncated: nextOffset < fullText.length,
-      textPreview: file.textPreview,
+      nextOffset: nextOffset < selectedText.length ? nextOffset : null,
+      totalChars: selectedText.length,
+      truncated: nextOffset < selectedText.length,
+      pageNumber: input.pageNumber,
+      pageTextAvailable: input.pageNumber === undefined || file.kind !== 'pdf' || Boolean(selectedText),
+      textPreview: input.pageNumber === undefined ? file.textPreview : content.slice(0, 2_000),
       metadata: file.metadata ?? {},
       // Keep the structured fields used by agent tools while also returning
       // the SDK's documented convenience aliases. Older and newer clients can
@@ -954,6 +1015,32 @@ export class FilesService {
       imageUrls: resolvedArtifacts
         .map((artifact) => artifact.url)
         .filter((url): url is string => Boolean(url)),
+    };
+  }
+
+  /** Search a permitted Library file without loading the whole document into a model prompt. */
+  async searchFileForAgent(input: {
+    fileId: string;
+    query: string;
+    maxResults?: number;
+    agentId?: string;
+    sessionId?: string;
+    ownerId?: string;
+    workspaceId?: string;
+  }) {
+    const file = await this.getFileOrThrow(input.fileId);
+    await this.assertCanAccess(file, input);
+    const extractedText = (await this.getBlobs(file.itemId)).find((blob) => blob.role === 'extracted_text');
+    const fullText = extractedText
+      ? await this.downloadText(extractedText.storageBucket, extractedText.storagePath)
+      : (file.textPreview ?? '');
+    return {
+      fileId: file.itemId,
+      name: file.name,
+      ...searchExtractedText(fullText, input.query, input.maxResults),
+      hint: file.kind === 'pdf'
+        ? 'Use readUploadedFile with this fileId and pageNumber to verify the full passage before citing that page.'
+        : 'Use readUploadedFile with this fileId and a matching offset for more context.',
     };
   }
 
@@ -1015,7 +1102,7 @@ export class FilesService {
 
     const lines = [
       '## Uploaded Files',
-      'The user attached these files. Do not ask for them again. Use readUploadedFile with the fileId to read chunked document, presentation, spreadsheet, PDF, archive, transcript, or code content. Request image URLs for visual pages; request a signed download URL and use the persistent computer when native extraction is unavailable. File bytes and base64 are intentionally unavailable in chat history.',
+      'The user attached these files. Do not ask for them again. Use searchUploadedFile to locate passages in a large document, then readUploadedFile with the fileId and pageNumber to verify PDF citations. Use readUploadedFile offsets for other chunked document, presentation, spreadsheet, archive, transcript, or code content. Request image URLs for visual pages; request a signed download URL and use the persistent computer when native extraction is unavailable. File bytes and base64 are intentionally unavailable in chat history.',
       ...attachments.map((file, index) => {
         const artifactSummary = file.artifacts?.length
           ? ` Artifacts: ${file.artifacts

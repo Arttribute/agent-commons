@@ -484,8 +484,9 @@ export interface CommonTool {
 
   /**
    * Read an uploaded chat file by ID. Returns extracted text in bounded chunks
-   * and optional signed image/PDF-page artifact URLs. It never returns raw file
-   * bytes or base64.
+   * and optional signed image/PDF-page artifact URLs. For a PDF, pageNumber
+   * selects that page's extracted text so citations can be verified. It never
+   * returns raw file bytes or base64.
    */
   readUploadedFile(props: {
     fileId: string;
@@ -506,6 +507,8 @@ export interface CommonTool {
     nextOffset: number | null;
     totalChars: number;
     truncated: boolean;
+    pageNumber?: number;
+    pageTextAvailable?: boolean;
     download?: {
       name: string;
       mimeType: string;
@@ -521,6 +524,22 @@ export interface CommonTool {
       height?: number | null;
       url?: string;
     }>;
+  }>;
+
+  /** Search an uploaded or project document for a topic, heading, or conclusion. Returns bounded passages with PDF page numbers. */
+  searchUploadedFile(props: {
+    fileId: string;
+    query: string;
+    maxResults?: number;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<{
+    fileId: string;
+    name: string;
+    query: string;
+    totalChars: number;
+    matches: Array<{ offset: number; pageNumber?: number; excerpt: string }>;
+    hint: string;
   }>;
 
   /**
@@ -1212,7 +1231,6 @@ export class CommonToolService {
     }
     return { principalId, workspaceId: agent?.workspaceId ?? null };
   }
-
   async listCommonsResources(
     props: {
       resourceTypes?: Array<
@@ -1931,6 +1949,20 @@ export class CommonToolService {
       includeImageUrls: props.includeImageUrls,
       includeDownloadUrl: props.includeDownloadUrl,
       pageNumber: props.pageNumber,
+    });
+  }
+
+  async searchUploadedFile(
+    props: { fileId: string; query: string; maxResults?: number; agentId: string; sessionId?: string },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    return this.files.searchFileForAgent({
+      fileId: props.fileId,
+      query: props.query,
+      maxResults: props.maxResults,
+      agentId: props.agentId,
+      sessionId: props.sessionId,
+      ownerId: metadata?.ownerId,
     });
   }
 

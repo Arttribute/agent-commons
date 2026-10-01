@@ -4,13 +4,48 @@ import sharp from 'sharp';
 import * as XLSX from 'xlsx';
 import {
   classifyFile,
+  extractedPdfPage,
   FilesService,
   normalizeMimeType,
   revisePdfBufferPreservingLayout,
+  searchExtractedText,
 } from './files.service';
 
 describe('FilesService document support', () => {
   const service = new FilesService({} as any, {} as any, {} as any);
+
+  it('searches PDF passages with one-based page numbers and reads exactly that page', () => {
+    const text = [
+      '--- Page 1 ---\nBackground and methods.',
+      '--- Page 24 ---\n4 Discussion and Conclusion The review found useful biomarkers.',
+      '--- Page 32 ---\nReferences only.',
+    ].join('\n\n');
+    const result = searchExtractedText(text, 'Conclusion');
+    expect(result.matches[0]).toMatchObject({ pageNumber: 24, excerpt: expect.stringContaining('Conclusion') });
+    expect(extractedPdfPage(text, 24)).toBe('--- Page 24 ---\n4 Discussion and Conclusion The review found useful biomarkers.');
+    expect(extractedPdfPage(text, 32)).toBe('--- Page 32 ---\nReferences only.');
+    expect(extractedPdfPage(text, 40)).toBeNull();
+  });
+
+  it('scopes searched and page-specific PDF text through file access checks', async () => {
+    const document = new FilesService({} as any, {} as any, {} as any);
+    const text = '--- Page 1 ---\nBackground.\n\n--- Page 24 ---\nDiscussion and Conclusion.\n\n--- Page 32 ---\nReferences.';
+    jest.spyOn(document as any, 'getFileOrThrow').mockResolvedValue({
+      itemId: 'shah-file', name: 'Shah.pdf', mimeType: 'application/pdf', kind: 'pdf',
+      status: 'ready', textPreview: text, metadata: {},
+    });
+    const access = jest.spyOn(document as any, 'assertCanAccess').mockResolvedValue(undefined);
+    jest.spyOn(document as any, 'getBlobs').mockResolvedValue([]);
+    jest.spyOn(document as any, 'getArtifacts').mockResolvedValue([]);
+    const scope = { fileId: 'shah-file', agentId: 'agent-1', ownerId: 'user-1' };
+    const search = await document.searchFileForAgent({ ...scope, query: 'Conclusion' });
+    expect(search.matches[0].pageNumber).toBe(24);
+    const read = await document.readFileForAgent({ ...scope, pageNumber: 24 });
+    expect(read.content).toContain('Discussion and Conclusion');
+    expect(read.content).not.toContain('References');
+    expect(read.pageTextAvailable).toBe(true);
+    expect(access).toHaveBeenCalledTimes(2);
+  });
 
   it('keeps a large extracted PDF readable in chunks instead of cutting it at 250,000 characters', () => {
     const extracted = 'A'.repeat(690_000);

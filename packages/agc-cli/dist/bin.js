@@ -24,7 +24,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/bin.ts
-var import_commander23 = require("commander");
+var import_commander24 = require("commander");
 var import_child_process3 = require("child_process");
 
 // src/commands/login.ts
@@ -178,7 +178,7 @@ var sym = {
   bullet: import_chalk.default.dim("\u2022"),
   dot: import_chalk.default.dim("\xB7")
 };
-function banner(version = "0.4.0") {
+function banner(version = "0.6.0") {
   console.log("");
   console.log(import_chalk.default.cyan("        \u25C7"));
   console.log(import_chalk.default.cyan("    \u256D\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256E"));
@@ -664,11 +664,11 @@ function agentsCommand() {
       process.exit(1);
     }
   });
-  cmd.command("get <agentId>").description("Show details for an agent").option("--json", "Output as JSON").action(async (agentId2, opts) => {
+  cmd.command("get <agentId>").description("Show details for an agent").option("--json", "Output as JSON").action(async (agentId3, opts) => {
     const spinner = spin("Fetching agent\u2026");
     try {
       const client = makeClient();
-      const res = await client.agents.get(agentId2);
+      const res = await client.agents.get(agentId3);
       const agent = res?.data ?? res;
       spinner.stop();
       if (opts.json) return jsonOut(agent);
@@ -747,10 +747,10 @@ ${sym.ok} Agent created`);
     }
   });
   const runtime = cmd.command("runtime").description("Manage an agent runtime");
-  runtime.command("status <agentId>").description("Show managed runtime status and capabilities").option("--json", "Output as JSON").action(async (agentId2, opts) => {
+  runtime.command("status <agentId>").description("Show managed runtime status and capabilities").option("--json", "Output as JSON").action(async (agentId3, opts) => {
     const spinner = spin("Fetching runtime status\u2026");
     try {
-      const result = await makeClient().agents.getRuntime(agentId2);
+      const result = await makeClient().agents.getRuntime(agentId3);
       spinner.stop();
       if (opts.json) return jsonOut(result.data);
       detail([
@@ -768,13 +768,13 @@ ${sym.ok} Agent created`);
   for (const action of ["deploy", "restart", "sleep"]) {
     runtime.command(`${action} <agentId>`).description(
       `${action[0].toUpperCase()}${action.slice(1)} the managed agent runtime`
-    ).action(async (agentId2) => {
+    ).action(async (agentId3) => {
       const spinner = spin(
         `${action[0].toUpperCase()}${action.slice(1)}ing runtime\u2026`
       );
       try {
         const client = makeClient();
-        const result = action === "deploy" ? await client.agents.deployRuntime(agentId2) : action === "restart" ? await client.agents.restartRuntime(agentId2) : await client.agents.sleepRuntime(agentId2);
+        const result = action === "deploy" ? await client.agents.deployRuntime(agentId3) : action === "restart" ? await client.agents.restartRuntime(agentId3) : await client.agents.sleepRuntime(agentId3);
         spinner.stop();
         console.log(`
 ${sym.ok} Runtime ${result.data.status}`);
@@ -887,12 +887,12 @@ function sessionsCommand() {
     const spinner = spin("Fetching sessions\u2026");
     try {
       const client = makeClient();
-      const agentId2 = opts.agent;
-      const res = agentId2 ? await client.sessions.list(agentId2, cfg.initiator) : await client.sessions.listByUser(cfg.initiator);
+      const agentId3 = opts.agent;
+      const res = agentId3 ? await client.sessions.list(agentId3, cfg.initiator) : await client.sessions.listByUser(cfg.initiator);
       const sessions = res?.data ?? res ?? [];
       spinner.stop();
       if (opts.json) return jsonOut(sessions);
-      section(`Sessions (${sessions.length})${agentId2 ? ` \u2014 agent ${agentId2.slice(0, 8)}\u2026` : " \u2014 all agents"}`);
+      section(`Sessions (${sessions.length})${agentId3 ? ` \u2014 agent ${agentId3.slice(0, 8)}\u2026` : " \u2014 all agents"}`);
       table(
         sessions.map((s) => ({
           ID: s.sessionId.slice(0, 8) + "\u2026",
@@ -933,8 +933,8 @@ function sessionsCommand() {
   });
   cmd.command("create").description("Create a new session").option("--agent <agentId>", "Agent ID").option("--title <title>", "Session title").option("--model <id>", "Model ID (e.g. gpt-5.4-mini, claude-sonnet-4-6)").option("--provider <provider>", "Model provider").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId> or set defaultAgentId"));
       process.exit(1);
     }
@@ -946,7 +946,7 @@ function sessionsCommand() {
     try {
       const client = makeClient();
       const res = await client.sessions.create({
-        agentId: agentId2,
+        agentId: agentId3,
         initiator: cfg.initiator,
         title: opts.title,
         ...opts.model && { model: { modelId: opts.model, provider: opts.provider } }
@@ -1102,8 +1102,8 @@ ${sym.ok} Tool created`);
   });
   cmd.command("exec <toolName>").description("Execute a tool directly by name").option("--agent <agentId>", "Agent context for tool execution").option("--args <json>", "Tool arguments as JSON object", "{}").option("--json", "Output result as JSON").action(async (toolName, opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
       process.exit(1);
     }
@@ -1119,7 +1119,7 @@ ${sym.ok} Tool created`);
     try {
       const client = makeClient();
       const result = await client.run.once({
-        agentId: agentId2,
+        agentId: agentId3,
         messages: [{ role: "user", content: prompt }],
         ...cfg.initiator && { initiatorId: cfg.initiator }
       });
@@ -1448,8 +1448,8 @@ ${sym.ok} Workflow created`);
     }
     const templateName = templateNameRaw;
     const needsAgent = templateName === "agent-research-summary" || templateName === "multi-agent-field-report";
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (needsAgent && !agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (needsAgent && !agentId3) {
       console.error(c.error("This template requires --agent <agentId> or a configured defaultAgentId."));
       process.exit(1);
     }
@@ -1473,7 +1473,7 @@ ${sym.ok} Workflow created`);
       const ctx = {
         ownerId: cfg.initiator,
         prefix,
-        agentId: agentId2,
+        agentId: agentId3,
         reviewerAgentId: opts.reviewerAgent,
         childWorkflowId
       };
@@ -1493,7 +1493,7 @@ ${sym.ok} Workflow created`);
           }
         }
         execution = await makeClient().workflows.execute(result.workflow.workflowId, {
-          agentId: agentId2,
+          agentId: agentId3,
           inputData,
           userId: cfg.initiator
         });
@@ -1564,7 +1564,7 @@ ${sym.ok} Execution started: ${c.id(execution.executionId)}`);
   });
   cmd.command("run <workflowId>").description("Execute a workflow").option("--agent <agentId>", "Agent context").option("--session <sessionId>", "Session context").option("--input <json>", "Input data as JSON string", "{}").option("--watch", "Stream execution progress via SSE").option("--json", "Output result as JSON").action(async (workflowId, opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
     let inputData = {};
     try {
       inputData = JSON.parse(opts.input);
@@ -1576,7 +1576,7 @@ ${sym.ok} Execution started: ${c.id(execution.executionId)}`);
     try {
       const client = makeClient();
       const execution = await client.workflows.execute(workflowId, {
-        agentId: agentId2,
+        agentId: agentId3,
         sessionId: opts.session,
         inputData
       });
@@ -1721,12 +1721,12 @@ function taskCommand() {
   const cmd = new import_commander7.Command("task").description("Manage and execute tasks").alias("t");
   cmd.command("list").description("List tasks").option("--agent <agentId>", "Filter by agent ID").option("--session <sessionId>", "Filter by session ID").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
     const spinner = spin("Fetching tasks\u2026");
     try {
       const client = makeClient();
       const filter = {};
-      if (agentId2) filter.agentId = agentId2;
+      if (agentId3) filter.agentId = agentId3;
       if (opts.session) filter.sessionId = opts.session;
       if (cfg.initiator) {
         filter.ownerId = cfg.initiator;
@@ -1782,8 +1782,8 @@ function taskCommand() {
   });
   cmd.command("create").description("Create a new task").requiredOption("--title <title>", "Task title").option("--agent <agentId>", "Agent ID").option("--session <sessionId>", "Session ID").option("--workflow <workflowId>", "Workflow ID to attach").option("--input <json>", "Input data as JSON", "{}").option("--timeout <ms>", "Execution timeout in milliseconds").option("--execute", "Execute immediately after creation").option("--watch", "Stream execution progress (implies --execute)").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
       process.exit(1);
     }
@@ -1799,7 +1799,7 @@ function taskCommand() {
       const client = makeClient();
       const res = await client.tasks.create({
         title: opts.title,
-        agentId: agentId2,
+        agentId: agentId3,
         sessionId: opts.session,
         workflowId: opts.workflow,
         inputData,
@@ -1905,14 +1905,237 @@ ${sym.fail} ${c.error(event.message ?? event.type)}`);
 // src/commands/run.ts
 var import_commander8 = require("commander");
 var readline2 = __toESM(require("readline"));
+var import_fs6 = require("fs");
+var import_path4 = require("path");
 
 // src/local-tools.ts
 var import_fs5 = require("fs");
 var import_path3 = require("path");
 var import_child_process2 = require("child_process");
+var import_crypto = require("crypto");
 var readline = __toESM(require("readline"));
+
+// src/edit-preview.ts
+function editPreview(before, after, limit = 12e3) {
+  if (before === after) return "(no content change)";
+  const oldLines = before ? before.split("\n") : [];
+  const newLines = after ? after.split("\n") : [];
+  let start = 0;
+  while (start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) start++;
+  let oldEnd = oldLines.length, newEnd = newLines.length;
+  while (oldEnd > start && newEnd > start && oldLines[oldEnd - 1] === newLines[newEnd - 1]) {
+    oldEnd--;
+    newEnd--;
+  }
+  const lines = [
+    `@@ -${start + 1},${oldEnd - start} +${start + 1},${newEnd - start} @@`,
+    ...oldLines.slice(Math.max(0, start - 3), start).map((line) => ` ${line}`),
+    ...oldLines.slice(start, oldEnd).map((line) => `-${line}`),
+    ...newLines.slice(start, newEnd).map((line) => `+${line}`),
+    ...newLines.slice(newEnd, newEnd + 3).map((line) => ` ${line}`)
+  ];
+  const preview = lines.join("\n").replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "?");
+  return preview.length > limit ? preview.slice(0, limit) + "\n\u2026 (preview truncated)" : preview;
+}
+
+// src/disk-usage.ts
+var import_node_fs = require("fs");
+var import_node_path = require("path");
+async function scanDiskUsage(root, signal, allowPath) {
+  if (!(await import_node_fs.promises.lstat(root)).isDirectory()) throw new Error("disk_usage requires a directory");
+  const deadline = Date.now() + 15e3;
+  const limit = 5e4;
+  let scanned = 0;
+  let skipped = 0;
+  let incomplete = false;
+  const measure = async (start) => {
+    let bytes = 0;
+    const pending = [start];
+    while (pending.length) {
+      if (signal?.aborted) throw new Error("Disk usage scan cancelled");
+      if (scanned >= limit || Date.now() >= deadline) {
+        incomplete = true;
+        break;
+      }
+      const path = pending.pop();
+      try {
+        allowPath(path);
+        const item = await import_node_fs.promises.lstat(path);
+        scanned += 1;
+        if (item.isSymbolicLink()) {
+          skipped += 1;
+          continue;
+        }
+        if (item.isDirectory()) {
+          for await (const child of await import_node_fs.promises.opendir(path)) {
+            if (pending.length + scanned >= limit || Date.now() >= deadline) {
+              incomplete = true;
+              break;
+            }
+            pending.push((0, import_node_path.join)(path, child.name));
+          }
+        } else if (item.isFile()) bytes += item.size;
+      } catch {
+        skipped += 1;
+      }
+    }
+    return bytes;
+  };
+  const entries = [];
+  for await (const child of await import_node_fs.promises.opendir(root)) {
+    if (incomplete) break;
+    if (child.isSymbolicLink()) {
+      skipped += 1;
+      continue;
+    }
+    const path = (0, import_node_path.join)(root, child.name);
+    try {
+      allowPath(path);
+    } catch {
+      skipped += 1;
+      continue;
+    }
+    entries.push({ path: child.name, kind: child.isDirectory() ? "directory" : "file", sizeBytes: await measure(path) });
+  }
+  entries.sort((left, right) => right.sizeBytes - left.sizeBytes);
+  return {
+    scope: root,
+    unit: "logical file bytes",
+    entries: entries.slice(0, 30),
+    scanned,
+    skipped,
+    incomplete,
+    note: incomplete ? "The bounded scan stopped early. Sizes may be underestimates; narrow the path and scan again." : "Sizes cover this selected folder only, not the whole computer."
+  };
+}
+
+// src/office-text.ts
+var import_zlib = require("zlib");
+var MAX_ENTRY_BYTES = 4e7;
+function readEntries(buffer) {
+  const floor = Math.max(0, buffer.length - 65557);
+  let end = -1;
+  for (let index = buffer.length - 22; index >= floor; index -= 1) {
+    if (buffer.readUInt32LE(index) === 101010256) {
+      end = index;
+      break;
+    }
+  }
+  if (end < 0) throw new Error("Not a zip archive");
+  const count = buffer.readUInt16LE(end + 10);
+  let cursor = buffer.readUInt32LE(end + 16);
+  const entries = [];
+  for (let index = 0; index < count && cursor + 46 <= buffer.length; index += 1) {
+    if (buffer.readUInt32LE(cursor) !== 33639248) break;
+    const method = buffer.readUInt16LE(cursor + 10);
+    const compressedSize = buffer.readUInt32LE(cursor + 20);
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    const offset = buffer.readUInt32LE(cursor + 42);
+    const name = buffer.toString("utf8", cursor + 46, cursor + 46 + nameLength);
+    entries.push({ name, method, compressedSize, offset });
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+function readEntry(buffer, entry) {
+  if (buffer.readUInt32LE(entry.offset) !== 67324752) throw new Error("Corrupt zip entry");
+  const nameLength = buffer.readUInt16LE(entry.offset + 26);
+  const extraLength = buffer.readUInt16LE(entry.offset + 28);
+  const start = entry.offset + 30 + nameLength + extraLength;
+  const data = buffer.subarray(start, start + entry.compressedSize);
+  if (entry.method === 0) return data.toString("utf8");
+  if (entry.method === 8) {
+    return (0, import_zlib.inflateRawSync)(data, { maxOutputLength: MAX_ENTRY_BYTES }).toString("utf8");
+  }
+  throw new Error(`Unsupported zip compression method ${entry.method}`);
+}
+function decodeXml(value) {
+  return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code))).replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16))).replace(/&amp;/g, "&");
+}
+function docxText(xml) {
+  const paragraphs = xml.match(/<w:p[\s>][\s\S]*?<\/w:p>/g) ?? [];
+  const lines = paragraphs.map((paragraph) => {
+    const style = /<w:pStyle w:val="([^"]+)"/.exec(paragraph)?.[1] ?? "";
+    const heading = /^(?:Heading|heading)\s?(\d)$/.exec(style)?.[1] ?? (style === "Title" ? "1" : "");
+    const listItem = /<w:numPr>/.test(paragraph);
+    const text = paragraph.replace(/<w:tab\/>/g, "	").replace(/<w:(?:br|cr)\/>/g, "\n").match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>|\t|\n/g)?.map((part) => part === "	" || part === "\n" ? part : decodeXml(part.replace(/<[^>]+>/g, ""))).join("") ?? "";
+    if (!text.trim()) return "";
+    if (heading) return `${"#".repeat(Math.min(6, Number(heading)))} ${text.trim()}`;
+    return listItem ? `- ${text.trim()}` : text;
+  });
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+function drawingText(xml) {
+  const paragraphs = xml.match(/<a:p[\s>][\s\S]*?<\/a:p>/g) ?? [];
+  return paragraphs.map(
+    (paragraph) => (paragraph.match(/<a:t>[\s\S]*?<\/a:t>/g) ?? []).map((part) => decodeXml(part.replace(/<[^>]+>/g, ""))).join("")
+  ).filter((line) => line.trim()).join("\n");
+}
+function slideNumber(name) {
+  return Number(/(\d+)\.xml$/.exec(name)?.[1] ?? 0);
+}
+function extractOfficeOpenXmlText(buffer, extension) {
+  let entries;
+  try {
+    entries = readEntries(buffer);
+  } catch {
+    return null;
+  }
+  const find = (name) => entries.find((entry) => entry.name === name);
+  try {
+    if (extension === ".docx") {
+      const document = find("word/document.xml");
+      return document ? docxText(readEntry(buffer, document)) : null;
+    }
+    if (extension === ".pptx") {
+      const slides = entries.filter((entry) => /^ppt\/slides\/slide\d+\.xml$/.test(entry.name)).sort((left, right) => slideNumber(left.name) - slideNumber(right.name));
+      if (!slides.length) return null;
+      return slides.map((slide) => `## Slide ${slideNumber(slide.name)}
+${drawingText(readEntry(buffer, slide))}`).join("\n\n").trim();
+    }
+    if (extension === ".xlsx") {
+      const shared = find("xl/sharedStrings.xml");
+      const strings = shared ? (readEntry(buffer, shared).match(/<si>[\s\S]*?<\/si>/g) ?? []).map(
+        (item) => (item.match(/<t(?:\s[^>]*)?>[\s\S]*?<\/t>/g) ?? []).map((part) => decodeXml(part.replace(/<[^>]+>/g, ""))).join("")
+      ) : [];
+      const sheets = entries.filter((entry) => /^xl\/worksheets\/sheet\d+\.xml$/.test(entry.name)).sort((left, right) => slideNumber(left.name) - slideNumber(right.name));
+      if (!sheets.length) return null;
+      return sheets.map((sheet) => {
+        const rows = (readEntry(buffer, sheet).match(/<row[\s\S]*?<\/row>/g) ?? []).slice(0, 2e3).map(
+          (row) => (row.match(/<c[\s\S]*?<\/c>|<c[^>]*\/>/g) ?? []).map((cell) => {
+            const value = /<v>([\s\S]*?)<\/v>/.exec(cell)?.[1] ?? /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/.exec(cell)?.[1] ?? "";
+            return /\bt="s"/.test(cell) ? strings[Number(value)] ?? "" : decodeXml(value);
+          }).join("	")
+        );
+        return `## Sheet ${slideNumber(sheet.name)}
+${rows.join("\n")}`;
+      }).join("\n\n").trim();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+// src/local-tools.ts
 var pdfParse = require("pdf-parse/lib/pdf-parse.js");
 var managedProcesses = /* @__PURE__ */ new Map();
+function stopProcessTree(proc) {
+  const pid = proc.child.pid;
+  if (!pid) return;
+  if (process.platform === "win32") {
+    const killer = (0, import_child_process2.spawn)("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    killer.on("error", () => proc.child.kill("SIGTERM"));
+  } else {
+    try {
+      process.kill(-pid, "SIGTERM");
+    } catch {
+      proc.child.kill("SIGTERM");
+    }
+  }
+}
 function capBuffer(existing, chunk, maxBytes) {
   const joined = existing + chunk;
   if (joined.length <= maxBytes) return joined;
@@ -1949,12 +2172,8 @@ function buildDirSnapshot(dir, maxDepth = 2) {
 }
 function readFileForContext(rootDir, filePath) {
   try {
-    const abs = (0, import_path3.resolve)(rootDir, filePath);
-    const rel = (0, import_path3.relative)(rootDir, abs);
-    if (rel.startsWith("..") || rel.startsWith("/")) return `[error: path escapes session root]`;
-    for (const pat of [/\/\.ssh\//, /\/\.aws\//, /\/\.env$/, /\/\.env\./, /id_rsa/, /id_ed25519/]) {
-      if (pat.test(abs)) return `[error: sensitive path blocked]`;
-    }
+    const abs = safePath(rootDir, filePath);
+    assertNotSensitive(abs);
     if (!(0, import_fs5.existsSync)(abs)) return `[error: file not found: ${filePath}]`;
     const stat = (0, import_fs5.statSync)(abs);
     if (stat.isDirectory()) return `[error: "${filePath}" is a directory \u2014 use list_directory]`;
@@ -1999,9 +2218,11 @@ ${fileSection}
 | Tool | What it does |
 |------|-------------|
 | \`cli_list_directory\` | List files and folders at a path |
-| \`cli_read_file\` | Read a file (PDF and Word docs are extracted to text) |
+| \`cli_read_file\` | Read a bounded part of a file (PDF and Word docs are extracted to text) |
+| \`cli_search_file\` | Find passages and character offsets inside one large document |
 | \`cli_write_file\` | Write or overwrite a file (user confirmation required) |
 | \`cli_search_files\` | Find files matching a pattern |
+| \`cli_disk_usage\` | Measure and rank file and folder sizes inside the selected root (read only; bounded scan) |
 | \`cli_run_command\` | Run a short command and return its output (user confirmation required) |
 | \`cli_start_process\` | Start a long-running command in the background; returns a processId immediately |
 | \`cli_wait_for_process\` | Block up to N seconds for a background process, then return current output |
@@ -2060,102 +2281,50 @@ function extractToolCall(text) {
   }
   return null;
 }
-function injectAgcTrailer(command, args, agentId2, agentName) {
+function injectAgcTrailer(command, args, agentId3, agentName) {
   if (command !== "git") return args;
   if (!args.some((a) => a === "commit")) return args;
   if (args.some((a) => a.includes("Co-Authored-By: agc"))) return args;
-  const identity = agentName ? `${agentName} (agc)` : agentId2 ? `agc/${agentId2}` : "agc agent";
+  const identity = agentName ? `${agentName} (agc)` : agentId3 ? `agc/${agentId3}` : "agc agent";
   return [...args, "--trailer", `Co-Authored-By: ${identity} <agc-agent@users.noreply.github.com>`];
 }
-var AGC_HOOK_MARKER = "# agc-session:";
-var HOOK_BACKUP_SUFFIX = ".agc-backup";
-function findGitDir(rootDir) {
-  const gitPath = (0, import_path3.join)(rootDir, ".git");
-  if (!(0, import_fs5.existsSync)(gitPath)) return null;
-  const s = (0, import_fs5.statSync)(gitPath);
-  if (s.isDirectory()) return gitPath;
-  if (s.isFile()) {
-    const content = (0, import_fs5.readFileSync)(gitPath, "utf8");
-    const match = content.match(/^gitdir:\s*(.+)$/m);
-    if (match) return match[1].trim();
-  }
-  return null;
-}
-function installGitHook(rootDir, sessionId, agentId2, agentName) {
-  const gitDir = findGitDir(rootDir);
-  if (!gitDir) return;
-  const hooksDir = (0, import_path3.join)(gitDir, "hooks");
-  (0, import_fs5.mkdirSync)(hooksDir, { recursive: true });
-  const hookPath = (0, import_path3.join)(hooksDir, "prepare-commit-msg");
-  if ((0, import_fs5.existsSync)(hookPath)) {
-    const existing = (0, import_fs5.readFileSync)(hookPath, "utf8");
-    if (!existing.includes(AGC_HOOK_MARKER)) {
-      (0, import_fs5.writeFileSync)(hookPath + HOOK_BACKUP_SUFFIX, existing, { mode: 493 });
-    }
-  }
-  const identity = agentName ? `${agentName} (agc)` : agentId2 ? `agc/${agentId2}` : "agc agent";
-  const trailer = `Co-Authored-By: ${identity} <agc-agent@users.noreply.github.com>`;
-  const chainLine = (0, import_fs5.existsSync)(hookPath + HOOK_BACKUP_SUFFIX) ? `
-# chain pre-existing hook
-"$(dirname "$0")/prepare-commit-msg${HOOK_BACKUP_SUFFIX}" "$@" 2>/dev/null || true
-` : "";
-  const hook = `#!/bin/sh
-${AGC_HOOK_MARKER}${sessionId}
-COMMIT_MSG_FILE="$1"
-COMMIT_SOURCE="$2"
-${chainLine}
-case "$COMMIT_SOURCE" in merge|squash) exit 0 ;; esac
-TRAILER="${trailer}"
-grep -qF "$TRAILER" "$COMMIT_MSG_FILE" 2>/dev/null && exit 0
-printf '\\n%s\\n' "$TRAILER" >> "$COMMIT_MSG_FILE"
-`;
-  (0, import_fs5.writeFileSync)(hookPath, hook, { mode: 493 });
-}
-function removeGitHook(rootDir) {
-  const gitDir = findGitDir(rootDir);
-  if (!gitDir) return;
-  const hookPath = (0, import_path3.join)(gitDir, "hooks", "prepare-commit-msg");
-  if (!(0, import_fs5.existsSync)(hookPath)) return;
-  const content = (0, import_fs5.readFileSync)(hookPath, "utf8");
-  if (!content.includes(AGC_HOOK_MARKER)) return;
-  const backupPath = hookPath + HOOK_BACKUP_SUFFIX;
-  if ((0, import_fs5.existsSync)(backupPath)) {
-    (0, import_fs5.writeFileSync)(hookPath, (0, import_fs5.readFileSync)(backupPath, "utf8"), { mode: 493 });
-    (0, import_fs5.unlinkSync)(backupPath);
-  } else {
-    (0, import_fs5.unlinkSync)(hookPath);
-  }
-}
 function safePath(root, userPath) {
-  const abs = (0, import_path3.resolve)(root, userPath);
-  const rel = (0, import_path3.relative)(root, abs);
-  if (rel.startsWith("..") || rel.startsWith("/")) {
-    throw new Error(`Path "${userPath}" escapes the session root. Access denied.`);
-  }
-  return abs;
-}
-var BLOCKED_PATTERNS = [
-  /\/\.ssh\//,
-  /\/\.gnupg\//,
-  /\/\.agc\//,
-  /\/\.aws\//,
-  /\/\.env$/,
-  /\/\.env\./,
-  /id_rsa/,
-  /id_ed25519/
-];
-function assertNotSensitive(abs) {
-  for (const pat of BLOCKED_PATTERNS) {
-    if (pat.test(abs)) {
-      throw new Error(`Access to "${abs}" is blocked for security reasons.`);
+  const canonicalRoot = (0, import_fs5.realpathSync)(root);
+  const abs = (0, import_path3.resolve)(canonicalRoot, userPath);
+  const inside = (path) => {
+    const rel = (0, import_path3.relative)(canonicalRoot, path);
+    return rel !== ".." && !rel.startsWith(`..${import_path3.sep}`) && !(0, import_path3.isAbsolute)(rel);
+  };
+  if (!inside(abs) && !(0, import_path3.isAbsolute)(userPath)) throw new Error(`Path "${userPath}" escapes the session root. Access denied.`);
+  let ancestor = abs;
+  while (!(0, import_fs5.existsSync)(ancestor)) {
+    try {
+      if ((0, import_fs5.lstatSync)(ancestor).isSymbolicLink()) throw new Error("Dangling symlink is not allowed.");
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
     }
+    const parent = (0, import_path3.dirname)(ancestor);
+    if (parent === ancestor) throw new Error("Cannot resolve path.");
+    ancestor = parent;
+  }
+  const canonicalAncestor = (0, import_fs5.realpathSync)(ancestor);
+  if (!inside(canonicalAncestor)) throw new Error(`Path "${userPath}" resolves outside the session root. Access denied.`);
+  assertNotSensitive(abs);
+  assertNotSensitive(canonicalAncestor);
+  return (0, import_path3.resolve)(canonicalAncestor, (0, import_path3.relative)(ancestor, abs));
+}
+function assertNotSensitive(abs) {
+  const segments = abs.split(/[\\/]/);
+  if (segments.some((part) => /^(?:\.ssh|\.gnupg|\.agc|\.aws|\.env(?:\..*)?|id_rsa|id_ed25519)$/i.test(part))) {
+    throw new Error(`Access to "${abs}" is blocked for security reasons.`);
   }
 }
 async function confirm(message, config, permissionKey) {
-  if (config.autoApprove) return true;
   const cached = config.permissions.get(permissionKey);
   if (cached === "allow") return true;
   if (cached === "deny") return false;
+  if (config.autoApprove) return true;
+  if (config.confirm) return config.confirm(message, permissionKey);
   return new Promise((resolve2) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     process.stdout.write(
@@ -2164,22 +2333,23 @@ async function confirm(message, config, permissionKey) {
   \x1B[2m[y] Yes  [n] No  [A] Always allow this type  [N] Never allow this type\x1B[0m
   \x1B[36m?\x1B[0m  `
     );
+    rl.once("close", () => resolve2(false));
     rl.once("line", (answer) => {
-      rl.close();
-      const a = answer.trim().toLowerCase();
-      if (a === "a") {
+      const a = answer.trim();
+      if (a === "A") {
         config.permissions.set(permissionKey, "allow");
         resolve2(true);
-      } else if (a === "n" || a === "nn") {
+      } else if (a === "N") {
         config.permissions.set(permissionKey, "deny");
         resolve2(false);
       } else {
-        resolve2(a === "y" || a === "yes" || a === "");
+        resolve2(a.toLowerCase() === "y" || a.toLowerCase() === "yes");
       }
+      rl.close();
     });
   });
 }
-var OFFICE_EXTS = /* @__PURE__ */ new Set([".docx", ".doc", ".rtf", ".odt", ".pages"]);
+var OFFICE_EXTS = /* @__PURE__ */ new Set([".docx", ".doc", ".rtf", ".odt", ".pages", ".pptx", ".xlsx"]);
 var PDF_EXTS = /* @__PURE__ */ new Set([".pdf"]);
 var UNREADABLE_BINARY_EXTS = /* @__PURE__ */ new Set([
   ".png",
@@ -2211,9 +2381,7 @@ var UNREADABLE_BINARY_EXTS = /* @__PURE__ */ new Set([
   ".ai",
   ".sketch",
   ".figma",
-  ".xlsx",
   ".xls",
-  ".pptx",
   ".ppt"
 ]);
 function extractViaCommand(cmd, cmdArgs) {
@@ -2224,17 +2392,16 @@ function extractViaCommand(cmd, cmdArgs) {
     });
   });
 }
-async function extractPdfText(abs) {
+async function extractPdfText(abs, maxChars = 15e4) {
   try {
     const buffer = (0, import_fs5.readFileSync)(abs);
     const data = await pdfParse(buffer);
     const text2 = data.text?.trim();
     if (text2) {
-      const MAX_CHARS = 15e4;
-      if (text2.length > MAX_CHARS) {
-        return text2.slice(0, MAX_CHARS) + `
+      if (text2.length > maxChars) {
+        return text2.slice(0, maxChars) + `
 
-[\u2026truncated \u2014 showing first ${MAX_CHARS.toLocaleString()} characters of ${text2.length.toLocaleString()} total]`;
+[\u2026truncated \u2014 showing first ${maxChars.toLocaleString()} characters of ${text2.length.toLocaleString()} total]`;
       }
       return text2;
     }
@@ -2245,47 +2412,129 @@ async function extractPdfText(abs) {
   return `[Cannot extract PDF text: the file may be scanned/image-only or password-protected]`;
 }
 async function extractOfficeText(abs, ext) {
+  const openXml = extractOfficeOpenXmlText((0, import_fs5.readFileSync)(abs), ext);
+  if (openXml) return openXml;
   const text = await extractViaCommand("textutil", ["-stdout", "-cat", "txt", abs]);
   if (text) return text;
-  return `[Cannot extract ${ext} text: textutil failed or is unavailable on this system]`;
+  return `[Cannot extract ${ext} text: this document format is not supported on this system]`;
+}
+var documentTextCache = /* @__PURE__ */ new Map();
+async function cachedDocumentText(abs, stat, ext) {
+  const cached = documentTextCache.get(abs);
+  if (cached?.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached.text;
+  const text = PDF_EXTS.has(ext) ? await extractPdfText(abs, Number.MAX_SAFE_INTEGER) : await extractOfficeText(abs, ext);
+  documentTextCache.delete(abs);
+  if (text.length <= 2e6) documentTextCache.set(abs, { size: stat.size, mtimeMs: stat.mtimeMs, text });
+  while (documentTextCache.size > 4) documentTextCache.delete(documentTextCache.keys().next().value);
+  return text;
 }
 async function toolReadFile(args, cfg) {
   const { path: userPath } = args;
   if (!userPath) throw new Error('read_file requires a "path" argument');
   const abs = safePath(cfg.rootDir, userPath);
   assertNotSensitive(abs);
-  if (!(0, import_fs5.existsSync)(abs)) throw new Error(`File not found: ${userPath}`);
+  if (!(0, import_fs5.existsSync)(abs)) throw new Error(`File not found: ${userPath} (resolved to ${abs}). List the parent directory and use a path relative to the selected workspace root: ${cfg.rootDir}.`);
   const stat = (0, import_fs5.statSync)(abs);
   if (stat.isDirectory()) throw new Error(`"${userPath}" is a directory, not a file`);
   const ext = (0, import_path3.extname)(abs).toLowerCase();
   if (PDF_EXTS.has(ext)) {
     if (stat.size > 5e7) throw new Error(`PDF too large to read (${Math.round(stat.size / 1e6)} MB). Max 50 MB.`);
-    return extractPdfText(abs);
+    return pageFileText(await cachedDocumentText(abs, stat, ext), args.offset, userPath, true);
   }
   if (OFFICE_EXTS.has(ext)) {
     if (stat.size > 2e7) throw new Error(`Document too large to read (${Math.round(stat.size / 1e6)} MB). Max 20 MB.`);
-    return extractOfficeText(abs, ext);
+    return pageFileText(await cachedDocumentText(abs, stat, ext), args.offset, userPath, true);
   }
   if (UNREADABLE_BINARY_EXTS.has(ext)) {
     throw new Error(`Cannot read binary file "${userPath}" (${ext} format). Only text, PDF, and Office documents are supported.`);
   }
   if (stat.size > 5e5) throw new Error(`File too large to read (${Math.round(stat.size / 1024)} KB). Max 500 KB.`);
-  return (0, import_fs5.readFileSync)(abs, "utf8");
+  return pageFileText((0, import_fs5.readFileSync)(abs, "utf8"), args.offset, userPath, false);
+}
+async function toolSearchFile(args, cfg) {
+  const path = String(args.path ?? "").trim();
+  const query = String(args.query ?? "").trim().slice(0, 120);
+  if (!path || !query) throw new Error("search_file requires a path and search query");
+  const abs = safePath(cfg.rootDir, path);
+  assertNotSensitive(abs);
+  if (!(0, import_fs5.existsSync)(abs)) throw new Error(`File not found: ${path}`);
+  const stat = (0, import_fs5.statSync)(abs);
+  if (!stat.isFile()) throw new Error(`"${path}" is not a file`);
+  const ext = (0, import_path3.extname)(abs).toLowerCase();
+  if (PDF_EXTS.has(ext) && stat.size > 5e7) throw new Error("PDF exceeds the 50 MB Local read limit");
+  if (OFFICE_EXTS.has(ext) && stat.size > 2e7) throw new Error("Document exceeds the 20 MB Local read limit");
+  if (UNREADABLE_BINARY_EXTS.has(ext)) throw new Error(`Cannot search binary file "${path}"`);
+  if (!PDF_EXTS.has(ext) && !OFFICE_EXTS.has(ext) && stat.size > 5e5) throw new Error("Text file exceeds the 500 KB Local read limit");
+  const text = PDF_EXTS.has(ext) || OFFICE_EXTS.has(ext) ? await cachedDocumentText(abs, stat, ext) : (0, import_fs5.readFileSync)(abs, "utf8");
+  return JSON.stringify(searchTextPassages(text, path, query, "Use cli_read_file with a matching offset for more context."));
+}
+function searchTextPassages(text, path, rawQuery, hint) {
+  const query = rawQuery.trim().slice(0, 120);
+  if (!query) throw new Error("A search query is required");
+  const lower = text.toLowerCase();
+  const phrase = query.toLowerCase();
+  const terms = [...new Set(phrase.match(/[\p{L}\p{N}]{3,}/gu) ?? [])].slice(0, 8);
+  const positions = [];
+  const collect2 = (needle) => {
+    let offset = 0;
+    while (positions.length < 5e3) {
+      const found = lower.indexOf(needle, offset);
+      if (found < 0) break;
+      positions.push(found);
+      offset = found + Math.max(needle.length, 1);
+    }
+  };
+  collect2(phrase);
+  if (!positions.length) for (const term of terms) collect2(term);
+  const ranked = positions.map((offset) => {
+    const start = Math.max(0, offset - 180);
+    const end = Math.min(text.length, offset + 320);
+    const excerpt = text.slice(start, end).replace(/\s+/g, " ").trim();
+    const score = terms.filter((term) => excerpt.toLowerCase().includes(term)).length;
+    return { offset, score, excerpt };
+  }).sort((a, b) => b.score - a.score || b.offset - a.offset);
+  const selected = [];
+  for (const match of ranked) {
+    if (selected.some((entry) => Math.abs(entry.offset - match.offset) < 250)) continue;
+    selected.push(match);
+    if (selected.length >= 8) break;
+  }
+  return { path, query, totalChars: text.length, matches: selected.map(({ offset, excerpt }) => ({ offset, excerpt })), hint };
+}
+function pageFileText(text, rawOffset, path, includeTail) {
+  const offset = rawOffset === void 0 ? 0 : Number(rawOffset);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > text.length) throw new Error("read_file offset must be a character position within the file");
+  if (offset === 0 && text.length <= 7e3) return text;
+  const end = Math.min(text.length, offset + 6e3);
+  const next = end < text.length ? ` Use cli_read_file with path ${JSON.stringify(path)} and offset ${end} to continue.` : "";
+  const tail = includeTail && offset === 0 && end < text.length - 1500 ? `
+
+[Final 1,500 characters of document]
+${text.slice(-1500)}` : "";
+  return `[Showing characters ${offset}-${end} of ${text.length}.${next}]
+${text.slice(offset, end)}${tail}`;
 }
 async function toolWriteFile(args, cfg) {
   const { path: userPath, content } = args;
   if (!userPath) throw new Error('write_file requires a "path" argument');
-  if (content === void 0) throw new Error('write_file requires a "content" argument');
+  if (typeof content !== "string") throw new Error('write_file requires a string "content" argument');
   const abs = safePath(cfg.rootDir, userPath);
   assertNotSensitive(abs);
+  const before = (0, import_fs5.existsSync)(abs) ? (0, import_fs5.readFileSync)(abs, "utf8") : "";
+  const preview = editPreview(before, content);
   const ok = await confirm(
-    `Agent wants to write file: \x1B[1m${abs}\x1B[0m (${String(content).length} chars)`,
+    `Agent wants to write file: \x1B[1m${abs}\x1B[0m (${String(content).length} chars)
+${preview}`,
     cfg,
     "write_file"
   );
   if (!ok) return "User denied write operation.";
-  (0, import_fs5.mkdirSync)((0, import_path3.dirname)(abs), { recursive: true });
-  (0, import_fs5.writeFileSync)(abs, content, "utf8");
+  const checked = safePath(cfg.rootDir, userPath);
+  if (((0, import_fs5.existsSync)(checked) ? (0, import_fs5.readFileSync)(checked, "utf8") : "") !== before) {
+    return "Error: file changed during approval. Read it again before retrying.";
+  }
+  (0, import_fs5.mkdirSync)((0, import_path3.dirname)(checked), { recursive: true });
+  (0, import_fs5.writeFileSync)(checked, content, "utf8");
   return `Written ${String(content).length} bytes to ${userPath}`;
 }
 async function toolListDirectory(args, cfg) {
@@ -2299,6 +2548,10 @@ async function toolListDirectory(args, cfg) {
     return `[${type}] ${e.name}`;
   });
   return lines.join("\n") || "(empty directory)";
+}
+async function toolDiskUsage(args, cfg) {
+  const root = safePath(cfg.rootDir, String(args.path ?? "."));
+  return JSON.stringify(await scanDiskUsage(root, cfg.signal, assertNotSensitive));
 }
 async function toolSearchFiles(args, cfg) {
   const { pattern, directory } = args;
@@ -2359,9 +2612,10 @@ async function toolRunCommand(args, cfg) {
     });
   }
   return new Promise((resolve2) => {
-    (0, import_child_process2.execFile)(command, injectedArgs.map(String), { cwd: workDir, timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+    (0, import_child_process2.execFile)(command, injectedArgs.map(String), { cwd: workDir, timeout: timeoutMs, maxBuffer: 1024 * 1024, signal: cfg.signal }, (err, stdout, stderr) => {
       const out = [stdout, stderr].filter(Boolean).join("\n--- stderr ---\n");
-      if (err && !out) return resolve2(`Error: ${err.message}`);
+      if (err) return resolve2(`Error: command failed (${err.code ?? "unknown"}): ${err.message}
+${out}`);
       resolve2(out || "(no output)");
     });
   });
@@ -2379,11 +2633,14 @@ async function toolStartProcess(args, cfg) {
     "start_process"
   );
   if (!ok) return JSON.stringify({ error: "User denied process start." });
-  const id = `proc_${Date.now().toString(36)}`;
+  const finished = [...managedProcesses.values()].filter((proc2) => proc2.status !== "running");
+  for (const proc2 of finished.slice(0, Math.max(0, finished.length - 99))) managedProcesses.delete(proc2.id);
+  const id = `proc_${(0, import_crypto.randomUUID)()}`;
   const child = (0, import_child_process2.spawn)(command, cmdArgs.map(String), {
     cwd: workDir,
     stdio: ["ignore", "pipe", "pipe"],
-    detached: false
+    detached: process.platform !== "win32",
+    windowsHide: true
   });
   const proc = {
     id,
@@ -2396,6 +2653,10 @@ async function toolStartProcess(args, cfg) {
     endedAt: null,
     child
   };
+  if (cfg.signal) {
+    if (cfg.signal.aborted) stopProcessTree(proc);
+    else cfg.signal.addEventListener("abort", () => stopProcessTree(proc), { once: true });
+  }
   child.stdout?.on("data", (chunk) => {
     proc.stdout = capBuffer(proc.stdout, chunk.toString(), 2e5);
   });
@@ -2403,7 +2664,7 @@ async function toolStartProcess(args, cfg) {
     proc.stderr = capBuffer(proc.stderr, chunk.toString(), 5e4);
   });
   child.on("close", (code) => {
-    proc.status = code === 0 ? "done" : "error";
+    if (proc.status !== "killed") proc.status = code === 0 ? "done" : "error";
     proc.exitCode = code;
     proc.endedAt = /* @__PURE__ */ new Date();
   });
@@ -2443,7 +2704,8 @@ async function toolWaitForProcess(args, _cfg) {
   const proc = managedProcesses.get(processId);
   if (!proc) return JSON.stringify({ error: `No process found with id "${processId}"` });
   if (proc.status !== "running") return processSnapshot(proc);
-  const maxWait = Math.min((typeof wait_seconds === "number" ? wait_seconds : 60) * 1e3, 12e4);
+  const requested = typeof wait_seconds === "number" && Number.isFinite(wait_seconds) ? wait_seconds : 60;
+  const maxWait = Math.max(0, Math.min(requested, 60)) * 1e3;
   const deadline = Date.now() + maxWait;
   await new Promise((resolve2) => {
     const tick = setInterval(() => {
@@ -2461,7 +2723,7 @@ async function toolKillProcess(args, cfg) {
   const proc = managedProcesses.get(processId);
   if (!proc) return JSON.stringify({ error: `No process found with id "${processId}"` });
   if (proc.status !== "running") return JSON.stringify({ error: `Process "${processId}" is not running (status: ${proc.status})` });
-  proc.child.kill("SIGTERM");
+  stopProcessTree(proc);
   proc.status = "killed";
   proc.endedAt = /* @__PURE__ */ new Date();
   cfg.appendLog({ type: "process_killed", processId, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
@@ -2477,6 +2739,15 @@ async function toolListProcesses(_args, _cfg) {
   }));
   return JSON.stringify(list);
 }
+function stopLocalProcesses() {
+  for (const proc of managedProcesses.values()) {
+    if (proc.status === "running") {
+      stopProcessTree(proc);
+      proc.status = "killed";
+      proc.endedAt = /* @__PURE__ */ new Date();
+    }
+  }
+}
 async function runLocalTool(call, cfg) {
   const { tool, args } = call;
   cfg.appendLog({
@@ -2491,6 +2762,9 @@ async function runLocalTool(call, cfg) {
       case "read_file":
         result = await toolReadFile(args, cfg);
         break;
+      case "search_file":
+        result = await toolSearchFile(args, cfg);
+        break;
       case "write_file":
         result = await toolWriteFile(args, cfg);
         break;
@@ -2499,6 +2773,9 @@ async function runLocalTool(call, cfg) {
         break;
       case "search_files":
         result = await toolSearchFiles(args, cfg);
+        break;
+      case "disk_usage":
+        result = await toolDiskUsage(args, cfg);
         break;
       case "run_command":
         result = await toolRunCommand(args, cfg);
@@ -2519,7 +2796,7 @@ async function runLocalTool(call, cfg) {
         result = await toolListProcesses(args, cfg);
         break;
       default:
-        result = `Unknown tool: "${tool}". Available: read_file, write_file, list_directory, search_files, run_command, start_process, wait_for_process, process_status, kill_process, list_processes`;
+        result = `Unknown tool: "${tool}". Available: read_file, search_file, write_file, list_directory, search_files, disk_usage, run_command, start_process, wait_for_process, process_status, kill_process, list_processes`;
     }
   } catch (err) {
     result = `Error: ${err?.message ?? String(err)}`;
@@ -2536,7 +2813,8 @@ async function runLocalTool(call, cfg) {
 
 // src/commands/run.ts
 function runCommand() {
-  return new import_commander8.Command("run").description("Send a single prompt to an agent and stream the response").argument("<prompt>", "Prompt text to send").option("--agent <agentId>", "Agent ID").option("--session <sessionId>", "Resume an existing session by ID").option(
+  const append = (value, previous) => [...previous, value];
+  return new import_commander8.Command("run").description("Send a single prompt to an agent and stream the response").argument("<prompt>", "Prompt text to send").option("--agent <agentId>", "Agent ID").option("--file <path>", "Upload and attach a file (repeatable, up to 25 MB each)", append, []).option("--attach <fileId>", "Attach an existing Library file ID (repeatable)", append, []).option("--session <sessionId>", "Resume an existing session by ID").option(
     "--new-session",
     "Create a new session and print its ID for future use"
   ).option(
@@ -2557,8 +2835,8 @@ function runCommand() {
     "Request an optional on-chain anchor for this run"
   ).action(async (prompt, opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(
         c.error(
           "Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"
@@ -2584,6 +2862,23 @@ function runCommand() {
     }
     const client = makeClient();
     let sessionId = opts.session;
+    const filePaths = opts.file;
+    const attachmentIds = opts.attach;
+    if (filePaths.length + attachmentIds.length > 10) {
+      console.error(c.error("Attach no more than 10 files to a run."));
+      process.exit(1);
+    }
+    try {
+      for (const path of filePaths) {
+        const stat = (0, import_fs6.statSync)(path);
+        if (!stat.isFile() || stat.size < 1 || stat.size > 25 * 1024 * 1024) {
+          throw new Error(`Choose a non-empty file up to 25 MB: ${path}`);
+        }
+      }
+    } catch (error) {
+      printError(error);
+      process.exit(1);
+    }
     if (opts.session) {
       const spinner = spin("Loading session\u2026");
       try {
@@ -2599,7 +2894,7 @@ function runCommand() {
       const spinner = spin("Creating session\u2026");
       try {
         const res = await client.sessions.create({
-          agentId: agentId2,
+          agentId: agentId3,
           initiator: cfg.initiator ?? "",
           title: `agc run ${(/* @__PURE__ */ new Date()).toISOString().slice(0, 16)}`,
           source: "cli"
@@ -2610,6 +2905,24 @@ function runCommand() {
       } catch (err) {
         spinner.stop();
         printError(err);
+        process.exit(1);
+      }
+    }
+    const attachments = attachmentIds.map((fileId) => ({ fileId }));
+    for (const path of filePaths) {
+      const spinner = spin(`Uploading ${(0, import_path4.basename)(path)}\u2026`);
+      try {
+        const result = await client.files.upload(
+          [{ data: new Blob([new Uint8Array((0, import_fs6.readFileSync)(path))]), name: (0, import_path4.basename)(path) }],
+          { agentId: agentId3, sessionId }
+        );
+        const fileId = result.data[0]?.fileId;
+        if (!fileId) throw new Error(`The upload did not return a file ID for ${path}.`);
+        attachments.push({ fileId });
+        spinner.stop();
+      } catch (error) {
+        spinner.stop();
+        printError(error);
         process.exit(1);
       }
     }
@@ -2625,7 +2938,7 @@ function runCommand() {
         appendLog: () => {
         },
         permissions: /* @__PURE__ */ new Map(),
-        agentId: agentId2,
+        agentId: agentId3,
         autoApprove
       };
       const snapshot = buildDirSnapshot(rootDir, 2);
@@ -2660,9 +2973,10 @@ function runCommand() {
       }
     }
     const params = {
-      agentId: agentId2,
+      agentId: agentId3,
       sessionId,
       messages: [{ role: "user", content: prompt }],
+      ...attachments.length && { attachments },
       ...cfg.initiator && { initiatorId: cfg.initiator },
       ...opts.computer && { computerRequest: { enabled: true } },
       ...cliContext && { cliContext },
@@ -2785,18 +3099,19 @@ ${sym.fail} ${c.error(event.message ?? "Error")}`
 // src/commands/chat.ts
 var import_commander9 = require("commander");
 var readline3 = __toESM(require("readline"));
-var import_fs6 = require("fs");
-var import_path4 = require("path");
+var import_fs7 = require("fs");
+var import_path5 = require("path");
 var import_os3 = require("os");
-var SESSIONS_DIR = (0, import_path4.join)((0, import_os3.homedir)(), ".agc", "sessions");
+var SESSIONS_DIR = (0, import_path5.join)((0, import_os3.homedir)(), ".agc", "sessions");
 function ensureSessionsDir() {
-  if (!(0, import_fs6.existsSync)(SESSIONS_DIR)) (0, import_fs6.mkdirSync)(SESSIONS_DIR, { recursive: true });
+  if (!(0, import_fs7.existsSync)(SESSIONS_DIR)) (0, import_fs7.mkdirSync)(SESSIONS_DIR, { recursive: true });
 }
 function appendSessionLog(sessionId, record) {
   try {
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(sessionId)) return;
     ensureSessionsDir();
-    const file = (0, import_path4.join)(SESSIONS_DIR, `${sessionId}.jsonl`);
-    (0, import_fs6.appendFileSync)(file, JSON.stringify(record) + "\n", { mode: 384 });
+    const file = (0, import_path5.join)(SESSIONS_DIR, `${sessionId}.jsonl`);
+    (0, import_fs7.appendFileSync)(file, JSON.stringify(record) + "\n", { mode: 384 });
   } catch {
   }
 }
@@ -2819,27 +3134,35 @@ var LOCAL_TOOLS_DISCLAIMER = `
   ${c.dim("and execute shell commands on your machine.")}
 
   ${c.dim("Rules:")}
-  ${sym.bullet} ${c.dim("All paths are restricted to:")} ${c.primary(process.cwd())}
+  ${sym.bullet} ${c.dim("File tools are restricted to:")} ${c.primary(process.cwd())}
   ${sym.bullet} ${c.dim("Sensitive paths (.ssh, .env, .aws, credentials) are always blocked")}
   ${sym.bullet} ${c.dim("Write and run_command operations require your confirmation")}
-  ${sym.bullet} ${c.dim("You can deny any individual request")}
+  ${sym.bullet} ${c.dim("Approved commands run with your operating-system permissions; they are not sandboxed")}
 
   ${c.dim("Session activity is logged to")} ${c.primary("~/.agc/sessions/")}
 `;
 function chatCommand() {
-  return new import_commander9.Command("chat").description("Start an interactive chat REPL with an agent").option("--agent <agentId>", "Agent ID (or set defaultAgentId in config)").option("--resume <sessionId>", "Resume an existing session by ID").option("--computer", "Give the agent access to its persistent cloud computer").option("--no-stream", "Disable token streaming (wait for full response)").option("--no-local", "Disable local file system access for the agent").action(async (opts) => {
+  return new import_commander9.Command("chat").alias("code").description("Start an interactive coding session with an agent").argument("[prompt]", "Initial task to send when the session opens").option("--prompt-file <path>", "Read the initial task from a UTF-8 file (maximum 100 KB)").option("--read-only", "Allow local reads but deny local edits and commands").option("--agent <agentId>", "Agent ID (or set defaultAgentId in config)").option("--resume <sessionId>", "Resume an existing session by ID").option("--computer", "Give the agent access to its persistent cloud computer").option("--no-stream", "Disable token streaming (wait for full response)").option("--no-local", "Disable local file system access for the agent").action(async (prompt, opts) => {
+    let initialPrompt = prompt;
+    if (opts.promptFile) {
+      if (prompt) throw new Error("Use either a prompt argument or --prompt-file, not both.");
+      if ((0, import_fs7.statSync)(opts.promptFile).size > 1e5) throw new Error("Prompt file exceeds 100 KB.");
+      initialPrompt = (0, import_fs7.readFileSync)(opts.promptFile, "utf8").trim();
+    }
+    if (!process.stdin.isTTY) throw new Error("Interactive coding requires a terminal. Use `agc run` for scripts.");
     const localEnabled = opts.local !== false;
+    if (localEnabled && opts.stream === false) throw new Error("Local tools require streaming. Use --no-local with --no-stream.");
     const cfg = loadConfig();
-    let agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2 && cfg.initiator) {
+    let agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3 && cfg.initiator) {
       try {
         const listed = await makeClient().agents.list(cfg.initiator);
         const agents = listed?.data ?? listed ?? [];
-        agentId2 = agents.find((agent) => agent.isDefault)?.agentId ?? agents[0]?.agentId;
+        agentId3 = agents.find((agent) => agent.isDefault)?.agentId ?? agents[0]?.agentId;
       } catch {
       }
     }
-    if (!agentId2) {
+    if (!agentId3) {
       console.error(c.error("No default agent is available. Specify --agent <agentId> or run `agc agents list`."));
       process.exit(1);
     }
@@ -2855,7 +3178,7 @@ function chatCommand() {
       const spinner = spin("Creating session\u2026");
       try {
         const res = await client.sessions.create({
-          agentId: agentId2,
+          agentId: agentId3,
           initiator,
           title: `agc chat ${(/* @__PURE__ */ new Date()).toISOString().slice(0, 16)}`,
           source: "cli"
@@ -2866,7 +3189,7 @@ function chatCommand() {
         appendSessionLog(sessionId, {
           type: "session_start",
           sessionId,
-          agentId: agentId2,
+          agentId: agentId3,
           initiator,
           source: "cli",
           createdAt: (/* @__PURE__ */ new Date()).toISOString()
@@ -2881,12 +3204,8 @@ function chatCommand() {
       try {
         const res = await client.sessions.get(sessionId);
         const session = res?.data ?? res;
-        if (session.agentId && session.agentId !== agentId2) {
-          spinner.stop();
-          console.log(c.warn(`  Note: session ${sessionId} was created with agent ${session.agentId}, not ${agentId2}`));
-        } else {
-          spinner.stop();
-        }
+        if (session.agentId) agentId3 = session.agentId;
+        spinner.stop();
       } catch {
         spinner.stop();
         console.error(c.error(`Session "${sessionId}" not found.`));
@@ -2896,10 +3215,10 @@ function chatCommand() {
     let agentName;
     let walletLine = "";
     await Promise.allSettled([
-      client.agents.get(agentId2).then((res) => {
+      client.agents.get(agentId3).then((res) => {
         agentName = (res?.data ?? res)?.name;
       }),
-      client.wallets.primary(agentId2).then(async (primary) => {
+      client.wallets.primary(agentId3).then(async (primary) => {
         const w = primary?.data ?? primary;
         if (w?.id) {
           const bal = await client.wallets.balance(w.id).catch(() => null);
@@ -2911,9 +3230,9 @@ function chatCommand() {
       })
     ]);
     console.log(`
-${c.bold("Agent Commons Chat")}`);
+${c.bold("Agent Commons \xB7 Code")}`);
     const headerRows = [
-      ["Agent", agentName ? `${agentName}  ${c.dim(agentId2)}` : agentId2],
+      ["Agent", agentName ? `${agentName}  ${c.dim(agentId3)}` : agentId3],
       ["Session", c.id(sessionId) + (isResume ? c.dim(" (resumed)") : c.dim(" (new)"))]
     ];
     if (walletLine) headerRows.push(["Wallet", walletLine]);
@@ -2922,17 +3241,16 @@ ${c.bold("Agent Commons Chat")}`);
     detail(headerRows);
     let localToolsCfg = null;
     if (localEnabled) {
-      console.log(LOCAL_TOOLS_DISCLAIMER);
+      console.log(opts.readOnly ? c.dim("  Local read-only mode: edits and commands are denied.\n") : LOCAL_TOOLS_DISCLAIMER);
       const rootDir = process.cwd();
       localToolsCfg = {
         rootDir,
         sessionId,
-        agentId: agentId2,
+        agentId: agentId3,
         agentName,
         appendLog: (record) => appendSessionLog(sessionId, record),
-        permissions: /* @__PURE__ */ new Map()
+        permissions: new Map(opts.readOnly ? ["write_file", "run_command", "start_process"].map((key) => [key, "deny"]) : [])
       };
-      installGitHook(rootDir, sessionId, agentId2, agentName);
       appendSessionLog(sessionId, {
         type: "local_tools_enabled",
         rootDir,
@@ -2946,8 +3264,10 @@ ${c.bold("Agent Commons Chat")}`);
       terminal: true,
       prompt: c.primary("you") + c.dim(" \u203A ")
     });
-    rl.prompt();
+    let busy = false;
+    if (!initialPrompt) rl.prompt();
     rl.on("line", async (line) => {
+      if (busy) return;
       const input = line.trim();
       if (!input) {
         rl.prompt();
@@ -3000,6 +3320,7 @@ Session saved. Resume with: agc chat --resume ${sessionId}`));
         rl.prompt();
         return;
       }
+      busy = true;
       rl.pause();
       appendSessionLog(sessionId, {
         type: "message",
@@ -3013,6 +3334,11 @@ Session saved. Resume with: agc chat --resume ${sessionId}`));
         const rootDir = localToolsCfg.rootDir;
         const atRefs = [...input.matchAll(/@([\S]+)/g)].map((m) => m[1]);
         const fileContextBlocks = [];
+        if ((0, import_fs7.existsSync)((0, import_path5.join)(rootDir, "AGENTS.md"))) {
+          fileContextBlocks.push(`Project instructions (AGENTS.md):
+${readFileForContext(rootDir, "AGENTS.md")}`);
+        }
+        if (opts.readOnly) fileContextBlocks.push("Local read-only mode: do not write files or execute commands. Local reads are available.");
         for (const ref of atRefs) {
           const content = readFileForContext(rootDir, ref);
           fileContextBlocks.push(`**${ref}**
@@ -3024,13 +3350,13 @@ ${content}
         cliContext = buildLocalToolsManifest(rootDir, snapshot, fileContextBlocks);
       }
       const params = {
-        agentId: agentId2,
+        agentId: agentId3,
         sessionId,
         messages: [{ role: "user", content: userMessage }],
         ...opts.computer && { computerRequest: { enabled: true } },
         ...cliContext && { cliContext }
       };
-      if (opts.noStream) {
+      if (opts.stream === false) {
         process.stdout.write(c.primary("agent") + c.dim(" \u203A "));
         const spinner = spin("thinking\u2026");
         try {
@@ -3051,12 +3377,12 @@ ${content}
 ${sym.fail} ${c.error(err.message ?? String(err))}`);
         }
       } else {
+        const thinkingSpinner = spin("thinking\u2026");
         try {
           let hasOutput = false;
           let agentContent = "";
           let toolStartMs = 0;
           let lastToolName = "";
-          const thinkingSpinner = spin("thinking\u2026");
           for await (const event of client.agents.stream(params)) {
             if (event.type === "token") {
               if (thinkingSpinner.isSpinning) {
@@ -3185,25 +3511,34 @@ ${sym.fail} ${c.error(event.message ?? "Stream error")}`);
           if (thinkingSpinner.isSpinning) thinkingSpinner.stop();
           process.stdout.write("\n");
           if (localToolsCfg && agentContent) {
-            await handleLocalToolLoop(agentContent, localToolsCfg, client, agentId2, sessionId, appendSessionLog, !!opts.computer);
+            await handleLocalToolLoop(agentContent, localToolsCfg, client, agentId3, sessionId, appendSessionLog, !!opts.computer);
           }
         } catch (err) {
           process.stdout.write("\n");
           console.error(`${sym.fail} ${c.error(err.message ?? String(err))}`);
+        } finally {
+          thinkingSpinner.stop();
         }
       }
       console.log();
       readline3.cursorTo(process.stdout, 0);
       readline3.clearLine(process.stdout, 0);
+      busy = false;
       rl.resume();
       rl.prompt();
     });
     const cleanup = () => {
-      if (localToolsCfg) removeGitHook(localToolsCfg.rootDir);
+      stopLocalProcesses();
     };
     rl.on("close", () => {
       cleanup();
       process.exit(0);
+    });
+    rl.on("SIGINT", () => {
+      cleanup();
+      console.log(c.dim(`
+Session preserved. Resume with: agc code --resume ${sessionId}`));
+      process.exit(130);
     });
     process.on("SIGINT", () => {
       cleanup();
@@ -3211,10 +3546,18 @@ ${sym.fail} ${c.error(event.message ?? "Stream error")}`);
 Session preserved. Resume with: agc chat --resume ${sessionId}`));
       process.exit(130);
     });
+    process.on("SIGTERM", () => {
+      cleanup();
+      process.exit(143);
+    });
+    if (initialPrompt) {
+      console.log(c.primary("you") + c.dim(" \u203A ") + initialPrompt);
+      rl.emit("line", initialPrompt);
+    }
   });
 }
 var MAX_TOOL_DEPTH = 10;
-async function handleLocalToolLoop(agentText, cfg, client, agentId2, sessionId, appendLog, computerEnabled = false, depth = 0) {
+async function handleLocalToolLoop(agentText, cfg, client, agentId3, sessionId, appendLog, computerEnabled = false, depth = 0) {
   if (depth >= MAX_TOOL_DEPTH) {
     console.log(c.dim(`
   [local] Max tool depth reached (${MAX_TOOL_DEPTH}). Stopping tool loop.
@@ -3261,7 +3604,7 @@ ${result}
     let loopToolName = "";
     let loopToolStartMs = 0;
     for await (const evt of client.agents.stream({
-      agentId: agentId2,
+      agentId: agentId3,
       sessionId,
       messages: [{ role: "user", content: resultMsg }],
       ...computerEnabled && { computerRequest: { enabled: true } }
@@ -3307,7 +3650,7 @@ ${sym.fail} ${c.error(evt.message ?? "Stream error")}`);
     console.error(`${sym.fail} ${c.error(err?.message ?? String(err))}`);
     return;
   }
-  await handleLocalToolLoop(followContent, cfg, client, agentId2, sessionId, appendLog, computerEnabled, depth + 1);
+  await handleLocalToolLoop(followContent, cfg, client, agentId3, sessionId, appendLog, computerEnabled, depth + 1);
 }
 function truncate(s, max) {
   const str = String(s ?? "");
@@ -3317,6 +3660,8 @@ function toolArgSummary(toolName, args) {
   switch (toolName) {
     case "read_file":
       return truncate(args.path ?? "", 60);
+    case "search_file":
+      return truncate(`${args.path ?? ""} \xB7 ${args.query ?? ""}`, 60);
     case "write_file":
       return truncate(args.path ?? "", 60);
     case "delete_file":
@@ -3351,6 +3696,14 @@ function toolResultPreview(toolName, result) {
     case "read_file": {
       const lines = result.split("\n").length;
       return `${lines} lines`;
+    }
+    case "search_file": {
+      try {
+        const matches = JSON.parse(result)?.matches;
+        return Array.isArray(matches) ? `${matches.length} passage${matches.length === 1 ? "" : "s"}` : "";
+      } catch {
+        return "";
+      }
     }
     case "write_file":
       return "written";
@@ -3954,19 +4307,19 @@ function walletCommand() {
   const cmd = new import_commander12.Command("wallet").description("Manage agent wallets");
   cmd.command("list").description("List all wallets for an agent").option("--agent <agentId>", "Agent ID (or use defaultAgentId from config)").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
       process.exit(1);
     }
     const spinner = spin("Fetching wallets\u2026");
     try {
       const client = makeClient();
-      const wallets = await client.wallets.list(agentId2);
+      const wallets = await client.wallets.list(agentId3);
       spinner.stop();
       if (opts.json) return jsonOut(wallets);
       const list = wallets?.data ?? wallets ?? [];
-      section(`Wallets for agent ${agentId2.slice(0, 8)}\u2026 (${list.length})`);
+      section(`Wallets for agent ${agentId3.slice(0, 8)}\u2026 (${list.length})`);
       table(
         list.map((w) => ({
           ID: w.id.slice(0, 8) + "\u2026",
@@ -3986,19 +4339,19 @@ function walletCommand() {
   });
   cmd.command("show").description("Show the agent's primary wallet address").option("--agent <agentId>", "Agent ID (or use defaultAgentId from config)").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
       process.exit(1);
     }
     const spinner = spin("Fetching primary wallet\u2026");
     try {
       const client = makeClient();
-      const wallet = await client.wallets.primary(agentId2);
+      const wallet = await client.wallets.primary(agentId3);
       spinner.stop();
       if (!wallet) {
-        console.log(c.warn(`  No wallet found for agent ${agentId2}`));
-        console.log(c.dim(`  Run: agc wallet create --agent ${agentId2}`));
+        console.log(c.warn(`  No wallet found for agent ${agentId3}`));
+        console.log(c.dim(`  Run: agc wallet create --agent ${agentId3}`));
         return;
       }
       const w = wallet?.data ?? wallet;
@@ -4019,8 +4372,8 @@ function walletCommand() {
   });
   cmd.command("balance").description("Show the agent's wallet USDC and ETH balance").option("--agent <agentId>", "Agent ID (or use defaultAgentId from config)").option("--wallet <walletId>", "Specific wallet ID (defaults to primary)").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
       process.exit(1);
     }
@@ -4029,11 +4382,11 @@ function walletCommand() {
       const client = makeClient();
       let walletId = opts.wallet;
       if (!walletId) {
-        const primary = await client.wallets.primary(agentId2);
+        const primary = await client.wallets.primary(agentId3);
         const w = primary?.data ?? primary;
         if (!w) {
           spinner.stop();
-          console.log(c.warn(`  No wallet found. Run: agc wallet create --agent ${agentId2}`));
+          console.log(c.warn(`  No wallet found. Run: agc wallet create --agent ${agentId3}`));
           return;
         }
         walletId = w.id;
@@ -4060,8 +4413,8 @@ function walletCommand() {
   });
   cmd.command("create").description("Create a new wallet for an agent").option("--agent <agentId>", "Agent ID (or use defaultAgentId from config)").option("--type <type>", "Wallet type: eoa | external (default: eoa)", "eoa").option("--label <label>", "Wallet label (default: Primary)", "Primary").option("--address <address>", "For --type external: owner-provided address").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`"));
       process.exit(1);
     }
@@ -4073,7 +4426,7 @@ function walletCommand() {
     try {
       const client = makeClient();
       const wallet = await client.wallets.create({
-        agentId: agentId2,
+        agentId: agentId3,
         walletType: opts.type,
         label: opts.label,
         externalAddress: opts.address
@@ -4231,22 +4584,22 @@ function memoryCommand() {
   const cmd = new import_commander14.Command("memory").description("View and manage agent memories");
   cmd.command("list").description("List memories for an agent").option("--agent <agentId>", "Agent ID (defaults to configured agent)").option("--type <type>", "Filter by type: episodic | semantic | procedural").option("--limit <n>", "Max results", "50").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId> or set defaultAgentId"));
       process.exit(1);
     }
     const spinner = spin("Fetching memories\u2026");
     try {
       const client = makeClient();
-      const res = await client.memory.list(agentId2, {
+      const res = await client.memory.list(agentId3, {
         type: opts.type,
         limit: parseInt(opts.limit, 10)
       });
       const memories = res?.data ?? res ?? [];
       spinner.stop();
       if (opts.json) return jsonOut(memories);
-      section(`Memories for ${agentId2.slice(0, 12)}\u2026 (${memories.length})`);
+      section(`Memories for ${agentId3.slice(0, 12)}\u2026 (${memories.length})`);
       if (memories.length === 0) {
         console.log(c.dim("  No memories yet"));
         return;
@@ -4268,15 +4621,15 @@ function memoryCommand() {
   });
   cmd.command("stats").description("Show memory statistics for an agent").option("--agent <agentId>", "Agent ID").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId>"));
       process.exit(1);
     }
     const spinner = spin("Fetching stats\u2026");
     try {
       const client = makeClient();
-      const res = await client.memory.stats(agentId2);
+      const res = await client.memory.stats(agentId3);
       const stats = res?.data ?? res;
       spinner.stop();
       if (opts.json) return jsonOut(stats);
@@ -4336,15 +4689,15 @@ ${sym.ok} Memory ${c.id(memoryId)} deleted`);
   });
   cmd.command("search <query>").description("Semantic search over agent memories").option("--agent <agentId>", "Agent ID").option("--limit <n>", "Max results", "10").option("--json", "Output as JSON").action(async (query, opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId>"));
       process.exit(1);
     }
     const spinner = spin("Searching memories\u2026");
     try {
       const client = makeClient();
-      const res = await client.memory.retrieve(agentId2, query, parseInt(opts.limit, 10));
+      const res = await client.memory.retrieve(agentId3, query, parseInt(opts.limit, 10));
       const memories = res?.data ?? res ?? [];
       spinner.stop();
       if (opts.json) return jsonOut(memories);
@@ -4433,18 +4786,18 @@ function usageCommand() {
       process.exit(1);
     }
   });
-  cmd.command("agent <agentId>").description("Show detailed usage for a specific agent").option("--from <date>", "Start date (ISO)").option("--to <date>", "End date (ISO)").option("--json", "Output as JSON").action(async (agentId2, opts) => {
+  cmd.command("agent <agentId>").description("Show detailed usage for a specific agent").option("--from <date>", "Start date (ISO)").option("--to <date>", "End date (ISO)").option("--json", "Output as JSON").action(async (agentId3, opts) => {
     const spinner = spin("Fetching usage\u2026");
     try {
       const client = makeClient();
-      const res = await client.usage.getAgentUsage(agentId2, {
+      const res = await client.usage.getAgentUsage(agentId3, {
         from: opts.from,
         to: opts.to
       });
       const data = res?.data ?? res;
       spinner.stop();
       if (opts.json) return jsonOut(data);
-      section(`Usage \u2014 ${agentId2.slice(0, 12)}\u2026`);
+      section(`Usage \u2014 ${agentId3.slice(0, 12)}\u2026`);
       detail([
         ["Calls", (data.callCount ?? 0).toLocaleString()],
         ["Input tokens", (data.totalInputTokens ?? 0).toLocaleString()],
@@ -4581,15 +4934,15 @@ function logsCommand() {
   const cmd = new import_commander17.Command("logs").description("View agent activity logs");
   cmd.command("list").alias("ls").description("List recent log entries for an agent").option("--agent <agentId>", "Agent ID (defaults to configured agent)").option("--session <sessionId>", "Filter by session ID").option("--status <status>", "Filter: success | error | warning").option("--limit <n>", "Max entries to show", "50").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId> or set defaultAgentId"));
       process.exit(1);
     }
     const spinner = spin("Fetching logs\u2026");
     try {
       const client = makeClient();
-      const res = await client.logs.list(agentId2, {
+      const res = await client.logs.list(agentId3, {
         limit: Number(opts.limit),
         sessionId: opts.session
       });
@@ -4597,7 +4950,7 @@ function logsCommand() {
       if (opts.status) logs = logs.filter((l) => l.status === opts.status);
       spinner.stop();
       if (opts.json) return jsonOut(logs);
-      section(`Logs \u2014 ${agentId2.slice(0, 12)}\u2026 (${logs.length})`);
+      section(`Logs \u2014 ${agentId3.slice(0, 12)}\u2026 (${logs.length})`);
       if (logs.length === 0) {
         console.log(c.dim("  No logs yet"));
         return;
@@ -4622,21 +4975,21 @@ function logsCommand() {
   });
   cmd.command("errors").description("Show only error log entries for an agent").option("--agent <agentId>", "Agent ID").option("--limit <n>", "Max entries", "20").option("--json", "Output as JSON").action(async (opts) => {
     const cfg = loadConfig();
-    const agentId2 = opts.agent ?? cfg.defaultAgentId;
-    if (!agentId2) {
+    const agentId3 = opts.agent ?? cfg.defaultAgentId;
+    if (!agentId3) {
       console.error(c.error("Specify --agent <agentId>"));
       process.exit(1);
     }
     const spinner = spin("Fetching error logs\u2026");
     try {
       const client = makeClient();
-      const res = await client.logs.list(agentId2, {
+      const res = await client.logs.list(agentId3, {
         limit: Number(opts.limit)
       });
       const errors = (res?.data ?? []).filter((l) => l.status === "error");
       spinner.stop();
       if (opts.json) return jsonOut(errors);
-      section(`Errors \u2014 ${agentId2.slice(0, 12)}\u2026 (${errors.length})`);
+      section(`Errors \u2014 ${agentId3.slice(0, 12)}\u2026 (${errors.length})`);
       if (errors.length === 0) {
         console.log(`${sym.ok} No errors found`);
         return;
@@ -4665,13 +5018,13 @@ var RESOURCE_PROFILES = [
 ];
 var RESOURCE_MODES = ["fixed", "elastic"];
 function resolveAgentId(opts) {
-  const agentId2 = opts.agent ?? loadConfig().defaultAgentId;
-  if (!agentId2) {
+  const agentId3 = opts.agent ?? loadConfig().defaultAgentId;
+  if (!agentId3) {
     throw new Error(
       "Specify --agent <agentId> or set defaultAgentId with `agc config set defaultAgentId <id>`."
     );
   }
-  return agentId2;
+  return agentId3;
 }
 function unwrap(response) {
   return response?.data ?? response;
@@ -4722,17 +5075,17 @@ function parseNumber(value, name, options) {
   }
   return parsed;
 }
-async function changeEnabled(agentId2, enabled, json) {
+async function changeEnabled(agentId3, enabled, json) {
   const spinner = spin(`${enabled ? "Enabling" : "Disabling"} persistent cloud computer\u2026`);
   try {
-    const response = await makeClient().agents.updateComputerConfig(agentId2, { enabled });
+    const response = await makeClient().agents.updateComputerConfig(agentId3, { enabled });
     const config = unwrap(response);
     spinner.stop();
     if (json) return jsonOut(config);
     console.log(`
-${sym.ok} Persistent cloud computer ${enabled ? "enabled" : "disabled"} for agent ${c.id(agentId2)}`);
+${sym.ok} Persistent cloud computer ${enabled ? "enabled" : "disabled"} for agent ${c.id(agentId3)}`);
     if (enabled) {
-      console.log(c.dim(`  Wake it now with: agc computer wake --agent ${agentId2}`));
+      console.log(c.dim(`  Wake it now with: agc computer wake --agent ${agentId3}`));
     }
   } catch (error) {
     spinner.stop();
@@ -4740,12 +5093,12 @@ ${sym.ok} Persistent cloud computer ${enabled ? "enabled" : "disabled"} for agen
     process.exitCode = 1;
   }
 }
-async function lifecycleAction(action, agentId2, reason, json) {
+async function lifecycleAction(action, agentId3, reason, json) {
   const verb = action === "wake" ? "Waking" : action === "sleep" ? "Sleeping" : "Restarting";
   const spinner = spin(`${verb} persistent cloud computer\u2026`);
   try {
     const client = makeClient();
-    const response = action === "wake" ? await client.agents.wakeComputer(agentId2, reason ? { reason } : void 0) : action === "sleep" ? await client.agents.sleepComputer(agentId2, reason ? { reason } : void 0) : await client.agents.restartComputer(agentId2, reason ? { reason } : void 0);
+    const response = action === "wake" ? await client.agents.wakeComputer(agentId3, reason ? { reason } : void 0) : action === "sleep" ? await client.agents.sleepComputer(agentId3, reason ? { reason } : void 0) : await client.agents.restartComputer(agentId3, reason ? { reason } : void 0);
     const computer = unwrap(response);
     spinner.stop();
     if (json) return jsonOut(computer);
@@ -4764,9 +5117,9 @@ function addAgentOption(command) {
 function computerCommand() {
   const command = new import_commander18.Command("computer").description("Manage an agent's one persistent cloud computer");
   addAgentOption(command.command("status").description("Show persistent cloud computer status")).option("--json", "Output as JSON").action(async (opts) => {
-    let agentId2;
+    let agentId3;
     try {
-      agentId2 = resolveAgentId(opts);
+      agentId3 = resolveAgentId(opts);
     } catch (error) {
       printError(error);
       process.exitCode = 1;
@@ -4774,7 +5127,7 @@ function computerCommand() {
     }
     const spinner = spin("Fetching persistent cloud computer\u2026");
     try {
-      const computer = unwrap(await makeClient().agents.getComputer(agentId2));
+      const computer = unwrap(await makeClient().agents.getComputer(agentId3));
       spinner.stop();
       if (opts.json) return jsonOut(computer);
       displayComputer(computer);
@@ -4816,10 +5169,10 @@ function computerCommand() {
     });
   }
   addAgentOption(command.command("resize").description("Resize the persistent cloud computer")).option("--profile <profile>", `Resource profile: ${RESOURCE_PROFILES.join(" | ")}`).option("--mode <mode>", `Resource mode: ${RESOURCE_MODES.join(" | ")}`).option("--vcpu <count>", "Requested virtual CPU count").option("--cpu <count>", "Alias for --vcpu").option("--memory <gib>", "Requested memory in GiB").option("--storage <gib>", "Requested persistent storage in GiB").option("--gpu-type <type>", "GPU type, such as nvidia-h100").option("--gpu-count <count>", "GPU count (0 removes GPU allocation)").option("--json", "Output as JSON").action(async (opts) => {
-    let agentId2;
+    let agentId3;
     let resize;
     try {
-      agentId2 = resolveAgentId(opts);
+      agentId3 = resolveAgentId(opts);
       if (opts.profile && !RESOURCE_PROFILES.includes(opts.profile)) {
         throw new Error(`--profile must be one of: ${RESOURCE_PROFILES.join(", ")}.`);
       }
@@ -4856,7 +5209,7 @@ function computerCommand() {
     }
     const spinner = spin("Resizing persistent cloud computer\u2026");
     try {
-      const computer = unwrap(await makeClient().agents.resizeComputer(agentId2, resize));
+      const computer = unwrap(await makeClient().agents.resizeComputer(agentId3, resize));
       spinner.stop();
       if (opts.json) return jsonOut(computer);
       console.log(`
@@ -4871,10 +5224,10 @@ ${sym.ok} Persistent cloud computer resize requested`);
   addAgentOption(
     command.command("exec").description("Run a command in the persistent cloud computer").argument("<command...>", "Command and arguments to run")
   ).option("--cwd <path>", "Working directory").option("--timeout <seconds>", "Command timeout in seconds", "120").option("--json", "Output as JSON").action(async (commandParts, opts) => {
-    let agentId2;
+    let agentId3;
     let timeoutSeconds;
     try {
-      agentId2 = resolveAgentId(opts);
+      agentId3 = resolveAgentId(opts);
       timeoutSeconds = parseNumber(opts.timeout, "Timeout");
     } catch (error) {
       printError(error);
@@ -4883,7 +5236,7 @@ ${sym.ok} Persistent cloud computer resize requested`);
     }
     const spinner = spin("Running command in persistent cloud computer\u2026");
     try {
-      const result = unwrap(await makeClient().agents.execComputer(agentId2, {
+      const result = unwrap(await makeClient().agents.execComputer(agentId3, {
         command: commandParts.join(" "),
         ...opts.cwd && { cwd: opts.cwd },
         ...timeoutSeconds !== void 0 && { timeoutSeconds }
@@ -4903,10 +5256,10 @@ ${sym.ok} Persistent cloud computer resize requested`);
     }
   });
   addAgentOption(command.command("events").description("List recent persistent cloud computer events")).option("--limit <count>", "Maximum events", "50").option("--json", "Output as JSON").action(async (opts) => {
-    let agentId2;
+    let agentId3;
     let limit;
     try {
-      agentId2 = resolveAgentId(opts);
+      agentId3 = resolveAgentId(opts);
       limit = parseNumber(opts.limit, "Limit", { integer: true });
     } catch (error) {
       printError(error);
@@ -4915,7 +5268,7 @@ ${sym.ok} Persistent cloud computer resize requested`);
     }
     const spinner = spin("Fetching persistent cloud computer events\u2026");
     try {
-      const events = unwrap(await makeClient().agents.listComputerEvents(agentId2, limit));
+      const events = unwrap(await makeClient().agents.listComputerEvents(agentId3, limit));
       spinner.stop();
       if (opts.json) return jsonOut(events);
       section(`Cloud computer events (${events.length})`);
@@ -4939,8 +5292,8 @@ ${sym.ok} Persistent cloud computer resize requested`);
 
 // src/commands/library.ts
 var import_commander19 = require("commander");
-var import_fs7 = require("fs");
-var import_path5 = require("path");
+var import_fs8 = require("fs");
+var import_path6 = require("path");
 function libraryCommand() {
   const command = new import_commander19.Command("library").alias("files").description("Upload, find, and manage files in your Commons library");
   command.command("list", { isDefault: true }).alias("ls").description("List library items").option("--query <text>", "Search names and descriptions").option("--source <source>", "Filter by source").option("--session <sessionId>", "Filter by session").option("--favorites", "Show favorites only").option("--limit <n>", "Maximum items", "50").option("--json", "Output as JSON").action(async (opts) => {
@@ -5002,8 +5355,8 @@ function libraryCommand() {
         throw new Error("--storage must be either s3 or ipfs.");
       }
       const files = paths.map((path) => ({
-        data: new Blob([new Uint8Array((0, import_fs7.readFileSync)(path))]),
-        name: (0, import_path5.basename)(path)
+        data: new Blob([new Uint8Array((0, import_fs8.readFileSync)(path))]),
+        name: (0, import_path6.basename)(path)
       }));
       const result = await makeClient().files.upload(files, {
         agentId: opts.agent,
@@ -5062,7 +5415,7 @@ ${sym.ok} Uploaded ${result.data.length} file${result.data.length === 1 ? "" : "
 
 // src/commands/projects.ts
 var import_commander20 = require("commander");
-var import_fs8 = require("fs");
+var import_fs9 = require("fs");
 function agentId(value) {
   const resolved = value ?? loadConfig().defaultAgentId;
   if (!resolved) {
@@ -5074,7 +5427,7 @@ function agentId(value) {
 }
 function projectFiles(path) {
   if (!path) return void 0;
-  const parsed = JSON.parse((0, import_fs8.readFileSync)(path, "utf8"));
+  const parsed = JSON.parse((0, import_fs9.readFileSync)(path, "utf8"));
   const files = Array.isArray(parsed) ? parsed : parsed.files;
   if (!Array.isArray(files)) {
     throw new Error("The files document must be an array or an object with a files array.");
@@ -5235,8 +5588,160 @@ ${sym.ok} Project published.`);
   return command;
 }
 
-// src/commands/api-keys.ts
+// src/commands/arcade.ts
 var import_commander21 = require("commander");
+var import_fs10 = require("fs");
+var import_path7 = require("path");
+function agentId2(value) {
+  const resolved = value ?? loadConfig().defaultAgentId;
+  if (!resolved) {
+    throw new Error(
+      "Specify --agent <agentId> or set a default with `agc config set defaultAgentId <id>`."
+    );
+  }
+  return resolved;
+}
+var SOURCE_EXTENSIONS = /\.(html|css|js|mjs|cjs|ts|tsx|jsx|json|svg|md|txt)$/i;
+function readGameDirectory(root) {
+  const files = [];
+  const walk = (directory) => {
+    for (const name of (0, import_fs10.readdirSync)(directory)) {
+      if (name.startsWith(".") || name === "node_modules" || name === "dist") continue;
+      const full = (0, import_path7.join)(directory, name);
+      if ((0, import_fs10.statSync)(full).isDirectory()) walk(full);
+      else if (SOURCE_EXTENSIONS.test(name)) {
+        files.push({
+          path: (0, import_path7.relative)(root, full).split(import_path7.sep).join("/"),
+          content: (0, import_fs10.readFileSync)(full, "utf8")
+        });
+      }
+    }
+  };
+  walk(root);
+  if (!files.length) throw new Error(`No game source files found in ${root}.`);
+  return files;
+}
+async function run(label, work) {
+  const spinner = spin(label);
+  try {
+    const result = await work();
+    spinner.stop();
+    return result;
+  } catch (error) {
+    spinner.stop();
+    printError(error);
+    process.exit(1);
+  }
+}
+function arcadeCommand() {
+  const command = new import_commander21.Command("arcade").description(
+    "Build, test, and publish Common Arcade games in your agent owner's account"
+  );
+  command.command("status").description("Check whether this platform is connected to Common Arcade").option("--agent <agentId>", "Agent ID").option("--json", "Output as JSON").action(async (opts) => {
+    const result = await run(
+      "Checking Arcade connection\u2026",
+      () => makeClient().arcade.status(agentId2(opts.agent))
+    );
+    if (opts.json) return jsonOut(result.data);
+    console.log(
+      result.data.connected ? `${sym.ok} Connected to Common Arcade.` : `${sym.fail} Common Arcade is not connected on this deployment.`
+    );
+  });
+  command.command("list", { isDefault: true }).alias("ls").description("List Arcade game projects").option("--agent <agentId>", "Agent ID").option("--json", "Output as JSON").action(async (opts) => {
+    const result = await run(
+      "Fetching Arcade projects\u2026",
+      () => makeClient().arcade.list(agentId2(opts.agent))
+    );
+    if (opts.json) return jsonOut(result.data);
+    section(`Arcade projects (${result.data.length})`);
+    table(
+      result.data.map((project) => ({
+        ID: project.projectId,
+        Title: project.title ?? "",
+        Published: project.isPublished ? "yes" : "no",
+        Studio: project.studioUrl
+      })),
+      ["ID", "Title", "Published", "Studio"]
+    );
+  });
+  command.command("get <projectId>").description("Show an Arcade game project").option("--agent <agentId>", "Agent ID").option("--json", "Output as JSON").action(async (projectId, opts) => {
+    const result = await run(
+      "Fetching Arcade project\u2026",
+      () => makeClient().arcade.get(agentId2(opts.agent), projectId)
+    );
+    if (opts.json) return jsonOut(result.data);
+    const project = result.data;
+    section(project.title ?? project.projectId);
+    detail([
+      ["Project ID", c.id(project.projectId)],
+      ["Revision", String(project.revision)],
+      ["Files", project.document.files.map((file) => file.path).join(", ")],
+      ["Published", project.isPublished ? "yes" : "no"],
+      ["Thumbnail", project.hasThumbnail ? "yes" : "no"],
+      ["Studio", project.studioUrl]
+    ]);
+  });
+  command.command("create").description("Create an Arcade game project").requiredOption("--title <title>", "Game title").option("--description <text>", "How to play").option("--agent <agentId>", "Agent ID").option("--json", "Output as JSON").action(async (opts) => {
+    const result = await run(
+      "Creating Arcade project\u2026",
+      () => makeClient().arcade.create(agentId2(opts.agent), {
+        title: opts.title,
+        description: opts.description
+      })
+    );
+    if (opts.json) return jsonOut(result.data);
+    console.log(`
+${sym.ok} Arcade project created.`);
+    detail([
+      ["Project ID", c.id(result.data.projectId)],
+      ["Studio", result.data.studioUrl]
+    ]);
+  });
+  command.command("push <projectId> <directory>").description("Upload a local game directory to an Arcade project").option("--agent <agentId>", "Agent ID").option("--entry <file>", "HTML entry file (default: index.html)").option("--runtime <file>", "Authoritative rules file, required to publish").option("--thumbnail <url>", "HTTPS thumbnail URL, required to publish").option("--replace", "Remove project files that are not in the directory").option("--json", "Output as JSON").action(async (projectId, directory, opts) => {
+    const files = readGameDirectory(directory);
+    const result = await run(
+      `Uploading ${files.length} files\u2026`,
+      () => makeClient().arcade.write(agentId2(opts.agent), projectId, {
+        files,
+        replaceFiles: Boolean(opts.replace),
+        entryFile: opts.entry,
+        thumbnail: opts.thumbnail,
+        runtime: opts.runtime ? { entryFile: opts.runtime } : void 0
+      })
+    );
+    if (opts.json) return jsonOut(result.data);
+    console.log(`${sym.ok} Saved revision ${result.data.revision}.`);
+    detail([["Studio", result.data.studioUrl]]);
+  });
+  command.command("test <projectId>").description("Run Arcade's validation and runtime harness").option("--agent <agentId>", "Agent ID").option("--steps <n>", "Steps to simulate", (value) => Number(value)).option("--seed <seed>", "Deterministic seed").action(async (projectId, opts) => {
+    const result = await run(
+      "Testing game\u2026",
+      () => makeClient().arcade.test(agentId2(opts.agent), projectId, {
+        steps: opts.steps,
+        seed: opts.seed
+      })
+    );
+    jsonOut(result.data);
+  });
+  command.command("publish <projectId>").description("Publish an Arcade game as an immutable release").option("--agent <agentId>", "Agent ID").option("--json", "Output as JSON").action(async (projectId, opts) => {
+    const result = await run(
+      "Publishing game\u2026",
+      () => makeClient().arcade.publish(agentId2(opts.agent), projectId)
+    );
+    if (opts.json) return jsonOut(result.data);
+    console.log(`
+${sym.ok} Game published.`);
+    detail([
+      ["Release", result.data.releaseId],
+      ["Play", result.data.gameUrl],
+      ["Studio", result.data.studioUrl]
+    ]);
+  });
+  return command;
+}
+
+// src/commands/api-keys.ts
+var import_commander22 = require("commander");
 async function resolveProject(projectId) {
   const projects = (await makeClient().developer.listProjects()).data;
   const project = projectId ? projects.find((candidate) => candidate.id === projectId) : projects[0];
@@ -5248,7 +5753,7 @@ async function resolveProject(projectId) {
   return project;
 }
 function apiKeysCommand() {
-  const command = new import_commander21.Command("keys").alias("api-keys").description("Create and manage project-scoped developer API keys");
+  const command = new import_commander22.Command("keys").alias("api-keys").description("Create and manage project-scoped developer API keys");
   command.command("list", { isDefault: true }).alias("ls").description("List API keys for a developer project").option("--project <projectId>", "Developer project ID (defaults to newest)").option("--json", "Output as JSON").action(async (opts) => {
     const spinner = spin("Fetching developer keys\u2026");
     try {
@@ -5403,7 +5908,7 @@ ${sym.ok} Developer project created.`);
 }
 
 // src/commands/provenance.ts
-var import_commander22 = require("commander");
+var import_commander23 = require("commander");
 function printTrajectory(trajectory) {
   const sources = trajectory.events.flatMap(
     (event) => event.metadata?.lineage?.sources ?? []
@@ -5454,7 +5959,7 @@ function printTrajectory(trajectory) {
   }
 }
 function provenanceCommand() {
-  const cmd = new import_commander22.Command("provenance").description(
+  const cmd = new import_commander23.Command("provenance").description(
     "Inspect and export provenance and attribution trails"
   );
   cmd.command("session <sessionId>").description("Show a plain-language sources and contributors report").option("--json", "Output the complete machine-readable trajectory").action(async (sessionId, opts) => {
@@ -5542,19 +6047,19 @@ async function interactiveMenu() {
     process.exit(0);
   }
   const needsAgent = action === "chat" || action === "run" || action === "computer";
-  const agentId2 = needsAgent ? cfg.defaultAgentId ?? await pickAgentInteractively(action) : void 0;
-  if (needsAgent && !agentId2) return;
+  const agentId3 = needsAgent ? cfg.defaultAgentId ?? await pickAgentInteractively(action) : void 0;
+  if (needsAgent && !agentId3) return;
   if (action === "run") {
     const prompt = await askPrompt("Enter your prompt:");
     if (!prompt) return;
-    runSubcommand(["run", "--agent", agentId2, prompt]);
+    runSubcommand(["run", "--agent", agentId3, prompt]);
     return;
   }
   const commandMap = {
-    chat: ["chat", "--agent", agentId2],
+    chat: ["chat", "--agent", agentId3],
     run: [],
     // handled above
-    computer: ["computer", "status", "--agent", agentId2],
+    computer: ["computer", "status", "--agent", agentId3],
     sessions: ["sessions", "list"],
     agents: ["agents", "list"],
     tasks: ["task", "list"],
@@ -5634,7 +6139,7 @@ async function pickAgentInteractively(action) {
     return null;
   }
   console.log();
-  const agentId2 = await select(
+  const agentId3 = await select(
     action === "computer" ? "Choose the agent whose cloud computer you want to manage:" : `Choose an agent to ${action} with:`,
     agents.map((a) => ({
       label: a.name,
@@ -5647,17 +6152,17 @@ async function pickAgentInteractively(action) {
     { label: "No \u2014 just this once", value: false }
   ]);
   if (saveDefault) {
-    saveConfig({ defaultAgentId: agentId2 });
-    const chosen = agents.find((a) => a.agentId === agentId2);
+    saveConfig({ defaultAgentId: agentId3 });
+    const chosen = agents.find((a) => a.agentId === agentId3);
     console.log(
-      `  ${sym.ok} ${c.dim("Default agent set to")} ${c.bold(chosen?.name ?? agentId2)}
+      `  ${sym.ok} ${c.dim("Default agent set to")} ${c.bold(chosen?.name ?? agentId3)}
 `
     );
   }
-  return agentId2;
+  return agentId3;
 }
-var program = new import_commander23.Command();
-program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.4.0", "-v, --version").showHelpAfterError("(run `agc --help` for usage)").configureHelp({
+var program = new import_commander24.Command();
+program.name("agc").description("Agent Commons CLI \u2014 interact with the Agent Commons platform").version("0.6.0", "-v, --version").showHelpAfterError("(run `agc --help` for usage)").configureHelp({
   sortOptions: true,
   sortSubcommands: true
 }).addHelpText(
@@ -5689,6 +6194,7 @@ program.addCommand(toolsCommand());
 program.addCommand(connectionsCommand());
 program.addCommand(libraryCommand());
 program.addCommand(projectsCommand());
+program.addCommand(arcadeCommand());
 program.addCommand(apiKeysCommand());
 program.addCommand(provenanceCommand());
 program.addCommand(workflowCommand());
