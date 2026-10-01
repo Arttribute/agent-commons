@@ -24,7 +24,7 @@ Sources: [Qwen model and license](https://huggingface.co/Qwen/Qwen3-4B-Instruct-
 ## Delivery gates
 
 1. Deploy and load test the isolated inference service in staging. Confirm model license, regional GPU quota, measured cost per 1,000 generated tokens, peak memory, cold start, and queue behavior.
-2. Configure the internal endpoint secret only after the GPU is running. The model registry entry, free usage ledger, and paid-reservation fallback are implemented but still need concurrent database integration tests against the production schema.
+2. Configure the internal endpoint secret only after the GPU is running. The model registry entry, free usage ledger, and paid-reservation fallback are implemented. A real SQL integration check verifies request and token counters, rollback on exhaustion, and no credit reservation for free runs. Multi-replica concurrency and the production database schema still need a staging test.
 3. Verify that a failed paid reservation creates no paid usage and a free run creates no credit debit in staging. The API exposes the free model in the catalog when configured; confirm its choice in the composer and the fallback status in both web and desktop Cloud views.
 4. Run agent tasks that require project context, large uploaded documents, web tools, and coding tools. Compare answer quality and tool completion with the paid default. Test reconnecting to an active streamed run.
 5. Roll out to a small cohort with a spending ceiling and alerts, then enable the default fallback after the service and ledger remain healthy under real traffic.
