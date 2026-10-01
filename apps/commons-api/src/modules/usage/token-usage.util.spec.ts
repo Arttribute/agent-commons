@@ -67,6 +67,24 @@ describe('extractTokenUsageFromLLMResult', () => {
     });
   });
 
+  it('uses streamed tool-call output tokens without multiplying repeated prompt usage', () => {
+    const usage = extractTokenUsageFromLLMResult({
+      llmOutput: { estimatedTokenUsage: { promptTokens: 6_628, completionTokens: 0, totalTokens: 6_628 } },
+      generations: [[{ message: { usage_metadata: {
+        input_tokens: 217_177,
+        output_tokens: 49,
+        input_token_details: { cache_read: 217_088 },
+      } } }]],
+    });
+    expect(usage).toEqual({
+      inputTokens: 6_628,
+      outputTokens: 49,
+      cachedTokens: 0,
+      totalTokens: 6_677,
+      source: 'llmOutput.estimatedTokenUsage+generations.message.usage_metadata',
+    });
+  });
+
   it('returns null instead of estimating when provider usage is absent', () => {
     expect(extractTokenUsageFromLLMResult({ generations: [[{ text: 'hello' }]] })).toBeNull();
   });
