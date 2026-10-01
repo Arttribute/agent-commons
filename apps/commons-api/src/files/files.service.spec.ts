@@ -411,6 +411,28 @@ describe('FilesService document support', () => {
     });
   });
 
+  it('converts WebP artwork to PNG bytes before embedding it in a presentation', async () => {
+    const webp = await sharp({
+      create: { width: 120, height: 80, channels: 3, background: '#7cf2c4' },
+    }).webp().toBuffer();
+    const service = new FilesService({} as any, {} as any, {} as any);
+    jest.spyOn(service as any, 'getFileOrThrow').mockResolvedValue({
+      itemId: 'image-1', name: 'art.webp', kind: 'image', mimeType: 'image/png',
+    });
+    jest.spyOn(service as any, 'assertCanAccess').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'getBlobs').mockResolvedValue([{ role: 'original' }]);
+    jest.spyOn(service as any, 'downloadBlobBuffer').mockResolvedValue(webp);
+
+    const images = await (service as any).loadPresentationImages(
+      [{ imageFileId: 'image-1' }], 'agent-test',
+    );
+    const image = images.get('image-1');
+    expect(image.mimeType).toBe('image/png');
+    expect(image.dataUri).toMatch(/^data:image\/png;base64,/);
+    expect((await sharp(image.buffer).metadata()).format).toBe('png');
+    expect(image.buffer.subarray(1, 4).toString()).toBe('PNG');
+  });
+
   it('allows workspace Library files to be attached to a chat', async () => {
     const db = {
       query: {

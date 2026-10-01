@@ -709,22 +709,24 @@ export class FilesService {
         );
       }
       const buffer = await this.downloadBlobBuffer(original);
-      const metadata = await sharp(buffer).metadata();
+      const image = sharp(buffer, { limitInputPixels: 25_000_000 });
+      const metadata = await image.metadata();
       if (!metadata.width || !metadata.height) {
         throw new BadRequestException(
           `The dimensions for ${file.name} could not be read`,
         );
       }
-      const mimeType = normalizePresentationImageMime(
-        file.mimeType,
-        metadata.format,
-      );
+      // Office slides support PNG and JPEG reliably. Convert other uploads
+      // before embedding so the media bytes match the declared MIME type.
+      const keepOriginal = metadata.format === 'png' || metadata.format === 'jpeg';
+      const embeddedBuffer = keepOriginal ? buffer : await image.png().toBuffer();
+      const mimeType = metadata.format === 'jpeg' ? 'image/jpeg' : 'image/png';
       loaded.set(fileId, {
         fileId,
         name: file.name,
         mimeType,
-        buffer,
-        dataUri: `data:${mimeType};base64,${buffer.toString('base64')}`,
+        buffer: embeddedBuffer,
+        dataUri: `data:${mimeType};base64,${embeddedBuffer.toString('base64')}`,
         width: metadata.width,
         height: metadata.height,
       });
@@ -2711,13 +2713,6 @@ function normalizeHexColor(value?: string) {
     .replace(/^#/, '')
     .toUpperCase();
   return /^[0-9A-F]{6}$/.test(normalized) ? normalized : '';
-}
-
-function normalizePresentationImageMime(declaredMime: string, format?: string) {
-  if (/^image\/(png|jpeg|gif)$/i.test(declaredMime)) return declaredMime;
-  if (format === 'jpeg' || format === 'jpg') return 'image/jpeg';
-  if (format === 'gif') return 'image/gif';
-  return 'image/png';
 }
 
 function addPresentationSlide(
