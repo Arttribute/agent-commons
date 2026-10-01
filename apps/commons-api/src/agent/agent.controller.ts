@@ -19,6 +19,7 @@ import {
   UploadedFile,
   Inject,
   forwardRef,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -34,7 +35,7 @@ import { Except } from 'type-fest';
 import { Observable } from 'rxjs';
 import { filter, map } from 'rxjs/operators';
 import { omit } from 'lodash';
-import { OwnerGuard, OwnerOnly } from '~/modules/auth';
+import { OwnerGuard, OwnerOnly, resolveCallerId } from '~/modules/auth';
 import { RuntimeDispatcherService } from './runtime/runtime-dispatcher.service';
 import { RuntimeManagementService } from './runtime/runtime-management.service';
 import { normalizeRuntimeType } from './runtime/runtime.types';
@@ -469,10 +470,12 @@ export class AgentController {
   //get agent session full chat by sessionId
   @Get('sessions/:sessionId/chat')
   async getAgentSessionFullChat(
-    @Param('agentId') agentId: string,
     @Param('sessionId') sessionId: string,
+    @Req() req: any,
   ) {
-    const chat = await this.agent.getAgentChatSession(sessionId);
+    const callerId = resolveCallerId(req);
+    if (!callerId) throw new UnauthorizedException('A signed-in caller is required');
+    const chat = await this.agent.getAgentChatSession(sessionId, callerId);
     if (!chat) {
       throw new BadRequestException('Unable to get chat');
     }

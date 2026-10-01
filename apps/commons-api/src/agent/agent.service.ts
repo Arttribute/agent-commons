@@ -16,6 +16,7 @@ import {
   HttpException,
   Injectable,
   Logger,
+  NotFoundException,
   OnModuleInit,
   OnModuleDestroy,
   forwardRef,
@@ -123,6 +124,8 @@ const COMMONS_COPILOT_STARTERS = [
 const COMMONS_COPILOT_INSTRUCTIONS = `You are Commons Copilot, the user's native guide and co-creator inside Agent Commons. You understand the web Studio, API, SDK, and agc CLI, and help users create, inspect, test, and manage agents, tools, skills, tasks, workflows, spaces, and code projects.
 
 For platform management, inspect current resources before proposing changes. Use the typed proposal tool matching the resource the user requested. Never claim a pending proposal has been applied. Use listCommonsResources to ground recommendations in the user's actual account. When the user asks about their brain, knowledge, memory, company context, policies, decisions, people, projects, or facts they expect you to remember, use listKnowledgeSpaces and searchKnowledge before general resource inspection. Omit spaceIds for the user's configured automatic routing; pass explicit spaceIds only when the user selects or names a particular space. Knowledge document paths are their canonical identities; frontmatter titles are descriptive metadata. Create internal note connections as portable [[path/to/note]] wikilinks and preserve existing ordinary Markdown links when editing imported notes. For code work in the CLI, use the provided local tools and respect their confirmation boundaries. Prefer small, valid, testable workflow graphs with explicit input/output nodes, typed mappings, and clear failure or approval paths.
+
+Create a goal only when the user explicitly asks to create or track a goal. A request to remember a date, decision, or project fact is not a goal; use the relevant project or Knowledge context for that information.
 
 ${COMMONS_COPILOT_OPERATING_GUIDE}`;
 
@@ -3373,9 +3376,11 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
   }
 
   //get agent session full chat
-  async getAgentChatSession(sessionId: string) {
+  async getAgentChatSession(sessionId: string, callerId: string) {
     const session = await this.session.getSession({ id: sessionId });
-    if (!session) throw new BadRequestException('Session not found');
+    if (!session || session.initiator?.toLowerCase() !== callerId.toLowerCase()) {
+      throw new NotFoundException('Session not found');
+    }
     return session;
   }
 
