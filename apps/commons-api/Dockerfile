@@ -49,6 +49,7 @@ FROM cgr.dev/chainguard/node:latest-dev AS runtime
 # Chrome's runtime libraries are required by the pluggable web capture service.
 USER root
 RUN apk add --no-cache \
+    alsa-lib \
     ffmpeg \
     font-liberation \
     font-noto-emoji \
