@@ -47,14 +47,17 @@ function explicitlyRequestsTaskCreation(requestText: string): boolean {
 }
 
 function explicitlyRequestsFileArtifact(requestText: string): boolean {
-  const action =
-    '\\b(?:create|make|write|draft|generate|produce|export|save|build|convert|want|need|send|give)\\b';
   const artifact =
-    '\\b(?:file|document|docx|pdf|presentation|slides?|deck|pptx|spreadsheet|xlsx|csv|markdown|readme|html|artifact|download)\\b|\\.(?:txt|md|pdf|docx|pptx|xlsx|csv|json|html)\\b';
-  return new RegExp(
-    `${action}.{0,100}(?:${artifact})|(?:${artifact}).{0,100}${action}`,
+    '(?:file|document|docx|pdf|presentation|slides?|deck|pptx|spreadsheet|xlsx|csv|markdown|readme|html|artifact|\\.(?:txt|md|pdf|docx|pptx|xlsx|csv|json|html))';
+  const direct = new RegExp(
+    `\\b(?:create|make|write|draft|generate|produce|build|want|need|send|give)\\b\\s+(?:(?:me|us)\\s+)?(?:(?:a|an|the|new)\\s+)?(?:(?!of\\b|about\\b|from\\b|this\\b|that\\b|in\\b|as\\b|for\\b)[\\w-]+\\s+){0,2}${artifact}\\b`,
+    'i',
+  );
+  const format = new RegExp(
+    `\\b(?:save|export|convert|render|deliver)\\b.{0,80}\\b(?:as|to|into)\\s+(?:(?:a|an|the)\\s+)?${artifact}\\b|\\b(?:as|into)\\s+(?:(?:a|an|the)\\s+)?${artifact}\\b`,
     'is',
-  ).test(requestText);
+  );
+  return direct.test(requestText) || format.test(requestText);
 }
 
 const FILE_ARTIFACT_TOOLS = new Set([

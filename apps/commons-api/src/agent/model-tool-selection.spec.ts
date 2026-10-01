@@ -192,5 +192,12 @@ describe('model tool selection', () => {
         (entry) => entry.function.name,
       ),
     ).toHaveLength(fileTools.length);
+    for (const request of [
+      'Write a short summary of this document.',
+      'Give me a summary of this PDF.',
+      'Remember this PDF and give the chat a title.',
+    ]) {
+      expect(selectModelTools(fileTools, [], request).tools).toEqual([]);
+    }
   });
 });
