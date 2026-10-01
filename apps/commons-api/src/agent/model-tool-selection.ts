@@ -27,6 +27,12 @@ function relevance(tool: NamedTool, request: Set<string>): number {
   return score;
 }
 
+function explicitlyRequestsGoalCreation(requestText: string): boolean {
+  const action = '\\b(?:create|add|set|save|track|start|define|make|record)\\b';
+  const object = '\\b(?:goal|objective|milestone)s?\\b';
+  return new RegExp(`${action}.{0,80}${object}|${object}.{0,80}${action}`, 'is').test(requestText);
+}
+
 /** Keep caller-provided and local tools ahead of the broad platform catalog. */
 export function selectModelTools<T extends NamedTool>(
   available: T[],
@@ -45,9 +51,13 @@ export function selectModelTools<T extends NamedTool>(
     return true;
   });
   const availableNames = new Set(seen);
+  const allowGoalCreation = explicitlyRequestsGoalCreation(requestText);
   const uniqueAvailable = available.filter((tool) => {
     const name = tool.function.name;
     if (!name || availableNames.has(name)) return false;
+    // An informational request must not expose a state-changing goal tool.
+    // Model instructions alone did not prevent a title request from invoking it.
+    if (tool.category === 'platform' && name === 'createGoal' && !allowGoalCreation) return false;
     availableNames.add(name);
     return true;
   });

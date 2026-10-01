@@ -48,6 +48,7 @@ export function StudioAgentLauncher({
   const { toast } = useToast();
   const { setInputText } = useAgentContext();
   const [launching, setLaunching] = useState(false);
+  const [pendingLaunch, setPendingLaunch] = useState<ComposerLaunch | null>(null);
   const { isLoading: sessionsLoading } = useUserSessions(userAddress);
 
   const defaultAgentId = useMemo(
@@ -102,6 +103,7 @@ export function StudioAgentLauncher({
 
   const handleLaunch = async (launch: ComposerLaunch) => {
     if (!selectedAgentId || launching) return;
+    setPendingLaunch(launch);
     setLaunching(true);
     try {
       router.push(await startChat({ agentId: selectedAgentId, projectId, launch }));
@@ -112,12 +114,29 @@ export function StudioAgentLauncher({
         description: cause instanceof Error ? cause.message : undefined,
         variant: "destructive",
       });
+      setPendingLaunch(null);
       setLaunching(false);
     }
   };
 
   return (
     <div className="w-full">
+      {pendingLaunch && (
+        <div aria-live="polite" className="mx-auto mb-5 flex max-w-3xl flex-col gap-4">
+          <div className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-2xl bg-muted px-4 py-3 text-sm text-foreground">
+            {pendingLaunch.text}
+            {pendingLaunch.attachments.length > 0 && (
+              <div className="mt-2 text-xs text-muted-foreground">
+                {pendingLaunch.attachments.map((attachment) => attachment.name).join(", ")}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
+            {selectedAgent?.name ?? "Agent"} is working…
+          </div>
+        </div>
+      )}
       <ChatInputBox
         agentId={selectedAgentId}
         sessionId=""

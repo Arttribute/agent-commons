@@ -50,4 +50,22 @@ describe('model tool selection', () => {
     expect(selected.tools.length + selected.localTools.length).toBe(HOSTED_FREE_MAX_TOOLS);
     expect(selected.tools.some((entry) => entry.function.name === 'search_library_item')).toBe(true);
   });
+
+  it('exposes goal creation only for an explicit goal request', () => {
+    const available = [tool('createGoal'), tool('listProjectChats')];
+    const informational = selectModelTools(
+      available,
+      [],
+      'Remember the launch date and give this chat a concise title.',
+    );
+    expect(informational.tools.map((entry) => entry.function.name)).toEqual(['listProjectChats']);
+    expect(informational.omitted).toBe(1);
+
+    const intentional = selectModelTools(
+      available,
+      [],
+      'Create a goal to track the launch milestones.',
+    );
+    expect(intentional.tools.map((entry) => entry.function.name)).toEqual(['createGoal', 'listProjectChats']);
+  });
 });
