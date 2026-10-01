@@ -89,9 +89,9 @@ describe('model tool selection', () => {
 
   it('exposes goal creation only for an explicit goal request', () => {
     const available = [
-      tool('createGoal'),
-      tool('updateGoalProgress'),
-      tool('recomputeGoalProgress'),
+      tool('createGoal', 'dynamic'),
+      tool('updateGoalProgress', 'dynamic'),
+      tool('recomputeGoalProgress', 'dynamic'),
       tool('listProjectChats'),
     ];
     const informational = selectModelTools(
@@ -130,8 +130,8 @@ describe('model tool selection', () => {
 
   it('does not turn an informational project message into a persistent task', () => {
     const available = [
-      tool('createTask'),
-      tool('updateTaskProgress'),
+      tool('createTask', 'dynamic'),
+      tool('updateTaskProgress', 'dynamic'),
       tool('listProjectChats'),
     ];
     const informational = selectModelTools(

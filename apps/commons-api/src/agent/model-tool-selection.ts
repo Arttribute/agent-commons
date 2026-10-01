@@ -104,30 +104,19 @@ export function selectModelTools<T extends NamedTool>(
   const uniqueAvailable = available.filter((tool) => {
     const name = tool.function.name;
     if (!name || availableNames.has(name)) return false;
-    // File actions may be registered as dynamic tools rather than platform
-    // tools, so gate the built-in function names before checking category.
+    // Built-in actions may be registered under different tool categories.
+    // Gate their stable function names before ranking the model catalog.
     if (FILE_ARTIFACT_TOOLS.has(name) && !allowFileArtifact) return false;
     // An informational request must not expose a state-changing goal tool.
     // Model instructions alone did not prevent a title request from invoking it.
-    if (tool.category === 'platform') {
-      if (name === 'createGoal' && !allowGoalCreation) return false;
-      if (
-        (name === 'updateGoalProgress' || name === 'recomputeGoalProgress') &&
-        !allowGoalProgress
-      )
-        return false;
-    }
+    if (name === 'createGoal' && !allowGoalCreation) return false;
     if (
-      tool.category === 'platform' &&
-      name === 'createTask' &&
-      !allowTaskCreation
+      (name === 'updateGoalProgress' || name === 'recomputeGoalProgress') &&
+      !allowGoalProgress
     )
       return false;
-    if (
-      tool.category === 'platform' &&
-      name === 'updateTaskProgress' &&
-      !allowTaskProgress
-    )
+    if (name === 'createTask' && !allowTaskCreation) return false;
+    if (name === 'updateTaskProgress' && !allowTaskProgress)
       return false;
     availableNames.add(name);
     return true;
