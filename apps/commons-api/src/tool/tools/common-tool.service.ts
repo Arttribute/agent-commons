@@ -1367,24 +1367,32 @@ export class CommonToolService {
     return resolved;
   }
 
-  async createGoal(props: CreateGoalDto) {
-    return await this.goals.create(props);
+  async createGoal(
+    props: CreateGoalDto,
+    metadata?: { agentId?: string; sessionId?: string; ownerId?: string },
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    return this.goals.create(
+      { ...props, agentId, sessionId: metadata?.sessionId ?? props.sessionId },
+      metadata?.ownerId ?? '',
+    );
   }
 
   async updateGoalProgress(props: {
     goalId: string;
     progress: number;
     status: 'pending' | 'started' | 'completed' | 'failed';
-  }) {
+  }, metadata?: { ownerId?: string }) {
     return await this.goals.updateProgress(
       props.goalId,
       props.progress,
       props.status,
+      metadata?.ownerId ?? '',
     );
   }
 
-  async recomputeGoalProgress(props: { goalId: string }) {
-    await this.goals.recomputeProgress(props.goalId);
+  async recomputeGoalProgress(props: { goalId: string }, metadata?: { ownerId?: string }) {
+    await this.goals.recomputeProgress(props.goalId, metadata?.ownerId ?? '');
     return { success: true };
   }
 
