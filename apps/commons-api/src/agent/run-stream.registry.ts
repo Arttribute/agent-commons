@@ -23,6 +23,8 @@ export interface RunMeta {
   initiator: string;
   sessionId?: string;
   steeringReady?: boolean;
+  /** Latest user prompt, replayed only to the authenticated run owner. */
+  prompt?: string;
 }
 
 export interface RunSummary {
@@ -130,7 +132,7 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
     }
     this.scheduleCleanup(runId, entry, MAX_RUN_LIFETIME_MS);
 
-    this.emit(entry, runId, { type: 'run_started' });
+    this.emit(entry, runId, { type: 'run_started', ...(meta?.prompt ? { prompt: meta.prompt } : {}) });
     entry.heartbeatTimer = setInterval(() => {
       if (!entry.done) this.emit(entry, runId, { type: 'keepalive' });
     }, 15_000);

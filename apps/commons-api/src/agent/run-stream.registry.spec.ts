@@ -41,6 +41,18 @@ describe('RunStreamRegistry', () => {
     expect(received.every((e) => e.runId === 'run-1')).toBe(true);
   });
 
+  it('replays the current prompt only to the run owner', () => {
+    registry.start('run-1', source, {
+      agentId: 'agent-1',
+      initiator: 'user-1',
+      sessionId: 'session-1',
+      prompt: 'Explain this document',
+    });
+    expect(registry.attach('run-1', 0, 'other-user')).toBeUndefined();
+    const { received } = collect(registry.attach('run-1', 0, 'user-1')!);
+    expect(received[0]).toMatchObject({ type: 'run_started', prompt: 'Explain this document' });
+  });
+
   it('replays only events after the given seq on attach', () => {
     registry.start('run-1', source);
     source.next({ type: 'token', content: 'a' }); // seq 2

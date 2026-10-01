@@ -185,6 +185,7 @@ export class AgentController {
     // well below how long a run can take, and clients re-attach via
     // POST /v1/agents/runs/:runId/stream using the runId from `run_started`.
     const runId = uuidv4();
+    const latestUserContent = body.messages?.findLast((message) => message.role === 'user')?.content;
     const source = this.runtimeDispatcher.runAgent({
           ...body,
           stream: true,
@@ -197,7 +198,15 @@ export class AgentController {
             : {}),
         });
     const stream$ = initiator
-      ? await this.runStreams.startPersisted(runId, source, { agentId: body.agentId, initiator, sessionId: body.sessionId, steeringReady: false })
+      ? await this.runStreams.startPersisted(runId, source, {
+          agentId: body.agentId,
+          initiator,
+          sessionId: body.sessionId,
+          steeringReady: false,
+          prompt: typeof latestUserContent === 'string'
+            ? latestUserContent.slice(0, 8_000)
+            : undefined,
+        })
       : this.runStreams.start(runId, source);
     return stream$.pipe(map((data) => ({ data })));
   }

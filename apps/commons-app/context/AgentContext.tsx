@@ -91,7 +91,10 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
 
   const setSessionHistory = useCallback((sessionId: string, history: Message[]) => {
     const current = sessionMessagesRef.current[sessionId];
-    if (current?.some((message) => message.isStreaming)) return;
+    // A session fetch can begin while a run is active and return an older
+    // snapshot after the stream has already completed. Keep the more complete
+    // in-memory conversation when navigating away and back during that race.
+    if (current?.some((message) => message.isStreaming) || (current?.length ?? 0) > history.length) return;
     sessionMessagesRef.current[sessionId] = history;
     if (activeSessionRef.current === sessionId) setMessages(history);
   }, []);

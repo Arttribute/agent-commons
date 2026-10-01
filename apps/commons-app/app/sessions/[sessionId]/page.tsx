@@ -17,6 +17,7 @@ import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 import { useChatLaunchStore } from "@/stores/chat-launch-store";
 import { useProjects } from "@/hooks/use-projects";
 import { SESSIONS_CHANGED } from "@/hooks/sessions/use-user-sessions";
+import { useSessionRunRecovery } from "@/hooks/sessions/use-session-run-recovery";
 
 function SessionPageOpening({ launch }: { launch: ComposerLaunch | null }) {
   return (
@@ -46,6 +47,7 @@ export default function SessionPage() {
   const [launch, setLaunch] = useState<ComposerLaunch | null>(() =>
     useChatLaunchStore.getState().peekLaunch(sessionId),
   );
+  useSessionRunRecovery(sessionId, loadedSessionId === sessionId && !loading && Boolean(session));
 
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
