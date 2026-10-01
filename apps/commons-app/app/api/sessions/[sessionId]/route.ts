@@ -8,6 +8,8 @@ const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 export async function GET(request: NextRequest, { params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
   if (!baseUrl) return NextResponse.json({ error: "Server base URL not configured" }, { status: 500 });
+  const { user, response } = await requireCurrentCommonsUser();
+  if (!user) return response;
   const full = new URL(request.url).searchParams.get("full") === "true";
   const path = full ? `/v1/sessions/${sessionId}/full` : `/v1/sessions/${sessionId}`;
   try {

@@ -690,10 +690,48 @@ var CommonsClient = class {
       ),
       getBySlug: (slug) => this.request("GET", `/v1/ui-plugins/slug/${encodeURIComponent(slug)}`),
       create: (input) => this.request("PUT", "/v1/ui-plugins", input),
-      setStatus: (pluginId, status) => this.request(
+      /** Enabling with `grants` records the owner's review in the same step. */
+      setStatus: (pluginId, status, grants) => this.request(
         "PUT",
         `/v1/ui-plugins/${encodeURIComponent(pluginId)}/status`,
-        { status }
+        grants ? { status, grants } : { status }
+      ),
+      updateGrants: (pluginId, grants) => this.request(
+        "PUT",
+        `/v1/ui-plugins/${encodeURIComponent(pluginId)}/grants`,
+        grants
+      ),
+      /** Pass a PNG, JPEG, WebP or SVG data URL, or null to use the app's own icon. */
+      setIcon: (pluginId, iconUrl) => this.request(
+        "PUT",
+        `/v1/ui-plugins/${encodeURIComponent(pluginId)}/appearance`,
+        { iconUrl }
+      ),
+      connections: (pluginId) => this.request(
+        "GET",
+        `/v1/ui-plugins/${encodeURIComponent(pluginId)}/connections`
+      ),
+      /** Store (or with `secret: null`, remove) the key for a declared connection. */
+      saveConnection: (pluginId, key, input) => this.request(
+        "PUT",
+        `/v1/ui-plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(key)}`,
+        input
+      ),
+      storage: (pluginId) => this.request(
+        "GET",
+        `/v1/ui-plugins/${encodeURIComponent(pluginId)}/storage`
+      ),
+      /** Tests the connection before saving it. */
+      setStorage: (pluginId, input) => this.request(
+        "PUT",
+        `/v1/ui-plugins/${encodeURIComponent(pluginId)}/storage`,
+        input
+      ),
+      layout: () => this.request("GET", "/v1/ui-plugins/layout"),
+      setPins: (scope, pluginIds) => this.request("PUT", "/v1/ui-plugins/layout", { scope, pluginIds }),
+      resetPins: (scope) => this.request(
+        "DELETE",
+        `/v1/ui-plugins/layout?scope=${encodeURIComponent(scope)}`
       ),
       delete: (pluginId) => this.request(
         "DELETE",
@@ -1315,6 +1353,23 @@ var CommonsClient = class {
         `${base(agentId)}/${encodeURIComponent(projectId)}/github`,
         params ?? {}
       )
+    };
+  }
+  /**
+   * Common Arcade games built through an agent. Arcade attributes every project
+   * to the agent's owner, so results open in the owner's own Arcade Studio.
+   */
+  get arcade() {
+    const base = (agentId) => `/v1/agents/${encodeURIComponent(agentId)}/arcade`;
+    const project = (agentId, projectId) => `${base(agentId)}/projects/${encodeURIComponent(projectId)}`;
+    return {
+      status: (agentId) => this.request("GET", `${base(agentId)}/status`),
+      list: (agentId) => this.request("GET", `${base(agentId)}/projects`),
+      create: (agentId, params) => this.request("POST", `${base(agentId)}/projects`, params),
+      get: (agentId, projectId) => this.request("GET", project(agentId, projectId)),
+      write: (agentId, projectId, params) => this.request("PUT", `${project(agentId, projectId)}/game`, params),
+      test: (agentId, projectId, params) => this.request("POST", `${project(agentId, projectId)}/test`, params ?? {}),
+      publish: (agentId, projectId) => this.request("POST", `${project(agentId, projectId)}/publish`, {})
     };
   }
   get goals() {

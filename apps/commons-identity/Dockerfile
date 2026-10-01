@@ -3,6 +3,7 @@ RUN corepack enable
 WORKDIR /workspace
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
 COPY apps/commons-identity/package.json apps/commons-identity/package.json
 RUN pnpm install --frozen-lockfile --filter commons-identity...
 

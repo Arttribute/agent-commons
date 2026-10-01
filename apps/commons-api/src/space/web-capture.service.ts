@@ -1,8 +1,9 @@
 // apps/commons-api/src/space/web-capture.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import puppeteer, { Browser, Page } from 'puppeteer';
+import type { Browser, Page } from 'puppeteer';
 import { EventEmitter } from 'events';
 import { SpaceToolsService, SpaceToolSpec } from './space-tools.service';
+import { fetchPublicJson, PublicWebEgressProxy, validatePublicWebUrl } from './public-web-egress';
 
 interface CaptureSession {
   id: string;
@@ -21,6 +22,7 @@ export class WebCaptureService extends EventEmitter {
   private readonly logger = new Logger(WebCaptureService.name);
   private sessions = new Map<string, CaptureSession>();
   private browser: Browser | null = null;
+  private readonly egressProxy = new PublicWebEgressProxy();
 
   constructor(private spaceTools: SpaceToolsService) {
     super();
@@ -47,6 +49,7 @@ export class WebCaptureService extends EventEmitter {
 
   async onModuleDestroy() {
     await this.cleanup();
+    await this.egressProxy.close();
   }
 
   private findChromiumExecutable(): string | null {
@@ -57,8 +60,8 @@ export class WebCaptureService extends EventEmitter {
       process.env.PUPPETEER_EXECUTABLE_PATH;
     if (envPath) return envPath;
 
-    // When using the full `puppeteer` package, Chromium is bundled —
-    // launch() will pick it automatically. Returning null = use bundled.
+    // Local development may use Puppeteer's cached browser. Production sets
+    // PUPPETEER_EXECUTABLE_PATH to the pinned Chrome for Testing binary.
     return null;
   }
 
@@ -100,13 +103,17 @@ export class WebCaptureService extends EventEmitter {
     }
 
     const executablePath = this.findChromiumExecutable();
+    const proxyPort = await this.egressProxy.listen();
 
     const launchOptions: any = {
       // Use modern headless for newer Chromium; fall back to boolean for older versions
       headless: (process.env.PUPPETEER_HEADLESS_MODE as any) || 'new',
       args: [
         '--disable-dev-shm-usage',
-        '--disable-web-security',
+        `--proxy-server=http://127.0.0.1:${proxyPort}`,
+        '--proxy-bypass-list=<-loopback>',
+        '--dns-prefetch-disable',
+        '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
         '--disable-extensions',
         '--disable-gpu',
         '--disable-sync',
@@ -117,7 +124,6 @@ export class WebCaptureService extends EventEmitter {
         '--password-store=basic',
         '--use-mock-keychain',
         '--autoplay-policy=no-user-gesture-required',
-        '--allow-running-insecure-content',
         '--force-device-scale-factor=1',
         '--enable-webgl',
         '--use-gl=swiftshader',
@@ -143,7 +149,6 @@ export class WebCaptureService extends EventEmitter {
       handleSIGINT: false,
       handleSIGTERM: false,
       handleSIGHUP: false,
-      ignoreHTTPSErrors: true, // Add this for better compatibility
     };
 
     // Ensure proper flags for Cloud Run/rootless environments
@@ -178,6 +183,9 @@ export class WebCaptureService extends EventEmitter {
       `Launching browser with ${executablePath ? 'custom' : 'bundled'} Chromium...`,
     );
 
+    // Puppeteer 25 is ESM-only. Keep the import at the browser launch boundary
+    // so this CommonJS Nest service can load it without requiring an installer.
+    const { default: puppeteer } = await import('puppeteer');
     this.browser = await puppeteer.launch(launchOptions);
 
     // Add better browser event handling
@@ -210,11 +218,11 @@ export class WebCaptureService extends EventEmitter {
   }
 
   private async ensureBrowserConnection(): Promise<boolean> {
-    if (!this.browser || !this.browser.isConnected()) {
+    if (!this.browser || !this.browser.connected) {
       this.logger.log('Browser not connected, reinitializing...');
       try {
         await this.initBrowserWithRetry();
-        return this.browser?.isConnected() ?? false;
+        return this.browser?.connected ?? false;
       } catch (error) {
         this.logger.error('Failed to reinitialize browser:', error);
         return false;
@@ -224,6 +232,9 @@ export class WebCaptureService extends EventEmitter {
   }
 
   private async ensureBrowser(): Promise<void> {
+    if (process.env.DISABLE_WEB_CAPTURE === 'true') {
+      throw new Error('Web capture is disabled in this environment.');
+    }
     if (this.browser) return;
     try {
       await this.initBrowserWithRetry();
@@ -254,7 +265,7 @@ export class WebCaptureService extends EventEmitter {
       this.logger.log(`Starting capture for URL: ${validUrl}`);
 
       // Add connection check before creating page
-      if (!this.browser?.isConnected()) {
+      if (!this.browser?.connected) {
         throw new Error('Browser connection lost before page creation');
       }
 
@@ -279,7 +290,7 @@ export class WebCaptureService extends EventEmitter {
 
       page.on('pageerror', (error) => {
         this.logger.debug(
-          `Page script error for ${params.sessionId}: ${error.message}`,
+          `Page script error for ${params.sessionId}: ${error instanceof Error ? error.message : String(error)}`,
         );
       });
 
@@ -383,10 +394,6 @@ export class WebCaptureService extends EventEmitter {
       `;
       await page.evaluateOnNewDocument(AUTOPLAY_INIT);
 
-      // Set permissions (valid puppeteer Permission strings; 'autoplay' is NOT valid)
-      const context = this.browser.defaultBrowserContext();
-      await context.overridePermissions(validUrl, ['camera', 'microphone']);
-
       // Navigate with staged fallbacks for faster first paint in constrained envs
       const navStart = Date.now();
       const primaryTimeout = Number(
@@ -435,9 +442,8 @@ export class WebCaptureService extends EventEmitter {
           : toolsEndpoint.pathname;
         const discoverUrl = `${baseOrigin}${basePath}/common-agent-tools/`;
         this.logger.log(`Attempting space tools discovery at ${discoverUrl}`);
-        const resp = await fetch(discoverUrl, { method: 'GET' });
-        if (resp.ok) {
-          const json = await resp.json();
+        const json = await fetchPublicJson(discoverUrl);
+        if (json) {
           // Accept single tool object or array
           const specs: SpaceToolSpec[] = Array.isArray(json) ? json : [json];
           const validSpecs = specs.filter((t) => t && t.name && t.apiSpec);
@@ -455,10 +461,6 @@ export class WebCaptureService extends EventEmitter {
               `No valid tool specs found at discovery endpoint for space ${params.spaceId}.`,
             );
           }
-        } else {
-          this.logger.debug(
-            `Space tools discovery endpoint returned status ${resp.status} for ${discoverUrl}`,
-          );
         }
       } catch (discErr) {
         this.logger.debug(
@@ -504,7 +506,7 @@ export class WebCaptureService extends EventEmitter {
       // Start frame capture quickly (first attempt almost immediately for faster UX)
       const initialDelay = navigated ? 300 : 800;
       setTimeout(() => {
-        if (session.isActive && this.browser?.isConnected()) {
+        if (session.isActive && this.browser?.connected) {
           this.startFrameCapture(session);
         } else {
           this.logger.warn(
@@ -540,11 +542,9 @@ export class WebCaptureService extends EventEmitter {
       u = 'https://' + u;
     }
     try {
-      // throws on invalid
-      // eslint-disable-next-line no-new
-      new URL(u);
-      return u;
-    } catch {
+      return validatePublicWebUrl(u).toString();
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Web capture')) throw error;
       throw new Error('Invalid URL format');
     }
   }
@@ -555,7 +555,7 @@ export class WebCaptureService extends EventEmitter {
 
       try {
         // Check if browser and page are still valid
-        if (!session.browser?.isConnected() || session.page.isClosed()) {
+        if (!session.browser?.connected || session.page.isClosed()) {
           this.logger.warn(
             `Browser/page disconnected for session ${session.id}`,
           );
@@ -570,7 +570,7 @@ export class WebCaptureService extends EventEmitter {
             try {
               // Try to reinitialize browser and recreate page
               await this.initBrowserWithRetry();
-              if (this.browser?.isConnected()) {
+              if (this.browser?.connected) {
                 const newPage = await this.browser.newPage();
                 await newPage.goto(session.url, {
                   waitUntil: 'networkidle2',

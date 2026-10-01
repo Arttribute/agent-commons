@@ -70,6 +70,7 @@ const publicRoutes: Array<[string, RequestInit?]> = [
   ["/v1/oauth/providers/google"],
   ["/v1/oauth/callback/google"],
   ["/v1/billing/webhook", { method: "POST" }],
+  ["/v1/files/upload-direct?ticket=invalid", { method: "POST" }],
   ["/v1/previews/example-project/"],
   ["/v1/previews/example-project/assets/index.js"],
   ["/v1/shared/artifacts/example-opaque-token"],
@@ -85,6 +86,9 @@ for (const [path, init] of publicRoutes) {
     503,
   );
 }
+
+const desktopCors = await app.request("/v1/files/upload-direct?ticket=invalid", { method: "OPTIONS", headers: { origin: "http://localhost:3100", "access-control-request-method": "POST" } });
+if (desktopCors.headers.get("access-control-allow-origin") !== "http://localhost:3100") failures.push("Desktop Cloud upload preflight must allow the loopback app origin");
 
 /** Routes that carry user data and must stay behind the credential check. */
 const protectedRoutes = [

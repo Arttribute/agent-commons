@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS build
+FROM public.ecr.aws/docker/library/node:22.22.2-bookworm-slim AS build
 
 WORKDIR /workspace
 
@@ -10,9 +10,15 @@ RUN apt-get update && apt-get install -y \
 
 RUN corepack enable && corepack prepare pnpm@9.15.3 --activate
 
+# The runtime image supplies a SHA-verified Chrome for Testing binary below.
+# Puppeteer's install hook must not download and unpack a second browser.
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
 COPY apps/commons-api/package.json apps/commons-api/package.json
 COPY packages/commons-agent-core/package.json packages/commons-agent-core/package.json
+COPY vendor/sheetjs/xlsx-0.20.3.tgz vendor/sheetjs/xlsx-0.20.3.tgz
 
 RUN pnpm install --filter commons-api... --frozen-lockfile
 
@@ -44,6 +50,7 @@ FROM cgr.dev/chainguard/node:latest-dev AS runtime
 # Chrome's runtime libraries are required by the pluggable web capture service.
 USER root
 RUN apk add --no-cache \
+    alsa-lib \
     ffmpeg \
     font-liberation \
     font-noto-emoji \
@@ -65,7 +72,7 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8080 \
     HOME=/home/node \
-    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/opt/chrome-linux64/chrome \
     CHROME_PATH=/opt/chrome-linux64/chrome \
     PUPPETEER_CACHE_DIR=/tmp/.cache

@@ -1,5 +1,7 @@
 import { Command } from "commander";
 import * as readline from "readline";
+import { readFileSync, statSync } from "fs";
+import { basename } from "path";
 import { loadConfig, makeClient } from "../config.js";
 import { c, sym, spin, detail, printError, jsonOut } from "../ui.js";
 import {
@@ -10,10 +12,13 @@ import {
 } from "../local-tools.js";
 
 export function runCommand(): Command {
+  const append = (value: string, previous: string[]): string[] => [...previous, value];
   return new Command("run")
     .description("Send a single prompt to an agent and stream the response")
     .argument("<prompt>", "Prompt text to send")
     .option("--agent <agentId>", "Agent ID")
+    .option("--file <path>", "Upload and attach a file (repeatable, up to 25 MB each)", append, [])
+    .option("--attach <fileId>", "Attach an existing Library file ID (repeatable)", append, [])
     .option("--session <sessionId>", "Resume an existing session by ID")
     .option(
       "--new-session",
@@ -73,6 +78,23 @@ export function runCommand(): Command {
 
       const client = makeClient();
       let sessionId: string | undefined = opts.session;
+      const filePaths = opts.file as string[];
+      const attachmentIds = opts.attach as string[];
+      if (filePaths.length + attachmentIds.length > 10) {
+        console.error(c.error("Attach no more than 10 files to a run."));
+        process.exit(1);
+      }
+      try {
+        for (const path of filePaths) {
+          const stat = statSync(path);
+          if (!stat.isFile() || stat.size < 1 || stat.size > 25 * 1024 * 1024) {
+            throw new Error(`Choose a non-empty file up to 25 MB: ${path}`);
+          }
+        }
+      } catch (error) {
+        printError(error);
+        process.exit(1);
+      }
 
       // Validate an existing session
       if (opts.session) {
@@ -103,6 +125,25 @@ export function runCommand(): Command {
         } catch (err) {
           spinner.stop();
           printError(err);
+          process.exit(1);
+        }
+      }
+
+      const attachments = attachmentIds.map((fileId) => ({ fileId }));
+      for (const path of filePaths) {
+        const spinner = spin(`Uploading ${basename(path)}…`);
+        try {
+          const result = await client.files.upload(
+            [{ data: new Blob([new Uint8Array(readFileSync(path))]), name: basename(path) }],
+            { agentId, sessionId },
+          );
+          const fileId = result.data[0]?.fileId;
+          if (!fileId) throw new Error(`The upload did not return a file ID for ${path}.`);
+          attachments.push({ fileId });
+          spinner.stop();
+        } catch (error) {
+          spinner.stop();
+          printError(error);
           process.exit(1);
         }
       }
@@ -165,6 +206,7 @@ export function runCommand(): Command {
         agentId,
         sessionId,
         messages: [{ role: "user" as const, content: prompt }],
+        ...(attachments.length && { attachments }),
         ...(cfg.initiator && { initiatorId: cfg.initiator }),
         ...(opts.computer && { computerRequest: { enabled: true } }),
         ...(cliContext && { cliContext }),

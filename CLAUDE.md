@@ -107,7 +107,7 @@ Key tables: `agent`, `agent_wallet`, `session`, `goal`, `task`, `tool`, `agent_t
 
 `apps/commons-app/app/` is the App Router. Main routes: `/agents`, `/sessions`, `/tasks`, `/tools`, `/workflows`, `/spaces/[spaceId]`, `/studio`, `/wallets`, `/logs`, `/usage`, `/settings/api-keys`.
 
-Auth uses **Privy** (`@privy-io/react-auth`). State management uses **Zustand**. The frontend calls the backend directly using the `@agent-commons/sdk` (or raw fetch to the API URL).
+Auth uses **Commons Identity** through Auth.js. State management uses **Zustand**. The frontend calls the backend directly using the `@agent-commons/sdk` (or raw fetch to the API URL).
 
 ### CLI — `agc`
 

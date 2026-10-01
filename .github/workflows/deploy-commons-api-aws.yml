@@ -17,8 +17,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # One in-flight deploy per environment (branch).
-  group: deploy-commons-api-aws-${{ github.ref_name }}
+  # API and Identity/Gateway share the account's Fargate vCPU quota.
+  # Serialize both workflows for each environment during a main push.
+  group: deploy-agent-commons-aws-${{ github.ref_name }}
   cancel-in-progress: false
 
 permissions:

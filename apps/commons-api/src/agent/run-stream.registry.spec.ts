@@ -41,6 +41,18 @@ describe('RunStreamRegistry', () => {
     expect(received.every((e) => e.runId === 'run-1')).toBe(true);
   });
 
+  it('replays the current prompt only to the run owner', () => {
+    registry.start('run-1', source, {
+      agentId: 'agent-1',
+      initiator: 'user-1',
+      sessionId: 'session-1',
+      prompt: 'Explain this document',
+    });
+    expect(registry.attach('run-1', 0, 'other-user')).toBeUndefined();
+    const { received } = collect(registry.attach('run-1', 0, 'user-1')!);
+    expect(received[0]).toMatchObject({ type: 'run_started', prompt: 'Explain this document' });
+  });
+
   it('replays only events after the given seq on attach', () => {
     registry.start('run-1', source);
     source.next({ type: 'token', content: 'a' }); // seq 2
@@ -95,6 +107,17 @@ describe('RunStreamRegistry', () => {
 
   it('returns undefined for unknown runs', () => {
     expect(registry.attach('nope', 0)).toBeUndefined();
+  });
+
+  it('accepts steering only from the run owner and drains it once', () => {
+    registry.start('run-1', source, { agentId: 'a1', initiator: 'owner' });
+    expect(registry.attach('run-1', 0, 'other')).toBeUndefined();
+    expect(registry.enqueueSteer('run-1', 'other', 'change direction')).toBe(false);
+    expect(registry.enqueueSteer('run-1', 'OWNER', 'change direction')).toBe(true);
+    expect(registry.takeSteers('run-1')).toEqual(['change direction']);
+    expect(registry.takeSteers('run-1')).toEqual([]);
+    source.complete();
+    expect(registry.enqueueSteer('run-1', 'owner', 'too late')).toBe(false);
   });
 
   it('reports each person\'s runs with their current state', () => {

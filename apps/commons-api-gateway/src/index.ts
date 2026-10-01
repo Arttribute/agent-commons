@@ -28,7 +28,7 @@ export function createGatewayApp() {
       const allowed = (process.env.CORS_ORIGINS ?? "")
         .split(",")
         .map((value) => value.trim());
-      return allowed.includes(origin) ? origin : (allowed[0] ?? "");
+      return allowed.includes(origin) || /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/.test(origin) ? origin : (allowed[0] ?? "");
     },
     allowHeaders: [
       "authorization",
@@ -200,6 +200,11 @@ export function createGatewayApp() {
       process.env.AGENT_COMMONS_INTERNAL_URL,
       c.req.path,
     ),
+  );
+  // Desktop Cloud uploads use a short-lived HMAC ticket in place of a bearer
+  // token so files can bypass the web function's small request-body limit.
+  app.post("/v1/files/upload-direct", (c) =>
+    publicProxy(c, "agent-commons", process.env.AGENT_COMMONS_INTERNAL_URL, c.req.path),
   );
 
   app.use("/v1/*", async (c, next) => {

@@ -1,5 +1,6 @@
 import { KnowledgeSpacesView } from "@/components/brains/knowledge-spaces-view";
+import { Suspense } from "react";
 
 export default function KnowledgePage() {
-  return <KnowledgeSpacesView />;
+  return <Suspense fallback={null}><KnowledgeSpacesView /></Suspense>;
 }

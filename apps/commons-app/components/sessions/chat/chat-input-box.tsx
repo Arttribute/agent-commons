@@ -7,22 +7,25 @@ import type { StreamEvent } from "@agent-commons/sdk";
 import Link from "next/link";
 import {
   BatteryLow,
+  Brain,
   Check,
   Gauge,
   FolderOpen,
+  Globe2,
   HardDriveUpload,
   LibraryBig,
   Loader2,
   Mic,
   Monitor,
-  Network,
   Plus,
+  Plug,
   ShieldCheck,
   X,
 } from "lucide-react";
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { BRAVE_SEARCH_BASE_URL, hasConfiguredLocalWebSearch, type LocalSettings } from "@agent-commons/desktop-contract";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
@@ -45,6 +48,14 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   readProvenancePreferences,
   writeProvenancePreferences,
@@ -105,6 +116,9 @@ export type ComposerLaunch = {
   }>;
   knowledgeSpaceIds: string[];
   reasoningEffort?: "low" | "medium" | "high" | "xhigh";
+  webSearchEnabled?: boolean;
+  mcpServerIds?: string[];
+  workspaceRoot?: string | null;
 };
 
 export type ExternalComposerPrompt = {
@@ -280,22 +294,103 @@ export default function ChatInputBox({
     useState<ComputerConfigState | null>(null);
   const [computerEnabled, setComputerEnabled] = useState(false);
   const [desktopWorkspace, setDesktopWorkspace] = useState<string | null>(null);
+  const [webSearchConfigured, setWebSearchConfigured] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [webSearchDialogOpen, setWebSearchDialogOpen] = useState(false);
+  const [webSearchProvider, setWebSearchProvider] = useState<"brave" | "searxng">("brave");
+  const [webSearchUrl, setWebSearchUrl] = useState("");
+  const [webSearchApiKey, setWebSearchApiKey] = useState("");
+  const [webSearchSaving, setWebSearchSaving] = useState(false);
+  const [webSearchError, setWebSearchError] = useState("");
+  const [mcpServers, setMcpServers] = useState<NonNullable<LocalSettings["mcpServers"]>>([]);
+  const [mcpServerIds, setMcpServerIds] = useState<string[]>([]);
+  const [workspaceRemoved, setWorkspaceRemoved] = useState(false);
+  useEffect(() => {
+    if (!local || !initialLaunch || initialLaunch.workspaceRoot === undefined) return;
+    setDesktopWorkspace(initialLaunch.workspaceRoot);
+    setWorkspaceRemoved(initialLaunch.workspaceRoot === null);
+  }, [initialLaunch, local]);
   useEffect(() => {
     if (local) {
-      void window.agentCommonsLocal?.getState().then((state) => {
-        setDesktopWorkspace(state.conversations.find((conversation) => conversation.id === sessionId)?.workspaceRoot ?? null);
+      const bridge = window.agentCommonsLocal;
+      void bridge?.getState().then((state) => {
+        const conversation = state.conversations.find((item) => item.id === sessionId);
+        if (initialLaunch?.workspaceRoot === undefined) setDesktopWorkspace(conversation?.workspaceRoot ?? null);
+        setWebSearchConfigured(hasConfiguredLocalWebSearch(state.settings));
+        setWebSearchEnabled(Boolean(hasConfiguredLocalWebSearch(state.settings) && (conversation?.webSearchEnabled ?? initialLaunch?.webSearchEnabled)));
+        setMcpServers(state.settings.mcpServers ?? []);
       }).catch(() => undefined);
+      return bridge?.onEvent((event) => {
+        if (event.type === "state") {
+          setWebSearchConfigured(hasConfiguredLocalWebSearch(event.state.settings));
+          if (!hasConfiguredLocalWebSearch(event.state.settings)) setWebSearchEnabled(false);
+          setMcpServers(event.state.settings.mcpServers ?? []);
+        }
+      });
     } else {
       void window.agentCommonsDesktop?.getWorkspace().then(setDesktopWorkspace).catch(() => undefined);
     }
-  }, [local, sessionId]);
+  }, [local, sessionId, initialLaunch?.webSearchEnabled]);
+  const setChatWebSearch = async (enabled: boolean) => {
+    const bridge = window.agentCommonsLocal;
+    if (!bridge) return;
+    try {
+      const state = await bridge.getState();
+      if (enabled && !hasConfiguredLocalWebSearch(state.settings)) {
+        openWebSearchSettings();
+        return;
+      }
+      if (state.conversations.some((conversation) => conversation.id === sessionId)) {
+        await bridge.setConversationWebSearch(sessionId, enabled);
+      }
+      setWebSearchEnabled(enabled);
+    } catch (cause) {
+      setWebSearchError(cause instanceof Error ? cause.message : "Could not save Web search for this chat.");
+      setWebSearchDialogOpen(true);
+    }
+  };
+  const openWebSearchSettings = () => {
+    setWebSearchError("");
+    setWebSearchDialogOpen(true);
+    void window.agentCommonsLocal?.getState().then((state) => {
+      setWebSearchProvider(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL || !state.settings.webSearchUrl ? "brave" : "searxng");
+      setWebSearchUrl(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "" : state.settings.webSearchUrl ?? "");
+      setWebSearchApiKey(state.settings.webSearchApiKey ?? "");
+    }).catch((cause) => setWebSearchError(cause instanceof Error ? cause.message : "Could not load web search settings."));
+  };
+  const saveWebSearchSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!window.agentCommonsLocal || webSearchSaving) return;
+    setWebSearchSaving(true);
+    setWebSearchError("");
+    try {
+      if (webSearchProvider === "brave" && !webSearchApiKey.trim()) throw new Error("Enter your Brave Search API key.");
+      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl: webSearchProvider === "brave" ? BRAVE_SEARCH_BASE_URL : webSearchUrl, webSearchApiKey });
+      const configured = hasConfiguredLocalWebSearch(state.settings);
+      if (configured && state.conversations.some((conversation) => conversation.id === sessionId)) {
+        await window.agentCommonsLocal.setConversationWebSearch(sessionId, true);
+      }
+      setWebSearchConfigured(configured);
+      setWebSearchEnabled(configured);
+      setWebSearchDialogOpen(false);
+    } catch (cause) {
+      setWebSearchError(cause instanceof Error ? cause.message : "Could not save web search settings.");
+    } finally {
+      setWebSearchSaving(false);
+    }
+  };
   const markRunning = useSessionRunStore((state) => state.markRunning);
+  const markRunId = useSessionRunStore((state) => state.markRunId);
   const markCompleted = useSessionRunStore((state) => state.markCompleted);
+  const sessionRunning = useSessionRunStore((state) => Boolean(sessionId && state.running[sessionId]));
+  const activeCloudRunId = useSessionRunStore((state) => sessionId ? state.runIds[sessionId] : undefined);
   const activeRunSessionRef = useRef<string>("");
   // React state updates are asynchronous, so two clicks in the same frame can
   // both observe `streaming === false`. This synchronous lock guarantees only
   // one request can create/adopt a session at a time.
   const sendInFlightRef = useRef(false);
+  const steerInFlightRef = useRef(false);
+  const [steerError, setSteerError] = useState<string | null>(null);
   const {
     addMessage,
     updateStreamingMessage,
@@ -306,17 +401,18 @@ export default function ChatInputBox({
   } = useAgentContext();
 
   const { stream, streaming } = useAgentStream(userId, {
+    onRunStarted: (runId) => markRunId(activeRunSessionRef.current, runId),
     onReset: () => {
       accumulatedRef.current = "";
-      updateStreamingMessage("");
+      updateStreamingMessage("", activeRunSessionRef.current);
     },
     onToken: (token) => {
       accumulatedRef.current += token;
-      updateStreamingMessage(accumulatedRef.current);
+      updateStreamingMessage(accumulatedRef.current, activeRunSessionRef.current);
     },
     onStatus: (event) => {
       const activity = statusEventToActivity(event);
-      if (activity) upsertStreamingActivity(activity);
+      if (activity) upsertStreamingActivity(activity, activeRunSessionRef.current);
       if (event.stage === "computer") {
         notifyComputerActivity({
           tab: "files",
@@ -327,7 +423,7 @@ export default function ChatInputBox({
     onFinal: (payload) => {
       const content =
         payload?.content ?? payload?.data?.content ?? accumulatedRef.current;
-      finalizeStreamingMessage(content, payload?.metadata);
+      finalizeStreamingMessage(content, payload?.metadata, activeRunSessionRef.current);
       markCompleted(payload?.sessionId ?? activeRunSessionRef.current);
       notifySessionsChanged({ sessionId: payload?.sessionId ?? activeRunSessionRef.current, title: payload?.title });
       if (payload?.sessionId && payload.sessionId !== sessionId) {
@@ -361,7 +457,7 @@ export default function ChatInputBox({
         status: "running",
         timestamp: new Date().toISOString(),
         payload: parsedArgs ? { args: parsedArgs } : undefined,
-      });
+      }, activeRunSessionRef.current);
     },
     onTool: (event) => {
       const toolName = event.toolName ?? event.tool ?? event.name ?? "tool";
@@ -412,7 +508,7 @@ export default function ChatInputBox({
         status: event.status === "error" ? "failed" : "completed",
         timestamp: event.timestamp ?? new Date().toISOString(),
         payload: { ...event, args: activityArgsRef.current.get(activityId) },
-      });
+      }, activeRunSessionRef.current);
       if (
         isComputerTool(toolName) &&
         progressActivityIdsRef.current.has(progressActivityId)
@@ -431,7 +527,7 @@ export default function ChatInputBox({
           status: event.status === "error" ? "failed" : "completed",
           timestamp: event.timestamp ?? new Date().toISOString(),
           payload: event,
-        });
+        }, activeRunSessionRef.current);
       }
     },
     onToolProgress: (event) => {
@@ -455,7 +551,7 @@ export default function ChatInputBox({
           input: event.payload?.summary ?? event.detail,
         });
       }
-      upsertStreamingActivity(activity);
+      upsertStreamingActivity(activity, activeRunSessionRef.current);
     },
     onToolEnd: (output, event) => {
       const toolName = event.toolName ?? "tool";
@@ -476,7 +572,7 @@ export default function ChatInputBox({
         status: "completed",
         timestamp: event.timestamp ?? new Date().toISOString(),
         payload: { output, args: activityArgsRef.current.get(activityId) },
-      });
+      }, activeRunSessionRef.current);
     },
     onCliToolRequest: (event) => {
       const toolName = event.tool ?? event.toolName ?? "local tool";
@@ -490,7 +586,7 @@ export default function ChatInputBox({
         status: "running",
         timestamp: event.timestamp ?? new Date().toISOString(),
         payload: event,
-      });
+      }, activeRunSessionRef.current);
     },
     onAgentStep: (event) => {
       upsertStreamingActivity({
@@ -505,7 +601,7 @@ export default function ChatInputBox({
         status: "completed",
         timestamp: event.timestamp ?? new Date().toISOString(),
         payload: event.payload,
-      });
+      }, activeRunSessionRef.current);
     },
     onError: (message) => {
       markCompleted(activeRunSessionRef.current);
@@ -520,13 +616,13 @@ export default function ChatInputBox({
         detail: message,
         status: "failed",
         timestamp: new Date().toISOString(),
-      });
-      finalizeStreamingMessage(accumulatedRef.current, { error: message });
+      }, activeRunSessionRef.current);
+      finalizeStreamingMessage(accumulatedRef.current, { error: message }, activeRunSessionRef.current);
       addMessage({
         role: "system",
         content: `Error: ${message}`,
         timestamp: new Date().toISOString(),
-      });
+      }, activeRunSessionRef.current);
     },
   });
 
@@ -540,7 +636,8 @@ export default function ChatInputBox({
     onError: (message) => setVoiceError(message),
   });
 
-  const isLoading = streaming || disabled || launching;
+  const isRunning = streaming || sessionRunning;
+  const isLoading = isRunning || disabled || launching;
   const isUploading = attachments.some(
     (attachment) => attachment.status === "uploading",
   );
@@ -616,13 +713,41 @@ export default function ChatInputBox({
     }));
     if (
       (!baseText && sendAttachments.length === 0) ||
-      isLoading ||
+      disabled || launching ||
+      (isLoading && !isRunning) ||
       isUploading ||
       (!local && outOfCredits)
     )
       return;
 
     const userMessage = baseText || "Please review the attached file(s).";
+
+    if (isRunning && !onLaunch) {
+      if (steerInFlightRef.current || !baseText || sendAttachments.length) return;
+      const targetId = sessionId || activeRunSessionRef.current;
+      if (!targetId) { setSteerError("Wait for the conversation to start, then send your prompt."); return; }
+      steerInFlightRef.current = true;
+      setSteerError(null);
+      try {
+        if (local) {
+          await window.agentCommonsLocal?.steerConversation(targetId, baseText);
+        } else {
+          if (!activeCloudRunId) throw new Error("Wait for the agent run to start, then send your prompt.");
+          const response = await fetch("/api/agents/run/stream/steer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ runId: activeCloudRunId, prompt: baseText }) });
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.message ?? payload.error ?? "The agent could not accept this prompt.");
+          }
+        }
+        addMessage({ role: "human", content: baseText, timestamp: new Date().toISOString(), metadata: {} }, targetId);
+        setInputText("");
+      } catch (cause) {
+        setSteerError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        steerInFlightRef.current = false;
+      }
+      return;
+    }
 
     // Launch mode: hand everything to the caller, which opens the new chat
     // in its session view and sends it there.
@@ -632,6 +757,9 @@ export default function ChatInputBox({
         attachments: sendAttachments,
         knowledgeSpaceIds: [...knowledgeSpaceIds],
         reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
+        webSearchEnabled,
+        mcpServerIds,
+        workspaceRoot: workspaceRemoved ? null : desktopWorkspace ?? undefined,
       });
       setInputText("");
       setAttachments([]);
@@ -675,7 +803,7 @@ export default function ChatInputBox({
         knowledgeSpaceIds: selectedKnowledgeSpaceIds,
       },
       timestamp: new Date().toISOString(),
-    });
+    }, sessionId);
 
     // Placeholder for the streaming AI message
     addMessage({
@@ -684,7 +812,7 @@ export default function ChatInputBox({
       metadata: {},
       timestamp: new Date().toISOString(),
       isStreaming: true,
-    });
+    }, sessionId);
 
     const cliContext = !local && desktopWorkspace
       ? await window.agentCommonsDesktop?.getToolContext().catch(() => null)
@@ -701,9 +829,11 @@ export default function ChatInputBox({
         computerRequest,
         knowledgeSpaceIds: selectedKnowledgeSpaceIds,
         reasoningEffort: effort,
+        webSearchEnabled: launched?.webSearchEnabled ?? webSearchEnabled,
+        mcpServerIds: launched?.mcpServerIds ?? mcpServerIds,
         provenance,
         cliContext: cliContext ?? undefined,
-        localWorkspaceRoot: local ? desktopWorkspace ?? undefined : undefined,
+        localWorkspaceRoot: local ? (launched?.workspaceRoot !== undefined ? launched.workspaceRoot : workspaceRemoved ? null : desktopWorkspace ?? undefined) : undefined,
         projectId: sessionId ? undefined : projectId,
       });
     } finally {
@@ -951,6 +1081,36 @@ export default function ChatInputBox({
         )}
         onAdd={addLibraryAttachments}
       />
+      {local && <Dialog open={webSearchDialogOpen} onOpenChange={setWebSearchDialogOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Web search</DialogTitle>
+            <DialogDescription>Choose where web searches go. Every query asks for approval before it leaves this computer.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={saveWebSearchSettings} className="space-y-4">
+            <label className="block space-y-1.5 text-sm">
+              <span>Provider</span>
+              <select value={webSearchProvider} onChange={(event) => { setWebSearchProvider(event.target.value as "brave" | "searxng"); setWebSearchApiKey(""); }} className="w-full rounded-md border border-border bg-background px-3 py-2">
+                <option value="brave">Brave Search · API key</option>
+                <option value="searxng">SearXNG · your endpoint</option>
+              </select>
+            </label>
+            {webSearchProvider === "searxng" && <label className="block space-y-1.5 text-sm">
+              <span>Search endpoint</span>
+              <input type="url" required placeholder="https://search.example.com" value={webSearchUrl} onChange={(event) => setWebSearchUrl(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
+            </label>}
+            <label className="block space-y-1.5 text-sm">
+              <span>API key {webSearchProvider === "searxng" && <span className="text-muted-foreground">(if required)</span>}</span>
+              <input type="password" required={webSearchProvider === "brave"} autoComplete="off" value={webSearchApiKey} onChange={(event) => setWebSearchApiKey(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
+            </label>
+            {webSearchError && <p role="alert" className="text-xs text-destructive">{webSearchError}</p>}
+            <DialogFooter>
+              <button type="button" onClick={() => setWebSearchDialogOpen(false)} className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted">Cancel</button>
+              <button type="submit" disabled={webSearchSaving} className="rounded-md bg-foreground px-3 py-2 text-sm text-background disabled:opacity-50">{webSearchSaving ? "Saving…" : "Save and turn on"}</button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>}
       {outOfCredits && (
         <div className="flex items-center justify-between gap-3 rounded-t-2xl border-b border-border bg-stone-50/80 px-3.5 py-2.5">
           <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -995,7 +1155,7 @@ export default function ChatInputBox({
                 key={spaceId}
                 className="flex max-w-full items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-2 py-1 text-xs text-teal-900"
               >
-                <Network className="h-3.5 w-3.5 shrink-0" />
+                <Brain className="h-3.5 w-3.5 shrink-0" />
                 <span className="max-w-44 truncate">{space.name}</span>
                 <button
                   type="button"
@@ -1030,7 +1190,7 @@ export default function ChatInputBox({
             autoCapitalize="sentences"
             autoCorrect="on"
             spellCheck
-            placeholder={placeholder}
+            placeholder={isRunning ? "Add a prompt while the agent works…" : placeholder}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => {
@@ -1044,8 +1204,9 @@ export default function ChatInputBox({
                 handleSend();
               }
             }}
-            disabled={isLoading}
+            disabled={disabled || launching}
           />
+          {steerError && <p className="px-3 pb-1 text-xs text-red-500">{steerError}</p>}
           {voiceError && (
             <p className="px-3 pb-1 text-xs text-red-500">{voiceError}</p>
           )}
@@ -1067,7 +1228,7 @@ export default function ChatInputBox({
                   <DropdownMenuContent
                     align="start"
                     side="top"
-                    className="w-52"
+                    className="w-72"
                   >
                     <DropdownMenuItem onSelect={openFilePicker}>
                       <HardDriveUpload className="mr-2 h-4 w-4" />
@@ -1080,7 +1241,7 @@ export default function ChatInputBox({
                     <DropdownMenuSeparator />
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger>
-                        <Network className="mr-2 h-4 w-4" />
+                        <Brain className="mr-2 h-4 w-4" />
                         Reference Knowledge
                         {knowledgeSpaceIds.length > 0 && (
                           <span className="ml-auto mr-1 text-xs text-teal-700">
@@ -1135,6 +1296,38 @@ export default function ChatInputBox({
                         )}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
+                    {local && <DropdownMenuCheckboxItem checked={webSearchEnabled} onCheckedChange={(checked) => { void setChatWebSearch(checked === true); }}>
+                      <Globe2 className="mr-2 h-4 w-4" />
+                      <span>Web search</span>
+                    </DropdownMenuCheckboxItem>}
+                    {local && webSearchConfigured && <DropdownMenuItem onSelect={openWebSearchSettings} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
+                    {local && <DropdownMenuSub>
+                      <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />MCP connectors</DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="min-w-56">
+                        <DropdownMenuLabel>Use in this chat</DropdownMenuLabel>
+                        {mcpServers.filter((server) => server.enabled).map((server) => <DropdownMenuCheckboxItem key={server.id} checked={mcpServerIds.includes(server.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, server.id])] : current.filter((id) => id !== server.id))}>{server.name} · {server.mode === "read" ? "Read" : "Write"}</DropdownMenuCheckboxItem>)}
+                        {!mcpServers.some((server) => server.enabled) && <p className="px-2 py-2 text-xs text-muted-foreground">Set up a connector in Settings.</p>}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <ShieldCheck className="mr-2 h-4 w-4" />
+                        Provenance
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-72">
+                        <DropdownMenuLabel>Provenance for new runs</DropdownMenuLabel>
+                        <DropdownMenuRadioGroup value={provenance.mode} onValueChange={(mode) => updateProvenance({ ...provenance, mode: mode as ProvenancePreferences["mode"] })}>
+                          <DropdownMenuRadioItem value="metadata">Metadata only</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="full">Full disclosure</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="off">Off</DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuCheckboxItem checked={provenance.onchain} disabled={provenance.mode === "off"} onCheckedChange={(checked) => updateProvenance({ ...provenance, onchain: checked === true })}>
+                          Request on-chain anchor
+                        </DropdownMenuCheckboxItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 {canUseComputer && (
@@ -1162,105 +1355,21 @@ export default function ChatInputBox({
                     )}
                   </button>
                 )}
-                {(
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        disabled={!!isLoading}
-                        title="Provenance capture"
-                        aria-label="Provenance capture"
-                        className={cn(
-                          "relative rounded-lg p-1.5 transition-colors disabled:opacity-40",
-                          provenance.mode === "off"
-                            ? "text-muted-foreground/60 hover:bg-muted"
-                            : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-                        )}
-                      >
-                        <ShieldCheck className="h-4 w-4" />
-                        {provenance.onchain && (
-                          <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-violet-500" />
-                        )}
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="start"
-                      side="top"
-                      className="w-72"
-                    >
-                      <DropdownMenuLabel>
-                        <span className="block text-sm">Provenance</span>
-                        <span className="block text-xs font-normal text-muted-foreground">
-                          Applies to new runs in this browser
-                        </span>
-                      </DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuRadioGroup
-                        value={provenance.mode}
-                        onValueChange={(mode) =>
-                          updateProvenance({
-                            ...provenance,
-                            mode: mode as ProvenancePreferences["mode"],
-                          })
-                        }
-                      >
-                        <DropdownMenuRadioItem value="metadata">
-                          <span>
-                            <span className="block">Metadata only</span>
-                            <span className="block text-xs text-muted-foreground">
-                              Hashes, timing, tools and usage · recommended
-                            </span>
-                          </span>
-                        </DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="full">
-                          <span>
-                            <span className="block">Full disclosure</span>
-                            <span className="block text-xs text-muted-foreground">
-                              Also stores redacted payloads and results
-                            </span>
-                          </span>
-                        </DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="off">
-                          <span>
-                            <span className="block">Off</span>
-                            <span className="block text-xs text-muted-foreground">
-                              Do not create a trajectory for new runs
-                            </span>
-                          </span>
-                        </DropdownMenuRadioItem>
-                      </DropdownMenuRadioGroup>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuCheckboxItem
-                        checked={provenance.onchain}
-                        onCheckedChange={(checked) =>
-                          updateProvenance({
-                            ...provenance,
-                            onchain: checked === true,
-                          })
-                        }
-                        disabled={provenance.mode === "off"}
-                      >
-                        <span>
-                          <span className="block">Request on-chain anchor</span>
-                          <span className="block text-xs text-muted-foreground">
-                            Optional; one digest per completed run
-                          </span>
-                        </span>
-                      </DropdownMenuCheckboxItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
                 {typeof window !== "undefined" && window.agentCommonsDesktop && (
-                  <button
-                    type="button"
-                    onClick={() => void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then(setDesktopWorkspace)}
-                    disabled={!!isLoading}
-                    title={desktopWorkspace ? `Local workspace: ${desktopWorkspace}` : "Choose a local workspace for agent file access"}
-                    aria-label="Choose local workspace"
-                    className={cn("rounded-lg p-1.5 transition-colors disabled:opacity-40", desktopWorkspace ? "bg-indigo-50 text-indigo-600" : "text-muted-foreground hover:bg-muted")}
-                  >
-                    <FolderOpen className="h-4 w-4" />
-                  </button>
+                  <div className="flex min-w-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then((folder) => { if (folder) { setDesktopWorkspace(folder); setWorkspaceRemoved(false); } })}
+                      disabled={!!isLoading}
+                      title={desktopWorkspace ?? "Choose a local workspace for agent file access"}
+                      aria-label="Choose local workspace"
+                      className={cn("flex max-w-44 items-center gap-1 rounded-lg p-1.5 transition-colors disabled:opacity-40", desktopWorkspace ? "bg-indigo-50 text-indigo-600" : "text-muted-foreground hover:bg-muted")}
+                    >
+                      <FolderOpen className="h-4 w-4 shrink-0" />
+                      {desktopWorkspace && <span className="truncate text-xs">{desktopWorkspace.split(/[\\/]/).filter(Boolean).at(-1)}</span>}
+                    </button>
+                    {desktopWorkspace && <button type="button" disabled={!!isLoading} onClick={() => { setDesktopWorkspace(null); setWorkspaceRemoved(true); }} title="Remove folder from this chat" aria-label="Remove folder from this chat" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>}
+                  </div>
                 )}
                 {footerLeft && <div className="ml-1 min-w-0">{footerLeft}</div>}
               </div>
@@ -1340,10 +1449,11 @@ export default function ChatInputBox({
               </button>
               <ComposerSendButton
                 onClick={() => handleSend()}
-                busy={Boolean(isLoading || isUploading)}
+                busy={Boolean((isLoading && !isRunning) || isUploading)}
                 disabled={
                   (!inputText.trim() && uploadedAttachments.length === 0) ||
-                  !!isLoading ||
+                  (isLoading && !isRunning) ||
+                  (isRunning && !inputText.trim()) ||
                   isUploading ||
                   (!local && outOfCredits)
                 }

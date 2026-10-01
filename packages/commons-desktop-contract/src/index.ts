@@ -57,6 +57,8 @@ export type LocalConversation = {
   id: string;
   agentId: string;
   title: string;
+  /** Per-chat consent to offer the read-only Web search tool. */
+  webSearchEnabled?: boolean;
   workspaceRoot?: string;
   spaceIds?: string[];
   /** Chats in the same project share its instructions, files, and knowledge. */
@@ -229,7 +231,20 @@ export type LocalSettings = {
   ollamaUrl: string;
   defaultModel: string;
   permissionMode: PermissionMode;
+  webSearchUrl?: string;
+  webSearchApiKey?: string;
+  transcriptionModel?: "Xenova/whisper-tiny" | "Xenova/whisper-base" | "Xenova/whisper-small";
+  imageModel?: string;
+  voiceModel?: "female" | "male" | "kokoro-heart" | "kokoro-bella" | "kokoro-michael" | "kokoro-george";
+  mcpServers?: Array<{ id: string; name: string; url: string; apiKey?: string; mode: "read" | "write"; enabled: boolean }>;
 };
+
+export const BRAVE_SEARCH_BASE_URL = "https://api.search.brave.com/res/v1/web";
+
+export function hasConfiguredLocalWebSearch(settings: Pick<LocalSettings, "webSearchUrl" | "webSearchApiKey">) {
+  const endpoint = settings.webSearchUrl?.replace(/\/$/, "");
+  return Boolean(endpoint && (endpoint !== BRAVE_SEARCH_BASE_URL || settings.webSearchApiKey?.trim()));
+}
 
 export type LocalModelStatus = {
   state: "checking" | "downloading-runtime" | "starting" | "downloading-model" | "ready" | "error";
@@ -237,10 +252,13 @@ export type LocalModelStatus = {
   progress?: number;
 };
 
+export type LocalModelDownload = { name: string; status: string; progress?: number; done: boolean; error?: string };
+
 export type DesktopAccount = {
   userId: string;
   displayName: string;
   email?: string;
+  profileImage?: string;
 };
 
 export type WorkspacePreferences = {
@@ -275,13 +293,15 @@ export type ChatRequest = {
   agentId: string;
   conversationId?: string;
   prompt: string;
-  workspaceRoot?: string;
+  workspaceRoot?: string | null;
   spaceIds?: string[];
   /** Local Library items attached to this message. Files never leave the computer. */
   attachmentIds?: string[];
   /** Project for a new conversation. Existing conversations keep their project. */
   projectId?: string;
   interactive?: boolean;
+  webSearchEnabled?: boolean;
+  mcpServerIds?: string[];
 };
 
 export type ChatResult = {
@@ -306,10 +326,16 @@ export type RuntimeEvent =
   | { type: "approval-resolved"; id: string; allow: boolean }
   | { type: "activity"; label: string; detail?: string; status: "running" | "done" | "error"; conversationId?: string; toolName?: string; args?: Record<string, unknown>; result?: string }
   | { type: "model"; model: LocalModelStatus }
+  | { type: "model-download"; download: LocalModelDownload }
+  | { type: "image-model"; status: ImageModelStatus }
+  | { type: "voice-model"; status: VoiceModelStatus }
   | { type: "chat-start"; conversationId: string }
   | { type: "chat-token"; conversationId: string; content: string }
   | { type: "chat-end"; conversationId: string }
   | { type: "state"; state: LocalState };
+
+export type ImageModelStatus = { state: "idle" | "downloading" | "ready" | "error"; label: string; modelId?: string; progress?: number; error?: string };
+export type VoiceModelStatus = { state: "idle" | "downloading" | "ready" | "error"; label: string; model?: string; error?: string };
 
 export type AgentInput = Pick<LocalAgent, "name" | "instructions" | "model"> & {
   id?: string;
@@ -381,6 +407,7 @@ export interface LocalDesktopBridge {
   getInfo(): Promise<DesktopInfo>;
   getState(): Promise<LocalState>;
   getModelStatus(): Promise<LocalModelStatus>;
+  getHardwareInfo(): Promise<{ ramGiB: number; freeDiskGiB: number; platform: string; arch: string }>;
   prepareModel(): Promise<void>;
   getStorageRoot(): Promise<string>;
   openComputer(input: { agentId: string; conversationId?: string; target: "files" | "terminal" }): Promise<void>;
@@ -392,12 +419,25 @@ export interface LocalDesktopBridge {
   onPreferences(listener: (preferences: WorkspacePreferences) => void): () => void;
   chooseWorkspace(): Promise<string | null>;
   chooseKnowledgeFolders(): Promise<string[]>;
+  clearAccount(): Promise<void>;
+  transcribeAudio(samples: Float32Array): Promise<string>;
+  prepareTranscriptionModel(): Promise<void>;
+  getImageModelStatus(): Promise<ImageModelStatus>;
+  prepareImageModel(modelId?: string): Promise<void>;
+  getImageModelCatalog(): Promise<Array<{ id: string; name: string; bytes: number; ramGiB: number; description: string; recommended: boolean }>>;
+  listImageModels(): Promise<Array<{ id: string; name: string; bytes: number }>>;
+  openImageModelFolder(): Promise<void>;
+  getVoiceModelStatus(): Promise<VoiceModelStatus>;
+  prepareVoiceModel(): Promise<void>;
+  importProjectFolder(): Promise<{ name: string; libraryItemIds: string[]; summary: string } | null>;
   chooseKnowledgeFiles(): Promise<string[]>;
   saveAgent(input: AgentInput): Promise<LocalState>;
   deleteAgent(id: string): Promise<LocalState>;
   sendMessage(input: ChatRequest): Promise<ChatResult>;
+  steerConversation(conversationId: string, prompt: string): Promise<void>;
   deleteConversation(id: string): Promise<LocalState>;
   renameConversation(id: string, title: string): Promise<LocalState>;
+  setConversationWebSearch(id: string, enabled: boolean): Promise<LocalState>;
   approve(id: string, allow: boolean, remember?: boolean): Promise<void>;
   addKnowledgeSpace(name: string, folders: string[]): Promise<LocalState>;
   reindexKnowledgeSpace(id: string): Promise<LocalState>;
@@ -415,11 +455,13 @@ export interface LocalDesktopBridge {
   stopApp(id: string): Promise<LocalState>;
   openApp(id: string): Promise<void>;
   openArtifact(conversationId: string, artifactId: string): Promise<void>;
+  getArtifactPreview(conversationId: string, artifactId: string): Promise<string | null>;
   setArtifactFavorite(conversationId: string, artifactId: string, favorite: boolean): Promise<LocalState>;
   removeArtifactReference(conversationId: string, artifactId: string): Promise<LocalState>;
   deleteApp(id: string): Promise<LocalState>;
   updateSettings(settings: Partial<LocalSettings>): Promise<LocalState>;
   listModels(url?: string): Promise<string[]>;
+  downloadModel(name: string): Promise<void>;
   openCloud(path?: string): Promise<void>;
   onEvent(listener: (event: RuntimeEvent) => void): () => void;
 }

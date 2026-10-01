@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { ModelConfig } from '../model-provider.interface';
+import { HOSTED_FREE_MODEL_ID } from '../model-registry';
 
 /**
  * Builds a LangChain ChatOpenAI instance from a ModelConfig.
@@ -20,10 +21,19 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
       baseURL: 'https://api.x.ai/v1',
     },
     custom: {},
+    'hosted-free': {
+      apiKey: process.env.HOSTED_FREE_MODEL_API_KEY,
+      baseURL: process.env.HOSTED_FREE_MODEL_BASE_URL,
+    },
   };
   const defaults = providerDefaults[config.provider] ?? providerDefaults.openai;
-  const apiKey = config.apiKey ?? defaults.apiKey;
-  const baseURL = config.baseUrl ?? defaults.baseURL;
+  // A caller can select this model, but can never replace the platform-owned
+  // inference endpoint or secret with values saved in a session or agent.
+  const apiKey = config.provider === 'hosted-free' ? defaults.apiKey : config.apiKey ?? defaults.apiKey;
+  const baseURL = config.provider === 'hosted-free' ? defaults.baseURL : config.baseUrl ?? defaults.baseURL;
+  if (config.provider === 'hosted-free' && (!apiKey || !baseURL || config.modelId !== HOSTED_FREE_MODEL_ID)) {
+    throw new Error('The Commons Free model service is unavailable.');
+  }
   if (!apiKey) {
     logger.warn(`No API key found for ${config.provider} — requests may fail`);
   }

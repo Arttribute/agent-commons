@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, realpathSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { safePath, readFileForContext, runLocalTool, type LocalToolsConfig } from '../../agc-cli/src/local-tools';
@@ -10,8 +11,9 @@ function fixture(t: any) {
   const root = join(base, 'project');
   const outside = join(base, 'outside');
   mkdirSync(root); mkdirSync(outside);
-  // Windows can keep a just-stopped child's working directory busy briefly.
-  t.after(() => rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
+  // Windows can keep a just-stopped child's cwd busy. Asynchronous retries
+  // let its close event run before removing the fixture directory.
+  t.after(() => rm(base, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 }));
   const cfg: LocalToolsConfig = { rootDir: root, sessionId: 'test', appendLog() {}, permissions: new Map() };
   return { base, root, outside, cfg };
 }

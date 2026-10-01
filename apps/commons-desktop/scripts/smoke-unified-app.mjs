@@ -1,6 +1,6 @@
 import electron from "electron";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
@@ -29,7 +29,7 @@ let childError = "";
 child.on("error", (error) => { childError = error.message; });
 for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => { output = (output + chunk.toString()).slice(-6_000); });
 
-async function evaluate(wsUrl, expression, timeout = 5_000) {
+async function evaluate(wsUrl, expression, timeout = 10_000) {
   const socket = new WebSocket(wsUrl);
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { socket.close(); reject(new Error("Desktop DevTools did not connect")); }, 5_000);
@@ -59,6 +59,7 @@ try {
   let lastTargets = "";
   let lastResult;
   let lastPage;
+  let checksStarted = false;
   while (Date.now() < deadline && child.exitCode === null) {
     try {
       const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2_000) })).json();
@@ -84,6 +85,7 @@ try {
           if (provider.knowledge !== 200 || provider.library !== 200 || provider.skills !== 200 || provider.tools !== 200 || !provider.commandTool) {
             throw new Error(`Local data providers failed: ${JSON.stringify(provider)}`);
           }
+          checksStarted = true;
           const identities = await evaluate(page.webSocketDebuggerUrl, `(async () => {
             const bridge = window.agentCommonsLocal;
             const agent = (await bridge.getState()).agents.find((item) => item.name === "Commons Copilot");
@@ -99,12 +101,55 @@ try {
             throw new Error(`Local agent identity failed: ${JSON.stringify(identities)}`);
           }
           await smokeLocalTools(evaluate, page.webSocketDebuggerUrl, temp);
+          console.log("Desktop smoke: Local tools complete.");
+          if (process.env.COMMONS_DESKTOP_STRESS_MODEL) {
+            const workspace = join(temp, "stress-workspace");
+            mkdirSync(workspace);
+            writeFileSync(join(workspace, "sum.js"), "export function sum(a, b) { return a - b; }\n");
+            if (process.env.COMMONS_DESKTOP_STRESS_PDF) copyFileSync(process.env.COMMONS_DESKTOP_STRESS_PDF, join(workspace, "report.pdf"));
+            const stress = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+              const bridge = window.agentCommonsLocal;
+              const commands = [];
+              window.__commonsStress = { phase: 'setup', activities: [] };
+              const unsubscribe = bridge.onEvent((event) => {
+                if (event.type === 'approval') void bridge.approve(event.approval.id, true);
+                if (event.type === 'activity' && event.toolName) {
+                  window.__commonsStress.activities.push({ name: event.toolName, status: event.status, resultLength: event.result?.length });
+                  if (event.status !== 'running') commands.push({ name: event.toolName, args: event.args, result: event.result });
+                }
+              });
+              try {
+                await bridge.updateSettings({ defaultModel: ${JSON.stringify(process.env.COMMONS_DESKTOP_STRESS_MODEL)}, permissionMode: 'ask' });
+                const agentId = (await bridge.getState()).agents.find(agent => agent.name === 'Commons Copilot').id;
+                window.__commonsStress.phase = 'code';
+                const code = await bridge.sendMessage({ agentId, workspaceRoot: ${JSON.stringify(workspace)}, prompt: 'Fix sum.js so sum(2, 3) is 5. Run a Node command to verify the fix, and report the observed result.' });
+                window.__commonsStress.phase = 'document';
+                const document = ${process.env.COMMONS_DESKTOP_STRESS_PDF ? `await bridge.sendMessage({ agentId, workspaceRoot: ${JSON.stringify(workspace)}, prompt: 'Read report.pdf and summarize its final recommendation in two sentences.' })` : 'null'};
+                window.__commonsStress.phase = 'done';
+                return { code: code.response, document: document?.response, commands };
+              } finally { unsubscribe(); }
+            })()`, 300_000).catch(async (error) => {
+              const progress = await evaluate(page.webSocketDebuggerUrl, "window.__commonsStress", 5_000).catch(() => null);
+              throw new Error(`Real model journey stopped: ${error.message}; progress ${JSON.stringify(progress)}`);
+            });
+            const updated = (await import("node:fs")).readFileSync(join(workspace, "sum.js"), "utf8");
+            if (!updated.includes("a + b")) throw new Error(`Real model did not fix sum.js: ${JSON.stringify(stress)}`);
+            if (!stress.commands.some((entry) => entry.name === "cli_run_command" && /(?:^|\D)5(?:\D|$)/.test(entry.result ?? "") && !/"exitCode":(?:[1-9]|null)/.test(entry.result ?? ""))) {
+              throw new Error(`Real model did not verify the result: ${JSON.stringify(stress)}`);
+            }
+            if (process.env.COMMONS_DESKTOP_STRESS_PDF && !stress.document) throw new Error("Real model did not read the PDF");
+            if (process.env.COMMONS_DESKTOP_STRESS_PDF && !stress.commands.some((entry) => entry.name === "cli_read_file" && entry.args?.path === "report.pdf")) {
+              throw new Error(`Real model answered without reading the PDF: ${JSON.stringify(stress)}`);
+            }
+            console.log(`Real local model task passed: ${JSON.stringify(stress).slice(0, 800)}`);
+          }
           const savedSession = await evaluate(page.webSocketDebuggerUrl, `(async () => {
             const bridge = window.agentCommonsLocal;
             const conversation = (await bridge.getState()).conversations[0];
             const result = await bridge.apiRequest({ path: '/api/sessions/' + conversation.id + '?full=true', method: 'GET' });
             return { id: conversation.id, agentName: (await bridge.getState()).agents.find(agent => agent.id === conversation.agentId).name, status: result.status, title: result.body?.data?.title, messages: result.body?.data?.history?.length };
           })()`);
+          console.log("Desktop smoke: Saved session loaded.");
           if (savedSession.status !== 200 || savedSession.messages < 2) throw new Error(`Local session was not stored: ${JSON.stringify(savedSession)}`);
           await evaluate(page.webSocketDebuggerUrl, `location.href = '/sessions/${savedSession.id}'`);
           let sessionVisible = false;
@@ -117,6 +162,57 @@ try {
             }
           }
           if (!sessionVisible) throw new Error(`Saved Local session did not render: ${savedSession.id}`);
+          console.log("Desktop smoke: Session view rendered.");
+          const webSearchDialog = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const buttons = [...document.querySelectorAll('button[aria-label="Add photos & files"]')];
+            buttons.find(button => !button.disabled)?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' }));
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const item = [...document.querySelectorAll('[role="menuitemcheckbox"]')].find(node => node.textContent?.includes('Web search'));
+            if (!item || item.getAttribute('aria-disabled') === 'true') return { item: item?.outerHTML ?? null, path: location.pathname, buttons: buttons.map(button => button.outerHTML.slice(0, 450)), menus: [...document.querySelectorAll('[role="menu"]')].map(menu => menu.innerText.slice(0, 450)), body: document.body.innerText.slice(-500) };
+            item.click();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            return { open: !!document.querySelector('[role="dialog"] select option[value="searxng"]'), path: location.pathname, item: item.outerHTML, dialogs: [...document.querySelectorAll('[role="dialog"]')].map(dialog => dialog.innerText.slice(0, 300)) };
+          })()`);
+          if (!webSearchDialog?.open || webSearchDialog.path !== `/sessions/${savedSession.id}`) throw new Error(`Web search did not open configuration inside the chat: ${JSON.stringify(webSearchDialog)}`);
+          console.log("Desktop smoke: Web search dialog opened.");
+          const webSearchSubmission = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const dialog = document.querySelector('[role="dialog"]');
+            const provider = dialog.querySelector('select');
+            Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(provider, 'searxng');
+            provider.dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const input = dialog.querySelector('input[type="url"]');
+            if (!input) return { submitted: false, provider: provider.value, dialog: dialog.innerText.slice(0, 300) };
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'http://127.0.0.1:8585');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            dialog.querySelector('button[type="submit"]').click();
+            return { submitted: true, provider: provider.value, input: input.value };
+          })()`);
+          if (!webSearchSubmission?.submitted) throw new Error(`Web search form did not submit: ${JSON.stringify(webSearchSubmission)}`);
+          let webSearchConfigured;
+          for (let attempt = 0; attempt < 20; attempt += 1) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            webSearchConfigured = await evaluate(page.webSocketDebuggerUrl, `(async () => { const state = await window.agentCommonsLocal.getState(); const dialog = document.querySelector('[role="dialog"]'); return { path: location.pathname, endpoint: state.settings.webSearchUrl, selected: state.conversations.find(conversation => conversation.id === '${savedSession.id}')?.webSearchEnabled, dialog: dialog?.innerText.slice(0, 500), dialogState: dialog?.getAttribute('data-state'), saving: dialog?.querySelector('button[type="submit"]')?.disabled, alert: dialog?.querySelector('[role="alert"]')?.innerText }; })()`, 5_000);
+            if (webSearchConfigured.endpoint === 'http://127.0.0.1:8585' && webSearchConfigured.dialogState !== 'open') {
+              webSearchConfigured.pass = webSearchConfigured.path === `/sessions/${savedSession.id}`;
+              break;
+            }
+          }
+          if (!webSearchConfigured?.pass) throw new Error(`Web search could not be saved and turned on from chat: ${JSON.stringify(webSearchConfigured)}`);
+          console.log("Desktop smoke: Web search configured.");
+          const webSearchChecked = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            document.querySelector('button[aria-label="Add photos & files"]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' }));
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const item = [...document.querySelectorAll('[role="menuitemcheckbox"]')].find(node => node.textContent?.includes('Web search'));
+            return item?.getAttribute('aria-checked') === 'true';
+          })()`);
+          if (!webSearchChecked) throw new Error("Web search was not enabled in the chat after setup");
+          console.log("Desktop smoke: Web search menu checked.");
+          const savedWebSearch = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const state = await window.agentCommonsLocal.getState();
+            return state.conversations.find(conversation => conversation.id === '${savedSession.id}')?.webSearchEnabled;
+          })()`);
+          if (savedWebSearch !== true) throw new Error("Web search setup did not persist the current chat's choice");
           await evaluate(page.webSocketDebuggerUrl, "window.dispatchEvent(new CustomEvent('agent-computer-open', { detail: { tab: 'browser' } }))");
           let computerVisible = false;
           for (let attempt = 0; attempt < 10; attempt++) {
@@ -148,7 +244,11 @@ try {
           break;
         }
       }
-    } catch (error) { lastError = error; }
+    } catch (error) {
+      if (error.message !== lastError?.message) console.error(`Desktop smoke check: ${error.message}`);
+      lastError = error;
+      if (checksStarted) throw error;
+    }
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
   let diagnostics;

@@ -89,7 +89,9 @@ export class TaskExecutionService {
         const dep = await this.db.query.task.findFirst({
           where: (t: any) => eq(t.taskId, depId),
         });
-        if (!dep) throw new BadRequestException(`Dependency task ${depId} not found`);
+        if (!dep || dep.agentId !== params.agentId) {
+          throw new BadRequestException(`Dependency task ${depId} not found`);
+        }
       }
     }
 

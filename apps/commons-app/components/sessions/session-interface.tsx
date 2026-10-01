@@ -134,17 +134,6 @@ function ExpandableToolCard({ tools }: { tools: Message[] }) {
   );
 }
 
-function ChatLoadingIndicator() {
-  return (
-    <div className="flex items-center justify-center py-8">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span className="text-sm">Loading conversation...</span>
-      </div>
-    </div>
-  );
-}
-
 export default function SessionInterfaceImproved({
   height,
   agent,
@@ -551,9 +540,7 @@ export default function SessionInterfaceImproved({
               className="container mx-auto max-w-[46rem] px-4 pb-6 pt-4"
               ref={scrollRef}
             >
-              {isLoadingSession && messages.length === 0 ? (
-                <ChatLoadingIndicator />
-              ) : messages.length === 0 &&
+              {isLoadingSession && messages.length === 0 ? null : messages.length === 0 &&
                 (greeting || conversationStarters.length > 0) ? (
                 <div className="flex min-h-[45vh] flex-col justify-center py-8">
                   <div className="space-y-6">

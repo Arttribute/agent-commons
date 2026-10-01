@@ -1,4 +1,5 @@
 "use client";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -114,7 +115,7 @@ export function CanvasStart() {
     try {
       const body = new FormData();
       selected.forEach((file) => body.append("files", file));
-      const response = await fetch("/api/files/upload", { method: "POST", body });
+      const response = await desktopApiFetch("/api/files/upload", { method: "POST", body });
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.message || payload?.error || "Upload failed");
       const uploaded = Array.isArray(payload?.data) ? payload.data[0] : null;

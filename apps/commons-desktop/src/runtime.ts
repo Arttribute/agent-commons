@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
-import { basename, dirname, extname } from "node:path";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir, totalmem } from "node:os";
+import { basename, dirname, extname, join, relative } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statfsSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import type { WebContents } from "electron";
+import { hasConfiguredLocalWebSearch } from "@agent-commons/desktop-contract";
 import type {
   AgentInput,
   AppInput,
@@ -29,6 +30,7 @@ import {
   isExtractableDocument,
   runLocalTool,
   safePath,
+  searchTextPassages,
   stopLocalProcesses,
   type LocalToolsConfig,
 } from "../../../packages/agc-cli/src/local-tools";
@@ -40,18 +42,29 @@ import { compactToolLoop, localChatHistory, LOCAL_CONTEXT_SIZE, toolResult } fro
 import { normalizeLocalCommand } from "./local-command";
 import { DEFAULT_LOCAL_MODEL, LocalStore } from "./store";
 import { LocalModelManager } from "./local-model";
+import { LocalImageManager } from "./local-image";
+import { LocalVoiceManager, LOCAL_VOICES } from "./local-voice";
 import { LocalStorageLayout } from "./local-storage-layout";
 import { handleLocalKnowledgeApi } from "./local-knowledge-api";
 import { assistantIdentityAnswer, assistantIdentityRequestKind, assistantNameAnswer, looksLikeInventedToolCall, looksLikeModelIdentity, parseToolArguments } from "./local-response";
 import { readOllamaChatResponse, type OllamaMessage } from "./ollama-stream";
 import { mergeWorkspacePreferences } from "./workspace-preferences";
 import { compileLocalWorkflow } from "./local-workflow-plan.mjs";
+import { localWebSearchRequest, localWebSearchResults } from "./local-web-search";
 
 type PendingApproval = {
   resolve: (allow: boolean) => void;
   timeout: NodeJS.Timeout;
   conversationId?: string;
   permission: string;
+};
+type RemoteMcpTool = {
+  client: { callTool(input: { name: string; arguments: Record<string, unknown> }, schema?: unknown, options?: { timeout?: number }): Promise<unknown>; close(): Promise<void> };
+  server: NonNullable<LocalState["settings"]["mcpServers"]>[number];
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  readOnly: boolean;
 };
 
 export const LOCAL_TOOLS = [
@@ -60,7 +73,11 @@ export const LOCAL_TOOLS = [
   }),
   functionTool("cli_read_file", "Read a text, PDF, or supported document from the selected workspace.", {
     path: { type: "string" },
+    offset: { type: "number", description: "Character offset for continuing a long file. Start at 0." },
   }, ["path"]),
+  functionTool("cli_search_file", "Find relevant passages and character offsets inside one text, PDF, or Office file in the selected workspace. Use this for large documents instead of reading every chunk in order.", {
+    path: { type: "string" }, query: { type: "string", description: "Words or phrase to find in the document" },
+  }, ["path", "query"]),
   functionTool("cli_write_file", "Create or replace a UTF-8 file inside the selected workspace.", {
     path: { type: "string" },
     content: { type: "string" },
@@ -104,9 +121,21 @@ export const LOCAL_TOOLS = [
   functionTool("search_knowledge", "Search the user's local Knowledge Spaces. Results are numbered passages with their source file and line range for citations.", {
     query: { type: "string" }, spaceId: { type: "string", description: "Optional: limit to one space" },
   }, ["query"]),
+  functionTool("web_search", "Search the public web through the user's configured Local search service. The exact query and destination require user approval before leaving this computer. Read-only.", {
+    query: { type: "string" },
+  }, ["query"]),
   functionTool("read_library_item", "Read the text of a file attached to this chat or included in this project, by its Library item ID. PDFs and Office documents are extracted to text. Supports offsets for long files.", {
     itemId: { type: "string" }, offset: { type: "number" },
   }, ["itemId"]),
+  functionTool("search_library_item", "Find relevant passages and character offsets inside a file attached to this chat or included in this project. Use this before reading a large file page by page.", {
+    itemId: { type: "string" }, query: { type: "string", description: "Words or phrase to find in the file" },
+  }, ["itemId", "query"]),
+  functionTool("generate_image", "Generate a 512×512 image on this computer. The image model downloads automatically on first use and the result appears in this chat's artifacts and Local Library.", {
+    prompt: { type: "string", description: "Visual description of the image to create" },
+  }, ["prompt"]),
+  functionTool("generate_audio", "Speak text with a local voice model and save a WAV file in this chat and Local Library. Model weights download automatically on first use.", {
+    text: { type: "string", description: "Text to speak, up to 1,500 characters" },
+  }, ["text"]),
   functionTool("invoke_skill", "Load the complete instructions for a locally saved skill by slug.", {
     skillSlug: { type: "string" },
   }, ["skillSlug"]),
@@ -172,20 +201,28 @@ export function mimeFor(path: string) {
 }
 
 const TEXT_EXTENSIONS = /\.(?:md|mdx|txt|json|jsonl|csv|tsv|html?|css|scss|js|jsx|ts|tsx|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|sql|ya?ml|toml|xml|sh)$/i;
+const libraryTextCache = new Map<string, { size: number; mtimeMs: number; text: string }>();
 
 /** Reads a Local Library file as text for the agent, extracting documents. */
 export async function readLibraryText(item: LocalLibraryItem) {
   if (!existsSync(item.path)) throw new Error("The file is missing from this computer.");
-  const size = statSync(item.path).size;
+  const { size, mtimeMs } = statSync(item.path);
+  const cached = libraryTextCache.get(item.path);
+  if (cached?.size === size && cached.mtimeMs === mtimeMs) return cached.text;
+  let text: string;
   if (isExtractableDocument(item.path) || item.mimeType === "application/pdf" || /officedocument/.test(item.mimeType)) {
-    return extractDocumentText(item.path);
-  }
-  if (item.mimeType.startsWith("text/") || item.mimeType === "application/json" || TEXT_EXTENSIONS.test(item.name)) {
-    if (size > 2_000_000) throw new Error("Text files larger than 2 MB cannot be read in chat.");
-    return readFileSync(item.path, "utf8");
-  }
-  if (item.mimeType.startsWith("image/")) return `[Image file ${item.name}. Describe it only if the local model supports images.]`;
-  return `[${item.name} is a binary ${extname(item.name) || "file"} and has no readable text.]`;
+    text = await extractDocumentText(item.path, { maxChars: Number.MAX_SAFE_INTEGER });
+  } else if (item.mimeType.startsWith("text/") || item.mimeType === "application/json" || TEXT_EXTENSIONS.test(item.name)) {
+    if (size > 25 * 1024 * 1024) throw new Error("Text files larger than 25 MB cannot be read in chat.");
+    text = readFileSync(item.path, "utf8");
+  } else if (item.mimeType.startsWith("image/")) text = `[Image file ${item.name}. Describe it only if the local model supports images.]`;
+  else text = `[${item.name} is a binary ${extname(item.name) || "file"} and has no readable text.]`;
+  // Small LRU. The text stays in memory only while Desktop is open; a file
+  // change invalidates its entry before the next read.
+  libraryTextCache.delete(item.path);
+  if (text.length <= 2_000_000) libraryTextCache.set(item.path, { size, mtimeMs, text });
+  while (libraryTextCache.size > 4) libraryTextCache.delete(libraryTextCache.keys().next().value!);
+  return text;
 }
 
 const supportedToolNames = new Set(LOCAL_TOOLS.map((tool) => tool.function.name));
@@ -201,6 +238,10 @@ type CloudAgentSnapshot = {
 };
 
 export class PrivateLocalRuntime {
+  private readonly activeConversations = new Set<string>();
+  private readonly pendingSteers = new Map<string, string[]>();
+  private readonly activeMcpTools = new Map<string, Map<string, RemoteMcpTool>>();
+  private modelDownload?: Promise<void>;
   private readonly approvals = new Map<string, PendingApproval>();
   private readonly appProcesses = new Map<string, string>();
   private readonly staticApps = new Map<string, StaticAppServer>();
@@ -208,6 +249,8 @@ export class PrivateLocalRuntime {
   private readonly layout: LocalStorageLayout;
   private readonly scheduler: NodeJS.Timeout;
   private readonly modelManager: LocalModelManager;
+  private readonly imageManager: LocalImageManager;
+  private readonly voiceManager: LocalVoiceManager;
   private readonly watcher: KnowledgeWatcher;
   /** Approvals the user chose to always allow, per conversation and permission. */
   private readonly rememberedApprovals = new Map<string, Set<string>>();
@@ -223,9 +266,11 @@ export class PrivateLocalRuntime {
     });
     this.modelManager = new LocalModelManager(
       this.layout.root,
-      DEFAULT_LOCAL_MODEL,
+      this.store.get().settings.defaultModel || DEFAULT_LOCAL_MODEL,
       (model) => this.emit({ type: "model", model }),
     );
+    this.imageManager = new LocalImageManager(this.layout.root, (status) => this.emit({ type: "image-model", status }));
+    this.voiceManager = new LocalVoiceManager(userDataDirectory, (status) => this.emit({ type: "voice-model", status }));
     this.layout.sync(this.store.get());
     this.scheduler = setInterval(() => void this.runDueTasks(), 30_000);
     this.scheduler.unref();
@@ -261,6 +306,33 @@ export class PrivateLocalRuntime {
     return this.modelManager.currentStatus();
   }
 
+  imageModelStatus() { return this.imageManager.currentStatus(); }
+  prepareImageModel(modelId?: string) { return this.imageManager.prepareModel(modelId); }
+  imageModelCatalog() { return this.imageManager.catalog(); }
+  listImageModels() { return this.imageManager.listModels(); }
+  imageModelDirectory() { return this.imageManager.modelDirectory(); }
+  voiceModelStatus() { return this.voiceManager.currentStatus(); }
+  prepareVoiceModel() { return this.voiceManager.prepare(this.store.get().settings.voiceModel); }
+
+  artifactPreview(conversationId: string, artifactId: string) {
+    const artifact = this.store.get().conversations.find((item) => item.id === conversationId)?.artifacts?.find((item) => item.id === artifactId);
+    if (!artifact || !/\.(?:png|wav)$/i.test(artifact.name) || !existsSync(artifact.path)) return null;
+    const size = statSync(artifact.path).size;
+    if (size < 1 || size > 4 * 1024 * 1024) return null;
+    const bytes = readFileSync(artifact.path);
+    if (/\.png$/i.test(artifact.name)) {
+      if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return null;
+      return `data:image/png;base64,${bytes.toString("base64")}`;
+    }
+    if (bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WAVE") return null;
+    return `data:audio/wav;base64,${bytes.toString("base64")}`;
+  }
+
+  hardwareInfo() {
+    const disk = statfsSync(this.layout.root);
+    return { ramGiB: Math.round(totalmem() / 1024 ** 3), freeDiskGiB: Math.floor(disk.bavail * disk.bsize / 1024 ** 3), platform: process.platform, arch: process.arch };
+  }
+
   prepareLocalModel() {
     if (this.store.get().settings.ollamaUrl !== "http://127.0.0.1:11434") return Promise.resolve();
     return this.modelManager.prepare();
@@ -278,7 +350,7 @@ export class PrivateLocalRuntime {
     if (!files.length) throw new Error("Choose a file to upload into the Local Library.");
     const imported: LocalLibraryItem[] = [];
     for (const file of files) {
-      if (!(file.bytes instanceof Uint8Array) || file.bytes.byteLength > 20_000_000) throw new Error("Local uploads are limited to 20 MB per file.");
+      if (!(file.bytes instanceof Uint8Array) || file.bytes.byteLength > 25 * 1024 * 1024) throw new Error("Local uploads are limited to 25 MB per file.");
       const id = randomUUID();
       const name = basename(String(file.name || "file")).replace(/[^a-zA-Z0-9._ -]/g, "_").slice(0, 180) || "file";
       const path = this.layout.path("uploads", `${id}-${name}`);
@@ -289,6 +361,25 @@ export class PrivateLocalRuntime {
     }
     this.change((state) => { (state.library ??= []).unshift(...imported); });
     return imported;
+  }
+
+  importProjectFolder(folder: string) {
+    if (!existsSync(folder) || !statSync(folder).isDirectory()) throw new Error("Choose an existing project folder.");
+    const supported = /\.(?:pdf|docx|pptx|xlsx|csv|txt|json|md|mdx)$/i;
+    const pending: string[] = [];
+    const walk = (directory: string, depth: number) => {
+      if (depth > 8) return;
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.isSymbolicLink()) continue;
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) walk(path, depth + 1);
+        else if (entry.isFile() && supported.test(entry.name) && statSync(path).size > 0 && statSync(path).size <= 25 * 1024 * 1024) pending.push(path);
+        if (pending.length >= 25) return;
+      }
+    };
+    walk(folder, 0);
+    const items = pending.map((path) => this.importLibraryFiles([{ name: relative(folder, path).replace(/[\\/]/g, " - "), mimeType: mimeFor(path), bytes: readFileSync(path) }])[0]);
+    return { name: basename(folder), libraryItemIds: items.map((item) => item.id), summary: `${items.length} documents` };
   }
 
   updateLibraryItem(id: string, patch: { name?: string; isFavorite?: boolean; keepOnDevice?: boolean }) {
@@ -317,7 +408,7 @@ export class PrivateLocalRuntime {
     if (!item) throw new Error("Local Library item not found");
     const text = await readLibraryText(item);
     const start = Math.max(0, Math.trunc(offset));
-    return { item, content: text.slice(start, start + 12_000), nextOffset: start + 12_000 < text.length ? start + 12_000 : null, totalChars: text.length };
+    return { item, content: text.slice(start, start + 6_000), nextOffset: start + 6_000 < text.length ? start + 6_000 : null, totalChars: text.length };
   }
 
   deleteLibraryItem(id: string) {
@@ -388,8 +479,14 @@ export class PrivateLocalRuntime {
         userId: account.userId.slice(0, 256),
         displayName: account.displayName.slice(0, 256),
         email: typeof account.email === "string" ? account.email.slice(0, 256) : undefined,
+        profileImage: typeof account.profileImage === "string" && /^https:\/\//i.test(account.profileImage)
+          ? account.profileImage.slice(0, 2_048) : undefined,
       };
     });
+  }
+
+  clearAccount() {
+    this.change((state) => { state.account = undefined; });
   }
 
   preferences() {
@@ -502,12 +599,132 @@ export class PrivateLocalRuntime {
     return (payload.models ?? []).map((model) => model.name ?? model.model ?? "").filter(Boolean);
   }
 
+  downloadModel(name: string): Promise<void> {
+    const model = name.trim();
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]*(?::[a-zA-Z0-9._-]+)?$/.test(model) || model.length > 120 || model.includes("..") || model.includes("//")) {
+      throw new Error("Enter a valid Ollama model name.");
+    }
+    if (this.modelDownload) throw new Error("A model download is already in progress.");
+    const publish = (status: string, progress: number | undefined, done: boolean, error?: string) => this.emit({ type: "model-download", download: { name: model, status, progress, done, error } });
+    const run = async () => {
+      const endpoint = ensureLoopback(this.store.get().settings.ollamaUrl);
+      publish("Connecting to model registry", 0, false);
+      try {
+        const response = await fetch(`${endpoint}/api/pull`, { method: "POST", redirect: "error", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: model, stream: true }), signal: AbortSignal.timeout(60 * 60_000) });
+        if (!response.ok || !response.body) throw new Error(`Model server returned ${response.status}: ${(await response.text()).slice(0, 300)}`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let complete = false;
+        const accept = (line: string) => {
+          if (!line.trim()) return;
+          const item = JSON.parse(line) as { status?: string; completed?: number; total?: number; error?: string };
+          if (item.error) throw new Error(item.error);
+          const progress = item.total && item.completed !== undefined ? Math.min(1, item.completed / item.total) : undefined;
+          if (item.status === "success") complete = true;
+          publish(item.status || "Downloading", progress, false);
+        };
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let newline = buffer.indexOf("\n");
+          while (newline !== -1) {
+            accept(buffer.slice(0, newline));
+            buffer = buffer.slice(newline + 1);
+            newline = buffer.indexOf("\n");
+          }
+        }
+        accept(buffer + decoder.decode());
+        if (!complete) throw new Error("The model download ended before Ollama confirmed it was ready.");
+        publish("Ready", 1, true);
+      } catch (error) {
+        publish("Download failed", undefined, true, error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+    };
+    this.modelDownload = run().finally(() => { this.modelDownload = undefined; });
+    return this.modelDownload;
+  }
+
   updateSettings(settings: Partial<LocalState["settings"]>) {
     return this.change((state) => {
       if (settings.ollamaUrl !== undefined) state.settings.ollamaUrl = ensureLoopback(settings.ollamaUrl);
-      if (settings.defaultModel !== undefined) state.settings.defaultModel = settings.defaultModel.trim();
+      if (settings.defaultModel !== undefined) {
+        const previous = state.settings.defaultModel;
+        state.settings.defaultModel = settings.defaultModel.trim();
+        for (const agent of state.agents) {
+          if ((agent.id === "commons-local" || agent.id === "local-copilot") && (!agent.model || agent.model === previous)) agent.model = state.settings.defaultModel;
+        }
+      }
       if (settings.permissionMode !== undefined) state.settings.permissionMode = settings.permissionMode;
+      if (settings.webSearchUrl !== undefined) {
+        const previous = state.settings.webSearchUrl;
+        const input = settings.webSearchUrl.trim();
+        if (input) {
+          const url = new URL(input);
+          if (url.username || url.password || url.search || url.hash || (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))) {
+            throw new Error("Use an HTTPS search endpoint, or an HTTP endpoint on this computer.");
+          }
+          state.settings.webSearchUrl = `${url.origin}${url.pathname.replace(/\/$/, "")}`;
+        } else state.settings.webSearchUrl = undefined;
+        if (previous !== state.settings.webSearchUrl && settings.webSearchApiKey === undefined) state.settings.webSearchApiKey = undefined;
+      }
+      if (settings.webSearchApiKey !== undefined) state.settings.webSearchApiKey = settings.webSearchApiKey.trim().slice(0, 512) || undefined;
+      if (settings.transcriptionModel !== undefined) {
+        if (!["Xenova/whisper-tiny", "Xenova/whisper-base", "Xenova/whisper-small"].includes(settings.transcriptionModel)) throw new Error("Choose a supported speech model.");
+        state.settings.transcriptionModel = settings.transcriptionModel;
+      }
+      if (settings.imageModel !== undefined) {
+        if (!this.imageManager.listModels().some((model) => model.id === settings.imageModel)) throw new Error("Choose an installed image model.");
+        state.settings.imageModel = settings.imageModel;
+      }
+      if (settings.voiceModel !== undefined) {
+        if (!LOCAL_VOICES.some((voice) => voice.id === settings.voiceModel)) throw new Error("Choose a supported voice model.");
+        state.settings.voiceModel = settings.voiceModel;
+      }
+      if (settings.mcpServers !== undefined) {
+        if (!Array.isArray(settings.mcpServers) || settings.mcpServers.length > 8) throw new Error("Configure up to eight Local MCP servers.");
+        state.settings.mcpServers = settings.mcpServers.map((server) => {
+          const url = new URL(server.url);
+          if (url.username || url.password || url.search || url.hash || (url.protocol !== "https:" && !(url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))) {
+            throw new Error("MCP endpoints must use HTTPS or HTTP on this computer, without URL credentials or query parameters.");
+          }
+          if (!/^[a-zA-Z0-9_-]{1,40}$/.test(server.id) || !server.name?.trim() || server.name.length > 80) throw new Error("Each MCP server needs a short name and ID.");
+          return { id: server.id, name: server.name.trim(), url: url.toString(), apiKey: server.apiKey?.trim().slice(0, 512) || undefined, mode: server.mode === "write" ? "write" as const : "read" as const, enabled: Boolean(server.enabled) };
+        });
+        if (new Set(state.settings.mcpServers.map((server) => server.id)).size !== state.settings.mcpServers.length) throw new Error("MCP server IDs must be unique.");
+      }
     });
+  }
+
+  private async connectMcpServers(conversationId: string, selectedIds: string[] | undefined) {
+    const configured = this.store.get().settings.mcpServers ?? [];
+    const selected = configured.filter((server) => server.enabled && selectedIds?.includes(server.id)).slice(0, 8);
+    const tools = new Map<string, RemoteMcpTool>();
+    if (!selected.length) return tools;
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+    for (const [index, server] of selected.entries()) {
+      const approved = await this.requestApproval(`Connect to MCP server ${server.name} at ${server.url} and discover its tool names${server.apiKey ? " using the saved API key" : ""}.`, `mcp_connect:${server.id}`, { conversationId });
+      if (!approved) continue;
+      const client = new Client({ name: "agent-commons-local", version: "0.4.1" });
+      try {
+        await client.connect(new StreamableHTTPClientTransport(new URL(server.url), { requestInit: server.apiKey ? { headers: { Authorization: `Bearer ${server.apiKey}` } } : undefined }));
+        const catalog = await client.listTools(undefined, { timeout: 10_000 });
+        for (const tool of catalog.tools.slice(0, 20)) {
+          const readOnly = tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true;
+          if (!readOnly && (server.mode !== "write" || this.store.get().settings.permissionMode === "read-only")) continue;
+          const name = `mcp_${index}_${String(tool.name).replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 48)}`;
+          tools.set(name, { client, server, name: tool.name, description: tool.description || `${server.name} tool`, parameters: tool.inputSchema as Record<string, unknown>, readOnly });
+        }
+        if (![...tools.values()].some((tool) => tool.client === client)) await client.close();
+      } catch (error) {
+        await client.close().catch(() => undefined);
+        this.emit({ type: "activity", label: `${server.name} could not connect`, detail: error instanceof Error ? error.message : String(error), status: "error", conversationId });
+      }
+    }
+    return tools;
   }
 
   createConversation(agentId: string, title: string, projectId?: string) {
@@ -587,6 +804,21 @@ export class PrivateLocalRuntime {
     });
   }
 
+  steerConversation(conversationId: string, prompt: string) {
+    const text = prompt.trim();
+    if (!text || text.length > 8_000) throw new Error("A prompt up to 8,000 characters is required.");
+    if (!this.activeConversations.has(conversationId)) throw new Error("This Local agent is no longer working. Send a new message instead.");
+    const queued = this.pendingSteers.get(conversationId) ?? [];
+    if (queued.length >= 8) throw new Error("Wait for the agent to work through the prompts already sent.");
+    this.change((state) => {
+      const conversation = state.conversations.find((entry) => entry.id === conversationId);
+      if (!conversation) throw new Error("Local conversation not found");
+      conversation.messages.push({ id: randomUUID(), role: "user", content: text, createdAt: now() });
+      conversation.updatedAt = now();
+    });
+    this.pendingSteers.set(conversationId, [...queued, text]);
+  }
+
   async sendMessage(input: ChatRequest): Promise<ChatResult> {
     const state = this.store.get();
     const agent = state.agents.find((candidate) => candidate.id === input.agentId);
@@ -598,6 +830,13 @@ export class PrivateLocalRuntime {
       await this.prepareLocalModel();
       available = await this.listModels();
     }
+    const preferredModel = agent.model?.trim() || state.settings.defaultModel;
+    const isCopilot = agent.id === "local-copilot" || agent.id === "commons-local" || agent.name === "Commons Copilot";
+    if (!directNameRequest && isCopilot && preferredModel === state.settings.defaultModel &&
+        !available.includes(preferredModel) && state.settings.ollamaUrl === "http://127.0.0.1:11434") {
+      await this.downloadModel(preferredModel);
+      available = await this.listModels();
+    }
     if (!available.length && !directNameRequest) throw new Error("No model is available at the configured local model server. Check the Local model server address in Settings.");
     const attachments = (input.attachmentIds ?? []).slice(0, 20).map((id) => {
       const item = state.library?.find((entry) => entry.id === id);
@@ -606,13 +845,16 @@ export class PrivateLocalRuntime {
     });
     if (input.projectId && !state.projects?.some((project) => project.id === input.projectId)) throw new Error("Local project not found");
     const explicitModel = agent.model?.trim();
-    const isCopilot = agent.id === "local-copilot" || agent.id === "commons-local" || agent.name === "Commons Copilot";
-    if (explicitModel && !available.includes(explicitModel) && !isCopilot && !directNameRequest) {
+    if (explicitModel && !available.includes(explicitModel) && !directNameRequest) {
       throw new Error(`The model ${explicitModel} is not installed on this computer. Choose an installed model in Private settings.`);
     }
-    const selectedModel = explicitModel && available.includes(explicitModel)
-      ? explicitModel
-      : available.includes(state.settings.defaultModel) ? state.settings.defaultModel : available[0] ?? state.settings.defaultModel;
+    const selectedModel = explicitModel || state.settings.defaultModel;
+    if (!directNameRequest && !available.includes(selectedModel)) {
+      throw new Error(`The model ${selectedModel} is not installed on this computer. Choose or download it in Private settings.`);
+    }
+    if (!directNameRequest && state.settings.ollamaUrl === "http://127.0.0.1:11434") {
+      await this.modelManager.verifyInstalledModel(selectedModel);
+    }
     if (state.settings.defaultModel !== selectedModel || (isCopilot && agent.model !== selectedModel)) {
       this.change((draft) => {
         draft.settings.defaultModel = selectedModel;
@@ -628,12 +870,13 @@ export class PrivateLocalRuntime {
       : undefined;
     if (input.conversationId && !conversation) throw new Error("This Local conversation could not be found. Open a saved conversation or start a new one.");
     if (conversation && conversation.agentId !== agent.id) throw new Error("This Local conversation belongs to a different agent.");
+    const firstTurn = !conversation || conversation.messages.length === 0;
     if (!conversation) {
       conversation = {
         id: randomUUID(),
         agentId: agent.id,
-        title: input.prompt.trim().slice(0, 80),
-        workspaceRoot: input.workspaceRoot || homedir(),
+        title: "New chat",
+        workspaceRoot: input.workspaceRoot === null ? undefined : input.workspaceRoot || homedir(),
         messages: [],
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -642,11 +885,13 @@ export class PrivateLocalRuntime {
       this.change((draft) => draft.conversations.unshift(conversation!));
     }
     const conversationId = conversation.id;
+    if (this.activeConversations.has(conversationId)) throw new Error("This agent is already working in this conversation. Add a prompt to the running work instead.");
     this.change((draft) => {
       const current = draft.conversations.find((candidate) => candidate.id === conversationId)!;
-      current.workspaceRoot = input.workspaceRoot ?? current.workspaceRoot ?? homedir();
+      if (input.workspaceRoot === null) current.workspaceRoot = undefined;
+      else if (input.workspaceRoot) current.workspaceRoot = input.workspaceRoot;
       if (input.spaceIds !== undefined) current.spaceIds = input.spaceIds;
-      if (!current.messages.length && current.title === "New chat") current.title = input.prompt.trim().slice(0, 80) || current.title;
+      current.webSearchEnabled = Boolean(input.webSearchEnabled);
       current.messages.push({ id: randomUUID(), role: "user", content: input.prompt.trim(), createdAt: timestamp, ...(attachments.length ? { attachments } : {}) });
       current.updatedAt = timestamp;
       const project = draft.projects?.find((entry) => entry.id === current.projectId);
@@ -655,13 +900,25 @@ export class PrivateLocalRuntime {
 
     if (input.interactive) this.emit({ type: "chat-start", conversationId });
     this.emit({ type: "activity", label: `${agent.name} is thinking`, status: "running" });
+    this.activeConversations.add(conversationId);
     try {
+      const mcpTools = await this.connectMcpServers(conversationId, input.mcpServerIds);
+      this.activeMcpTools.set(conversationId, mcpTools);
       const response = await this.runAgent(runningAgent, conversationId, input.spaceIds, input.interactive);
+      this.activeConversations.delete(conversationId);
       const finalState = this.change((draft) => {
         const current = draft.conversations.find((candidate) => candidate.id === conversationId)!;
         current.messages.push({ id: randomUUID(), role: "assistant", content: response, createdAt: now() });
         current.updatedAt = now();
       });
+      if (firstTurn) {
+        void this.generateLocalTitle(input.prompt, response, selectedModel, state.settings.ollamaUrl)
+          .then((title) => this.change((draft) => {
+            const current = draft.conversations.find((candidate) => candidate.id === conversationId);
+            if (current?.title === "New chat") current.title = title;
+          }))
+          .catch(() => undefined);
+      }
       this.emit({ type: "activity", label: `${agent.name} finished`, status: "done" });
       if (input.interactive) this.emit({ type: "chat-end", conversationId });
       return {
@@ -677,7 +934,35 @@ export class PrivateLocalRuntime {
         status: "error",
       });
       throw error;
+    } finally {
+      const mcpTools = this.activeMcpTools.get(conversationId);
+      this.activeMcpTools.delete(conversationId);
+      if (mcpTools) for (const client of new Set([...mcpTools.values()].map((tool) => tool.client))) void client.close().catch(() => undefined);
+      this.activeConversations.delete(conversationId);
+      this.pendingSteers.delete(conversationId);
     }
+  }
+
+  private async generateLocalTitle(prompt: string, answer: string, model: string, ollamaUrl: string) {
+    try {
+      const response = await fetch(`${ensureLoopback(ollamaUrl)}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, stream: false, messages: [
+          { role: "system", content: "Write a specific title of at most six words for this conversation. Return only the title, with no quotes or punctuation." },
+          { role: "user", content: `Request: ${prompt.slice(0, 800)}\nAnswer: ${answer.slice(0, 350)}` },
+        ], options: { temperature: 0.2, num_ctx: 2048, num_predict: 32 } }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw new Error("Title model unavailable");
+      const payload = await response.json() as { message?: { content?: string } };
+      const title = String(payload.message?.content ?? "").replace(/^[\s"'`#*-]+|[\s"'`#*.!]+$/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+      if (title) return title.split(" ").slice(0, 6).join(" ");
+    } catch { /* Keep the conversation usable if title generation fails. */ }
+    if (/\b(?:pdf|document|paper|report|file)\b/i.test(prompt)) return /summari[sz]|key points/i.test(prompt) ? "Document Summary" : "Document Analysis";
+    if (/\b(?:bug|fix|debug|code|function|build|app)\b/i.test(prompt)) return "Development Task";
+    if (/\b(?:project|plan|strategy)\b/i.test(prompt)) return "Project Planning";
+    return "New Conversation";
   }
 
   deleteConversation(id: string) {
@@ -695,6 +980,21 @@ export class PrivateLocalRuntime {
       conversation.title = name;
       conversation.updatedAt = now();
     });
+  }
+
+  setConversationWebSearch(id: string, enabled: boolean) {
+    return this.change((state) => {
+      const conversation = state.conversations.find((candidate) => candidate.id === id);
+      if (!conversation) throw new Error("Local conversation not found");
+      if (enabled && !hasConfiguredLocalWebSearch(state.settings)) throw new Error("Configure a search provider before turning on Web search.");
+      conversation.webSearchEnabled = enabled;
+      conversation.updatedAt = now();
+    });
+  }
+
+  private webSearchAllowed(conversationId: string) {
+    const state = this.store.get();
+    return Boolean(hasConfiguredLocalWebSearch(state.settings) && state.conversations.find((conversation) => conversation.id === conversationId)?.webSearchEnabled);
   }
 
   async addKnowledgeSpace(name: string, folders: string[], options: { description?: string; autoGrantNewAgents?: boolean } = {}) {
@@ -1027,16 +1327,21 @@ export class PrivateLocalRuntime {
     const spaces = accessibleSpaces(state.spaces, agent.id, scopedSpaceIds);
     const knowledge = searchSpaces(spaces, lastUser);
     const lastUserMessage = [...conversation.messages].reverse().find((message) => message.role === "user");
-    const attachmentBlocks = await Promise.all((lastUserMessage?.attachments ?? []).map(async (attachment) => {
+    const attachmentBlocks = await Promise.all((lastUserMessage?.attachments ?? []).slice(0, 3).map(async (attachment) => {
       const item = state.library?.find((entry) => entry.id === attachment.id);
       if (!item) return `- ${attachment.name}: no longer available in the Local Library.`;
       try {
         const text = await readLibraryText(item);
-        return `### ${item.name} (itemId: ${item.id})\n${text.slice(0, 12_000)}${text.length > 12_000 ? `\n[Showing 12,000 of ${text.length.toLocaleString()} characters. Call read_library_item with offset 12000 to continue.]` : ""}`;
+        return `### ${item.name} (itemId: ${item.id})\n${text.slice(0, 2_000)}${text.length > 2_000 ? `\n[Showing 2,000 of ${text.length.toLocaleString()} characters. Use search_library_item to locate relevant passages, then read_library_item with a matching offset for context. Do not read a large document sequentially.]` : ""}`;
       } catch (error) {
         return `### ${item.name} (itemId: ${item.id})\n[Could not read: ${error instanceof Error ? error.message : String(error)}]`;
       }
     }));
+    const availableAttachments = [...new Map(conversation.messages.flatMap((message) => message.attachments ?? []).map((attachment) => [attachment.id, attachment])).values()]
+      .slice(-20).map((attachment) => `- ${attachment.name} (itemId: ${attachment.id})`);
+    const relatedChats = project ? state.conversations.filter((entry) => entry.projectId === project.id && entry.id !== conversationId && entry.messages.length)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 8)
+      .map((entry) => `- ${entry.title} (sessionId: ${entry.id}): ${entry.messages.find((message) => message.role === "user")?.content.slice(0, 180) ?? ""}`) : [];
     const projectFiles = (project?.libraryItemIds ?? []).flatMap((id) => {
       const item = state.library?.find((entry) => entry.id === id);
       return item ? [`- ${item.name} (itemId: ${item.id}, ${item.mimeType})`] : [];
@@ -1045,14 +1350,16 @@ export class PrivateLocalRuntime {
       `## Project: ${project.name}`,
       project.description ? `Goal: ${project.description}` : "",
       project.instructions ? `Project instructions (follow them in every chat in this project):\n${project.instructions}` : "",
-      projectFiles.length ? `Project files. Read them with read_library_item when they are relevant:\n${projectFiles.join("\n")}` : "",
+      relatedChats.length ? `Related project chats. These sessions share project context; use local_read_data for full details when needed:\n${relatedChats.join("\n")}` : "",
+      projectFiles.length ? `Project files. Use search_library_item for large files and read_library_item for relevant passages:\n${projectFiles.join("\n")}` : "",
       project.spaceIds.length ? `Project Knowledge Spaces: ${state.spaces.filter((space) => project.spaceIds.includes(space.id)).map((space) => `${space.name} (${space.id})`).join(", ")}. Search them before answering questions about the project.` : "",
     ].filter(Boolean).join("\n") : "";
     const skills = (state.skills ?? []).filter((skill) => skill.assignedAgentIds === undefined || skill.assignedAgentIds.includes(agent.id));
     const skillsBlock = buildSkillPromptIndex(skills, findMatchingSkills(skills, lastUser));
     const workspace = conversation.workspaceRoot;
     const localManifest = workspace
-      ? `Workspace: ${workspace}. File paths and command cwd are relative to this folder. Use cli_list_directory to inspect folders as needed.
+      ? `Workspace: ${workspace}. File paths and command cwd are relative to this folder. If a project is inside this workspace, include its directory in every file path or set cwd on commands. Use cli_list_directory to inspect folders as needed. If a file read fails, inspect the parent folder and retry with the correct relative path; never ask the user to paste a file that is accessible through these tools.
+For a large workspace document, use cli_search_file to locate requested sections such as conclusions or recommendations. The first cli_read_file response includes the final 1,500 characters for quick orientation. Do not read a long document sequentially when a targeted search can find the relevant section. Knowledge search applies to indexed Knowledge Spaces, not arbitrary workspace files.
 Use cli_run_command for short commands. Use cli_start_process for installs, builds and scaffolding, then cli_wait_for_process until done or error. Never claim completion while a setup process is running. Dev servers may keep running after you verify they are ready.
 Commands must be non-interactive: pass the executable as command and arguments as an array. Writes and commands require approval. Use real output to diagnose failures and continue the user's task.`
       : "No workspace folder is selected. Do not call cli_* filesystem or command tools.";
@@ -1068,11 +1375,14 @@ Commands must be non-interactive: pass the executable as command and arguments a
       localManifest,
       `Agent Commons Local data is organized at ${this.layout.root}. Use local_list_data and local_read_data to inspect agents, conversations, knowledge, artifacts, apps, skills, tasks, workflows, and uploads. The private state index is outside this workspace and must not be edited directly.`,
       `Available Knowledge Spaces: ${JSON.stringify(spaces.map((space) => ({ spaceId: space.id, name: space.name, documents: space.files.length })))}. Use list_knowledge_spaces, list_knowledge_documents, read_knowledge_document and search_knowledge for knowledge questions. These tools refer to the same spaces shown in the Knowledge page.`,
+      "For image requests, use generate_image. The result is saved in this conversation's artifacts and Local Library. Model weights download automatically the first time. Do not claim an image exists unless the tool succeeds.",
+      "For spoken audio requests, use generate_audio. The result is a local WAV artifact. Do not claim audio exists unless the tool succeeds.",
       skillsBlock,
       projectBlock,
+      availableAttachments.length ? `Files previously attached in this chat remain searchable with search_library_item and readable with read_library_item:\n${availableAttachments.join("\n")}` : "",
       attachmentBlocks.length ? `## Files attached to the latest message\nThe files stay on this computer. Their text is below.\n\n${attachmentBlocks.join("\n\n")}` : "",
       knowledge.length
-        ? `Local Knowledge passages (use the Knowledge tools for full documents):\n${knowledge.slice(0, 5).map((entry) => `\nSource: ${entry.source} (lines ${entry.lines}) in ${entry.space}${entry.heading ? ` · ${entry.heading}` : ""}\n${entry.excerpt.slice(0, 1_500)}`).join("\n")}`
+        ? `Local Knowledge passages (use the Knowledge tools for full documents):\n${knowledge.slice(0, 3).map((entry) => `\nSource: ${entry.source} (lines ${entry.lines}) in ${entry.space}${entry.heading ? ` · ${entry.heading}` : ""}\n${entry.excerpt.slice(0, 600)}`).join("\n")}`
         : "",
       spaces.length || attachmentBlocks.length || projectFiles.length
         ? "Citations: when an answer uses Knowledge passages or files, cite them inline and finish with a Sources list giving each source's file path and line range, for example: [1] research/interviews.md (lines 12-40). Number sources from [1] in the order you first use them. Cite only sources you actually read. If the sources do not support a claim, say so."
@@ -1089,18 +1399,26 @@ Commands must be non-interactive: pass the executable as command and arguments a
       })),
     ];
     const endpoint = ensureLoopback(state.settings.ollamaUrl);
-    const tools = (workspace ? LOCAL_TOOLS : LOCAL_TOOLS.filter((entry) => ["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge", "read_library_item", "invoke_skill", "local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill"].includes(entry.function.name)))
-      .filter((entry) => entry.function.name !== "invoke_skill" || skills.length > 0);
+    const tools = [
+      ...(workspace ? LOCAL_TOOLS : LOCAL_TOOLS.filter((entry) => ["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge", "web_search", "read_library_item", "search_library_item", "generate_image", "generate_audio", "invoke_skill", "local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill"].includes(entry.function.name)))
+        .filter((entry) => entry.function.name !== "invoke_skill" || skills.length > 0),
+      ...[...(this.activeMcpTools.get(conversationId)?.entries() ?? [])].map(([name, tool]) => ({ type: "function", function: { name, description: `${tool.server.name}: ${tool.description}`, parameters: tool.parameters } })),
+    ];
 
     let repairAttempted = false;
     let identityRepairAttempted = false;
     for (let turn = 0; turn < 64; turn += 1) {
+      const beforeStep = this.pendingSteers.get(conversationId)?.splice(0) ?? [];
+      if (beforeStep.length) {
+        messages.push(...beforeStep.map((content): OllamaMessage => ({ role: "user", content })));
+        if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
+      }
       compactToolLoop(messages);
       const response = await fetch(`${endpoint}/api/chat`, {
         method: "POST",
         redirect: "error",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages, tools: repairAttempted ? [] : tools, stream: true, options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE } }),
+        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages, tools: repairAttempted ? [] : tools.filter((entry) => entry.function.name !== "web_search" || this.webSearchAllowed(conversationId)), stream: true, options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE } }),
         signal: AbortSignal.timeout(10 * 60_000),
       });
       const message = await readOllamaChatResponse(response, interactive && !identityRequest ? (content) => {
@@ -1109,6 +1427,12 @@ Commands must be non-interactive: pass the executable as command and arguments a
           this.emit({ type: "chat-token", conversationId, content });
         }
       } : undefined);
+      const afterStep = this.pendingSteers.get(conversationId)?.splice(0) ?? [];
+      if (afterStep.length) {
+        messages.push(...afterStep.map((content): OllamaMessage => ({ role: "user", content })));
+        if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
+        continue;
+      }
       messages.push(message);
       const calls = message.tool_calls ?? [];
       if (calls.length && interactive) this.emit({ type: "chat-token", conversationId, content: "" });
@@ -1136,7 +1460,7 @@ Commands must be non-interactive: pass the executable as command and arguments a
         }
         if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
         if (!supportedToolNames.has(fallback.tool) && supportedToolNames.has(`cli_${fallback.tool}`)) fallback.tool = `cli_${fallback.tool}`;
-        if (!supportedToolNames.has(fallback.tool)) {
+        if (!supportedToolNames.has(fallback.tool) && !this.activeMcpTools.get(conversationId)?.has(fallback.tool)) {
           if (repairAttempted) throw new Error("The local model repeatedly called an unavailable tool. Try a stronger tool-capable model.");
           repairAttempted = true;
           messages.push({ role: "system", content: `The tool ${fallback.tool} does not exist. Reply to the user's request in plain language, or use a provided structured tool.` });
@@ -1149,7 +1473,7 @@ Commands must be non-interactive: pass the executable as command and arguments a
       }
       repairAttempted = false;
       for (const call of calls) {
-        if (!supportedToolNames.has(call.function.name)) {
+        if (!supportedToolNames.has(call.function.name) && !this.activeMcpTools.get(conversationId)?.has(call.function.name)) {
           messages.push(toolResult(call.function.name, `Error: ${call.function.name} is not an available tool.`));
           continue;
         }
@@ -1179,13 +1503,72 @@ Commands must be non-interactive: pass the executable as command and arguments a
     this.emit({ type: "activity", label: label.replaceAll("_", " "), detail: JSON.stringify(args), status: "running", conversationId, toolName: name, args });
     let result: string;
     if (commandError) result = commandError;
-    else if (["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge"].includes(name)) {
+    else if (this.activeMcpTools.get(conversationId)?.has(name)) {
+      const tool = this.activeMcpTools.get(conversationId)!.get(name)!;
+      const outbound = JSON.stringify(args);
+      if (outbound.length > 8_000) result = "Error: MCP tool input exceeds the 8,000-character disclosure limit.";
+      else if (!tool.readOnly && this.store.get().settings.permissionMode === "read-only") result = "Error: Local workspace is read only.";
+      else if (!(await this.requestApproval(`Send to ${tool.server.name} (${tool.server.url}) using ${tool.name}${tool.readOnly ? " [read]" : " [write]"}: ${outbound}${tool.server.apiKey ? "\nThe saved API key is included in the request." : ""}`, `mcp_call:${tool.server.id}:${tool.name}`, { conversationId, toolName: name }))) result = "User denied the MCP tool request.";
+      else {
+        try { result = JSON.stringify(await tool.client.callTool({ name: tool.name, arguments: args }, undefined, { timeout: 30_000 })); }
+        catch (error) { result = `Error: ${error instanceof Error ? error.message : String(error)}`; }
+      }
+    } else if (name === "generate_audio") {
+      if (this.store.get().settings.permissionMode === "read-only") result = "Error: Local workspace is read only. Enable changes in General settings to generate audio.";
+      else {
+        try {
+          const audio = await this.voiceManager.generate(String(args.text ?? ""), this.store.get().settings.voiceModel);
+          const id = randomUUID();
+          const fileName = `Spoken audio ${now().replace(/[:.]/g, "-")}.wav`;
+          const path = this.layout.path("artifacts", `${id}.wav`);
+          writeFileSync(path, audio, { flag: "wx", mode: 0o600 });
+          this.change((draft) => {
+            const conversation = draft.conversations.find((item) => item.id === conversationId);
+            if (!conversation) return;
+            (conversation.artifacts ??= []).push({ id, name: fileName, path, createdAt: now() });
+            (draft.library ??= []).unshift({ id, name: fileName, path, mimeType: "audio/wav", source: "agent", agentId: conversation.agentId, conversationId, createdAt: now(), updatedAt: now() });
+          });
+          result = JSON.stringify({ artifactId: id, name: fileName, saved: true });
+        } catch (error) { result = `Error: ${error instanceof Error ? error.message : String(error)}`; }
+      }
+    } else if (name === "generate_image") {
+      if (this.store.get().settings.permissionMode === "read-only") result = "Error: Local workspace is read only. Enable changes in General settings to generate an image.";
+      else {
+        try {
+          const image = await this.imageManager.generate(String(args.prompt ?? ""), this.store.get().settings.imageModel);
+          const id = randomUUID();
+          const fileName = `Generated image ${now().replace(/[:.]/g, "-")}.png`;
+          this.change((draft) => {
+            const conversation = draft.conversations.find((item) => item.id === conversationId);
+            if (!conversation) return;
+            (conversation.artifacts ??= []).push({ id, name: fileName, path: image.path, createdAt: now() });
+            (draft.library ??= []).unshift({ id, name: fileName, path: image.path, mimeType: "image/png", source: "agent", agentId: conversation.agentId, conversationId, createdAt: now(), updatedAt: now() });
+          });
+          result = JSON.stringify({ artifactId: id, name: fileName, model: image.modelId, saved: true });
+        } catch (error) { result = `Error: ${error instanceof Error ? error.message : String(error)}`; }
+      }
+    } else if (name === "web_search") {
+      const endpoint = this.store.get().settings.webSearchUrl;
+      const query = String(args.query ?? "").trim().slice(0, 500);
+      if (!this.webSearchAllowed(conversationId) || !endpoint) result = "Error: Web search is off. The user must enable it in the composer and configure a Local search endpoint.";
+      else if (!query) result = "Error: A search query is required.";
+      else if (!(await this.requestApproval(`Send web search query to ${endpoint}: ${query}`, "web_search", { conversationId, toolName: name }))) result = "User denied the web search query.";
+      else if (!this.webSearchAllowed(conversationId)) result = "Web search was turned off before the query was sent.";
+      else {
+        try {
+          const request = localWebSearchRequest(this.store.get().settings, query);
+          const response = await fetch(request.url, { redirect: "error", signal: AbortSignal.timeout(10_000), headers: request.headers });
+          if (!response.ok) throw new Error(`Search endpoint returned ${response.status}`);
+          result = JSON.stringify(localWebSearchResults(await response.json(), request.brave));
+        } catch (error) { result = `Error: ${error instanceof Error ? error.message : String(error)}`; }
+      }
+    } else if (["list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge"].includes(name)) {
       const state = this.store.get();
       const conversation = state.conversations.find((item) => item.id === conversationId)!;
       const projectSpaces = state.projects?.find((project) => project.id === conversation.projectId)?.spaceIds ?? [];
       const scoped = projectSpaces.length ? [...new Set([...(spaceIds ?? []), ...projectSpaces])] : spaceIds;
       result = await knowledgeTool(accessibleSpaces(state.spaces, conversation.agentId, scoped), name, args);
-    } else if (name === "read_library_item") {
+    } else if (name === "read_library_item" || name === "search_library_item") {
       const state = this.store.get();
       const conversation = state.conversations.find((item) => item.id === conversationId);
       const itemId = String(args.itemId ?? "");
@@ -1196,8 +1579,15 @@ Commands must be non-interactive: pass the executable as command and arguments a
       if (!permitted) result = "Error: that file is not attached to this chat or included in its project.";
       else {
         try {
-          const read = await this.readLibraryItem(itemId, Number(args.offset) || 0);
-          result = JSON.stringify({ itemId, name: read.item.name, content: read.content, nextOffset: read.nextOffset, totalChars: read.totalChars });
+          if (name === "search_library_item") {
+            const item = state.library?.find((entry) => entry.id === itemId);
+            if (!item) throw new Error("The file is no longer in the Local Library.");
+            const text = await readLibraryText(item);
+            result = JSON.stringify({ itemId, ...searchTextPassages(text, item.name, String(args.query ?? ""), "Use read_library_item with this itemId and a matching offset for more context.") });
+          } else {
+            const read = await this.readLibraryItem(itemId, Number(args.offset) || 0);
+            result = JSON.stringify({ itemId, name: read.item.name, content: read.content, nextOffset: read.nextOffset, totalChars: read.totalChars });
+          }
         } catch (error) { result = `Error: ${error instanceof Error ? error.message : String(error)}`; }
       }
     } else if (name === "invoke_skill") {

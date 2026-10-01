@@ -28,6 +28,7 @@ async function activateProduct(accessToken: unknown) {
     userId?: string;
     workspaceId?: string | null;
     image?: string | null;
+    name?: string | null;
   };
   // Provision the new user's credit account during the first product
   // activation. The credit service performs the 500-credit grant atomically;
@@ -224,7 +225,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       ]
     : [],
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger }) {
       if (user) {
         token.authSessionVersion = AUTH_SESSION_VERSION;
         token.identityUserId = user.id;
@@ -245,6 +246,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (identity?.userId) token.identityUserId = identity.userId;
         if (identity?.workspaceId) token.workspaceId = identity.workspaceId;
         if (identity?.image) token.picture = identity.image;
+        if (identity?.name) token.name = identity.name;
       } else if (account) {
         token.authSessionVersion = AUTH_SESSION_VERSION;
         token.accessToken = account.access_token;
@@ -256,6 +258,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (identity?.userId) token.identityUserId = identity.userId;
         if (identity?.workspaceId) token.workspaceId = identity.workspaceId;
         if (identity?.image) token.picture = identity.image;
+        if (identity?.name) token.name = identity.name;
+      }
+      if (trigger === 'update' && identityBaseUrl && token.accessToken) {
+        if (token.accessTokenExpiresAt && Date.now() >= Number(token.accessTokenExpiresAt) - 30_000) token = await refreshAccessToken(token);
+        if (!token.accessTokenError && token.accessToken) {
+          const response = await fetch(`${identityBaseUrl}/api/identity/me/profile`, {
+            headers: { Authorization: `Bearer ${token.accessToken}` }, cache: 'no-store',
+          }).catch(() => null);
+          if (response?.ok) {
+            const profile = (await response.json()) as { data?: { name?: string | null; image?: string | null } };
+            token.name = profile.data?.name ?? undefined;
+            token.picture = profile.data?.image ?? undefined;
+          }
+        }
       }
       if (
         token.accessTokenExpiresAt &&
@@ -268,6 +284,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     session({ session, token }) {
       session.authSessionVersion = token.authSessionVersion as string | undefined;
       session.user.id = String(token.identityUserId ?? token.sub ?? "");
+      session.user.name = typeof token.name === 'string' ? token.name : null;
       session.user.workspaceId = token.workspaceId as string | undefined;
       if (token.picture) session.user.image = String(token.picture);
       // auth() receives a JSON-serialized session, so these must be enumerable

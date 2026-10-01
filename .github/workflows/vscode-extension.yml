@@ -21,6 +21,7 @@ permissions:
 jobs:
   verify:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -56,7 +57,7 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          curl --fail --location --retry 3 https://update.code.visualstudio.com/1.95.3/linux-x64/stable --output /tmp/vscode.tar.gz
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 https://update.code.visualstudio.com/1.95.3/linux-x64/stable --output /tmp/vscode.tar.gz
           mkdir -p /tmp/commons-vscode-host
           tar -xzf /tmp/vscode.tar.gz -C /tmp/commons-vscode-host --strip-components=1
           xvfb-run -a /tmp/commons-vscode-host/code --no-sandbox --disable-gpu --disable-extensions --disable-workspace-trust --skip-welcome --skip-release-notes --user-data-dir=/tmp/commons-vscode-user --extensions-dir=/tmp/commons-vscode-extensions --extensionDevelopmentPath="$PWD/packages/commons-vscode" --extensionTestsPath="$PWD/packages/commons-vscode/test/extension-host.cjs" "$PWD/packages/commons-vscode"

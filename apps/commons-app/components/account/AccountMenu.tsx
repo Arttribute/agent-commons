@@ -23,16 +23,19 @@ function AccountMenu() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div className="rounded-full overflow-hidden">
-                <RandomPixelAvatar
-                  username={username || walletAddress || ""}
-                  size={32}
-                />
+                {authState.profileImage ? (
+                  <img src={authState.profileImage} alt="" className="h-8 w-8 object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <RandomPixelAvatar username={username || walletAddress || ""} size={32} />
+                )}
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuLabel>{username}</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Profile</DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/settings">Profile</Link>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/settings/api-keys">API Keys</Link>
               </DropdownMenuItem>

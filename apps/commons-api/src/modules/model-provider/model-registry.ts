@@ -1,5 +1,10 @@
 import { ModelProviderName } from './model-provider.interface';
 
+export const HOSTED_FREE_MODEL_ID = 'Qwen/Qwen3-1.7B-FP8';
+// Reserve context headroom for tool schemas and tokenizer estimation error.
+export const HOSTED_FREE_MAX_ESTIMATED_TOKENS = 6_000;
+export const HOSTED_FREE_MAX_TOOLS = 20;
+
 export interface ModelRegistryEntry {
   provider: ModelProviderName;
   modelId: string;
@@ -15,7 +20,7 @@ export interface ModelRegistryEntry {
   longContextThreshold?: number;
   longContextInputMultiplier?: number;
   longContextOutputMultiplier?: number;
-  tier: 'frontier' | 'standard' | 'fast' | 'local';
+  tier: 'frontier' | 'standard' | 'fast' | 'local' | 'free';
 }
 
 export const MODEL_REGISTRY: ModelRegistryEntry[] = [
@@ -195,6 +200,20 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
     inputPricePer1kTokens: 0.00059,
     outputPricePer1kTokens: 0.00079,
     tier: 'fast',
+  },
+  // ── Hosted free fallback ───────────────────────────────────────────────────
+  {
+    provider: 'hosted-free',
+    modelId: HOSTED_FREE_MODEL_ID,
+    displayName: 'Commons Free · Qwen3 1.7B',
+    // Bound to the proposed single-slice service until an actual GPU load test.
+    contextWindow: 8192,
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsVision: false,
+    inputPricePer1kTokens: 0,
+    outputPricePer1kTokens: 0,
+    tier: 'free',
   },
   // ── Ollama (local) ─────────────────────────────────────────────────────────
   {

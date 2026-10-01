@@ -1,6 +1,6 @@
 {
   "name": "commons-desktop",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "author": "Agent Commons",
   "type": "module",
@@ -20,11 +20,12 @@
   },
   "devDependencies": {
     "@agent-commons/agent-core": "workspace:*",
-    "@agent-commons/desktop-contract": "workspace:*",
     "@agent-commons/cli": "workspace:*",
+    "@agent-commons/desktop-contract": "workspace:*",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/yauzl": "2.10.3",
     "@vitejs/plugin-react": "latest",
     "concurrently": "^9.1.2",
     "cross-env": "latest",
@@ -37,7 +38,8 @@
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "vite": "latest",
-    "wait-on": "latest"
+    "wait-on": "latest",
+    "yazl": "2.5.1"
   },
   "build": {
     "appId": "io.agentcommons.desktop",
@@ -55,20 +57,38 @@
       "THIRD_PARTY_NOTICES.md"
     ],
     "extraResources": [
-      { "from": "commons-app-dist", "to": "commons-app" }
+      {
+        "from": "commons-app-dist",
+        "to": "commons-app"
+      },
+      {
+        "from": "../commons-app/fonts",
+        "to": "licenses/fonts",
+        "filter": [
+          "OFL-*.txt"
+        ]
+      }
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "notarize": true
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "linux": {
-      "target": ["AppImage"],
+      "executableName": "agent-commons",
+      "target": [
+        "AppImage"
+      ],
       "category": "Development"
     },
     "publish": {
@@ -77,5 +97,12 @@
       "repo": "agent-commons",
       "releaseType": "release"
     }
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.5.1",
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "@xenova/transformers": "2.17.2",
+    "kokoro-js": "1.2.1",
+    "yauzl": "3.4.0"
   }
 }

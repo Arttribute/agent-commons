@@ -12,6 +12,28 @@ import { createCommonsId } from "../lib/ids.js";
 import { clientName, escapeHtml, page, safeReturnPath, scopeList } from "./ui.js";
 import { createPlatformRouter } from "./platform.js";
 
+async function profileUserId(authService: typeof auth, database: typeof pool, headers: Headers): Promise<string | null> {
+  const session = await authService.api.getSession({ headers }).catch(() => null);
+  if (session?.user?.id) return session.user.id;
+  const bearer = (headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!bearer) return null;
+  if (bearer.split(".").length === 3) {
+    try {
+      const { payload } = await jwtVerify(bearer, createLocalJWKSet(await authService.api.getJwks()), {
+        issuer: process.env.COMMONS_IDENTITY_ISSUER ?? `${baseUrl}/api/auth`,
+        audience: "commons-platform",
+        requiredClaims: ["exp", "iat", "sub"],
+      });
+      return payload.actor_type === "user" && typeof payload.sub === "string" ? payload.sub : null;
+    } catch { return null; }
+  }
+  const token = await database.query(
+    `select "userId" from "oauthAccessToken" where token = $1 and "expiresAt" > now() limit 1`,
+    [createHash("sha256").update(bearer).digest("base64url")],
+  );
+  return token.rows[0]?.userId ?? null;
+}
+
 const baseUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:3010";
 // Per-app return-to/dashboard URLs default to the production domains but can be
 // overridden per environment (e.g. staging) via env vars.
@@ -542,6 +564,62 @@ app.get("/api/identity/me", async (c) => {
   return c.json({ user: session.user, workspaces: memberships.rows });
 });
 
+app.get("/api/identity/me/profile", async (c) => {
+  const userId = await profileUserId(authService, database, c.req.raw.headers);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const result = await database.query(
+    `select coalesce(p.display_name, u.name) as name,
+            coalesce(p.image_url, u.image) as image,
+            u.image as "providerImage", p.image_url is not null as "hasCustomImage"
+       from "user" u left join commons_user_profile_override p on p.user_id = u.id
+      where u.id = $1 limit 1`,
+    [userId],
+  );
+  if (!result.rows[0]) return c.json({ error: "User not found" }, 404);
+  return c.json({ data: result.rows[0] });
+});
+
+app.patch("/api/identity/me/profile", async (c) => {
+  const userId = await profileUserId(authService, database, c.req.raw.headers);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const body = await c.req.json().catch(() => ({})) as { name?: string | null; imageUrl?: string | null };
+  if (!Object.prototype.hasOwnProperty.call(body, "name") && !Object.prototype.hasOwnProperty.call(body, "imageUrl")) return c.json({ error: "Nothing to update" }, 400);
+  let name: string | null | undefined;
+  if (Object.prototype.hasOwnProperty.call(body, "name")) {
+    name = body.name === null ? null : typeof body.name === "string" ? body.name.trim() : undefined;
+    if (name === undefined || (name !== null && (!name || name.length > 100))) return c.json({ error: "Name must be 1 to 100 characters" }, 400);
+  }
+  let imageUrl: string | null | undefined;
+  if (Object.prototype.hasOwnProperty.call(body, "imageUrl")) {
+    imageUrl = body.imageUrl === null ? null : typeof body.imageUrl === "string" ? body.imageUrl : undefined;
+    if (imageUrl === undefined || imageUrl === "") return c.json({ error: "Invalid profile image" }, 400);
+    if (imageUrl) {
+      const gateway = (process.env.GATEWAY_URL ?? "gateway.pinata.cloud").replace(/^https?:\/\//, "").replace(/\/$/, "");
+      let url: URL;
+      try { url = new URL(imageUrl); } catch { return c.json({ error: "Invalid profile image" }, 400); }
+      if (url.protocol !== "https:" || url.host !== gateway || !/^\/ipfs\/[a-zA-Z0-9]+$/.test(url.pathname) || url.search || url.hash) return c.json({ error: "Choose an uploaded profile image" }, 400);
+    }
+  }
+  await database.query(
+    `insert into commons_user_profile_override (user_id, display_name, image_url)
+     values ($1, $2, $3)
+     on conflict (user_id) do update set
+       display_name = case when $4 then excluded.display_name else commons_user_profile_override.display_name end,
+       image_url = case when $5 then excluded.image_url else commons_user_profile_override.image_url end,
+       updated_at = now()`,
+    [userId, name ?? null, imageUrl ?? null, name !== undefined, imageUrl !== undefined],
+  );
+  const result = await database.query(
+    `select coalesce(p.display_name, u.name) as name,
+            coalesce(p.image_url, u.image) as image,
+            u.image as "providerImage", p.image_url is not null as "hasCustomImage"
+       from "user" u left join commons_user_profile_override p on p.user_id = u.id
+      where u.id = $1 limit 1`,
+    [userId],
+  );
+  return c.json({ data: result.rows[0] });
+});
+
 /**
  * Service-to-service email → user id lookup, used by product apps (e.g.
  * Agent Commons credit gifting) to address a user by email. Requires a valid
@@ -673,8 +751,11 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
     });
   }
   const identity = await database.query(
-    `select id, "defaultWorkspaceId" as "workspaceId", image
-       from "user" where id = $1`,
+    `select u.id, u."defaultWorkspaceId" as "workspaceId",
+            coalesce(p.image_url, u.image) as image,
+            coalesce(p.display_name, u.name) as name
+       from "user" u left join commons_user_profile_override p on p.user_id = u.id
+      where u.id = $1`,
     [user.id],
   );
   return c.json({
@@ -683,6 +764,7 @@ app.post("/api/identity/apps/:app/activate", async (c) => {
     userId: identity.rows[0]?.id ?? user.id,
     workspaceId: identity.rows[0]?.workspaceId ?? null,
     image: identity.rows[0]?.image ?? null,
+    name: identity.rows[0]?.name ?? null,
   });
 });
 
@@ -693,6 +775,15 @@ return app;
 const port = Number(process.env.PORT ?? 3010);
 const app = createIdentityApp();
 if (process.env.COMMONS_IDENTITY_NO_LISTEN !== "true") {
+  // The platform deploy rolls the Identity container without a separate
+  // migration task. Create this additive table before the new profile routes
+  // accept traffic; the same SQL is also in the offline migration list.
+  await pool.query(`create table if not exists commons_user_profile_override (
+    user_id text primary key references "user"(id) on delete cascade,
+    display_name text,
+    image_url text,
+    updated_at timestamptz not null default now()
+  )`);
   serve({ fetch: app.fetch, port }, () => {
     console.log(`Commons Identity listening on ${baseUrl} (port ${port})`);
   });

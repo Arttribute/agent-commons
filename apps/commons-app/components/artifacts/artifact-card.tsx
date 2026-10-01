@@ -29,11 +29,13 @@ export function ArtifactCard({
   onOpen,
   compact = false,
   className,
+  previewUrl,
 }: {
   artifact: ArtifactRef;
   onOpen: (artifact: ArtifactRef) => void;
   compact?: boolean;
   className?: string;
+  previewUrl?: string | null;
 }) {
   const kind = artifactKind(artifact);
   return (
@@ -53,10 +55,7 @@ export function ArtifactCard({
           kindStyles[kind] || kindStyles.other,
         )}
       >
-        <ArtifactIcon
-          artifact={artifact}
-          className={compact ? "h-4 w-4" : "h-5 w-5"}
-        />
+        {previewUrl && kind === "image" ? <img src={previewUrl} alt="" className={cn("rounded-lg object-cover", compact ? "h-9 w-9" : "h-11 w-11")} /> : <ArtifactIcon artifact={artifact} className={compact ? "h-4 w-4" : "h-5 w-5"} />}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-stone-900">

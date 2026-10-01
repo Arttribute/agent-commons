@@ -4,10 +4,8 @@ const desktopBundle = process.env.COMMONS_DESKTOP_BUNDLE_APP === "1";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  ...(desktopBundle ? {
-    output: "standalone" as const,
-    outputFileTracingRoot: resolve(process.cwd(), "../.."),
-  } : {}),
+  outputFileTracingRoot: resolve(process.cwd(), "../.."),
+  ...(desktopBundle ? { output: "standalone" as const } : {}),
   transpilePackages: ["@agent-commons/ui"],
   images: {
     remotePatterns: [

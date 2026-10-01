@@ -16,8 +16,8 @@ The Dockerfile includes:
 
 The following environment variables are configured in the Dockerfile:
 
-- `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true` - Prevents downloading Chromium during npm install
-- `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium` - Points to system-installed Chromium
+- `PUPPETEER_SKIP_DOWNLOAD=true` - Prevents Puppeteer's install hook from downloading and unpacking another browser
+- `PUPPETEER_EXECUTABLE_PATH=/opt/chrome-linux64/chrome` - Points to the checksum-verified Chrome copied into the runtime image
 - `CHROME_PATH=/usr/bin/chromium` - Alternative path variable
 - `PUPPETEER_CACHE_DIR=/tmp/.cache` - Writable cache directory
 

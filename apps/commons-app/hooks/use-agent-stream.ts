@@ -4,8 +4,10 @@ import type { StreamEvent, ChatMessage } from "@agent-commons/sdk";
 import { parseEventStream } from "@/lib/sse";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { localToolCalls, mapLocalTool } from "@/lib/local-tool-calls";
+import { claimCliToolRequest } from "@/lib/cli-tool-request-claim";
 
 interface UseAgentStreamOptions {
+  onRunStarted?: (runId: string) => void;
   onToken?: (token: string) => void;
   onReset?: () => void;
   onStatus?: (event: StreamEvent) => void;
@@ -32,6 +34,11 @@ const TERMINAL_EVENT_TYPES = new Set([
 const MAX_RESUME_ATTEMPTS = 8;
 
 type ResumableStreamEvent = StreamEvent & { seq?: number; runId?: string };
+
+// A route change unmounts the composer but does not stop its fetch. Session
+// recovery can use this to avoid opening a second subscriber in the same tab.
+const browserAttachedRunIds = new Set<string>();
+export const isBrowserRunAttached = (runId: string) => browserAttachedRunIds.has(runId);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -73,7 +80,9 @@ export function useAgentStream(
       /** Per-turn thinking depth chosen in the composer; omit for auto. */
       reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
       cliContext?: string;
-      localWorkspaceRoot?: string;
+      localWorkspaceRoot?: string | null;
+      webSearchEnabled?: boolean;
+      mcpServerIds?: string[];
       /** Project for a new session; existing sessions keep their project. */
       projectId?: string;
       provenance?: {
@@ -146,6 +155,8 @@ export function useAgentStream(
               workspaceRoot: params.localWorkspaceRoot,
               attachmentIds: params.attachments?.map((attachment) => attachment.fileId),
               projectId: params.projectId,
+              webSearchEnabled: params.webSearchEnabled,
+              mcpServerIds: params.mcpServerIds,
               interactive: true,
             });
             if (!abortRef.current) optionsRef.current.onFinal?.({
@@ -174,14 +185,17 @@ export function useAgentStream(
       const consume = async (res: Response) => {
         for await (const event of parseEventStream<ResumableStreamEvent>(res)) {
           if (abortRef.current) return;
-          if (event.runId) runId = event.runId;
+          if (event.runId) {
+            runId = event.runId;
+            browserAttachedRunIds.add(event.runId);
+          }
           if (typeof event.seq === "number" && event.seq > lastSeq)
             lastSeq = event.seq;
           handleEvent(event, optionsRef.current);
           if (event.type === "cli_tool_request" && event.requestId && !handledLocalRequests.has(event.requestId)) {
             handledLocalRequests.add(event.requestId);
             const bridge = window.agentCommonsDesktop;
-            if (bridge) {
+            if (bridge && claimCliToolRequest(event.requestId)) {
               void (async () => {
                 let result: string;
                 try {
@@ -204,6 +218,7 @@ export function useAgentStream(
           }
           if (TERMINAL_EVENT_TYPES.has(event.type)) {
             finished = true;
+            if (runId) browserAttachedRunIds.delete(runId);
             return;
           }
         }
@@ -268,6 +283,7 @@ export function useAgentStream(
         setError(msg);
         optionsRef.current.onError?.(msg);
       } finally {
+        if (runId) browserAttachedRunIds.delete(runId);
         setStreaming(false);
       }
     },
@@ -283,6 +299,9 @@ export function useAgentStream(
 
 function handleEvent(event: StreamEvent, options: UseAgentStreamOptions) {
   switch (event.type) {
+    case "run_started":
+      if ((event as StreamEvent & { runId?: string }).runId) options.onRunStarted?.((event as StreamEvent & { runId: string }).runId);
+      break;
     case "token":
       if (event.content) options.onToken?.(event.content);
       break;

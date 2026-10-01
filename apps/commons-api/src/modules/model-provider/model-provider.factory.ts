@@ -38,6 +38,8 @@ export class ModelProviderFactory {
       case 'xai':
       case 'custom':
         return buildOpenAIModel(resolved);
+      case 'hosted-free':
+        return buildOpenAIModel({ ...resolved, maxTokens: Math.min(resolved.maxTokens ?? 2048, 2048) });
       case 'anthropic':
         return buildAnthropicModel(resolved);
       case 'google':
@@ -117,7 +119,10 @@ export class ModelProviderFactory {
       throw new BadRequestException(
         'Choose a model from the Commons model catalog',
       );
-    return { provider: model.provider, modelId: model.modelId };
+    if (model.provider === 'hosted-free' && (!process.env.HOSTED_FREE_MODEL_BASE_URL || !process.env.HOSTED_FREE_MODEL_API_KEY)) {
+      throw new BadRequestException('The Commons Free model is not available yet.');
+    }
+    return { provider: model.provider, modelId: model.modelId, ...(model.provider === 'hosted-free' ? { maxTokens: 2048 } : {}) };
   }
 
   /** Infer provider from a legacy model name string */

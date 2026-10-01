@@ -1,11 +1,10 @@
 import { CommonsAppWindows } from "@/components/plugins/app-windows";
 import type { Metadata } from "next";
-import { Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
-import Providers from "@/Providers"; // The file with your <PrivyProvider> from earlier
+import Providers from "@/Providers";
 import { AuthProvider } from "@/context/AuthContext";
 import { Analytics } from "@vercel/analytics/react";
-import { Space_Grotesk } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { GlobalSearchProvider } from "@/context/SearchContext";
@@ -16,18 +15,21 @@ import { getAppBaseUrl } from "@/lib/app-url";
 import { cookies } from "next/headers";
 import { DesktopApprovalBridge } from "@/components/desktop/approval-widgets";
 import { WorkspaceModeProvider } from "@/context/WorkspaceModeContext";
+import { AgentProvider } from "@/context/AgentContext";
 
-const spaceGrotesk = Space_Grotesk({
-  weight: ["400", "500", "600", "700"],
-  subsets: ["latin"],
+const spaceGrotesk = localFont({
+  src: "../fonts/SpaceGrotesk-variable.ttf",
+  weight: "400 700",
   display: "swap",
   fallback: ["Helvetica", "Arial", "sans-serif"],
   variable: "--font-space-grotesk",
 });
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
+  src: "../fonts/GeistMono-variable.ttf",
+  weight: "100 900",
+  display: "swap",
   variable: "--font-geist-mono",
-  subsets: ["latin"],
 });
 
 const SITE_DESCRIPTION =
@@ -110,9 +112,11 @@ export default async function RootLayout({
           <AuthProvider>
             <SidebarProvider>
               <GlobalSearchProvider>
+                <AgentProvider>
                 <div id="app-shell-content" className="h-full min-w-0">
                   {children}
                 </div>
+                </AgentProvider>
                 <FloatingCommonsCopilot />
                 <CommonsAppWindows />
                 <DesktopApprovalBridge />

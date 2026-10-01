@@ -18,7 +18,8 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This project uses local Space Grotesk and Geist Mono font files through `next/font/local`. Their SIL Open Font License texts are in `fonts/`.
+The files come from `google/fonts` at commits `2861cb7b12f90c0a294a12ed666e381e2211872f` (Space Grotesk) and `9e25e2ba265e5298f70f6182dd4e8a3ebf1b9123` (Geist Mono). Keeping these files in the repository makes web and desktop builds independent of Google Fonts availability.
 
 ## Learn More
 

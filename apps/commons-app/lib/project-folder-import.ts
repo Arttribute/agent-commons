@@ -1,7 +1,7 @@
 "use client";
 
 import { desktopApiFetch } from "@/lib/desktop-api-fetch";
-import { chooseMarkdownFolder, rememberMarkdownFolder, supportsBrowserFolders } from "@/components/brains/browser-folder";
+import { supportsBrowserFolders } from "@/components/brains/browser-folder";
 
 export type ImportedFolder = {
   name: string;
@@ -11,9 +11,9 @@ export type ImportedFolder = {
   summary: string;
 };
 
-const DOCUMENT_FILE = /\.(?:pdf|docx|pptx|xlsx|csv|txt|json)$/i;
+const DOCUMENT_FILE = /\.(?:pdf|docx|pptx|xlsx|csv|txt|json|md|mdx)$/i;
 const MAX_DOCUMENTS = 25;
-const MAX_DOCUMENT_BYTES = 20_000_000;
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 
 async function payload(response: Response, fallback: string) {
   const body = await response.json().catch(() => ({}));
@@ -23,63 +23,30 @@ async function payload(response: Response, fallback: string) {
 
 /** True when this environment can pick a folder for a project. */
 export function canImportProjectFolder(local: boolean) {
-  return local ? Boolean(typeof window !== "undefined" && window.agentCommonsLocal) : typeof window === "undefined" || supportsBrowserFolders();
+  return local ? Boolean(typeof window !== "undefined" && window.agentCommonsLocal) : true;
 }
 
 /**
  * Brings a project folder into Commons.
  *
- * Private Local links the folder as a Knowledge Space that stays on this
- * computer and follows edits made in other apps, including PDF and Office
- * files. Cloud imports Markdown notes into a connected Knowledge Space and
- * uploads documents to the Library as project files.
+ * Project folders contribute files to the Library in both modes. Knowledge
+ * Spaces are attached separately and keep their own editing semantics.
  */
 export async function importProjectFolder(local: boolean): Promise<ImportedFolder | null> {
   if (local) {
     const bridge = window.agentCommonsLocal;
     if (!bridge) throw new Error("The Local desktop workspace is unavailable.");
-    const [folder] = await bridge.chooseKnowledgeFolders();
-    if (!folder) return null;
-    const name = folder.split(/[\\/]/).filter(Boolean).at(-1) || "Project folder";
-    const space = await payload(await desktopApiFetch("/api/knowledge", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, folders: [folder], allAgents: true }),
-    }), "Could not link the folder");
-    return {
-      name,
-      knowledgeSpaceIds: [space.spaceId],
-      libraryItemIds: [],
-      summary: `${space.counts?.documents ?? 0} files · kept in sync`,
-    };
+    const imported = await bridge.importProjectFolder();
+    return imported ? { ...imported, knowledgeSpaceIds: [] } : null;
   }
 
-  const picked = await chooseMarkdownFolder().catch((cause) => {
+  if (!supportsBrowserFolders()) throw new Error("Choose a folder with the browser folder picker.");
+
+  const handle = await (window as any).showDirectoryPicker({ mode: "read" }).catch((cause: unknown) => {
     if (cause instanceof DOMException && cause.name === "AbortError") return null;
     throw cause;
   });
-  if (!picked) return null;
-  const knowledgeSpaceIds: string[] = [];
-  if (picked.documents.length) {
-    const space = await payload(await desktopApiFetch("/api/knowledge", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: picked.name,
-        provider: "browser_filesystem",
-        providerConfig: { folderName: picked.name },
-        allAgents: true,
-      }),
-    }), "Could not create the Knowledge Space");
-    await rememberMarkdownFolder(space.spaceId, picked.handle);
-    await payload(await desktopApiFetch(`/api/knowledge/${space.spaceId}/import`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ documents: picked.documents, folders: picked.folders }),
-    }), "The notes could not be imported");
-    knowledgeSpaceIds.push(space.spaceId);
-  }
-
+  if (!handle) return null;
   const files: File[] = [];
   async function walk(directory: any, depth: number) {
     if (depth > 8 || files.length >= MAX_DOCUMENTS) return;
@@ -93,11 +60,18 @@ export async function importProjectFolder(local: boolean): Promise<ImportedFolde
       if (files.length >= MAX_DOCUMENTS) break;
     }
   }
-  await walk(picked.handle, 0);
+  await walk(handle, 0);
+  return importProjectFiles(files, String(handle.name || "Project folder"));
+}
+
+export async function importProjectFiles(selected: FileList | File[], folderName?: string): Promise<ImportedFolder> {
+  const files = Array.from(selected).filter((file) => DOCUMENT_FILE.test(file.name) && file.size > 0 && file.size <= MAX_DOCUMENT_BYTES).slice(0, MAX_DOCUMENTS);
+  const name = folderName || files[0]?.webkitRelativePath?.split("/")[0] || "Project folder";
   const libraryItemIds: string[] = [];
-  if (files.length) {
+  // The Cloud API accepts ten files per request; keep batches bounded.
+  for (let start = 0; start < files.length; start += 10) {
     const form = new FormData();
-    files.forEach((file) => form.append("files", file));
+    files.slice(start, start + 10).forEach((file) => form.append("files", file));
     const uploaded = await payload(await desktopApiFetch("/api/files/upload", { method: "POST", body: form }), "Documents could not be uploaded");
     for (const item of Array.isArray(uploaded) ? uploaded : []) {
       const id = item?.fileId ?? item?.itemId;
@@ -105,12 +79,9 @@ export async function importProjectFolder(local: boolean): Promise<ImportedFolde
     }
   }
   return {
-    name: picked.name,
-    knowledgeSpaceIds,
+    name,
+    knowledgeSpaceIds: [],
     libraryItemIds,
-    summary: [
-      picked.documents.length ? `${picked.documents.length} notes` : "",
-      libraryItemIds.length ? `${libraryItemIds.length} documents` : "",
-    ].filter(Boolean).join(" · ") || "No supported files found",
+    summary: libraryItemIds.length ? `${libraryItemIds.length} documents` : "No supported files found",
   };
 }

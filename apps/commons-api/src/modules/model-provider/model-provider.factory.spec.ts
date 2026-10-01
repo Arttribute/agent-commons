@@ -21,4 +21,24 @@ describe('per-turn platform model selection', () => {
     ).toThrow();
     expect(() => factory.resolveRunModel(null)).toThrow();
   });
+  it('keeps the hosted free endpoint private and caps its output', () => {
+    const previousUrl = process.env.HOSTED_FREE_MODEL_BASE_URL;
+    const previousKey = process.env.HOSTED_FREE_MODEL_API_KEY;
+    try {
+      delete process.env.HOSTED_FREE_MODEL_BASE_URL;
+      delete process.env.HOSTED_FREE_MODEL_API_KEY;
+      expect(() => factory.resolveRunModel({ provider: 'hosted-free', modelId: 'Qwen/Qwen3-1.7B-FP8' })).toThrow();
+      process.env.HOSTED_FREE_MODEL_BASE_URL = 'http://free-model.internal/v1';
+      process.env.HOSTED_FREE_MODEL_API_KEY = 'private-test-key';
+      expect(factory.resolveRunModel({
+        provider: 'hosted-free', modelId: 'Qwen/Qwen3-1.7B-FP8',
+        apiKey: 'attacker-key', baseUrl: 'https://attacker.invalid', maxTokens: 99999,
+      })).toEqual({ provider: 'hosted-free', modelId: 'Qwen/Qwen3-1.7B-FP8', maxTokens: 2048 });
+    } finally {
+      if (previousUrl === undefined) delete process.env.HOSTED_FREE_MODEL_BASE_URL;
+      else process.env.HOSTED_FREE_MODEL_BASE_URL = previousUrl;
+      if (previousKey === undefined) delete process.env.HOSTED_FREE_MODEL_API_KEY;
+      else process.env.HOSTED_FREE_MODEL_API_KEY = previousKey;
+    }
+  });
 });

@@ -8,20 +8,6 @@ import {
 import { DEFAULT_AUTH_CALLBACK } from "@/lib/auth-callback";
 import { useWorkspaceMode } from "./WorkspaceModeContext";
 
-declare module "@privy-io/react-auth" {
-  interface Google {
-    picture?: string;
-  }
-
-  interface Discord {
-    picture?: string;
-  }
-
-  interface Twitter {
-    picture?: string;
-  }
-}
-
 // Define the shape of the data we'll store about the user
 export interface AuthState {
   idToken?: string | null;
@@ -79,6 +65,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         idToken: "local-workspace",
         username: localAccount?.displayName ?? "Local workspace",
         email: localAccount?.email,
+        profileImage: localAccount?.profileImage,
         walletAddress: id,
         userId: id,
       };
@@ -128,7 +115,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = async () => {
     if (local) {
-      await setMode("cloud");
+      await window.agentCommonsLocal?.clearAccount();
+      await commonsSignOut({ redirect: false });
+      setLocalAccount(undefined);
       return;
     }
     try {

@@ -70,21 +70,49 @@ function fromUsageObject(usage: any, source: string): NormalizedTokenUsage | nul
 }
 
 export function extractTokenUsageFromLLMResult(result: any): NormalizedTokenUsage | null {
-  const candidates: Array<[any, string]> = [
+  const directCandidates: Array<[any, string]> = [
     [result?.llmOutput?.tokenUsage, 'llmOutput.tokenUsage'],
     [result?.llmOutput?.usage, 'llmOutput.usage'],
-    [result?.llmOutput?.estimatedTokenUsage, 'llmOutput.estimatedTokenUsage'],
+  ];
+  for (const [candidate, source] of directCandidates) {
+    const usage = fromUsageObject(candidate, source);
+    if (usage) return usage;
+  }
+
+  const estimated = fromUsageObject(
+    result?.llmOutput?.estimatedTokenUsage,
+    'llmOutput.estimatedTokenUsage',
+  );
+  const messageCandidates: Array<[any, string]> = [
     [result?.generations?.[0]?.[0]?.message?.usage_metadata, 'generations.message.usage_metadata'],
     [result?.generations?.[0]?.[0]?.message?.response_metadata?.usage, 'generations.message.response_metadata.usage'],
     [result?.generations?.[0]?.[0]?.message?.response_metadata?.token_usage, 'generations.message.response_metadata.token_usage'],
     [result?.generations?.[0]?.[0]?.generationInfo?.usage, 'generations.generationInfo.usage'],
     [result?.generations?.[0]?.[0]?.generationInfo?.token_usage, 'generations.generationInfo.token_usage'],
   ];
-
-  for (const [candidate, source] of candidates) {
-    const usage = fromUsageObject(candidate, source);
-    if (usage) return usage;
+  for (const [candidate, source] of messageCandidates) {
+    const reported = fromUsageObject(candidate, source);
+    if (!reported) continue;
+    if (!estimated) return reported;
+    // Some streaming adapters sum the input token count on every chunk while
+    // retaining the real output count on the final chunk. Keep the per-call
+    // prompt estimate in that case; never discard its reported output tokens.
+    if (reported.inputTokens > 0 &&
+      reported.inputTokens <= Math.max(estimated.inputTokens * 2, estimated.inputTokens + 1_024)) {
+      return reported;
+    }
+    const inputTokens = estimated.inputTokens || reported.inputTokens;
+    const outputTokens = reported.outputTokens || estimated.outputTokens;
+    const cachedTokens = reported.cachedTokens <= inputTokens
+      ? reported.cachedTokens
+      : Math.min(estimated.cachedTokens, inputTokens);
+    return {
+      inputTokens,
+      outputTokens,
+      cachedTokens,
+      totalTokens: inputTokens + outputTokens,
+      source: `${estimated.source}+${reported.source}`,
+    };
   }
-
-  return null;
+  return estimated;
 }

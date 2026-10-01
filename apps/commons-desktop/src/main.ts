@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { computerWorkspace, terminalCommand } from "./local-computer";
 import { initializeCommandPath } from "./local-command";
+import { prepareLocalTranscriber, transcribeLocalAudio } from "./local-transcription";
 import {
   app,
   BrowserWindow,
@@ -125,11 +126,11 @@ function saveCloudAccess() {
   renameSync(temporary, path);
 }
 
-const MAX_TRANSFER_BYTES = 20_000_000;
+const MAX_TRANSFER_BYTES = 25 * 1024 * 1024;
 
 async function readTransfer(response: Response) {
   if (!response.ok || !response.body) throw new Error("Could not download the Cloud Library file.");
-  if (Number(response.headers.get("content-length") ?? 0) > MAX_TRANSFER_BYTES) throw new Error("Library transfers are limited to 20 MB per file.");
+  if (Number(response.headers.get("content-length") ?? 0) > MAX_TRANSFER_BYTES) throw new Error("Library transfers are limited to 25 MB per file.");
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -139,7 +140,7 @@ async function readTransfer(response: Response) {
     size += value.byteLength;
     if (size > MAX_TRANSFER_BYTES) {
       await reader.cancel();
-      throw new Error("Library transfers are limited to 20 MB per file.");
+      throw new Error("Library transfers are limited to 25 MB per file.");
     }
     chunks.push(value);
   }
@@ -501,7 +502,7 @@ async function createUnifiedView(path?: string) {
     sameSite: "strict",
   });
   unifiedSession.setPermissionRequestHandler((_contents, permission, callback) => {
-    callback(activeMode === "cloud" && ["media", "clipboard-sanitized-write", "notifications"].includes(permission));
+    callback(permission === "media" || (activeMode === "cloud" && ["clipboard-sanitized-write", "notifications"].includes(permission)));
   });
   unifiedSession.webRequest.onBeforeRequest((details, callback) => {
     if (activeMode !== "private-local" || !/^(?:https?|wss?):/i.test(details.url)) {
@@ -755,7 +756,7 @@ function registerIpc() {
     if (item.keepOnDevice) throw new Error("This file is set to stay on this computer.");
     const root = realpathSync(runtime.storageRoot());
     const path = realpathSync(item.path);
-    if (!pathContains(root, path) || statSync(path).size > MAX_TRANSFER_BYTES) throw new Error("Only Local Library files up to 20 MB can be transferred.");
+    if (!pathContains(root, path) || statSync(path).size > MAX_TRANSFER_BYTES) throw new Error("Only Local Library files up to 25 MB can be transferred.");
     const choice = await dialog.showMessageBox(desktopWindow!, {
       type: "warning", title: "Send Local file to Commons Cloud?",
       message: `Upload ${item.name} to your Commons Cloud Library?`,
@@ -881,6 +882,19 @@ function registerIpc() {
   ipcMain.handle("cloud:sync-preferences", (event, incoming: WorkspacePreferences) => { assertCloudSender(event); return syncPreferences(incoming, "cloud"); });
 
   localHandler("local:get-state", () => runtime.state());
+  localHandler<[Float32Array]>("local:transcribe-audio", (samples) => transcribeLocalAudio(samples, app.getPath("userData"), runtime.state().settings.transcriptionModel));
+  localHandler("local:prepare-transcription-model", () => prepareLocalTranscriber(app.getPath("userData"), runtime.state().settings.transcriptionModel));
+  localHandler("local:get-image-model-status", () => runtime.imageModelStatus());
+  localHandler<[string?]>("local:prepare-image-model", (modelId) => runtime.prepareImageModel(modelId));
+  localHandler("local:get-image-model-catalog", () => runtime.imageModelCatalog());
+  localHandler("local:list-image-models", () => runtime.listImageModels());
+  localHandler("local:open-image-model-folder", async () => {
+    const error = await shell.openPath(runtime.imageModelDirectory());
+    if (error) throw new Error(error);
+  });
+  localHandler("local:get-voice-model-status", () => runtime.voiceModelStatus());
+  localHandler("local:prepare-voice-model", () => runtime.prepareVoiceModel());
+  localHandler("local:clear-account", () => runtime.clearAccount());
   localHandler<[{ agentId: string; conversationId?: string; target: "files" | "terminal" }]>("local:open-computer", async (input) => {
     const path = computerWorkspace(runtime.state(), input.agentId, input.conversationId);
     if (input.target === "files") {
@@ -908,6 +922,10 @@ function registerIpc() {
     const result = await dialog.showOpenDialog(desktopWindow!, { properties: ["openDirectory", "multiSelections"] });
     return result.canceled ? [] : result.filePaths;
   });
+  localHandler("local:import-project-folder", async () => {
+    const result = await dialog.showOpenDialog(desktopWindow!, { properties: ["openDirectory"] });
+    return result.canceled || !result.filePaths[0] ? null : runtime.importProjectFolder(result.filePaths[0]);
+  });
   localHandler("local:choose-knowledge-files", async () => {
     const result = await dialog.showOpenDialog(desktopWindow!, { properties: ["openFile", "multiSelections"] });
     return result.canceled ? [] : result.filePaths;
@@ -915,8 +933,10 @@ function registerIpc() {
   localHandler<[AgentInput]>("local:save-agent", (input) => runtime.saveAgent(input));
   localHandler<[string]>("local:delete-agent", (id) => runtime.deleteAgent(id));
   localHandler<[ChatRequest]>("local:send-message", (input) => runtime.sendMessage(input));
+  localHandler<[string, string]>("local:steer-conversation", (conversationId, prompt) => runtime.steerConversation(conversationId, prompt));
   localHandler<[string]>("local:delete-conversation", (id) => runtime.deleteConversation(id));
   localHandler<[string, string]>("local:rename-conversation", (id, title) => runtime.renameConversation(id, title));
+  localHandler<[string, boolean]>("local:set-conversation-web-search", (id, enabled) => runtime.setConversationWebSearch(id, enabled));
   localHandler<[string, boolean, boolean | undefined]>("local:approve", (id, allow, remember) => runtime.resolveApproval(id, allow, Boolean(remember)));
   localHandler<[string, string[]]>("local:add-space", (name, folders) => runtime.addKnowledgeSpace(name, folders));
   localHandler<[string]>("local:reindex-space", (id) => runtime.reindexKnowledgeSpace(id));
@@ -935,11 +955,14 @@ function registerIpc() {
   localHandler<[string]>("local:delete-app", (id) => runtime.deleteApp(id));
   localHandler<[Partial<LocalSettings>]>("local:update-settings", (settings) => runtime.updateSettings(settings));
   localHandler<[string | undefined]>("local:list-models", (url) => runtime.listModels(url));
+  localHandler<[string]>("local:download-model", (name) => runtime.downloadModel(name));
+  localHandler("local:get-hardware-info", () => runtime.hardwareInfo());
   localHandler<[string]>("local:open-app", (id) => openLocalApp(id));
   localHandler<[string, string]>("local:open-artifact", async (conversationId, artifactId) => {
     const error = await shell.openPath(runtime.getArtifactPath(conversationId, artifactId));
     if (error) throw new Error(error);
   });
+  localHandler<[string, string]>("local:get-artifact-preview", (conversationId, artifactId) => runtime.artifactPreview(conversationId, artifactId));
   localHandler<[string, string, boolean]>("local:set-artifact-favorite", (conversationId, artifactId, favorite) => runtime.setArtifactFavorite(conversationId, artifactId, favorite));
   localHandler<[string, string]>("local:remove-artifact-reference", (conversationId, artifactId) => runtime.removeArtifactReference(conversationId, artifactId));
 }

@@ -30,9 +30,11 @@ import {
   statSync,
   realpathSync,
   lstatSync,
+  type Stats,
 } from 'fs';
 import { join, resolve, relative, extname, dirname, isAbsolute, sep } from 'path';
 import { execFile, spawn } from 'child_process';
+import { randomUUID } from 'crypto';
 import * as readline from 'readline';
 import { editPreview } from './edit-preview.js';
 import { scanDiskUsage } from './disk-usage.js';
@@ -66,6 +68,18 @@ interface ManagedProcess {
 
 /** Module-level store — survives across tool calls within a session. */
 const managedProcesses = new Map<string, ManagedProcess>();
+
+function stopProcessTree(proc: ManagedProcess): void {
+  const pid = proc.child.pid;
+  if (!pid) return;
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    killer.on('error', () => proc.child.kill('SIGTERM'));
+  } else {
+    try { process.kill(-pid, 'SIGTERM'); }
+    catch { proc.child.kill('SIGTERM'); }
+  }
+}
 
 /** Cap a string buffer to avoid unbounded memory growth. */
 function capBuffer(existing: string, chunk: string, maxBytes: number): string {
@@ -196,7 +210,8 @@ ${fileSection}
 | Tool | What it does |
 |------|-------------|
 | \`cli_list_directory\` | List files and folders at a path |
-| \`cli_read_file\` | Read a file (PDF and Word docs are extracted to text) |
+| \`cli_read_file\` | Read a bounded part of a file (PDF and Word docs are extracted to text) |
+| \`cli_search_file\` | Find passages and character offsets inside one large document |
 | \`cli_write_file\` | Write or overwrite a file (user confirmation required) |
 | \`cli_search_files\` | Find files matching a pattern |
 | \`cli_disk_usage\` | Measure and rank file and folder sizes inside the selected root (read only; bounded scan) |
@@ -365,8 +380,10 @@ export function safePath(root: string, userPath: string): string {
     const rel = relative(canonicalRoot, path);
     return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
   };
-  if (!inside(abs)) throw new Error(`Path "${userPath}" escapes the session root. Access denied.`);
-  // Check the existing ancestor too: a new file can escape through a symlinked directory.
+  if (!inside(abs) && !isAbsolute(userPath)) throw new Error(`Path "${userPath}" escapes the session root. Access denied.`);
+  // Check the canonical existing ancestor. On macOS, /var and /private/var
+  // can name the same file; a lexical check would reject that safe path.
+  // This also protects new files from escaping through a symlinked directory.
   let ancestor = abs;
   while (!existsSync(ancestor)) {
     // Dangling links must not become write destinations.
@@ -451,17 +468,17 @@ function extractViaCommand(cmd: string, cmdArgs: string[]): Promise<string> {
   });
 }
 
-async function extractPdfText(abs: string): Promise<string> {
+async function extractPdfText(abs: string, maxChars = 150_000): Promise<string> {
   // Primary: pdf-parse — pure Node.js, no system dependencies.
   try {
     const buffer = readFileSync(abs);
     const data = await pdfParse(buffer);
     const text = data.text?.trim();
     if (text) {
-      // Cap at ~150 KB of text to keep token count reasonable
-      const MAX_CHARS = 150_000;
-      if (text.length > MAX_CHARS) {
-        return text.slice(0, MAX_CHARS) + `\n\n[…truncated — showing first ${MAX_CHARS.toLocaleString()} characters of ${text.length.toLocaleString()} total]`;
+      // CLI reads stay bounded. Desktop Library reads page through larger
+      // documents using offsets, so they request the full extracted text.
+      if (text.length > maxChars) {
+        return text.slice(0, maxChars) + `\n\n[…truncated — showing first ${maxChars.toLocaleString()} characters of ${text.length.toLocaleString()} total]`;
       }
       return text;
     }
@@ -497,11 +514,25 @@ export function isExtractableDocument(path: string) {
  * responsible for authorizing the path. Returns an explanatory bracketed
  * message when no text could be extracted.
  */
-export async function extractDocumentText(abs: string): Promise<string> {
+export async function extractDocumentText(abs: string, options?: { maxChars?: number }): Promise<string> {
   const ext = extname(abs).toLowerCase();
-  if (PDF_EXTS.has(ext)) return extractPdfText(abs);
+  if (PDF_EXTS.has(ext)) return extractPdfText(abs, options?.maxChars);
   if (OFFICE_EXTS.has(ext)) return extractOfficeText(abs, ext);
   return readFileSync(abs, 'utf8');
+}
+
+const documentTextCache = new Map<string, { size: number; mtimeMs: number; text: string }>();
+
+async function cachedDocumentText(abs: string, stat: Stats, ext: string) {
+  const cached = documentTextCache.get(abs);
+  if (cached?.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached.text;
+  const text = PDF_EXTS.has(ext)
+    ? await extractPdfText(abs, Number.MAX_SAFE_INTEGER)
+    : await extractOfficeText(abs, ext);
+  documentTextCache.delete(abs);
+  if (text.length <= 2_000_000) documentTextCache.set(abs, { size: stat.size, mtimeMs: stat.mtimeMs, text });
+  while (documentTextCache.size > 4) documentTextCache.delete(documentTextCache.keys().next().value!);
+  return text;
 }
 
 async function toolReadFile(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
@@ -509,21 +540,23 @@ async function toolReadFile(args: Record<string, any>, cfg: LocalToolsConfig): P
   if (!userPath) throw new Error('read_file requires a "path" argument');
   const abs = safePath(cfg.rootDir, userPath);
   assertNotSensitive(abs);
-  if (!existsSync(abs)) throw new Error(`File not found: ${userPath}`);
+  if (!existsSync(abs)) throw new Error(`File not found: ${userPath} (resolved to ${abs}). List the parent directory and use a path relative to the selected workspace root: ${cfg.rootDir}.`);
   const stat = statSync(abs);
   if (stat.isDirectory()) throw new Error(`"${userPath}" is a directory, not a file`);
 
   const ext = extname(abs).toLowerCase();
 
   // PDFs and Office docs: extract text regardless of binary size (a large PDF
-  // often compresses to a small amount of readable text).
+  // often compresses to a small amount of readable text). Keep the returned
+  // result bounded: the full extraction can be much larger than a model's
+  // context window and must not be persisted as one session tool event.
   if (PDF_EXTS.has(ext)) {
     if (stat.size > 50_000_000) throw new Error(`PDF too large to read (${Math.round(stat.size / 1_000_000)} MB). Max 50 MB.`);
-    return extractPdfText(abs);
+    return pageFileText(await cachedDocumentText(abs, stat, ext), args.offset, userPath, true);
   }
   if (OFFICE_EXTS.has(ext)) {
     if (stat.size > 20_000_000) throw new Error(`Document too large to read (${Math.round(stat.size / 1_000_000)} MB). Max 20 MB.`);
-    return extractOfficeText(abs, ext);
+    return pageFileText(await cachedDocumentText(abs, stat, ext), args.offset, userPath, true);
   }
 
   if (UNREADABLE_BINARY_EXTS.has(ext)) {
@@ -532,7 +565,72 @@ async function toolReadFile(args: Record<string, any>, cfg: LocalToolsConfig): P
 
   // Plain text files: enforce 500 KB limit
   if (stat.size > 500_000) throw new Error(`File too large to read (${Math.round(stat.size / 1024)} KB). Max 500 KB.`);
-  return readFileSync(abs, 'utf8');
+  return pageFileText(readFileSync(abs, 'utf8'), args.offset, userPath, false);
+}
+
+async function toolSearchFile(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
+  const path = String(args.path ?? '').trim();
+  const query = String(args.query ?? '').trim().slice(0, 120);
+  if (!path || !query) throw new Error('search_file requires a path and search query');
+  const abs = safePath(cfg.rootDir, path);
+  assertNotSensitive(abs);
+  if (!existsSync(abs)) throw new Error(`File not found: ${path}`);
+  const stat = statSync(abs);
+  if (!stat.isFile()) throw new Error(`"${path}" is not a file`);
+  const ext = extname(abs).toLowerCase();
+  if (PDF_EXTS.has(ext) && stat.size > 50_000_000) throw new Error('PDF exceeds the 50 MB Local read limit');
+  if (OFFICE_EXTS.has(ext) && stat.size > 20_000_000) throw new Error('Document exceeds the 20 MB Local read limit');
+  if (UNREADABLE_BINARY_EXTS.has(ext)) throw new Error(`Cannot search binary file "${path}"`);
+  if (!PDF_EXTS.has(ext) && !OFFICE_EXTS.has(ext) && stat.size > 500_000) throw new Error('Text file exceeds the 500 KB Local read limit');
+  const text = PDF_EXTS.has(ext) || OFFICE_EXTS.has(ext)
+    ? await cachedDocumentText(abs, stat, ext)
+    : readFileSync(abs, 'utf8');
+  return JSON.stringify(searchTextPassages(text, path, query, 'Use cli_read_file with a matching offset for more context.'));
+}
+
+export function searchTextPassages(text: string, path: string, rawQuery: string, hint: string) {
+  const query = rawQuery.trim().slice(0, 120);
+  if (!query) throw new Error('A search query is required');
+  const lower = text.toLowerCase();
+  const phrase = query.toLowerCase();
+  const terms = [...new Set(phrase.match(/[\p{L}\p{N}]{3,}/gu) ?? [])].slice(0, 8);
+  const positions: number[] = [];
+  const collect = (needle: string) => {
+    let offset = 0;
+    while (positions.length < 5_000) {
+      const found = lower.indexOf(needle, offset);
+      if (found < 0) break;
+      positions.push(found);
+      offset = found + Math.max(needle.length, 1);
+    }
+  };
+  collect(phrase);
+  if (!positions.length) for (const term of terms) collect(term);
+  const ranked = positions.map((offset) => {
+    const start = Math.max(0, offset - 180);
+    const end = Math.min(text.length, offset + 320);
+    const excerpt = text.slice(start, end).replace(/\s+/g, ' ').trim();
+    const score = terms.filter((term) => excerpt.toLowerCase().includes(term)).length;
+    return { offset, score, excerpt };
+  }).sort((a, b) => b.score - a.score || b.offset - a.offset);
+  const selected: typeof ranked = [];
+  for (const match of ranked) {
+    if (selected.some((entry) => Math.abs(entry.offset - match.offset) < 250)) continue;
+    selected.push(match);
+    if (selected.length >= 8) break;
+  }
+  return { path, query, totalChars: text.length, matches: selected.map(({ offset, excerpt }) => ({ offset, excerpt })), hint };
+}
+
+function pageFileText(text: string, rawOffset: unknown, path: string, includeTail: boolean): string {
+  const offset = rawOffset === undefined ? 0 : Number(rawOffset);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > text.length) throw new Error('read_file offset must be a character position within the file');
+  if (offset === 0 && text.length <= 7_000) return text;
+  const end = Math.min(text.length, offset + 6_000);
+  const next = end < text.length ? ` Use cli_read_file with path ${JSON.stringify(path)} and offset ${end} to continue.` : '';
+  const tail = includeTail && offset === 0 && end < text.length - 1_500
+    ? `\n\n[Final 1,500 characters of document]\n${text.slice(-1_500)}` : '';
+  return `[Showing characters ${offset}-${end} of ${text.length}.${next}]\n${text.slice(offset, end)}${tail}`;
 }
 
 async function toolWriteFile(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
@@ -668,16 +766,17 @@ async function toolStartProcess(args: Record<string, any>, cfg: LocalToolsConfig
   );
   if (!ok) return JSON.stringify({ error: 'User denied process start.' });
 
-  const id = `proc_${Date.now().toString(36)}_${managedProcesses.size}`;
+  // Finished commands do not need to occupy memory indefinitely in a long
+  // desktop session. Running commands are never evicted.
+  const finished = [...managedProcesses.values()].filter((proc) => proc.status !== 'running');
+  for (const proc of finished.slice(0, Math.max(0, finished.length - 99))) managedProcesses.delete(proc.id);
+  const id = `proc_${randomUUID()}`;
   const child = spawn(command, cmdArgs.map(String), {
     cwd: workDir,
     stdio: ['ignore', 'pipe', 'pipe'],
-    detached: false,
+    detached: process.platform !== 'win32',
+    windowsHide: true,
   });
-  if (cfg.signal) {
-    if (cfg.signal.aborted) child.kill('SIGTERM');
-    else cfg.signal.addEventListener('abort', () => child.kill('SIGTERM'), { once: true });
-  }
 
   const proc: ManagedProcess = {
     id,
@@ -690,6 +789,10 @@ async function toolStartProcess(args: Record<string, any>, cfg: LocalToolsConfig
     endedAt: null,
     child,
   };
+  if (cfg.signal) {
+    if (cfg.signal.aborted) stopProcessTree(proc);
+    else cfg.signal.addEventListener('abort', () => stopProcessTree(proc), { once: true });
+  }
 
   child.stdout?.on('data', (chunk: Buffer) => {
     proc.stdout = capBuffer(proc.stdout, chunk.toString(), 200_000);
@@ -698,7 +801,7 @@ async function toolStartProcess(args: Record<string, any>, cfg: LocalToolsConfig
     proc.stderr = capBuffer(proc.stderr, chunk.toString(), 50_000);
   });
   child.on('close', (code) => {
-    proc.status = (code === 0) ? 'done' : 'error';
+    if (proc.status !== 'killed') proc.status = (code === 0) ? 'done' : 'error';
     proc.exitCode = code;
     proc.endedAt = new Date();
   });
@@ -747,8 +850,9 @@ async function toolWaitForProcess(args: Record<string, any>, _cfg: LocalToolsCon
 
   if (proc.status !== 'running') return processSnapshot(proc);
 
-  // Block for up to wait_seconds (max 120s per call to stay within server timeout budget)
-  const maxWait = Math.min((typeof wait_seconds === 'number' ? wait_seconds : 60) * 1_000, 120_000);
+  // Bound each poll. The agent can poll again while the command continues.
+  const requested = typeof wait_seconds === 'number' && Number.isFinite(wait_seconds) ? wait_seconds : 60;
+  const maxWait = Math.max(0, Math.min(requested, 60)) * 1_000;
   const deadline = Date.now() + maxWait;
 
   await new Promise<void>((resolve) => {
@@ -770,7 +874,7 @@ async function toolKillProcess(args: Record<string, any>, cfg: LocalToolsConfig)
   if (!proc) return JSON.stringify({ error: `No process found with id "${processId}"` });
   if (proc.status !== 'running') return JSON.stringify({ error: `Process "${processId}" is not running (status: ${proc.status})` });
 
-  proc.child.kill('SIGTERM');
+  stopProcessTree(proc);
   proc.status = 'killed';
   proc.endedAt = new Date();
   cfg.appendLog({ type: 'process_killed', processId, timestamp: new Date().toISOString() });
@@ -793,7 +897,7 @@ async function toolListProcesses(_args: Record<string, any>, _cfg: LocalToolsCon
 export function stopLocalProcesses(): void {
   for (const proc of managedProcesses.values()) {
     if (proc.status === 'running') {
-      proc.child.kill('SIGTERM');
+      stopProcessTree(proc);
       proc.status = 'killed';
       proc.endedAt = new Date();
     }
@@ -819,6 +923,7 @@ export async function runLocalTool(
   try {
     switch (tool) {
       case 'read_file':       result = await toolReadFile(args, cfg);       break;
+      case 'search_file':     result = await toolSearchFile(args, cfg);     break;
       case 'write_file':      result = await toolWriteFile(args, cfg);      break;
       case 'list_directory':  result = await toolListDirectory(args, cfg);  break;
       case 'search_files':    result = await toolSearchFiles(args, cfg);    break;
@@ -830,7 +935,7 @@ export async function runLocalTool(
       case 'kill_process':    result = await toolKillProcess(args, cfg);    break;
       case 'list_processes':  result = await toolListProcesses(args, cfg);  break;
       default:
-        result = `Unknown tool: "${tool}". Available: read_file, write_file, list_directory, search_files, disk_usage, run_command, start_process, wait_for_process, process_status, kill_process, list_processes`;
+        result = `Unknown tool: "${tool}". Available: read_file, search_file, write_file, list_directory, search_files, disk_usage, run_command, start_process, wait_for_process, process_status, kill_process, list_processes`;
     }
   } catch (err: any) {
     result = `Error: ${err?.message ?? String(err)}`;

@@ -20,9 +20,13 @@ export class RuntimeDispatcherService {
       let closed = false;
       void this.native
         .getAgent({ agentId: props.agentId })
-        .then((agent) => {
+        .then(async (agent) => {
           if (closed) return;
           const runtimeType = normalizeRuntimeType(agent.runtimeType);
+          // External runtimes have no mid-run input channel. Reject steering
+          // instead of acknowledging a prompt that the runtime cannot see.
+          if (runtimeType === 'native') await props.openSteering?.();
+          else await props.closeSteering?.();
           const stream =
             runtimeType === 'native'
               ? this.native.runAgent(props as any)

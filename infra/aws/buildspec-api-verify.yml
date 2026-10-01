@@ -1,0 +1,27 @@
+version: 0.2
+
+# Build the exact API container without deploying it. This catches runtime
+# library and browser dependencies that TypeScript/unit tests cannot load.
+env:
+  shell: bash
+
+phases:
+  build:
+    commands:
+      - set -euo pipefail
+      - docker build --platform linux/amd64 -f apps/commons-api/Dockerfile -t agent-commons-api-verify:local .
+      - docker run --rm --entrypoint node agent-commons-api-verify:local scripts/smoke-browser-runtime.mjs
+
+  post_build:
+    commands:
+      - test "${CODEBUILD_BUILD_SUCCEEDING:-0}" = "1"
+      - |
+        if [ "${PUBLISH_VERIFY_IMAGE:-false}" = "true" ]; then
+          : "${VERIFY_IMAGE_TAG:?A unique image tag is required to publish a verified build}"
+          image_uri="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${VERIFY_IMAGE_TAG}"
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          docker tag agent-commons-api-verify:local "$image_uri"
+          docker push "$image_uri"
+          printf 'Verified image: %s\n' "$image_uri"
+        fi

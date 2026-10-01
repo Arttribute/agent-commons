@@ -4,13 +4,55 @@ import sharp from 'sharp';
 import * as XLSX from 'xlsx';
 import {
   classifyFile,
+  extractedPdfPage,
   FilesService,
   normalizeMimeType,
   revisePdfBufferPreservingLayout,
+  searchExtractedText,
 } from './files.service';
 
 describe('FilesService document support', () => {
   const service = new FilesService({} as any, {} as any, {} as any);
+
+  it('searches PDF passages with one-based page numbers and reads exactly that page', () => {
+    const text = [
+      '--- Page 1 ---\nBackground and methods.',
+      '--- Page 24 ---\n4 Discussion and Conclusion The review found useful biomarkers.',
+      '--- Page 32 ---\nReferences only.',
+    ].join('\n\n');
+    const result = searchExtractedText(text, 'Conclusion');
+    expect(result.matches[0]).toMatchObject({ pageNumber: 24, excerpt: expect.stringContaining('Conclusion') });
+    expect(extractedPdfPage(text, 24)).toBe('--- Page 24 ---\n4 Discussion and Conclusion The review found useful biomarkers.');
+    expect(extractedPdfPage(text, 32)).toBe('--- Page 32 ---\nReferences only.');
+    expect(extractedPdfPage(text, 40)).toBeNull();
+  });
+
+  it('scopes searched and page-specific PDF text through file access checks', async () => {
+    const document = new FilesService({} as any, {} as any, {} as any);
+    const text = '--- Page 1 ---\nBackground.\n\n--- Page 24 ---\nDiscussion and Conclusion.\n\n--- Page 32 ---\nReferences.';
+    jest.spyOn(document as any, 'getFileOrThrow').mockResolvedValue({
+      itemId: 'shah-file', name: 'Shah.pdf', mimeType: 'application/pdf', kind: 'pdf',
+      status: 'ready', textPreview: text, metadata: {},
+    });
+    const access = jest.spyOn(document as any, 'assertCanAccess').mockResolvedValue(undefined);
+    jest.spyOn(document as any, 'getBlobs').mockResolvedValue([]);
+    jest.spyOn(document as any, 'getArtifacts').mockResolvedValue([]);
+    const scope = { fileId: 'shah-file', agentId: 'agent-1', ownerId: 'user-1' };
+    const search = await document.searchFileForAgent({ ...scope, query: 'Conclusion' });
+    expect(search.matches[0].pageNumber).toBe(24);
+    const read = await document.readFileForAgent({ ...scope, pageNumber: 24 });
+    expect(read.content).toContain('Discussion and Conclusion');
+    expect(read.content).not.toContain('References');
+    expect(read.pageTextAvailable).toBe(true);
+    expect(access).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a large extracted PDF readable in chunks instead of cutting it at 250,000 characters', () => {
+    const extracted = 'A'.repeat(690_000);
+    expect((service as any).capExtractedText(extracted)).toHaveLength(extracted.length);
+    const beyondLimit = (service as any).capExtractedText('B'.repeat(1_000_100)) as string;
+    expect(beyondLimit).toContain('[truncated: showing first 1000000');
+  });
 
   it('reuses an identical Library upload and links it to the current agent session', async () => {
     const existing = {
@@ -402,6 +444,28 @@ describe('FilesService document support', () => {
       previewSlides: 3,
       autoIncludedImageSlides: 1,
     });
+  });
+
+  it('converts WebP artwork to PNG bytes before embedding it in a presentation', async () => {
+    const webp = await sharp({
+      create: { width: 120, height: 80, channels: 3, background: '#7cf2c4' },
+    }).webp().toBuffer();
+    const service = new FilesService({} as any, {} as any, {} as any);
+    jest.spyOn(service as any, 'getFileOrThrow').mockResolvedValue({
+      itemId: 'image-1', name: 'art.webp', kind: 'image', mimeType: 'image/png',
+    });
+    jest.spyOn(service as any, 'assertCanAccess').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'getBlobs').mockResolvedValue([{ role: 'original' }]);
+    jest.spyOn(service as any, 'downloadBlobBuffer').mockResolvedValue(webp);
+
+    const images = await (service as any).loadPresentationImages(
+      [{ imageFileId: 'image-1' }], 'agent-test',
+    );
+    const image = images.get('image-1');
+    expect(image.mimeType).toBe('image/png');
+    expect(image.dataUri).toMatch(/^data:image\/png;base64,/);
+    expect((await sharp(image.buffer).metadata()).format).toBe('png');
+    expect(image.buffer.subarray(1, 4).toString()).toBe('PNG');
   });
 
   it('allows workspace Library files to be attached to a chat', async () => {

@@ -79,9 +79,17 @@ function hrefFor(kind: EntityKind, id?: string, data: Record<string, any> = {}) 
     case "skill": return `/studio/customize/skills/${encoded}`;
     case "workflow": return `/studio/workflows/${encoded}`;
     case "app": return data.slug && data.status === "active" ? `/apps/${encodeURIComponent(data.slug)}` : "/studio/customize/apps";
-    case "knowledge":
-    case "note": return "/knowledge";
+    case "knowledge": return `/knowledge?spaceId=${encoded}`;
+    case "note": return knowledgeHref(data.spaceId, data.documentId ?? id, data.path);
   }
+}
+
+function knowledgeHref(spaceId?: string, documentId?: string, path?: string) {
+  if (!spaceId) return "/knowledge";
+  const query = new URLSearchParams({ spaceId });
+  if (documentId && documentId !== path) query.set("documentId", documentId);
+  else if (path) query.set("documentPath", path);
+  return `/knowledge?${query.toString()}`;
 }
 
 const TOOL_KINDS: Record<string, EntityKind> = {
@@ -142,7 +150,7 @@ export function collectEntityRefs(calls: Array<{ name?: string; toolName?: strin
       const id = result.skillId ?? result.slug;
       ref = { key: `skill:${id}`, kind: "skill", id, name: args.name ?? result.slug ?? "Skill", action: "created", href: hrefFor("skill", id), data: { ...args, ...result } };
     } else if (kindFromTool === "knowledge" && result.spaceId) {
-      ref = { key: `knowledge:${result.spaceId}`, kind: "knowledge", id: result.spaceId, name: result.name ?? args.name ?? "Knowledge Space", action: "created", href: "/knowledge", data: { ...args, ...result } };
+      ref = { key: `knowledge:${result.spaceId}`, kind: "knowledge", id: result.spaceId, name: result.name ?? args.name ?? "Knowledge Space", action: "created", href: hrefFor("knowledge", result.spaceId), data: { ...args, ...result } };
     } else if (kindFromTool === "note" && (result.documentId || result.path)) {
       const id = result.documentId ?? result.path;
       ref = {
@@ -151,7 +159,7 @@ export function collectEntityRefs(calls: Array<{ name?: string; toolName?: strin
         id,
         name: result.title ?? String(result.path ?? args.path ?? "Note").split("/").pop()!.replace(/\.mdx?$/, ""),
         action: args.documentId || (result.revision ?? 1) > 1 ? "updated" : "created",
-        href: "/knowledge",
+        href: knowledgeHref(result.spaceId ?? args.spaceId, result.documentId, result.path ?? args.path),
         data: { ...result, content: result.content ?? args.content, path: result.path ?? args.path },
       };
     }

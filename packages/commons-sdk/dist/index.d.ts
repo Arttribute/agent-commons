@@ -1,4 +1,4 @@
-type ModelProvider = "openai" | "anthropic" | "google" | "mistral" | "groq" | "ollama" | "openrouter" | "xai" | "custom";
+type ModelProvider = "openai" | "anthropic" | "google" | "mistral" | "groq" | "ollama" | "openrouter" | "xai" | "custom" | "hosted-free";
 interface ModelConfig {
     provider: ModelProvider;
     modelId: string;
@@ -1118,16 +1118,65 @@ interface CapabilityProviderInput {
     status?: "active" | "disabled";
 }
 type UiPluginPermission = "theme.read" | "navigation" | "storage";
-type UiPluginCapabilityName = "agents.read" | "tasks.read" | "tasks.write" | "workflows.read" | "workflows.execute" | "library.read" | "tools.read" | "copilot.prompt";
+type UiPluginCapabilityName = "agents.read" | "agents.run" | "sessions.read" | "memory.read" | "memory.write" | "skills.read" | "tasks.read" | "tasks.write" | "workflows.read" | "workflows.execute" | "library.read" | "tools.read" | "spaces.read" | "credits.read" | "data.read" | "data.write" | "network.request" | "copilot.prompt";
+type UiPluginApproval = "ask" | "auto";
 interface UiPluginCapabilityGrant {
     name: UiPluginCapabilityName;
     resourceIds?: string[];
+    approval?: UiPluginApproval;
 }
 interface UiPluginSurface {
     type: "page" | "widget";
     title?: string;
     width?: number;
     height?: number;
+}
+interface UiPluginConnection {
+    key: string;
+    name: string;
+    description?: string;
+    baseUrl: string;
+    auth: {
+        type: "none" | "bearer" | "header" | "query" | "basic";
+        name?: string;
+    };
+    methods: string[];
+    pathPrefixes: string[];
+}
+interface UiPluginCollection {
+    name: string;
+    description?: string;
+    fields?: Record<string, {
+        type: "string" | "number" | "boolean" | "object" | "array";
+        required?: boolean;
+    }>;
+}
+interface UiPluginGrants {
+    capabilities: UiPluginCapabilityGrant[];
+    agentDataAccess: "none" | "read" | "readwrite";
+    chatEnabled: boolean;
+    reviewedAt: string;
+}
+interface UiPluginManifest {
+    schemaVersion: "1" | "2";
+    surfaces: UiPluginSurface[];
+    permissions: UiPluginPermission[];
+    capabilities?: UiPluginCapabilityGrant[];
+    networkAccess?: {
+        allowedDomains: string[];
+    };
+    /** Project file path of the app's SVG icon, e.g. "icon.svg". */
+    icon?: string;
+    category?: string;
+    /** When agents should show the app in chat, and the input it reads. */
+    chat?: {
+        when: string;
+        inputDescription?: string;
+    };
+    connections?: UiPluginConnection[];
+    data?: {
+        collections: UiPluginCollection[];
+    };
 }
 interface UiPlugin {
     pluginId: string;
@@ -1141,15 +1190,13 @@ interface UiPlugin {
     description?: string | null;
     version: string;
     entryUrl: string;
-    manifest: {
-        schemaVersion: "1" | "2";
-        surfaces: UiPluginSurface[];
-        permissions: UiPluginPermission[];
-        capabilities?: UiPluginCapabilityGrant[];
-        networkAccess?: {
-            allowedDomains: string[];
-        };
-    };
+    manifest: UiPluginManifest;
+    /** Validated icon data URL. */
+    iconUrl?: string | null;
+    /** What the owner allowed. Null for apps enabled before grants existed. */
+    grants?: UiPluginGrants | null;
+    /** The grant set the API enforces. */
+    effectiveCapabilities?: UiPluginCapabilityGrant[];
     status: "draft" | "active" | "disabled";
     createdAt: string;
     updatedAt: string;
@@ -1160,15 +1207,44 @@ interface CreateUiPluginParams {
     description?: string;
     version?: string;
     codeProjectId: string;
-    manifest: {
-        schemaVersion?: "1" | "2";
+    manifest: Omit<Partial<UiPluginManifest>, "surfaces" | "connections"> & {
         surfaces: UiPluginSurface[];
-        permissions?: UiPluginPermission[];
-        capabilities?: UiPluginCapabilityGrant[];
-        networkAccess?: {
-            allowedDomains?: string[];
-        };
+        connections?: Array<Omit<UiPluginConnection, "auth" | "methods" | "pathPrefixes"> & {
+            auth?: Partial<UiPluginConnection["auth"]>;
+            methods?: string[];
+            pathPrefixes?: string[];
+        }>;
     };
+}
+interface UpdateUiPluginGrantsParams {
+    capabilities?: Array<{
+        name: UiPluginCapabilityName;
+        enabled?: boolean;
+        resourceIds?: string[];
+        approval?: UiPluginApproval;
+    }>;
+    agentDataAccess?: UiPluginGrants["agentDataAccess"];
+    chatEnabled?: boolean;
+}
+interface UiPluginConnectionStatus extends UiPluginConnection {
+    configured: boolean;
+    enabled: boolean;
+    secretHint: string | null;
+}
+interface UiPluginStorageSettings {
+    provider: "commons" | "supabase" | "mongodb";
+    url: string | null;
+    database: string | null;
+    tablePrefix: string;
+    secretHint: string | null;
+    lastCheckedAt: string | null;
+    lastError: string | null;
+    collections: UiPluginCollection[];
+}
+interface UiPluginLayout {
+    maxPinned: number;
+    /** Pinned app ids by page scope. `global` applies to every other page. */
+    scopes: Record<string, string[]>;
 }
 type MemoryType = "episodic" | "semantic" | "procedural";
 type MemorySourceType = "auto" | "manual";
@@ -1337,7 +1413,7 @@ interface CreditWriteParams {
 }
 type PlanKey = "free" | "plus" | "pro" | "max";
 type ComputeProfile = "starter" | "standard" | "performance" | "gpu";
-type ModelTier = "frontier" | "standard" | "fast" | "local";
+type ModelTier = "frontier" | "standard" | "fast" | "local" | "free";
 interface PlanEntitlements {
     computerUse: boolean;
     allowedProfiles: ComputeProfile[];
@@ -1524,6 +1600,71 @@ interface CodeProject {
     createdAt?: string;
     updatedAt?: string;
     [key: string]: unknown;
+}
+/** A Common Arcade game project, built in the agent owner's Arcade account. */
+interface ArcadeProjectSummary {
+    projectId: string;
+    title?: string;
+    description?: string;
+    revision: number;
+    isPublished: boolean;
+    hasThumbnail: boolean;
+    updatedAt?: string;
+    /** Opens the project in Common Arcade Studio. */
+    studioUrl: string;
+    [key: string]: unknown;
+}
+interface ArcadeProject extends ArcadeProjectSummary {
+    document: {
+        kind: "browser";
+        title: string;
+        description: string;
+        entryFile: string;
+        thumbnail?: string;
+        files: CodeProjectFile[];
+        [key: string]: unknown;
+    };
+    annotations: unknown[];
+}
+interface ArcadeGameWrite {
+    /** Complete replacement contents for each path. */
+    files?: CodeProjectFile[];
+    /** Delete files not named in this write. Defaults to merging. */
+    replaceFiles?: boolean;
+    title?: string;
+    description?: string;
+    entryFile?: string;
+    /** HTTPS image URL or data:image/png;base64 URI. Required before publishing. */
+    thumbnail?: string;
+    play?: {
+        mode?: "turn-based" | "simultaneous" | "realtime" | "hybrid";
+        seats?: {
+            min: number;
+            max: number;
+            default: number;
+        };
+        maxDecisionsPerSecond?: number;
+    };
+    /** Authoritative rules file (globalThis.arcadeGame). Required to publish. */
+    runtime?: {
+        entryFile: string;
+        tickRate?: number;
+        memoryMiB?: number;
+        timeoutMs?: number;
+    };
+    dependencies?: Array<{
+        name: string;
+        version: string;
+    }>;
+}
+interface ArcadePublication {
+    projectId: string;
+    releaseId: string;
+    revision: number;
+    publishedAt: string;
+    studioUrl: string;
+    /** Public page where the published game is played. */
+    gameUrl: string;
 }
 interface Goal {
     goalId: string;
@@ -2388,8 +2529,48 @@ declare class CommonsClient {
         create: (input: CreateUiPluginParams) => Promise<{
             data: UiPlugin;
         }>;
-        setStatus: (pluginId: string, status: "draft" | "active" | "disabled") => Promise<{
+        /** Enabling with `grants` records the owner's review in the same step. */
+        setStatus: (pluginId: string, status: "draft" | "active" | "disabled", grants?: UpdateUiPluginGrantsParams) => Promise<{
             data: UiPlugin;
+        }>;
+        updateGrants: (pluginId: string, grants: UpdateUiPluginGrantsParams) => Promise<{
+            data: UiPlugin;
+        }>;
+        /** Pass a PNG, JPEG, WebP or SVG data URL, or null to use the app's own icon. */
+        setIcon: (pluginId: string, iconUrl: string | null) => Promise<{
+            data: UiPlugin;
+        }>;
+        connections: (pluginId: string) => Promise<{
+            data: UiPluginConnectionStatus[];
+        }>;
+        /** Store (or with `secret: null`, remove) the key for a declared connection. */
+        saveConnection: (pluginId: string, key: string, input: {
+            secret?: string | null;
+            enabled?: boolean;
+        }) => Promise<{
+            data: UiPluginConnectionStatus[];
+        }>;
+        storage: (pluginId: string) => Promise<{
+            data: UiPluginStorageSettings;
+        }>;
+        /** Tests the connection before saving it. */
+        setStorage: (pluginId: string, input: {
+            provider: UiPluginStorageSettings["provider"];
+            url?: string;
+            database?: string;
+            tablePrefix?: string;
+            secret?: string;
+        }) => Promise<{
+            data: UiPluginStorageSettings;
+        }>;
+        layout: () => Promise<{
+            data: UiPluginLayout;
+        }>;
+        setPins: (scope: string, pluginIds: string[]) => Promise<{
+            data: UiPluginLayout;
+        }>;
+        resetPins: (scope: string) => Promise<{
+            data: UiPluginLayout;
         }>;
         delete: (pluginId: string) => Promise<{
             deleted: boolean;
@@ -3025,6 +3206,45 @@ declare class CommonsClient {
             data: Record<string, unknown>;
         }>;
     };
+    /**
+     * Common Arcade games built through an agent. Arcade attributes every project
+     * to the agent's owner, so results open in the owner's own Arcade Studio.
+     */
+    get arcade(): {
+        status: (agentId: string) => Promise<{
+            data: {
+                connected: boolean;
+            };
+        }>;
+        list: (agentId: string) => Promise<{
+            data: ArcadeProjectSummary[];
+        }>;
+        create: (agentId: string, params: {
+            title: string;
+            description?: string;
+        }) => Promise<{
+            data: ArcadeProjectSummary & {
+                files: string[];
+            };
+        }>;
+        get: (agentId: string, projectId: string) => Promise<{
+            data: ArcadeProject;
+        }>;
+        write: (agentId: string, projectId: string, params: ArcadeGameWrite) => Promise<{
+            data: ArcadeProjectSummary & {
+                files: string[];
+            };
+        }>;
+        test: (agentId: string, projectId: string, params?: {
+            seed?: string;
+            steps?: number;
+        }) => Promise<{
+            data: Record<string, unknown>;
+        }>;
+        publish: (agentId: string, projectId: string) => Promise<{
+            data: ArcadePublication;
+        }>;
+    };
     get goals(): {
         create: (params: Record<string, unknown>) => Promise<{
             data: Goal;
@@ -3203,4 +3423,4 @@ declare function listWorkflowTemplates(): readonly [{
 }];
 declare function buildWorkflowTemplate(templateName: WorkflowTemplateName, ctx: WorkflowTemplateContext): WorkflowTemplateBuild;
 
-export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type ActivityEvent, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentLog, type AgentMemory, type AgentSkill, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type BillingCatalog, type BillingInvoice, type BillingPaymentMethod, type CapabilityName, type CapabilityProviderConfiguration, type CapabilityProviderDefinition, type CapabilityProviderInput, type ChatMessage, type CodeProject, type CodeProjectFile, CommonsClient, type CommonsClientConfig, CommonsError, type CommonsRequestOptions, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateUiPluginParams, type CreateWalletParams, type CreatedApiKey, type CreatedDeveloperApiKey, type CreditBalance, type CreditCampaign, type CreditDirection, type CreditLedgerEntry, type CreditPlatform, type CreditSummary, type CreditTransfer, type CreditWriteParams, type DeveloperApiKey, type DeveloperProject, type DeveloperProjectEnvironment, type FileArtifact, type FileContent, type FileContentArtifact, type FileContentDownload, type FlagEvaluation, type GenerateImageParams, type GeneratedImageAsset, type Goal, type KnowledgeDocument, type KnowledgeFolder, type KnowledgeGrant, type KnowledgeGraph, type KnowledgeLink, type KnowledgePermission, type KnowledgeProviderDefinition, type KnowledgeProviderId, type KnowledgeSearchResult, type KnowledgeSpace, type LibraryGrant, type LibraryItem, type LibraryShareLink, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type OAuthConnection, type OAuthProvider, type OutputPresentation, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillAgentAssignment, type SkillIndex, type Space, type SpaceMember, type SpaceMessage, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UiPlugin, type UiPluginCapabilityGrant, type UiPluginCapabilityName, type UiPluginPermission, type UiPluginSurface, type UpdateMemoryParams, type UploadFileInput, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, type WorkflowValue, type WorkflowValueKind, buildWorkflowTemplate, listWorkflowTemplates };
+export { type A2AArtifact, type A2ADataPart, type A2AFilePart, type A2AMessage, type A2AMessagePart, type A2ASendTaskParams, type A2ASkill, type A2ATask, type A2ATaskState, type A2ATextPart, type ActivityEvent, type Agent, type AgentCard, type AgentComputer, type AgentComputerBrowser, type AgentComputerConfig, type AgentComputerDesiredState, type AgentComputerEvent, type AgentComputerGpu, type AgentComputerGpuType, type AgentComputerInstance, type AgentComputerLifecycle, type AgentComputerResourceMode, type AgentComputerResourceProfile, type AgentComputerResources, type AgentComputerStatus, type AgentComputerTerminal, type AgentLog, type AgentMemory, type AgentSkill, type AgentWallet, type ApiKey, type ApiKeyPrincipalType, type ArcadeGameWrite, type ArcadeProject, type ArcadeProjectSummary, type ArcadePublication, type BillingCatalog, type BillingInvoice, type BillingPaymentMethod, type CapabilityName, type CapabilityProviderConfiguration, type CapabilityProviderDefinition, type CapabilityProviderInput, type ChatMessage, type CodeProject, type CodeProjectFile, CommonsClient, type CommonsClientConfig, CommonsError, type CommonsRequestOptions, type ComputeProfile, type ComputerActionParams, type ComputerBrowserOpenParams, type ComputerCommandParams, type ComputerConfigUpdate, type ComputerFile, type ComputerGpu, type ComputerGpuType, type ComputerLifecycle, type ComputerNetworkAccess, type ComputerPersistence, type ComputerResizeParams, type ComputerResourceMode, type ComputerResourceProfile, type ComputerResourceUpdate, type ComputerResources, type CreateAgentParams, type CreateApiKeyParams, type CreateMemoryParams, type CreateSkillParams, type CreateTaskParams, type CreateToolKeyParams, type CreateToolParams, type CreateUiPluginParams, type CreateWalletParams, type CreatedApiKey, type CreatedDeveloperApiKey, type CreditBalance, type CreditCampaign, type CreditDirection, type CreditLedgerEntry, type CreditPlatform, type CreditSummary, type CreditTransfer, type CreditWriteParams, type DeveloperApiKey, type DeveloperProject, type DeveloperProjectEnvironment, type FileArtifact, type FileContent, type FileContentArtifact, type FileContentDownload, type FlagEvaluation, type GenerateImageParams, type GeneratedImageAsset, type Goal, type KnowledgeDocument, type KnowledgeFolder, type KnowledgeGrant, type KnowledgeGraph, type KnowledgeLink, type KnowledgePermission, type KnowledgeProviderDefinition, type KnowledgeProviderId, type KnowledgeSearchResult, type KnowledgeSpace, type LibraryGrant, type LibraryItem, type LibraryShareLink, type McpConnectionType, type McpPrompt, type McpResource, type McpServer, type MemorySourceType, type MemoryStats, type MemoryType, type ModelConfig, type ModelProvider, type ModelTier, type OAuthConnection, type OAuthProvider, type OutputPresentation, type PlanEntitlements, type PlanKey, type RunParams, type Session, type Skill, type SkillAgentAssignment, type SkillIndex, type Space, type SpaceMember, type SpaceMessage, type StreamEvent, type StreamEventType, type SubscriptionInfo, type Task, type Tool, type ToolKey, type ToolPermission, type UiPlugin, type UiPluginApproval, type UiPluginCapabilityGrant, type UiPluginCapabilityName, type UiPluginCollection, type UiPluginConnection, type UiPluginConnectionStatus, type UiPluginGrants, type UiPluginLayout, type UiPluginManifest, type UiPluginPermission, type UiPluginStorageSettings, type UiPluginSurface, type UpdateMemoryParams, type UpdateUiPluginGrantsParams, type UploadFileInput, type UsageAggregation, type UsageEvent, type WalletBalance, type WalletType, type Workflow, type WorkflowDefinition, type WorkflowEdge, type WorkflowExecution, type WorkflowNode, type WorkflowNodeType, type WorkflowTemplateBuild, type WorkflowTemplateContext, type WorkflowTemplateName, type WorkflowTemplateTool, type WorkflowValue, type WorkflowValueKind, buildWorkflowTemplate, listWorkflowTemplates };

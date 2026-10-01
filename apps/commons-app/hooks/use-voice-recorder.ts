@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isLocalDesktopMode } from "@/lib/desktop-api-fetch";
 
 export type VoiceRecorderState = "idle" | "recording" | "transcribing";
 
@@ -187,6 +188,22 @@ async function requestTranscription(
   mimeType: string,
   durationMs: number,
 ): Promise<string> {
+  if (isLocalDesktopMode() && window.agentCommonsLocal) {
+    const context = new AudioContext();
+    try {
+      const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+      const length = Math.ceil(decoded.duration * 16_000);
+      const offline = new OfflineAudioContext(1, length, 16_000);
+      const source = offline.createBufferSource();
+      source.buffer = decoded;
+      source.connect(offline.destination);
+      source.start();
+      const rendered = await offline.startRendering();
+      return await window.agentCommonsLocal.transcribeAudio(new Float32Array(rendered.getChannelData(0)));
+    } finally {
+      await context.close();
+    }
+  }
   const extension = mimeType.includes("mp4")
     ? "mp4"
     : mimeType.includes("ogg")

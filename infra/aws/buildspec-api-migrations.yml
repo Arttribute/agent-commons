@@ -1,0 +1,33 @@
+version: 0.2
+
+# Inspect a verified API image against the staging database. Applying pending
+# migrations requires APPLY_MIGRATIONS=true for this one CodeBuild invocation.
+env:
+  shell: bash
+
+phases:
+  build:
+    commands:
+      - |
+        set -euo pipefail
+        : "${VERIFY_IMAGE_TAG:?A verified API image tag is required}"
+        : "${RUNTIME_SECRET_ARN:?The staging runtime secret is required}"
+        registry="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        image_uri="${registry}/${ECR_REPOSITORY}:${VERIFY_IMAGE_TAG}"
+        aws ecr get-login-password --region "$AWS_REGION" |
+          docker login --username AWS --password-stdin "$registry"
+        docker pull "$image_uri"
+        secret_json=$(aws secretsmanager get-secret-value \
+          --secret-id "$RUNTIME_SECRET_ARN" --query SecretString --output text --region "$AWS_REGION")
+        db_env=(
+          -e "POSTGRES_HOST=$(jq -r .POSTGRES_HOST <<<"$secret_json")"
+          -e "POSTGRES_PORT=$(jq -r .POSTGRES_PORT <<<"$secret_json")"
+          -e "POSTGRES_DATABASE=$(jq -r .POSTGRES_DATABASE <<<"$secret_json")"
+          -e "POSTGRES_USER=$(jq -r .POSTGRES_USER <<<"$secret_json")"
+          -e "POSTGRES_PASSWORD=$(jq -r .POSTGRES_PASSWORD <<<"$secret_json")"
+          -e "POSTGRES_SSL=$(jq -r '.POSTGRES_SSL // "disable"' <<<"$secret_json")"
+        )
+        docker run --rm "${db_env[@]}" --entrypoint node "$image_uri" scripts/migrate.mjs --status
+        if [ "${APPLY_MIGRATIONS:-false}" = "true" ]; then
+          docker run --rm "${db_env[@]}" --entrypoint node "$image_uri" scripts/migrate.mjs
+        fi
