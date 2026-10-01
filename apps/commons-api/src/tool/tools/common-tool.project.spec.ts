@@ -45,7 +45,7 @@ describe('CommonToolService project chat access', () => {
         { sessionId: 'third', title: 'More work', updatedAt: now, history: [] },
       ] },
     );
-    const result = await service.listProjectChats({ agentId: 'agent-1', limit: 2 }, metadata);
+    const result = await service.listProjectChats({ limit: 2 }, metadata);
     expect(result.nextOffset).toBe(2);
     expect(result.chats).toHaveLength(2);
     expect(result.chats[0]).toEqual({ sessionId, title: 'Shoe shop', updatedAt: now.toISOString(), firstRequest: 'Build a shoe shop' });
@@ -54,6 +54,6 @@ describe('CommonToolService project chat access', () => {
 
   it('refuses a chat outside the current project', async () => {
     const service = harness({ rows: [{ projectId }] }, { rows: [{ projectId }] }, { rows: [] });
-    await expect(service.readProjectChat({ agentId: 'agent-1', targetSessionId: 'd6c663b4-a62e-429e-9637-8b209c468aef' }, metadata)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.readProjectChat({ targetSessionId: 'd6c663b4-a62e-429e-9637-8b209c468aef' }, metadata)).rejects.toBeInstanceOf(BadRequestException);
   });
 });

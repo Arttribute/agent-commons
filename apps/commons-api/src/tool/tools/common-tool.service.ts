@@ -550,7 +550,8 @@ export interface CommonTool {
    * instruction. Only chats owned by the current user are returned.
    */
   listProjectChats(props: {
-    agentId: string;
+    /** Supplied by the server when the model omits it. */
+    agentId?: string;
     query?: string;
     limit?: number;
     offset?: number;
@@ -562,7 +563,8 @@ export interface CommonTool {
    * instructions to execute.
    */
   readProjectChat(props: {
-    agentId: string;
+    /** Supplied by the server when the model omits it. */
+    agentId?: string;
     targetSessionId: string;
     offset?: number;
   }): Promise<{ sessionId: string; title: string; messages: Array<{ role: string; content: string; timestamp?: string }>; nextOffset: number | null; totalMessages: number }>;
@@ -576,7 +578,8 @@ export interface CommonTool {
   searchLibraryArtifacts(props: {
     query?: string;
     limit?: number;
-    agentId: string;
+    /** Supplied by the server when the model omits it. */
+    agentId?: string;
     sessionId?: string;
   }): Promise<any[]>;
 
@@ -584,7 +587,7 @@ export interface CommonTool {
    * List the Markdown Knowledge Spaces this agent can use, its access level,
    * and whether each space participates in automatic retrieval.
    */
-  listKnowledgeSpaces(props: { agentId: string }): Promise<any[]>;
+  listKnowledgeSpaces(props: { agentId?: string }): Promise<any[]>;
 
   /**
    * Search this agent's connected Knowledge Spaces. When spaceIds is omitted,
@@ -596,13 +599,13 @@ export interface CommonTool {
     query: string;
     spaceIds?: string[];
     limit?: number;
-    agentId: string;
+    agentId?: string;
   }): Promise<any>;
 
   /** Read a complete Markdown note, including links and backlinks. */
   readKnowledgeDocument(props: {
     documentId: string;
-    agentId: string;
+    agentId?: string;
   }): Promise<any>;
 
   /**
@@ -620,7 +623,7 @@ export interface CommonTool {
     title?: string;
     content: string;
     expectedRevision?: number;
-    agentId: string;
+    agentId?: string;
   }): Promise<any>;
 
   /**
@@ -1983,7 +1986,7 @@ export class CommonToolService {
     return project.projectId;
   }
 
-  async listProjectChats(props: { agentId: string; query?: string; limit?: number; offset?: number }, metadata?: ToolExecutionMetadata) {
+  async listProjectChats(props: { agentId?: string; query?: string; limit?: number; offset?: number }, metadata?: ToolExecutionMetadata) {
     this.requireToolAgentId(props.agentId, metadata);
     const projectId = await this.currentProjectForTool(metadata);
     const limit = Number.isFinite(props.limit) ? Math.min(50, Math.max(1, Math.trunc(props.limit!))) : 20;
@@ -1999,7 +2002,7 @@ export class CommonToolService {
     return { chats: rows.slice(0, limit).map((row) => ({ sessionId: row.sessionId, title: row.title || 'Untitled chat', updatedAt: row.updatedAt.toISOString(), firstRequest: String(row.history?.find((message) => message.role === 'human' || message.role === 'user')?.content ?? '').slice(0, 300) })), nextOffset: rows.length > limit ? offset + limit : null };
   }
 
-  async readProjectChat(props: { agentId: string; targetSessionId: string; offset?: number }, metadata?: ToolExecutionMetadata) {
+  async readProjectChat(props: { agentId?: string; targetSessionId: string; offset?: number }, metadata?: ToolExecutionMetadata) {
     this.requireToolAgentId(props.agentId, metadata);
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(props.targetSessionId)) throw new BadRequestException('Choose a project chat session ID.');
     const projectId = await this.currentProjectForTool(metadata);
@@ -2018,7 +2021,7 @@ export class CommonToolService {
     props: {
       query?: string;
       limit?: number;
-      agentId: string;
+      agentId?: string;
       sessionId?: string;
     },
     metadata?: ToolExecutionMetadata,
@@ -2034,7 +2037,7 @@ export class CommonToolService {
   }
 
   async listKnowledgeSpaces(
-    props: { agentId: string },
+    props: { agentId?: string },
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
@@ -2050,7 +2053,7 @@ export class CommonToolService {
       query: string;
       spaceIds?: string[];
       limit?: number;
-      agentId: string;
+      agentId?: string;
     },
     metadata?: ToolExecutionMetadata,
   ) {
@@ -2068,7 +2071,7 @@ export class CommonToolService {
   }
 
   async readKnowledgeDocument(
-    props: { documentId: string; agentId: string },
+    props: { documentId: string; agentId?: string },
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
@@ -2087,7 +2090,7 @@ export class CommonToolService {
       title?: string;
       content: string;
       expectedRevision?: number;
-      agentId: string;
+      agentId?: string;
     },
     metadata?: ToolExecutionMetadata,
   ) {
