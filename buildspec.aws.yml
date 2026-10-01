@@ -45,6 +45,7 @@ phases:
         src/skill/skill.controller.spec.ts
         src/skill/skill.service.spec.ts
       - docker build --platform linux/amd64 -f apps/commons-api/Dockerfile -t "$IMAGE_URI" .
+      - docker run --rm --entrypoint node "$IMAGE_URI" scripts/smoke-browser-runtime.mjs
       - docker push "$IMAGE_URI"
       - |
         scan_status=""

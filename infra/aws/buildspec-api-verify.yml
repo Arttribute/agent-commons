@@ -10,15 +10,7 @@ phases:
     commands:
       - set -euo pipefail
       - docker build --platform linux/amd64 -f apps/commons-api/Dockerfile -t agent-commons-api-verify:local .
-      - |
-        module_status=0
-        browser_status=0
-        docker run --rm --entrypoint node agent-commons-api-verify:local \
-          -e "require('sharp'); require('puppeteer'); console.log('API runtime modules loaded')" || module_status=$?
-        docker run --rm --entrypoint /opt/chrome-linux64/chrome \
-          agent-commons-api-verify:local --version || browser_status=$?
-        test "$module_status" -eq 0
-        test "$browser_status" -eq 0
+      - docker run --rm --entrypoint node agent-commons-api-verify:local scripts/smoke-browser-runtime.mjs
 
   post_build:
     commands:
