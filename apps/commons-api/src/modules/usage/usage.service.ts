@@ -5,7 +5,7 @@ import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import { CreditService } from '~/credit';
 import { EntitlementsService } from '~/billing/entitlements.service';
-import { getModelInfo } from '~/modules/model-provider/model-registry';
+import { getModelInfo, HOSTED_FREE_MAX_ESTIMATED_TOKENS } from '~/modules/model-provider/model-registry';
 
 type InsertUsageEvent = InferInsertModel<typeof schema.usageEvent>;
 
@@ -193,7 +193,7 @@ export class UsageService {
     const inputTokens = Math.max(1, Math.ceil(prompts.reduce((total, prompt) => total + String(prompt).length, 0) / 4));
     const outputTokens = Math.min(Math.max(maxOutputTokens ?? 2048, 1), 2048);
     const tokens = inputTokens + outputTokens;
-    if (tokens > 24_000) {
+    if (tokens > HOSTED_FREE_MAX_ESTIMATED_TOKENS) {
       throw new HttpException({ code: 'free_model_context_limit', message: 'This request is too large for the Commons Free model. Shorten the context or choose another model.' }, HttpStatus.PAYLOAD_TOO_LARGE);
     }
     const day = new Date().toISOString().slice(0, 10);

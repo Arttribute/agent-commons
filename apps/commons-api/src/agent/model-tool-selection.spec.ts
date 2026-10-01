@@ -1,5 +1,6 @@
 import type { ChatCompletionTool } from 'openai/resources/chat/completions';
 import { MAX_MODEL_TOOLS, selectModelTools } from './model-tool-selection';
+import { HOSTED_FREE_MAX_TOOLS } from '~/modules/model-provider/model-registry';
 
 function tool(name: string, category = 'platform') {
   return {
@@ -38,5 +39,15 @@ describe('model tool selection', () => {
       'search_library_item',
       'cli_read_file',
     ]);
+  });
+
+  it('keeps local CLI tools within the smaller hosted free catalog', () => {
+    const local = Array.from({ length: 12 }, (_, index) => tool(`cli_tool_${index}`)) as ChatCompletionTool[];
+    const platform = Array.from({ length: 40 }, (_, index) => tool(`platform_${index}`));
+    platform[39] = tool('search_library_item');
+    const selected = selectModelTools(platform, local, 'Search a library item', HOSTED_FREE_MAX_TOOLS);
+    expect(selected.localTools).toHaveLength(12);
+    expect(selected.tools.length + selected.localTools.length).toBe(HOSTED_FREE_MAX_TOOLS);
+    expect(selected.tools.some((entry) => entry.function.name === 'search_library_item')).toBe(true);
   });
 });

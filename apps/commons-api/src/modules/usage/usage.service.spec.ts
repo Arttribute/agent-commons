@@ -93,12 +93,12 @@ describe('UsageService', () => {
 
         const reservation = await service.authorizeAgentRun({
           principalId: 'user-1', agentId: 'agent-1', traceId: 'trace-free',
-          provider: 'hosted-free', modelId: 'Qwen/Qwen3-4B-Instruct-2507', isByok: false,
+          provider: 'hosted-free', modelId: 'Qwen/Qwen3-1.7B-FP8', isByok: false,
         });
         expect(reservation?.reservationId).toBe('hosted-free:trace-free');
         await service.authorizeModelCall({
           reservationId: reservation?.reservationId, provider: 'hosted-free',
-          modelId: 'Qwen/Qwen3-4B-Instruct-2507', prompts: ['Hello'], isByok: false,
+          modelId: 'Qwen/Qwen3-1.7B-FP8', prompts: ['Hello'], isByok: false,
         });
         await service.finalizeAgentRun(reservation?.reservationId);
         expect(startExecute).toHaveBeenCalledTimes(5);

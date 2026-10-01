@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { ModelConfig } from '../model-provider.interface';
+import { HOSTED_FREE_MODEL_ID } from '../model-registry';
 
 /**
  * Builds a LangChain ChatOpenAI instance from a ModelConfig.
@@ -30,7 +31,7 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
   // inference endpoint or secret with values saved in a session or agent.
   const apiKey = config.provider === 'hosted-free' ? defaults.apiKey : config.apiKey ?? defaults.apiKey;
   const baseURL = config.provider === 'hosted-free' ? defaults.baseURL : config.baseUrl ?? defaults.baseURL;
-  if (config.provider === 'hosted-free' && (!apiKey || !baseURL || config.modelId !== 'Qwen/Qwen3-4B-Instruct-2507')) {
+  if (config.provider === 'hosted-free' && (!apiKey || !baseURL || config.modelId !== HOSTED_FREE_MODEL_ID)) {
     throw new Error('The Commons Free model service is unavailable.');
   }
   if (!apiKey) {

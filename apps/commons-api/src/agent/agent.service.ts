@@ -62,7 +62,7 @@ import { ToolLoaderService } from '~/tool/tool-loader.service';
 import { Observable } from 'rxjs';
 import { SpaceToolsService } from '~/space/space-tools.service';
 import { UsageService } from '~/modules/usage/usage.service';
-import { calculateCost } from '~/modules/model-provider/model-registry';
+import { calculateCost, HOSTED_FREE_MAX_TOOLS, HOSTED_FREE_MODEL_ID } from '~/modules/model-provider/model-registry';
 import { extractTokenUsageFromLLMResult } from '~/modules/usage/token-usage.util';
 import { MemoryService } from '~/memory/memory.service';
 import { WalletService } from '~/wallet/wallet.service';
@@ -1077,7 +1077,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               const response = error instanceof HttpException ? error.getResponse() : undefined;
               const insufficient = typeof response === 'object' && response !== null && 'code' in response && response.code === 'insufficient_credits';
               if (!insufficient || !process.env.HOSTED_FREE_MODEL_BASE_URL || !process.env.HOSTED_FREE_MODEL_API_KEY || effectiveModel.provider === 'hosted-free') throw error;
-              effectiveModel = this.modelProviderFactory.resolveRunModel({ provider: 'hosted-free', modelId: 'Qwen/Qwen3-4B-Instruct-2507' });
+              effectiveModel = this.modelProviderFactory.resolveRunModel({ provider: 'hosted-free', modelId: HOSTED_FREE_MODEL_ID });
               effectiveModel.maxTokens = 2048;
               emitStatus('model', 'running', 'Credits exhausted; using Commons Free model');
               reservation = await authorize();
@@ -1692,6 +1692,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             toolDefs,
             cliToolSchemas,
             requestText,
+            effectiveModel.provider === 'hosted-free' ? HOSTED_FREE_MAX_TOOLS : undefined,
           );
           if (selectedTools.omitted) {
             this.logger.warn(

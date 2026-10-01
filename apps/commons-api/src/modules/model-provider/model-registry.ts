@@ -1,5 +1,10 @@
 import { ModelProviderName } from './model-provider.interface';
 
+export const HOSTED_FREE_MODEL_ID = 'Qwen/Qwen3-1.7B-FP8';
+// Reserve context headroom for tool schemas and tokenizer estimation error.
+export const HOSTED_FREE_MAX_ESTIMATED_TOKENS = 6_000;
+export const HOSTED_FREE_MAX_TOOLS = 20;
+
 export interface ModelRegistryEntry {
   provider: ModelProviderName;
   modelId: string;
@@ -199,9 +204,10 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
   // ── Hosted free fallback ───────────────────────────────────────────────────
   {
     provider: 'hosted-free',
-    modelId: 'Qwen/Qwen3-4B-Instruct-2507',
-    displayName: 'Commons Free · Qwen3 4B',
-    contextWindow: 32768,
+    modelId: HOSTED_FREE_MODEL_ID,
+    displayName: 'Commons Free · Qwen3 1.7B',
+    // Bound to the proposed single-slice service until an actual GPU load test.
+    contextWindow: 8192,
     supportsTools: true,
     supportsStreaming: true,
     supportsVision: false,

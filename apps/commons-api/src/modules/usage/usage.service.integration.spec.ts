@@ -4,7 +4,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { UsageService } from './usage.service';
 
-const freeModel = { provider: 'hosted-free', modelId: 'Qwen/Qwen3-4B-Instruct-2507', isByok: false };
+const freeModel = { provider: 'hosted-free', modelId: 'Qwen/Qwen3-1.7B-FP8', isByok: false };
 
 describe('hosted free quota with real SQL', () => {
   let postgres: PGlite;
@@ -59,6 +59,11 @@ describe('hosted free quota with real SQL', () => {
       { scope: 'user', scope_id: 'user-1', request_count: 1 },
       { scope: 'user', scope_id: 'user-2', request_count: 1 },
     ]);
+
+    await expect(service.authorizeModelCall({
+      reservationId: 'hosted-free:run-1', ...freeModel,
+      prompts: ['x'.repeat(24_000)], maxOutputTokens: 2_048,
+    })).rejects.toMatchObject({ status: HttpStatus.PAYLOAD_TOO_LARGE });
 
     await service.authorizeModelCall({ reservationId: 'hosted-free:run-1', ...freeModel, prompts: ['Hello'], maxOutputTokens: 4 });
     const tokenRows = await postgres.query<{ scope: string; scope_id: string; reserved_tokens: string }>(
