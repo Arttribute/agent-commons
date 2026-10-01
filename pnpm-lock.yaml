@@ -138,7 +138,8 @@ overrides:
   form-data@<2.5.6: '>=2.5.6'
   tar@<=7.5.15: '>=7.5.16'
   protobufjs@<=7.6.0: '>=7.6.1'
-  piscina@<=4.9.2: '>=4.9.3'
+  piscina: 5.3.2
+  basic-ftp: 6.2.1
   undici@<6.27.0: '>=6.27.0'
   js-yaml@>=4.0.0 <=4.1.1: '>=4.2.0'
   '@xhmikosr/decompress': 11.1.4
@@ -8106,8 +8107,8 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
-  basic-ftp@6.0.1:
-    resolution: {integrity: sha512-3ilxa3n4276wGQp/ImRAuz4ALdsj/2Wd3FqoZBZlajDYnByCZ0JMb4+26Rde0wGXIbM0G2HWSfr/Fi8b21KX8g==}
+  basic-ftp@6.2.1:
+    resolution: {integrity: sha512-bK67isD+lKq46AU8vNtjvMaT2ZqAOAmNCbxUHlFBRD4k15NWxyEjmaKtZPlgce58So4BNTjITGQOVTjL9y0ECA==}
     engines: {node: '>=10.0.0'}
 
   bcryptjs@2.4.3:
@@ -13196,8 +13197,8 @@ packages:
     resolution: {integrity: sha512-saLsH7WeYYPiD25LDuLRRY/i+6HaPYr6G1OUlN39otzkSTxKnubR9RTxS3/Kk50s1g2JTgFwWQDQyplC5/SHZg==}
     engines: {node: '>= 6'}
 
-  piscina@5.2.0:
-    resolution: {integrity: sha512-DszUCKeVN/5G5QKo6jAVHL8fmKnkJvQ0ACiVgY7YGCq3TUB2oznAOayvZPIAdEThvhczkXR+qm3IHsNXpFCYfA==}
+  piscina@5.3.2:
+    resolution: {integrity: sha512-vv7l/mM7B9WgrhDaudIqv1x6v4LOBRYYmpWGdWushhpbCmVHp11sUB2v4hj1CAeTGXVxuZFz6xOU1RalAiPKfQ==}
     engines: {node: '>=20.x'}
 
   pkce-challenge@5.0.1:
@@ -22065,7 +22066,7 @@ snapshots:
       commander: 8.3.0
       fast-glob: 3.3.3
       minimatch: 10.2.5
-      piscina: 5.2.0
+      piscina: 5.3.2
       semver: 7.7.1
       slash: 3.0.0
       source-map: 0.7.4
@@ -24582,7 +24583,7 @@ snapshots:
 
   baseline-browser-mapping@2.11.26: {}
 
-  basic-ftp@6.0.1: {}
+  basic-ftp@6.2.1: {}
 
   bcryptjs@2.4.3: {}
 
@@ -27278,7 +27279,7 @@ snapshots:
 
   get-uri@6.0.5:
     dependencies:
-      basic-ftp: 6.0.1
+      basic-ftp: 6.2.1
       data-uri-to-buffer: 6.0.2
       debug: 4.4.3
     transitivePeerDependencies:
@@ -30870,7 +30871,7 @@ snapshots:
 
   pirates@4.0.6: {}
 
-  piscina@5.2.0:
+  piscina@5.3.2:
     optionalDependencies:
       '@napi-rs/nice': 1.1.1
 
