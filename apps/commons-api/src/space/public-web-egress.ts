@@ -1,7 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { connect, isIP } from 'node:net';
+import { connect, isIP, type LookupFunction } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import * as ipaddr from 'ipaddr.js';
@@ -43,6 +43,14 @@ export async function resolvePublicAddress(hostname: string, resolver: AddressRe
     throw new Error('Web capture cannot access a private network address.');
   }
   return answers.find((answer) => answer.family === 4) ?? answers[0];
+}
+
+/** Node can request one address or an array when connecting. Both must stay pinned. */
+export function pinnedLookup(address: string, family: number): LookupFunction {
+  return (_hostname, options, callback) => {
+    if (options.all) callback(null, [{ address, family }]);
+    else callback(null, address, family);
+  };
 }
 
 /** Chrome's HTTP proxy validates every page request, including redirects and subresources. */
@@ -176,7 +184,7 @@ export async function fetchPublicJson(urlString: string, resolver: AddressResolv
     const client = request(url, {
       method: 'GET',
       timeout: 8_000,
-      lookup: (_hostname: string, _options: unknown, callback: (error: NodeJS.ErrnoException | null, address: string, family: number) => void) => callback(null, address, family),
+      lookup: pinnedLookup(address, family),
     }, (response) => {
       if (response.statusCode !== 200) { response.resume(); resolve(null); return; }
       const chunks: Buffer[] = [];

@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/node:22.11.0-bookworm-slim AS build
+FROM public.ecr.aws/docker/library/node:22.22.2-bookworm-slim AS build
 
 WORKDIR /workspace
 

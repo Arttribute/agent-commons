@@ -1,6 +1,6 @@
 // apps/commons-api/src/space/web-capture.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import puppeteer, { Browser, Page } from 'puppeteer';
+import type { Browser, Page } from 'puppeteer';
 import { EventEmitter } from 'events';
 import { SpaceToolsService, SpaceToolSpec } from './space-tools.service';
 import { fetchPublicJson, PublicWebEgressProxy, validatePublicWebUrl } from './public-web-egress';
@@ -60,8 +60,8 @@ export class WebCaptureService extends EventEmitter {
       process.env.PUPPETEER_EXECUTABLE_PATH;
     if (envPath) return envPath;
 
-    // When using the full `puppeteer` package, Chromium is bundled —
-    // launch() will pick it automatically. Returning null = use bundled.
+    // Local development may use Puppeteer's cached browser. Production sets
+    // PUPPETEER_EXECUTABLE_PATH to the pinned Chrome for Testing binary.
     return null;
   }
 
@@ -183,6 +183,9 @@ export class WebCaptureService extends EventEmitter {
       `Launching browser with ${executablePath ? 'custom' : 'bundled'} Chromium...`,
     );
 
+    // Puppeteer 25 is ESM-only. Keep the import at the browser launch boundary
+    // so this CommonJS Nest service can load it without requiring an installer.
+    const { default: puppeteer } = await import('puppeteer');
     this.browser = await puppeteer.launch(launchOptions);
 
     // Add better browser event handling
@@ -215,11 +218,11 @@ export class WebCaptureService extends EventEmitter {
   }
 
   private async ensureBrowserConnection(): Promise<boolean> {
-    if (!this.browser || !this.browser.isConnected()) {
+    if (!this.browser || !this.browser.connected) {
       this.logger.log('Browser not connected, reinitializing...');
       try {
         await this.initBrowserWithRetry();
-        return this.browser?.isConnected() ?? false;
+        return this.browser?.connected ?? false;
       } catch (error) {
         this.logger.error('Failed to reinitialize browser:', error);
         return false;
@@ -262,7 +265,7 @@ export class WebCaptureService extends EventEmitter {
       this.logger.log(`Starting capture for URL: ${validUrl}`);
 
       // Add connection check before creating page
-      if (!this.browser?.isConnected()) {
+      if (!this.browser?.connected) {
         throw new Error('Browser connection lost before page creation');
       }
 
@@ -287,7 +290,7 @@ export class WebCaptureService extends EventEmitter {
 
       page.on('pageerror', (error) => {
         this.logger.debug(
-          `Page script error for ${params.sessionId}: ${error.message}`,
+          `Page script error for ${params.sessionId}: ${error instanceof Error ? error.message : String(error)}`,
         );
       });
 
@@ -503,7 +506,7 @@ export class WebCaptureService extends EventEmitter {
       // Start frame capture quickly (first attempt almost immediately for faster UX)
       const initialDelay = navigated ? 300 : 800;
       setTimeout(() => {
-        if (session.isActive && this.browser?.isConnected()) {
+        if (session.isActive && this.browser?.connected) {
           this.startFrameCapture(session);
         } else {
           this.logger.warn(
@@ -552,7 +555,7 @@ export class WebCaptureService extends EventEmitter {
 
       try {
         // Check if browser and page are still valid
-        if (!session.browser?.isConnected() || session.page.isClosed()) {
+        if (!session.browser?.connected || session.page.isClosed()) {
           this.logger.warn(
             `Browser/page disconnected for session ${session.id}`,
           );
@@ -567,7 +570,7 @@ export class WebCaptureService extends EventEmitter {
             try {
               // Try to reinitialize browser and recreate page
               await this.initBrowserWithRetry();
-              if (this.browser?.isConnected()) {
+              if (this.browser?.connected) {
                 const newPage = await this.browser.newPage();
                 await newPage.goto(session.url, {
                   waitUntil: 'networkidle2',

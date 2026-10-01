@@ -1,8 +1,17 @@
 import { request } from 'node:http';
 import { connect } from 'node:net';
-import { fetchPublicJson, PublicWebEgressProxy, resolvePublicAddress, validatePublicWebUrl } from './public-web-egress';
+import { fetchPublicJson, pinnedLookup, PublicWebEgressProxy, resolvePublicAddress, validatePublicWebUrl } from './public-web-egress';
 
 describe('public Web capture egress', () => {
+  it('returns the pinned address in both Node lookup callback shapes', () => {
+    const lookup = pinnedLookup('1.1.1.1', 4);
+    const callback = jest.fn();
+    lookup('example.com', { all: true }, callback);
+    expect(callback).toHaveBeenLastCalledWith(null, [{ address: '1.1.1.1', family: 4 }]);
+    lookup('example.com', { all: false }, callback);
+    expect(callback).toHaveBeenLastCalledWith(null, '1.1.1.1', 4);
+  });
+
   it('rejects private, metadata, credentialed, and non-web URLs', () => {
     for (const url of [
       'http://127.0.0.1/',
