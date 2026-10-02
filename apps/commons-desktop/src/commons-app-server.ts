@@ -1,8 +1,33 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
+
+/**
+ * Why the installed Commons app bundle cannot start, or undefined when it can.
+ *
+ * An upgrade from 0.4.2 or earlier on Windows could leave that version's pnpm
+ * tree in place, whose Next.js copy cannot find styled-jsx. Resolve what the
+ * server needs the way Node will, so a broken install is reported with what to
+ * do instead of a module stack trace.
+ */
+export function bundleProblem(bundleDirectory: string, appDirectory: string): string | undefined {
+  if (existsSync(join(bundleDirectory, "node_modules", ".pnpm"))) {
+    return "files from an earlier Agent Commons version were left behind";
+  }
+  try {
+    const next = createRequire(join(appDirectory, "server.js")).resolve("next/package.json");
+    for (const request of ["styled-jsx/package.json", "react/package.json", "react-dom/package.json"]) {
+      createRequire(next).resolve(request);
+    }
+    return undefined;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.split("\n")[0] : String(error);
+    return `some of its files are missing (${detail})`;
+  }
+}
 
 function freeLoopbackPort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -55,6 +80,14 @@ export async function startCommonsAppServer(
   const appDirectory = join(resourcesDirectory, bundledRoot, "apps", "commons-app");
   const entry = join(appDirectory, "server.js");
   if (!existsSync(entry)) throw new Error("The bundled Commons app server is missing.");
+  const problem = bundleProblem(join(resourcesDirectory, bundledRoot), appDirectory);
+  if (problem) {
+    throw new Error(
+      `Agent Commons was not installed completely: ${problem}.\n\n` +
+      "Download the installer from agentcommons.io/download/desktop and run it again. " +
+      "If that does not help, uninstall Agent Commons in Settings > Apps first. Your agents and settings are kept.",
+    );
+  }
   const port = await freeLoopbackPort();
   const origin = `http://localhost:${port}`;
   const child: ChildProcess = spawn(electronExecutable, [entry], {
