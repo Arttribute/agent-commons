@@ -118,27 +118,46 @@ jobs:
       - name: Package Linux
         if: runner.os == 'Linux'
         run: pnpm --filter commons-desktop exec electron-builder --linux --publish never
-      - name: Smoke test packaged macOS desktop
+      # Smoke the artifacts users install, not the unpacked build folders.
+      # Installers can change the app's files: the Windows NSIS archive
+      # turned links into copies, and only the installed app failed to start.
+      - name: Smoke test installed macOS desktop
         if: runner.os == 'macOS'
-        timeout-minutes: 4
+        timeout-minutes: 6
         run: |
-          desktop_arch="$(uname -m)"
-          desktop_dir="mac"
-          if [ "$desktop_arch" = "arm64" ]; then desktop_dir="mac-arm64"; fi
-          echo "Testing the $desktop_dir package on $desktop_arch"
-          COMMONS_DESKTOP_SMOKE_EXECUTABLE="$PWD/apps/commons-desktop/release/$desktop_dir/Agent Commons.app/Contents/MacOS/Agent Commons" pnpm --filter commons-desktop smoke
-      - name: Smoke test packaged Windows desktop
+          desktop_arch="arm64"
+          if [ "$(uname -m)" = "x86_64" ]; then desktop_arch="x64"; fi
+          mount="$RUNNER_TEMP/agent-commons-dmg"
+          applications="$RUNNER_TEMP/Applications"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "apps/commons-desktop/release/Agent-Commons-mac-$desktop_arch.dmg"
+          mkdir -p "$applications"
+          ditto "$mount/Agent Commons.app" "$applications/Agent Commons.app"
+          hdiutil detach "$mount"
+          echo "Testing the $desktop_arch disk image install"
+          COMMONS_DESKTOP_SMOKE_EXECUTABLE="$applications/Agent Commons.app/Contents/MacOS/Agent Commons" pnpm --filter commons-desktop smoke
+      - name: Smoke test installed Windows desktop
         if: runner.os == 'Windows'
-        timeout-minutes: 4
+        timeout-minutes: 8
         shell: pwsh
         run: |
-          $env:COMMONS_DESKTOP_SMOKE_EXECUTABLE = Join-Path (Get-Location).Path 'apps/commons-desktop/release/win-unpacked/Agent Commons.exe'
+          $installer = Join-Path (Get-Location).Path 'apps/commons-desktop/release/Agent-Commons-win-x64.exe'
+          $install = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "The Windows installer exited with $($install.ExitCode)" }
+          $installed = Join-Path $env:LOCALAPPDATA 'Programs/commons-desktop/Agent Commons.exe'
+          if (-not (Test-Path $installed)) {
+            Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Programs') -Depth 1 | Format-Table FullName
+            throw "Agent Commons was not installed at $installed"
+          }
+          $env:COMMONS_DESKTOP_SMOKE_EXECUTABLE = $installed
           pnpm --filter commons-desktop smoke
-      - name: Smoke test packaged Linux desktop
+      - name: Smoke test installed Linux desktop
         if: runner.os == 'Linux'
-        timeout-minutes: 4
+        timeout-minutes: 6
         run: |
-          desktop_executable="$PWD/apps/commons-desktop/release/linux-unpacked/agent-commons"
+          appimage="$PWD/apps/commons-desktop/release/Agent-Commons-linux-x86_64.AppImage"
+          chmod +x "$appimage"
+          (cd "$RUNNER_TEMP" && "$appimage" --appimage-extract > /dev/null)
+          desktop_executable="$RUNNER_TEMP/squashfs-root/agent-commons"
           test -x "$desktop_executable"
           COMMONS_DESKTOP_SMOKE_EXECUTABLE="$desktop_executable" xvfb-run -a pnpm --filter commons-desktop smoke
       - uses: actions/upload-artifact@v4

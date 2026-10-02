@@ -47,6 +47,12 @@ pnpm desktop:package
 
 The Commons app bundle and installers are written to
 `apps/commons-desktop/commons-app-dist` and `apps/commons-desktop/release`.
+The bundle step copies Next's standalone server with a flat `node_modules` of
+real folders, because installers do not keep pnpm's links. The Windows
+installer turns them into copies, which breaks module resolution. The step
+fails if any link remains or if Next cannot resolve its dependencies inside
+the bundle. CI installs each platform's installer and runs the smoke test
+against the installed app.
 Tagged releases (`desktop-v*`) are built by `.github/workflows/desktop.yml` for
 macOS, Windows, and Linux. Until publisher enrollment is complete, releases
 may be unsigned and must be labeled that way on the download page and in the
