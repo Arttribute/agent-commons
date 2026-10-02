@@ -139,9 +139,19 @@ Agent wallets use viem EOA keypairs (stored encrypted in `agent_wallet.encrypted
 
 Any user interface work in this repo follows `docs/ui-guidelines.md`: one task per view, lists that open detail views, forms in drawers, explanations behind info tips, panes that scroll instead of pages, and the shared `components/ui` kit. Read it before designing a new screen.
 
+## Release flow: staging first
+
+`main` is production. Every change, hotfixes included, goes through `staging` first:
+
+1. Branch from `origin/staging` and open the PR against `staging`, never `main`.
+2. Merge after CI passes, then verify on staging.agentcommons.io or the staging API.
+3. Promote with a single `staging` → `main` PR, merged with a merge commit. `Sync staging` then fast-forwards `staging` to `main`.
+
+`main` is protected: the `Main only accepts staging` check rejects PRs from any other branch. Identity and the API gateway have no staging deployment, so say so in the PR and verify them right after the promotion deploys. See `AGENTS.md` for the full workflow, desktop releases and the lockfile rules.
+
 ## CI/CD and versioning
 
-Version bumps are handled automatically by CI via changesets — **never manually edit `package.json` version fields**. Use `pnpm changeset` to create a changeset entry for a PR.
+Version bumps are handled automatically by CI via changesets — **never manually edit `package.json` version fields** (the desktop app is the exception; see `AGENTS.md`). Use `pnpm changeset` to create a changeset entry for a PR.
 
 Release scripts: `scripts/release-manual.sh` (patch/minor/major).
 

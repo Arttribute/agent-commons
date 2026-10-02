@@ -103,6 +103,16 @@ export function invalidateBackendServiceAuthCache() {
   serviceTokenCache.clear();
 }
 
+/** Milliseconds until Commons Identity accepts another service-token request. */
+export function backendServiceAuthRetryAfterMs() {
+  const now = Date.now();
+  let longest = 0;
+  for (const until of serviceTokenBackoff.values()) {
+    longest = Math.max(longest, until - now);
+  }
+  return longest;
+}
+
 /** Resolve a gift recipient without treating identity outages as missing users. */
 export async function resolveGiftRecipient(
   recipient: { email: string } | { userId: string },

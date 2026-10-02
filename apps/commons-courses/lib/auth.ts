@@ -23,11 +23,42 @@ type AuthToken = {
   refreshToken?: string;
   accessTokenExpiresAt?: number;
   accessTokenError?: string;
+  refreshRetryAt?: number;
 };
+
+// A failed refresh must not be retried by every request that follows: each
+// page fires several API calls, and Commons Identity rate limits its token
+// endpoint. Retrying a dead grant on each of them used up that limit for
+// everyone else.
+const REFRESH_RETRY_MS = 30_000;
+
+function refreshFailure(token: AuthToken, response?: Response) {
+  // invalid_grant / invalid_client: only a new sign-in restores the token.
+  if (response?.status === 400 || response?.status === 401) {
+    return { ...token, accessTokenError: "RefreshTokenRejected", refreshRetryAt: undefined };
+  }
+  const retryAfter = Number(
+    response?.headers.get("retry-after") ?? response?.headers.get("x-retry-after"),
+  );
+  return {
+    ...token,
+    accessTokenError:
+      response?.status === 429 ? "RefreshRateLimited" : "RefreshAccessTokenError",
+    refreshRetryAt:
+      Date.now() +
+      (Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : REFRESH_RETRY_MS),
+  };
+}
 
 async function refreshAccessToken(token: AuthToken) {
   const issuer = process.env.COMMONS_IDENTITY_ISSUER;
   if (!issuer || !token.refreshToken) return token;
+  if (token.accessTokenError === "RefreshTokenRejected") return token;
+  if (token.refreshRetryAt && Date.now() < Number(token.refreshRetryAt)) {
+    return token;
+  }
   try {
     const response = await fetch(`${issuer}/oauth2/token`, {
       method: "POST",
@@ -41,9 +72,7 @@ async function refreshAccessToken(token: AuthToken) {
           : {}),
       }),
     });
-    if (!response.ok) {
-      return { ...token, accessTokenError: "RefreshAccessTokenError" };
-    }
+    if (!response.ok) return refreshFailure(token, response);
     const refreshed = (await response.json()) as {
       access_token: string;
       expires_in?: number;
@@ -55,9 +84,10 @@ async function refreshAccessToken(token: AuthToken) {
       refreshToken: refreshed.refresh_token ?? token.refreshToken,
       accessTokenExpiresAt: Date.now() + (refreshed.expires_in ?? 3600) * 1000,
       accessTokenError: undefined,
+      refreshRetryAt: undefined,
     };
   } catch {
-    return { ...token, accessTokenError: "RefreshAccessTokenError" };
+    return refreshFailure(token);
   }
 }
 
@@ -318,6 +348,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       if (account?.provider === "commons") {
         token.authSessionVersion = AUTH_SESSION_VERSION;
+        token.accessTokenError = undefined;
+        token.refreshRetryAt = undefined;
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.accessTokenExpiresAt = account.expires_at

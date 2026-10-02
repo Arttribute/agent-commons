@@ -3,6 +3,9 @@ const { cpSync } = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
+// electron-builder passes its Arch enum; map it to Node's process.arch names.
+const ARCH_NAMES = { 0: "ia32", 1: "x64", 2: "armv7l", 3: "arm64" };
+
 /**
  * Restore the bundled Next dependencies, then seal unsigned macOS builds.
  *
@@ -31,6 +34,23 @@ module.exports = async function afterPack(context) {
     });
   }
   assertPortableStandalone(packagedApp, path.join(packagedApp, "apps", "commons-app", "server.js"));
+
+  // Ship each installer only the native binaries it can load. Check first:
+  // the binaries for other targets show where each native package lives.
+  const arch = ARCH_NAMES[context.arch];
+  if (arch) {
+    const { assertNativeBinaries, pruneForeignNativeBinaries } = await import(
+      pathToFileURL(path.join(__dirname, "prune-bundle.mjs")).href
+    );
+    const nativeRoots = [
+      ...moduleOwners(bundle).map((owner) => path.join(packagedApp, owner, "node_modules")),
+      path.join(resourcesPath, "app.asar.unpacked", "node_modules"),
+    ];
+    for (const root of nativeRoots) {
+      assertNativeBinaries(root, context.electronPlatformName, arch);
+      pruneForeignNativeBinaries(root, context.electronPlatformName, arch);
+    }
+  }
 
   if (
     context.electronPlatformName !== "darwin" ||
