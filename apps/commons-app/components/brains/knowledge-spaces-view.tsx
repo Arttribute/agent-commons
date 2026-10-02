@@ -92,6 +92,7 @@ import {
   knowledgeFileName,
   normalizeKnowledgePathInput,
 } from "./knowledge-path";
+import { apiErrorMessage } from "@/lib/api-error";
 
 const KnowledgeGraphView = dynamic(
   () => import("./knowledge-graph").then((module) => module.KnowledgeGraphView),
@@ -174,7 +175,7 @@ export function KnowledgeSpacesView() {
     const response = await desktopApiFetch("/api/knowledge", { cache: "no-store" });
     const payload = await readApiPayload(response);
     if (!response.ok)
-      throw new Error(apiMessage(payload, "Could not load knowledge"));
+      throw new Error(apiErrorMessage(payload, "Could not load knowledge"));
     const next = Array.isArray(payload.data) ? payload.data : [];
     setSpaces(next);
     setSpaceId((current) =>
@@ -215,7 +216,7 @@ export function KnowledgeSpacesView() {
       });
       const payload = await readApiPayload(response);
       if (!response.ok)
-        throw new Error(apiMessage(payload, "Could not load notes"));
+        throw new Error(apiErrorMessage(payload, "Could not load notes"));
       const next = Array.isArray(payload.data) ? payload.data : [];
       setDocuments(next);
       setDocumentId((current) =>
@@ -249,7 +250,7 @@ export function KnowledgeSpacesView() {
     });
     const payload = await readApiPayload(response);
     if (!response.ok)
-      throw new Error(apiMessage(payload, "Could not load folders"));
+      throw new Error(apiErrorMessage(payload, "Could not load folders"));
     setFolders(Array.isArray(payload.data) ? payload.data : []);
   }, []);
 
@@ -260,8 +261,11 @@ export function KnowledgeSpacesView() {
     setFolders([]);
     if (spaceId) {
       void loadDocuments(spaceId);
-      void loadFolders(spaceId);
-      void loadGraph(spaceId);
+      loadFolders(spaceId).catch((cause) =>
+        setError(cause instanceof Error ? cause.message : "Could not load folders"),
+      );
+      // The graph is decorative; a failed load leaves the previous view.
+      loadGraph(spaceId).catch(() => undefined);
       const selectedSpace = spaces.find((space) => space.spaceId === spaceId);
       if (selectedSpace?.provider === "browser_filesystem") {
         void restoreMarkdownFolder(spaceId).then((connected) => {
@@ -284,7 +288,7 @@ export function KnowledgeSpacesView() {
       .then(async (response) => {
         const payload = await readApiPayload(response);
         if (!response.ok)
-          throw new Error(apiMessage(payload, "Could not open note"));
+          throw new Error(apiErrorMessage(payload, "Could not open note"));
         if (cancelled) return;
         const next = payload.data as KnowledgeDocument;
         documentRef.current = next;
@@ -351,7 +355,7 @@ export function KnowledgeSpacesView() {
           );
           const payload = await readApiPayload(response);
           if (!response.ok)
-            throw new Error(apiMessage(payload, "Could not save note"));
+            throw new Error(apiErrorMessage(payload, "Could not save note"));
           const saved = payload.data as KnowledgeDocument;
           documentRef.current = saved;
           setDocument(saved);
@@ -483,7 +487,7 @@ export function KnowledgeSpacesView() {
     );
     const payload = await readApiPayload(response);
     if (!response.ok)
-      throw new Error(apiMessage(payload, "Could not create note"));
+      throw new Error(apiErrorMessage(payload, "Could not create note"));
     const created = payload.data as KnowledgeDocument;
     if (activeSpace.provider === "browser_filesystem") {
       const writtenLocally = await writeConnectedNote(
@@ -533,7 +537,7 @@ export function KnowledgeSpacesView() {
     );
     const payload = await readApiPayload(response);
     if (!response.ok)
-      throw new Error(apiMessage(payload, "Could not open note"));
+      throw new Error(apiErrorMessage(payload, "Could not open note"));
     return payload.data as KnowledgeDocument;
   }
 
@@ -545,7 +549,7 @@ export function KnowledgeSpacesView() {
     );
     const payload = await readApiPayload(response);
     if (!response.ok)
-      throw new Error(apiMessage(payload, "Could not refresh note"));
+      throw new Error(apiErrorMessage(payload, "Could not refresh note"));
     const next = payload.data as KnowledgeDocument;
     documentRef.current = next;
     setDocument(next);
@@ -617,7 +621,7 @@ export function KnowledgeSpacesView() {
             "file",
           ).catch(() => false);
         }
-        throw new Error(apiMessage(payload, "Could not move note"));
+        throw new Error(apiErrorMessage(payload, "Could not move note"));
       }
       if (target.documentId === document?.documentId) {
         const saved = payload.data as KnowledgeDocument;
@@ -692,7 +696,7 @@ export function KnowledgeSpacesView() {
             () => false,
           );
         }
-        throw new Error(apiMessage(payload, "Could not create folder"));
+        throw new Error(apiErrorMessage(payload, "Could not create folder"));
       }
       await refreshActiveSpace();
       setNewFolderOpen(false);
@@ -749,7 +753,7 @@ export function KnowledgeSpacesView() {
             "folder",
           ).catch(() => false);
         }
-        throw new Error(apiMessage(payload, "Could not move folder"));
+        throw new Error(apiErrorMessage(payload, "Could not move folder"));
       }
       await refreshActiveSpace();
       if (selectedDocumentId) await reloadOpenDocument(selectedDocumentId);
@@ -793,7 +797,7 @@ export function KnowledgeSpacesView() {
       );
       const payload = await readApiPayload(response);
       if (!response.ok)
-        throw new Error(apiMessage(payload, "Could not delete folder"));
+        throw new Error(apiErrorMessage(payload, "Could not delete folder"));
       if (
         activeSpace.provider === "browser_filesystem" &&
         hasConnectedFolder(activeSpace.spaceId)
@@ -907,7 +911,7 @@ export function KnowledgeSpacesView() {
       );
       const payload = await readApiPayload(response);
       if (!response.ok)
-        throw new Error(apiMessage(payload, "Could not import folder"));
+        throw new Error(apiErrorMessage(payload, "Could not import folder"));
       const result = payload.data;
       setNotice(
         `Folder synced: ${result.created} created, ${result.updated} updated, ${
@@ -1931,11 +1935,6 @@ function formatTrustTier(
   if (value === "human-reviewed") return "Human reviewed";
   if (value === "machine-confirmed") return "Machine confirmed";
   return "Unverified";
-}
-
-function apiMessage(payload: any, fallback: string) {
-  const message = payload?.message || payload?.error;
-  return Array.isArray(message) ? message.join(", ") : message || fallback;
 }
 
 async function readApiPayload(response: Response) {
