@@ -1,7 +1,7 @@
 // Keep desktop downloads pinned to a desktop release. The repository also
 // publishes CLI and VS Code releases, so GitHub's repository-wide `latest`
 // redirect can point at a release that does not contain desktop installers.
-export const DESKTOP_VERSION = "0.4.1";
+export const DESKTOP_VERSION = "0.4.2";
 export const DESKTOP_RELEASE_TAG = `desktop-v${DESKTOP_VERSION}`;
 export const DESKTOP_RELEASE_ROOT = `https://github.com/Arttribute/agent-commons/releases/download/${DESKTOP_RELEASE_TAG}`;
 export const DESKTOP_RELEASE_PAGE = `https://github.com/Arttribute/agent-commons/releases/tag/${DESKTOP_RELEASE_TAG}`;
