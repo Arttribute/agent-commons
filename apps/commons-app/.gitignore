@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# pdf.js browser build, copied from node_modules by scripts/copy-pdfjs.mjs
+/public/vendor/pdfjs/

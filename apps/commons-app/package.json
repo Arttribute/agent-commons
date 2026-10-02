@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "node scripts/copy-pdfjs.mjs && next dev",
+    "build": "node scripts/copy-pdfjs.mjs && next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -56,9 +56,11 @@
     "ethers": "^6.13.5",
     "framer-motion": "^12.0.11",
     "lucide-react": "^0.474.0",
+    "mermaid": "^11",
     "motion": "^12.4.1",
     "next": "15.5.24",
     "next-auth": "5.0.0-beta.32",
+    "pdfjs-dist": "5.4.296",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.54.2",

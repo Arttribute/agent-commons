@@ -49,15 +49,16 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { ArtifactIcon } from "@/components/artifacts/artifact-icon";
-import { ArtifactSurface } from "@/components/artifacts/artifact-surface";
+import { useCanvasStore } from "@/stores/canvas-store";
+import { apiErrorMessage } from "@/lib/api-error";
 import {
   artifactKind,
   artifactLabel,
   isCodeArtifact,
   isPagedDocument,
   prettyBytes,
-  type ArtifactRef,
 } from "@/lib/artifacts";
 
 type LibraryItem = {
@@ -121,7 +122,8 @@ export default function LibraryPage() {
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [groupByChat, setGroupByChat] = useState(false);
   const [selected, setSelected] = useState<ItemDetail | null>(null);
-  const [previewing, setPreviewing] = useState<ArtifactRef | null>(null);
+  const router = useRouter();
+  const remember = useCanvasStore((state) => state.remember);
   const [grantType, setGrantType] = useState<"agent" | "user" | "workspace">(
     "agent",
   );
@@ -142,10 +144,10 @@ export default function LibraryPage() {
       });
       const data = await response.json();
       if (!response.ok)
-        throw new Error(
-          data?.message || data?.error || "Could not load library",
-        );
-      setItems(Array.isArray(data) ? data : data?.data || []);
+        throw new Error(apiErrorMessage(data, "Could not load library"));
+      const list: LibraryItem[] = Array.isArray(data) ? data : data?.data || [];
+      setItems(list);
+      remember(list);
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Could not load library",
@@ -153,7 +155,7 @@ export default function LibraryPage() {
     } finally {
       setLoading(false);
     }
-  }, [query, view, source, favorites]);
+  }, [query, view, source, favorites, remember]);
 
   useEffect(() => {
     const timer = setTimeout(load, 180);
@@ -196,7 +198,7 @@ export default function LibraryPage() {
       });
       const data = await response.json();
       if (!response.ok)
-        throw new Error(data?.message || data?.error || "Upload failed");
+        throw new Error(apiErrorMessage(data, "Upload failed"));
       const uploaded = Array.isArray(data?.data) ? data.data : [];
       const reused = uploaded.filter(
         (item: { reused?: boolean }) => item.reused,
@@ -490,7 +492,7 @@ export default function LibraryPage() {
                           local={local}
                           layout={layout}
                           onOpen={() =>
-                            setPreviewing({ fileId: item.itemId, ...item })
+                            router.push(`/library/${encodeURIComponent(item.itemId)}`)
                           }
                           onDownload={() => download(item)}
                           onSaveToLocal={desktop && !local ? () => void saveToLocal(item) : undefined}
@@ -518,12 +520,6 @@ export default function LibraryPage() {
             )}
           </div>
         </main>
-        {previewing && (
-          <ArtifactSurface
-            artifact={previewing}
-            onClose={() => setPreviewing(null)}
-          />
-        )}
       </div>
 
       <Dialog

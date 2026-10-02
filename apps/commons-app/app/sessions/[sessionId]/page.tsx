@@ -42,7 +42,6 @@ export default function SessionPage() {
   const [session, setSession] = useState<any>(null);
   const [loadedSessionId, setLoadedSessionId] = useState("");
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<"chat" | "trajectory">("chat");
   // A chat opened from a launcher sends its first message here, once.
   const [launch, setLaunch] = useState<ComposerLaunch | null>(() =>
     useChatLaunchStore.getState().peekLaunch(sessionId),
@@ -139,7 +138,6 @@ export default function SessionPage() {
               userId={userAddress}
               sessionId={sessionId}
               isLoadingSession={loading}
-              viewMode={viewMode}
               initialLaunch={loading ? null : launch}
               onInitialLaunchSent={() => {
                 useChatLaunchStore.getState().clearLaunch(sessionId);
@@ -186,11 +184,6 @@ export default function SessionPage() {
                         </span>
                       </Link>
                     )}
-                  </div>
-                  <div className="flex shrink-0 items-center rounded-lg bg-muted/60 p-0.5 text-xs">
-                    {(["chat", "trajectory"] as const).map((mode) => (
-                      <button key={mode} type="button" onClick={() => setViewMode(mode)} className={`rounded-md px-2.5 py-1 capitalize transition-colors ${viewMode === mode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{mode}</button>
-                    ))}
                   </div>
                 </div>
               }

@@ -153,7 +153,10 @@ function FloatingCommonsCopilotInner() {
       pathname.startsWith("/oauth") ||
       pathname.startsWith("/legal") ||
       pathname.startsWith("/privacy") ||
-      pathname.startsWith("/terms"),
+      pathname.startsWith("/terms") ||
+      // An open artifact has its own chat, with Copilot as its default agent.
+      /^\/library\/[^/]+/.test(pathname) ||
+      pathname.startsWith("/studio/canvas"),
     [authenticated, pathname, ready]
   );
 
@@ -306,10 +309,10 @@ function FloatingCommonsCopilotInner() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("commons-copilot-open", open);
+    document.documentElement.classList.toggle("commons-copilot-open", open && !hidden);
     return () =>
       document.documentElement.classList.remove("commons-copilot-open");
-  }, [open]);
+  }, [hidden, open]);
 
   useEffect(() => {
     let cancelled = false;
