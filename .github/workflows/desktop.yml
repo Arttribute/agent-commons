@@ -161,15 +161,34 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: release
-          merge-multiple: true
-      - name: Generate checksums
+          path: release-artifacts
+          merge-multiple: false
+      - name: Assemble complete release and generate checksums
         run: |
-          cd release
+          set -euo pipefail
+          mkdir publish
+          for platform in desktop-macOS desktop-Windows desktop-Linux; do
+            test -d "release-artifacts/$platform"
+            while IFS= read -r -d '' asset; do
+              name=${asset##*/}
+              if [ ! -e "publish/$name" ]; then
+                cp "$asset" "publish/$name"
+              fi
+            done < <(find "release-artifacts/$platform" -type f -print0)
+          done
+          for installer in \
+            Agent-Commons-mac-arm64.dmg \
+            Agent-Commons-mac-x64.dmg \
+            Agent-Commons-win-x64.exe \
+            Agent-Commons-linux-x86_64.AppImage \
+            latest-mac.yml latest.yml latest-linux.yml; do
+            test -s "publish/$installer"
+          done
+          cd publish
           sha256sum * > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
-          files: release/*
+          files: publish/*
           generate_release_notes: true
           body: |
             ## Unified desktop release
