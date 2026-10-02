@@ -165,11 +165,13 @@ jobs:
             status=$(curl -sS -o "$RUNNER_TEMP/exchange.json" -w '%{http_code}' -X POST \
               -H "Authorization: Bearer $id_token" \
               "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/${name/\//%2f}")
-            if [ "$status" = 200 ]; then
+            # A successful exchange returns a publish token: never print the
+            # response, only npm's error message.
+            if [ "${status:0:1}" = 2 ]; then
               echo "$name: trusted publishing ok"
             else
               reason=$(jq -r '.message // .error // empty' "$RUNNER_TEMP/exchange.json" 2>/dev/null || true)
-              echo "::error::$name: npm rejected trusted publishing (HTTP $status). ${reason:-$(head -c 300 "$RUNNER_TEMP/exchange.json")}"
+              echo "::error::$name: npm rejected trusted publishing (HTTP $status). ${reason:-npm gave no reason}"
               failed=1
             fi
             rm -f "$RUNNER_TEMP/exchange.json"
