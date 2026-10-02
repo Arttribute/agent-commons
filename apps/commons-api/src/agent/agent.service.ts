@@ -1,4 +1,7 @@
 import * as schema from '#/models/schema';
+import { CanvasService } from '~/media/canvas.service';
+import { CanvasVisualsService } from '~/media/canvas-visuals.service';
+import { canvasContextRequest } from '~/media/canvas-context';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import {
@@ -241,6 +244,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     private copilotService: CopilotService,
     private uiPlugins: UiPluginService,
     @Optional() private projects?: ProjectService,
+    @Optional() private canvas?: CanvasService,
+    @Optional() private canvasVisuals?: CanvasVisualsService,
   ) {}
 
   /* ─────────────────────────  INIT  ───────────────────────── */
@@ -521,6 +526,10 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       - **listMediaModels** — inspect exact creative model keys, provider availability, supported controls, and price basis before choosing a model.
       - **getCanvasProject** — load a Canvas project's active artifact, revision history, annotations, and generation state before analysing or changing it. Read the active artifact with readUploadedFile when its actual media contents are needed.
       - **annotateCanvas** — add precise normalized spatial notes or millisecond time-range notes that users and other agents can inspect and drag into chat.
+      - **analyzeMedia** — timestamped transcript, silences, scene changes and frame descriptions for a video or audio clip. Call it before planning cuts so every edit uses real times.
+      - **editMedia** — frame-accurate video and audio editing with ffmpeg: trim, cut, append or insert clips, add or replace sound, volume, speed, crop, resize, fades, text overlays, region blur, extract audio. Pass the canvas projectId to make the result the artifact's next version.
+      - **addCanvasVersion** — after writing a revised document, deck, sheet, PDF, or text file for an artifact open in the canvas, record the new fileId as its next version.
+      - **updateCanvasNotes** — mark canvas notes resolved once you have addressed them.
       - **generateMedia** — generate or transform images, video, speech, and music with a listed creative modelKey. Attach input Library item IDs for edits, and pass a Canvas project ID to create a recoverable revision with provenance. Media usage is pre-authorized in Commons credits and settled once from actual provider usage when available.
       - **uploadFileToIPFS** — explicit-only public IPFS publishing. Never call this for ordinary uploads, generated files, or library storage unless the user specifically asks for IPFS.
 
@@ -2384,6 +2393,45 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                       `## Commons Copilot context\nLive context lookup failed: ${error.message}`,
                   )
               : '';
+          const canvasRequest = canvasContextRequest(props.uiContext);
+          const canvasPrincipal = {
+            principalId: initiator,
+            principalType: 'user' as const,
+            workspaceId: null,
+          };
+          let canvasContext = canvasRequest
+            ? await this.canvas
+                ?.buildAgentContext(canvasRequest, canvasPrincipal)
+                .catch((error) => {
+                  this.logger.warn(
+                    `Canvas context unavailable: ${error.message}`,
+                  );
+                  return null;
+                })
+            : null;
+          // Show vision models exactly what attached notes mark.
+          if (
+            canvasContext &&
+            canvasRequest?.annotationIds.length &&
+            this.supportsImageInputs(agent.modelProvider, agent.modelId)
+          ) {
+            const visuals =
+              (await this.canvasVisuals
+                ?.build(canvasRequest, canvasPrincipal)
+                .catch((error) => {
+                  this.logger.warn(`Canvas pictures unavailable: ${error.message}`);
+                  return [];
+                })) ?? [];
+            if (visuals.length) {
+              canvasContext += `\n\n### Pictures attached to this message\n${visuals
+                .map((visual, index) => `${index + 1}. ${visual.label}`)
+                .join('\n')}`;
+              this.appendImagesToLastUserMessage(
+                messages,
+                visuals.map((visual) => visual.url),
+              );
+            }
+          }
           const projectContext = await this.projects
             ?.buildRunContext(
               (await this.session
@@ -2452,6 +2500,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             projectContext?.block,
             knowledgeSelectionBlock,
             copilotContext,
+            canvasContext,
             props.cliContext,
             computerSelectionBlock,
             computerPreparationBlock,
@@ -3022,6 +3071,20 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
         ) as any,
       };
     });
+  }
+
+  /** Add image parts to the newest user message already in the graph input. */
+  private appendImagesToLastUserMessage(messages: any[], urls: string[]) {
+    const index = messages.findLastIndex(
+      (message) => message?.role === 'user' || message?.type === 'user',
+    );
+    if (index < 0 || !urls.length) return;
+    const message = messages[index];
+    const parts = urls.map((url) => ({ type: 'image_url' as const, image_url: { url } }));
+    const content = Array.isArray(message.content)
+      ? [...message.content, ...parts]
+      : [{ type: 'text', text: String(message.content ?? '') }, ...parts];
+    messages[index] = { ...message, content };
   }
 
   private appendAttachmentContext(

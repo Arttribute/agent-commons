@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { RateLimit, resolveCallerId, type ApiKeyPrincipal } from '~/modules/auth';
 import { CanvasService } from './canvas.service';
 import { MediaService } from './media.service';
+import { MediaEditService } from './media-edit.service';
 import type { CreateMediaGenerationInput, MediaPrincipal } from './media.types';
 
 @Controller({ version: '1', path: 'canvas' })
@@ -10,7 +11,22 @@ export class CanvasController {
   constructor(
     private readonly canvas: CanvasService,
     private readonly media: MediaService,
+    private readonly mediaEdit: MediaEditService,
   ) {}
+
+  /** Timestamped transcript, silences and scenes for a clip (cached). */
+  @Post('media/analyze')
+  @RateLimit({ limit: 10, windowMs: 60_000, keyStrategy: 'user' })
+  analyze(
+    @Req() request: Request,
+    @Body() body: { fileId?: string; projectId?: string; refresh?: boolean },
+  ) {
+    const caller = requester(request);
+    return this.mediaEdit.analyze(
+      { fileId: body.fileId, projectId: body.projectId, refresh: body.refresh === true },
+      { principalId: caller.principalId, workspaceId: caller.workspaceId },
+    );
+  }
 
   @Get('models')
   models() {

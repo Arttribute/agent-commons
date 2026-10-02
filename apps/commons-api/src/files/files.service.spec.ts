@@ -183,6 +183,8 @@ describe('FilesService document support', () => {
     ['demo.mp4', '', 'video'],
     ['source.ts', '', 'code'],
     ['bundle.zip', '', 'archive'],
+    ['flow.mmd', '', 'code'],
+    ['architecture.mermaid', 'application/octet-stream', 'code'],
   ])('classifies %s as %s', (name, mime, expected) => {
     const normalized = normalizeMimeType(mime, name);
     expect(classifyFile(normalized, name)).toBe(expected);

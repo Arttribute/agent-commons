@@ -3,3 +3,5 @@ export * from './media.service';
 export * from './canvas.service';
 export * from './media.types';
 export * from './media-model.registry';
+export * from './media-edit.service';
+export * from './canvas-visuals.service';

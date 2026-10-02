@@ -54,7 +54,7 @@ import {
   type UiPluginSurface,
 } from '~/ui-plugin';
 import { BrainService } from '~/brain';
-import { CanvasService, MediaService } from '~/media';
+import { CanvasService, MediaEditService, MediaService } from '~/media';
 
 type ToolExecutionMetadata = {
   agentId?: string;
@@ -462,6 +462,100 @@ export interface CommonTool {
     geometry?: Record<string, unknown>;
     startMs?: number;
     endMs?: number;
+    agentId: string;
+  }): Promise<Record<string, unknown>>;
+
+  /**
+   * Understand a video or audio clip before editing it: a timestamped
+   * transcript (segments; words when asked), silent stretches, scene changes,
+   * and short descriptions of sampled frames, all in milliseconds. Results are
+   * cached per file. Call this before planning cuts.
+   */
+  analyzeMedia(props: {
+    projectId?: string;
+    fileId?: string;
+    /** Word-level timestamps, for cuts on exact words. */
+    words?: boolean;
+    refresh?: boolean;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<Record<string, unknown>>;
+
+  /**
+   * Edit a video or audio clip with exact, frame-accurate operations, applied
+   * in order: trim (keep a range), cut (remove a range), append or insert
+   * other clips, addAudio (mix or replace sound, with fades and offsets),
+   * volume (whole clip or a range), speed, crop, resize, fade, text overlays,
+   * blur (redact a region, optionally for a time range), extractAudio. Times
+   * are milliseconds on the clip as it is at that step; boxes are fractions of
+   * the frame (0 to 1). The result is a new Library file and, with projectId,
+   * the canvas artifact's next version. Use generateMedia instead for edits
+   * that need a generative model.
+   */
+  editMedia(props: {
+    /** Canvas project; when set and fileId is omitted, edits the current version. */
+    projectId?: string;
+    fileId?: string;
+    operations: Array<{
+      op:
+        | 'trim'
+        | 'cut'
+        | 'append'
+        | 'insert'
+        | 'addAudio'
+        | 'volume'
+        | 'speed'
+        | 'crop'
+        | 'resize'
+        | 'fade'
+        | 'text'
+        | 'blur'
+        | 'extractAudio';
+      startMs?: number;
+      endMs?: number;
+      atMs?: number;
+      fileId?: string;
+      volume?: number;
+      level?: number;
+      mode?: 'mix' | 'replace';
+      fadeInMs?: number;
+      fadeOutMs?: number;
+      factor?: number;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      inMs?: number;
+      outMs?: number;
+      text?: string;
+      position?: 'top' | 'center' | 'bottom';
+      size?: 'small' | 'medium' | 'large';
+    }>;
+    outputName?: string;
+    /** One sentence on what changed, shown in the version history. */
+    summary?: string;
+    agentId: string;
+    sessionId?: string;
+  }): Promise<Record<string, unknown>>;
+
+  /**
+   * Record a Library file you created as the next version of a canvas
+   * artifact, so it appears in the artifact's history and becomes current.
+   * Use it after writing a revised document, deck, sheet, PDF, or text file.
+   */
+  addCanvasVersion(props: {
+    projectId: string;
+    fileId: string;
+    /** One sentence on what changed, shown in the version history. */
+    summary?: string;
+    agentId: string;
+  }): Promise<Record<string, unknown>>;
+
+  /** Mark canvas notes resolved after addressing them, or reopen them. */
+  updateCanvasNotes(props: {
+    projectId: string;
+    annotationIds: string[];
+    status: 'open' | 'resolved';
     agentId: string;
   }): Promise<Record<string, unknown>>;
 
@@ -1225,6 +1319,7 @@ export class CommonToolService {
     private media: MediaService,
     private canvas: CanvasService,
     private arcade: ArcadeService,
+    private mediaEdit: MediaEditService,
   ) {}
 
   private async capabilityOwner(agentId: string) {
@@ -1870,6 +1965,114 @@ export class CommonToolService {
         startMs: props.startMs,
         endMs: props.endMs,
       },
+    );
+  }
+
+  async analyzeMedia(
+    props: {
+      projectId?: string;
+      fileId?: string;
+      words?: boolean;
+      refresh?: boolean;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    return this.mediaEdit.analyze(
+      {
+        projectId: props.projectId,
+        fileId: props.fileId,
+        words: props.words,
+        refresh: props.refresh,
+        agentId,
+        sessionId: metadata?.sessionId ?? props.sessionId,
+        toolCallId: metadata?.toolCallId,
+      },
+      { principalId: owner.principalId, workspaceId: owner.workspaceId },
+    );
+  }
+
+  async editMedia(
+    props: {
+      projectId?: string;
+      fileId?: string;
+      operations: unknown[];
+      outputName?: string;
+      summary?: string;
+      agentId: string;
+      sessionId?: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    return this.mediaEdit.edit(
+      {
+        projectId: props.projectId,
+        fileId: props.fileId,
+        operations: props.operations,
+        outputName: props.outputName,
+        summary: props.summary,
+        agentId,
+        sessionId: metadata?.sessionId ?? props.sessionId,
+      },
+      { principalId: owner.principalId, workspaceId: owner.workspaceId },
+    );
+  }
+
+  async addCanvasVersion(
+    props: {
+      projectId: string;
+      fileId: string;
+      summary?: string;
+      agentId: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    const result = await this.canvas.addVersion(
+      props.projectId,
+      {
+        principalId: owner.principalId,
+        principalType: 'user',
+        workspaceId: owner.workspaceId,
+        actorId: agentId,
+      },
+      { itemId: props.fileId, summary: props.summary },
+    );
+    return {
+      projectId: props.projectId,
+      fileId: props.fileId,
+      revisionId: result.revision?.revisionId,
+      created: result.created,
+    };
+  }
+
+  async updateCanvasNotes(
+    props: {
+      projectId: string;
+      annotationIds: string[];
+      status: 'open' | 'resolved';
+      agentId: string;
+    },
+    metadata?: ToolExecutionMetadata,
+  ) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const owner = await this.capabilityOwner(agentId);
+    return this.canvas.setNotesStatus(
+      props.projectId,
+      {
+        principalId: owner.principalId,
+        principalType: 'user',
+        workspaceId: owner.workspaceId,
+        actorId: agentId,
+      },
+      Array.isArray(props.annotationIds) ? props.annotationIds : [],
+      props.status,
     );
   }
 

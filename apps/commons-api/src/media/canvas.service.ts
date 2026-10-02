@@ -12,6 +12,14 @@ import { DatabaseService } from '~/modules/database/database.service';
 import { LibraryService } from '~/files';
 import type { LibraryPrincipal } from '~/files/library.service';
 import type { MediaPrincipal } from './media.types';
+import {
+  formatCanvasContext,
+  normalizeCreativeDefaults,
+  type CanvasContextRequest,
+} from './canvas-context';
+
+const CANVAS_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type CreateAnnotationInput = {
   revisionId: string;
@@ -180,6 +188,14 @@ export class CanvasService {
     return publicArtifact(item);
   }
 
+  /** Keep a file with a canvas artifact as a source (references, music). */
+  async linkSource(projectId: string, itemId: string) {
+    await this.db
+      .insert(schema.libraryLink)
+      .values({ itemId, scopeType: 'canvas_project', scopeId: projectId })
+      .onConflictDoNothing();
+  }
+
   async editTimeline(
     projectId: string,
     principal: MediaPrincipal,
@@ -296,7 +312,9 @@ export class CanvasService {
         ...(input.description !== undefined
           ? { description: input.description.trim().slice(0, 2_000) || null }
           : {}),
-        ...(input.settings ? { settings: input.settings } : {}),
+        ...(input.settings
+          ? { settings: mergeSettings(project.settings, input.settings) }
+          : {}),
         activeItemId,
         updatedAt: new Date(),
       })
@@ -346,6 +364,7 @@ export class CanvasService {
       })
       .onConflictDoNothing()
       .returning();
+    const linked = [...new Set([input.itemId, ...(input.inputItemIds ?? [])])];
     await Promise.all([
       this.db
         .update(schema.canvasProject)
@@ -353,11 +372,13 @@ export class CanvasService {
         .where(eq(schema.canvasProject.projectId, input.projectId)),
       this.db
         .insert(schema.libraryLink)
-        .values({
-          itemId: input.itemId,
-          scopeType: 'canvas_project',
-          scopeId: input.projectId,
-        })
+        .values(
+          linked.map((itemId) => ({
+            itemId,
+            scopeType: 'canvas_project',
+            scopeId: input.projectId,
+          })),
+        )
         .onConflictDoNothing(),
     ]);
     return revision;
@@ -444,11 +465,138 @@ export class CanvasService {
     return saved;
   }
 
+  /**
+   * Record an existing Library file as the next version of a canvas artifact.
+   * Agents use this after writing a revised document with a create*File tool.
+   */
+  async addVersion(
+    projectId: string,
+    principal: MediaPrincipal,
+    input: { itemId: string; summary?: string },
+  ) {
+    const project = await this.requireProject(projectId, principal, 'edit');
+    const item = await this.library.get(
+      input.itemId,
+      asLibraryPrincipal(principal),
+    );
+    const existing = await this.db.query.canvasRevision.findFirst({
+      where: (table) =>
+        and(eq(table.projectId, projectId), eq(table.itemId, item.itemId)),
+    });
+    if (existing) {
+      await this.updateProject(projectId, principal, {
+        activeRevisionId: existing.revisionId,
+      });
+      return { revision: existing, created: false };
+    }
+    const summary = input.summary?.trim().slice(0, 500);
+    const revision = await this.addRevision({
+      projectId,
+      itemId: item.itemId,
+      parentItemId: project.activeItemId,
+      operation: 'edit',
+      settings: summary ? { summary } : {},
+      createdByType: principal.actorId ? 'agent' : 'human',
+      createdById: principal.actorId ?? principal.principalId,
+    });
+    return { revision, created: true };
+  }
+
+  /** Mark canvas notes open or resolved. Unknown IDs are ignored. */
+  async setNotesStatus(
+    projectId: string,
+    principal: MediaPrincipal,
+    annotationIds: string[],
+    status: 'open' | 'resolved',
+  ) {
+    await this.requireProject(projectId, principal, 'edit');
+    if (!['open', 'resolved'].includes(status)) {
+      throw new BadRequestException('Status must be open or resolved.');
+    }
+    const ids = [...new Set(annotationIds)].slice(0, 50);
+    const updated: string[] = [];
+    for (const annotationId of ids) {
+      const [saved] = await this.db
+        .update(schema.canvasAnnotation)
+        .set({ status, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.canvasAnnotation.projectId, projectId),
+            eq(schema.canvasAnnotation.annotationId, annotationId),
+            isNull(schema.canvasAnnotation.deletedAt),
+          ),
+        )
+        .returning({ annotationId: schema.canvasAnnotation.annotationId });
+      if (saved) updated.push(saved.annotationId);
+    }
+    return { updated, status };
+  }
+
+  /**
+   * Build the canvas block for an agent run. The request comes from the
+   * browser, so access is checked and every value is reloaded here.
+   */
+  async buildAgentContext(
+    request: CanvasContextRequest,
+    principal: MediaPrincipal,
+  ) {
+    const project = await this.requireProject(
+      request.projectId,
+      principal,
+      'read',
+    );
+    const [revisions, annotations, artifact, codeProject] = await Promise.all([
+      this.db.query.canvasRevision.findMany({
+        where: (table) => eq(table.projectId, project.projectId),
+        orderBy: (table) => asc(table.createdAt),
+        limit: 200,
+      }),
+      this.db.query.canvasAnnotation.findMany({
+        where: (table) =>
+          and(eq(table.projectId, project.projectId), isNull(table.deletedAt)),
+        orderBy: (table) => asc(table.createdAt),
+        limit: 500,
+      }),
+      this.db.query.libraryItem.findFirst({
+        where: (table) => eq(table.itemId, project.activeItemId),
+      }),
+      this.db.query.codeProject.findFirst({
+        where: (table) => eq(table.libraryItemId, project.activeItemId),
+        columns: { projectId: true, entryFile: true, name: true },
+      }),
+    ]);
+    if (!artifact) return null;
+    return formatCanvasContext({
+      projectId: project.projectId,
+      artifact: {
+        itemId: artifact.itemId,
+        name: artifact.name,
+        kind: artifact.kind,
+        mimeType: artifact.mimeType,
+        metadata: artifact.metadata,
+      },
+      activeRevision: revisions.find(
+        (revision) => revision.itemId === project.activeItemId,
+      ),
+      revisions,
+      annotations,
+      attachedIds: request.annotationIds,
+      viewer: request.viewer,
+      creativeDefaults: normalizeCreativeDefaults(
+        project.settings?.creativeDefaults,
+      ),
+      codeProject: codeProject ?? null,
+    });
+  }
+
   async requireProject(
     projectId: string,
     principal: MediaPrincipal,
     permission: 'read' | 'edit',
   ) {
+    if (!CANVAS_ID.test(projectId)) {
+      throw new NotFoundException('Canvas project not found.');
+    }
     const project = await this.db.query.canvasProject.findFirst({
       where: (table) =>
         and(eq(table.projectId, projectId), isNull(table.deletedAt)),
@@ -590,4 +738,16 @@ function cleanName(value: string) {
 
 function same(left?: string | null, right?: string | null) {
   return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
+}
+
+/** Shallow-merge settings so one control never erases another's state. */
+function mergeSettings(
+  current: Record<string, unknown> | null | undefined,
+  next: Record<string, unknown>,
+) {
+  const merged: Record<string, unknown> = { ...(current ?? {}), ...next };
+  if ('creativeDefaults' in next) {
+    merged.creativeDefaults = normalizeCreativeDefaults(next.creativeDefaults);
+  }
+  return merged;
 }
