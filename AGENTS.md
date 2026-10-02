@@ -36,7 +36,7 @@ A merged version bump is not a release. Check that the tag and the GitHub releas
 
 ## Practical rules
 
-- Published packages (`@agent-commons/sdk`, `@agent-commons/cli`, `@agent-commons/ui`) are versioned by changesets. Add one with `pnpm changeset`; never edit their `version` fields. When changesets reach `staging`, the Release workflow opens a `chore: version packages` PR into `staging`. Merge it like any other PR. The new versions are published to npm when they are promoted to `main`.
+- Published packages (`@agent-commons/sdk`, `@agent-commons/cli`, `@agent-commons/ui`) are versioned by changesets. Add one with `pnpm changeset`; never edit their `version` fields. When changesets reach `staging`, the Release workflow bumps the versions and changelogs and commits them to `staging` as `chore: version packages`. Promoting to `main` publishes the new versions to npm. Publishing uses npm trusted publishing, so there is no npm token: each package lists `release.yml` (and `release-staging.yml` for snapshots) as a trusted publisher on npmjs.com.
 - The pre-commit hook runs `pnpm install` whenever a `package.json` is staged. If no dependency changed, make sure `pnpm-lock.yaml` did not change either. If a dependency did change, regenerate the lockfile with Node 22 and pnpm 9.15.3, the versions CI uses, and keep the diff limited to that dependency.
 - Deploys roll back when the error alarms fire, and they count 4xx responses. A change that causes many 401s or 429s can block its own deploy. Deploy during quiet periods and check the alarms if a deploy fails.
 - When AWS capacity is short (for example the Fargate vCPU quota blocks a deploy), pause Common Arcade services first. Agent Commons production always has priority.

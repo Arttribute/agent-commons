@@ -3,6 +3,11 @@
   "version": "0.2.4",
   "description": "Shared Commons canvas, compiled preview and annotation primitives",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Arttribute/agent-commons.git",
+    "directory": "packages/ui"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.tsx",

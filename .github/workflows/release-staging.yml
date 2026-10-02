@@ -24,6 +24,11 @@ concurrency:
   group: release-staging
   cancel-in-progress: true
 
+# Trusted publishing (OIDC): npm lists this workflow as a trusted publisher.
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   snapshot:
     name: Publish staging snapshot
@@ -57,6 +62,10 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      - name: Use an npm that supports trusted publishing
+        if: steps.pending.outputs.count != '0'
+        run: npm install -g npm@^11.5.1
+
       - name: Install dependencies
         if: steps.pending.outputs.count != '0'
         run: pnpm install --no-frozen-lockfile
@@ -73,5 +82,4 @@ jobs:
         if: steps.pending.outputs.count != '0'
         run: pnpm changeset publish --tag staging --no-git-tag
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           HUSKY: 0
