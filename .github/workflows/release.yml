@@ -1,10 +1,14 @@
 name: Release
 
 # Package releases follow the same route as every other change:
-# - A push to `staging` with pending changesets opens or updates the
-#   "chore: version packages" pull request into `staging`.
+# - A push to `staging` with pending changesets bumps the package versions and
+#   changelogs and commits them to `staging`.
 # - A push to `main` publishes every package version that npm does not have
 #   yet, so a version reaches npm only after it has been promoted.
+#
+# npm authenticates the publish through trusted publishing (OIDC), so there is
+# no npm token. Each package lists this workflow as a trusted publisher on
+# npmjs.com.
 
 on:
   push:
@@ -15,7 +19,9 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer staging push versions everything the older one would have. Never
+  # cancel a publish halfway.
+  cancel-in-progress: ${{ github.ref_name == 'staging' }}
 
 jobs:
   version:
@@ -25,7 +31,6 @@ jobs:
 
     permissions:
       contents: write
-      pull-requests: write
 
     steps:
       - name: Checkout
@@ -44,7 +49,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Auto-generate patch changeset when packages changed without one
         shell: bash
@@ -86,15 +91,29 @@ jobs:
           printf -- "---\n%s---\n\nAuto patch release\n" "$FRONTMATTER" > ".changeset/auto-${ID}.md"
           echo "Created .changeset/auto-${ID}.md"
 
-      - name: Open or update the version packages PR
-        uses: changesets/action@v1
-        with:
-          version: pnpm version-ci
-          title: "chore: version packages"
-          commit: "chore: version packages"
+      - name: Commit the version bump to staging
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ github.token }}
           HUSKY: 0
+        run: |
+          if [ -z "$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md')" ]; then
+            echo "No pending changesets — nothing to version"
+            exit 0
+          fi
+          pnpm version-ci
+          git add -A
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "chore: version packages"
+          git show --stat --format='%s' HEAD
+          if ! git push origin HEAD:staging; then
+            git fetch origin staging
+            if [ "$(git rev-parse origin/staging)" != "$GITHUB_SHA" ]; then
+              echo "::notice::staging moved on while versioning. The run for the newer commit versions these packages."
+              exit 0
+            fi
+            exit 1
+          fi
 
   publish:
     name: Publish packages
@@ -103,6 +122,7 @@ jobs:
 
     permissions:
       contents: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -120,6 +140,11 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later. pnpm publish hands the
+      # packed tarball to this npm.
+      - name: Use an npm that supports trusted publishing
+        run: npm install -g npm@^11.5.1
 
       - name: Get pnpm store directory
         id: pnpm-cache
@@ -140,7 +165,6 @@ jobs:
       - name: Publish new package versions
         run: pnpm release
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           HUSKY: 0
 
       - name: Push release tags
