@@ -15,29 +15,26 @@ jobs:
   upgrade:
     name: ${{ matrix.name }}
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: fresh 0.4.4
-            from: ""
-            run_old: "false"
-          - name: 0.4.2 then 0.4.4
+          - name: 0.4.2 then 0.4.4, no time limit
             from: "0.4.2"
             run_old: "false"
-          - name: 0.4.2 running then 0.4.4
+            clean: "false"
+          - name: 0.4.2, delete install folder, then 0.4.4
             from: "0.4.2"
             run_old: "true"
-          - name: 0.4.3 running then 0.4.4
-            from: "0.4.3"
-            run_old: "true"
+            clean: "true"
     steps:
       - name: Install, upgrade and start the bundled server
         shell: pwsh
         env:
           FROM: ${{ matrix.from }}
           RUN_OLD: ${{ matrix.run_old }}
+          CLEAN: ${{ matrix.clean }}
         run: |
           $ErrorActionPreference = 'Stop'
           $root = 'https://github.com/Arttribute/agent-commons/releases/download'
@@ -72,6 +69,15 @@ jobs:
               Start-Sleep -Seconds 25
               "Running before upgrade: " + ((Get-Process | Where-Object { $_.Path -like "$dir*" } | ForEach-Object { "$($_.Id) $($_.ProcessName)" }) -join ', ')
             }
+          }
+          if ($env:CLEAN -eq 'true') {
+            # The remedy for broken installs: stop the app and remove the
+            # install folder with a long-path-safe delete, then install fresh.
+            Get-Process | Where-Object { $_.Path -like "$dir*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+            $started = Get-Date
+            cmd /c rd /s /q "\\?\$dir"
+            "Removed install folder: $(-not (Test-Path $dir)) ($([int]((Get-Date) - $started).TotalSeconds)s)"
           }
           Install '0.4.4'
           Show-Bundle 'after installing 0.4.4'
