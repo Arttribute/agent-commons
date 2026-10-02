@@ -1,0 +1,31 @@
+name: Sync staging
+
+# A promotion merges staging into main with a merge commit, which leaves
+# main one commit ahead. Fast-forward staging to main so the next change
+# branches from exactly what production runs.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-staging
+  cancel-in-progress: false
+
+jobs:
+  fast-forward:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fast-forward staging to main
+        run: |
+          git fetch origin staging main
+          if git merge-base --is-ancestor origin/staging origin/main; then
+            git push origin origin/main:refs/heads/staging
+          else
+            echo "::warning::staging has commits that are not on main yet, so it was not fast-forwarded. That is expected while changes wait on staging for the next promotion."
+          fi
