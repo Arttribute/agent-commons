@@ -51,10 +51,24 @@
     "icon": "build/icon.png",
     "artifactName": "Agent-Commons-${os}-${arch}.${ext}",
     "asar": true,
+    "electronLanguages": [
+      "en",
+      "en-US",
+      "en-GB"
+    ],
     "files": [
       "dist/**/*",
+      "!dist/**/*.map",
       "package.json",
-      "THIRD_PARTY_NOTICES.md"
+      "THIRD_PARTY_NOTICES.md",
+      "!**/node_modules/@huggingface/transformers/node_modules/onnxruntime-web/**",
+      "!**/node_modules/@huggingface/transformers/dist/*.map",
+      "!**/node_modules/@huggingface/transformers/dist/*.wasm",
+      "!**/node_modules/@huggingface/transformers/dist/transformers.{js,min.js,web.js,web.min.js}",
+      "!**/node_modules/@huggingface/transformers/dist/transformers.node.min.*",
+      "!**/node_modules/kokoro-js/dist/kokoro.web.js",
+      "!**/node_modules/kokoro-js/voices/*.bin",
+      "**/node_modules/kokoro-js/voices/{af_heart,af_bella,am_michael,bm_george}.bin"
     ],
     "extraResources": [
       {
@@ -77,11 +91,23 @@
       ],
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "notarize": true
+      "notarize": true,
+      "files": [
+        "!**/node_modules/@img/sharp-{linux,linuxmusl,win32}-*/**",
+        "!**/node_modules/@img/sharp-libvips-{linux,linuxmusl,win32}-*/**",
+        "!**/node_modules/@img/sharp-wasm32/**",
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
+      ]
     },
     "win": {
       "target": [
         "nsis"
+      ],
+      "files": [
+        "!**/node_modules/@img/sharp-{darwin,linux,linuxmusl}-*/**",
+        "!**/node_modules/@img/sharp-libvips-{darwin,linux,linuxmusl}-*/**",
+        "!**/node_modules/@img/sharp-wasm32/**",
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/{darwin,linux}/**"
       ]
     },
     "linux": {
@@ -89,7 +115,13 @@
       "target": [
         "AppImage"
       ],
-      "category": "Development"
+      "category": "Development",
+      "files": [
+        "!**/node_modules/@img/sharp-{darwin,linuxmusl,win32}-*/**",
+        "!**/node_modules/@img/sharp-libvips-{darwin,linuxmusl,win32}-*/**",
+        "!**/node_modules/@img/sharp-wasm32/**",
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/{darwin,win32}/**"
+      ]
     },
     "publish": {
       "provider": "github",

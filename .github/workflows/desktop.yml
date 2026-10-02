@@ -54,6 +54,14 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # The macOS job packages both Apple silicon and Intel apps on an arm64
+      # runner. Install x64 native packages too, or the Intel app ships
+      # without its own sharp binary. Scoped to CI so arm64 developer
+      # machines do not download x64 compilers.
+      - name: Install Intel native packages alongside arm64
+        if: runner.os == 'macOS'
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.pnpm.supportedArchitectures={os:['current'],cpu:['current','x64']};fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @agent-commons/desktop-contract typecheck
       - run: pnpm --filter @agent-commons/agent-core test
@@ -118,6 +126,21 @@ jobs:
       - name: Package Linux
         if: runner.os == 'Linux'
         run: pnpm --filter commons-desktop exec electron-builder --linux --publish never
+      - name: Report installer and installed sizes
+        shell: bash
+        run: |
+          cd apps/commons-desktop/release
+          {
+            echo "### Desktop size (${{ runner.os }})"
+            echo "| Artifact | Size |"
+            echo "| --- | --- |"
+            for file in *.dmg *.zip *.exe *.AppImage; do
+              [ -f "$file" ] && echo "| $file (download) | $(( $(wc -c < "$file") / 1048576 )) MB |"
+            done
+            for dir in mac/*.app mac-arm64/*.app win-unpacked linux-unpacked; do
+              [ -d "$dir" ] && echo "| $dir (installed) | $(du -sm "$dir" | cut -f1) MB |"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       # Smoke the artifacts users install, not the unpacked build folders.
       # Installers can change the app's files: the Windows NSIS archive
       # turned links into copies, and only the installed app failed to start.
@@ -173,9 +196,40 @@ jobs:
             apps/commons-desktop/release/*.blockmap
           if-no-files-found: warn
 
+  # The macOS build job runs on Apple silicon, so it can only launch the arm64
+  # app. Install and launch the Intel disk image on an Intel Mac as well.
+  smoke-intel-mac:
+    needs: build
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-macOS
+          path: desktop-release
+      - name: Smoke test installed Intel macOS desktop
+        timeout-minutes: 8
+        run: |
+          mount="$RUNNER_TEMP/agent-commons-dmg"
+          applications="$RUNNER_TEMP/Applications"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" desktop-release/Agent-Commons-mac-x64.dmg
+          mkdir -p "$applications"
+          ditto "$mount/Agent Commons.app" "$applications/Agent Commons.app"
+          hdiutil detach "$mount"
+          file "$applications/Agent Commons.app/Contents/MacOS/Agent Commons"
+          COMMONS_DESKTOP_SMOKE_EXECUTABLE="$applications/Agent Commons.app/Contents/MacOS/Agent Commons" pnpm --filter commons-desktop smoke
+
   release:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
-    needs: build
+    needs: [build, smoke-intel-mac]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
