@@ -1,5 +1,11 @@
 # @agent-commons/sdk
 
+## 0.8.0
+
+### Minor Changes
+
+- 5534481: Add Commons app grants, icons, external connections, storage settings and pinned layouts to `uiPlugins`, and expand the app capability and manifest types.
+
 ## 0.7.0
 
 ### Minor Changes
