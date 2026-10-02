@@ -9,6 +9,12 @@
 ;
 ; Close the app as usual, then delete the previous Commons app bundle with a
 ; delete that handles long paths, before the old uninstaller runs.
+
+; Defining customCheckAppRunning stops electron-builder from including what its
+; default check uses (see allowOnlyOneInstallerInstance.nsh), so include it here.
+!include "getProcessInfo.nsh"
+Var pid
+
 !macro customCheckAppRunning
   !insertmacro IS_POWERSHELL_AVAILABLE
   !insertmacro _CHECK_APP_RUNNING
