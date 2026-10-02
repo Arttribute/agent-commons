@@ -1,0 +1,71 @@
+---
+title: Library and canvas
+description: Open any file full screen, mark exactly what you mean, and let an agent change it.
+---
+
+The Library holds every file you upload or an agent creates: documents, decks,
+spreadsheets, images, video, audio, apps, and Mermaid diagrams. Opening a file
+shows it in the canvas, with the rest of the Library listed beside it.
+
+## The canvas
+
+The file fills the page. Controls float around it:
+
+- Top left: the file name (rename, download), and buttons for **Notes**,
+  **History**, and **Creative tools**. Paged files add a page or slide list;
+  apps and diagrams add a source view.
+- Top right: zoom, share link, download, close.
+- Bottom: tools that fit the file, such as pinning a note on a picture or
+  trimming a video.
+- Bottom right: a chat box. It talks to Commons Copilot by default; pick any
+  of your agents from the avatar. Sending a message opens the chat beside the
+  file, and the chat stays open as you move between files.
+
+## Notes
+
+A note marks one exact place and says something about it. How you make one
+depends on the file:
+
+| File | Mark it by |
+|---|---|
+| PDF, Word, Markdown, text | Selecting text. The note keeps the exact quote. |
+| Images, slides, PDF pages | Pinning a point or drawing an area. |
+| Video | Pinning a point or area on a frame, or selecting a range on the timeline. |
+| Audio | Selecting a range on the timeline. |
+| Spreadsheets | Selecting cells. The note keeps the sheet, range, and values. |
+| Apps and websites | Pinning an element in the live preview. The note keeps its selector, text, and attributes. |
+| Code and diagram source | Selecting lines. |
+| Mermaid diagrams | Pinning a node. |
+
+New notes are added to your next chat message as chips. Remove a chip to leave
+a note out, or add older notes from the Notes list. The agent receives each
+note's exact location. Vision models also receive a picture of the marked
+area or frame.
+
+## History
+
+Every change an agent makes is a new version. **History** lists the versions
+and who made them; select one to make it current. **Sources** lists the files
+that went into the artifact, such as reference images or music options, which
+you can play and swap in.
+
+## Video and audio
+
+The timeline shows frames (or the waveform), notes, and scene changes. Drag to
+select a range, then add a note, trim to it, or cut it. **Transcribe** adds a
+timestamped transcript lane. Arrow keys step one frame; Shift steps a second;
+I and O set the range.
+
+Agents edit clips with exact operations: trim, cut, join or insert clips, add
+or replace sound, volume, speed, crop, resize, fades, captions, and blurring an
+area. Every edit is a new version.
+
+## Creative tools
+
+Choose the model and settings agents use for images, video, speech, and music
+on this file. Leave a type on **Let the agent choose** to use the default.
+
+## Local mode
+
+In Local mode files open and chat works with your Local agents. Notes and
+version history are saved in Commons Cloud.
