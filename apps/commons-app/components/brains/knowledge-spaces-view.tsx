@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BookOpen,
   Bot,
+  Brain,
   Check,
   ChevronDown,
   ChevronRight,
@@ -26,12 +27,12 @@ import {
   PanelRightOpen,
   Plus,
   Search,
-  Share2,
+  Settings2,
   Tags,
   Trash2,
 } from "lucide-react";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
-import { PageTitle } from "@/components/layout/page-header";
+import { CreateButton, PageTitle } from "@/components/layout/page-header";
 import { CommonsAppsBar } from "@/components/plugins/apps-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { useAgents } from "@/hooks/agents/use-agents";
@@ -994,17 +1001,25 @@ export function KnowledgeSpacesView() {
               </div>
               <CommonsAppsBar />
               {canManage && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAccessOpen(true)}
-                >
-                  <Share2 className="mr-1.5 h-4 w-4" /> {local ? "Agent access" : "Share"}
-                </Button>
+                <TooltipProvider delayDuration={150}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => setAccessOpen(true)}
+                        aria-label="Configure space"
+                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-card transition-colors hover:bg-muted"
+                      >
+                        <Settings2 className="h-4 w-4" strokeWidth={1.75} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs">
+                      Configure space
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
-              <Button size="sm" onClick={() => setCreateSpaceOpen(true)}>
-                <Plus className="mr-1.5 h-4 w-4" /> New space
-              </Button>
+              <CreateButton label="New Knowledge Space" onClick={() => setCreateSpaceOpen(true)} />
             </div>
           </header>
 
@@ -1036,8 +1051,8 @@ export function KnowledgeSpacesView() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button className="flex h-10 w-full items-center gap-2 rounded-lg px-2 text-left hover:bg-stone-50">
-                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-teal-100 text-teal-800">
-                        <Network className="h-3.5 w-3.5" />
+                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-stone-100 text-stone-700">
+                        <Brain className="h-4 w-4" strokeWidth={1.75} />
                       </span>
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">
                         {activeSpace?.name || "Knowledge Spaces"}

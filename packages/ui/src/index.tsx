@@ -102,6 +102,7 @@ export type {
   CanvasInteraction,
   CanvasRecording,
   CanvasMoment,
+  InspectedElement,
 } from "./compiled-frame";
 export type AnnotationGeometry = {
   x: number;

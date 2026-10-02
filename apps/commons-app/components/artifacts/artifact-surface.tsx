@@ -10,16 +10,21 @@ import {
   ChevronRight,
   Code2,
   Download,
-  Eye,
   ExternalLink,
   Loader2,
   Maximize2,
-  Minimize2,
+  MoreHorizontal,
   MousePointer2,
   PencilLine,
   RefreshCw,
   X,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ArtifactIcon } from "./artifact-icon";
@@ -30,11 +35,14 @@ import {
 import {
   artifactKind,
   artifactLabel,
+  isMermaid,
   prettyBytes,
   type ArtifactPreview,
   type ArtifactRef,
 } from "@/lib/artifacts";
 import { cn } from "@/lib/utils";
+import { apiErrorMessage } from "@/lib/api-error";
+import { MermaidDiagram } from "./mermaid-diagram";
 
 export function ArtifactSurface({
   artifact,
@@ -48,7 +56,6 @@ export function ArtifactSurface({
   const [preview, setPreview] = useState<ArtifactPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [fullscreen, setFullscreen] = useState(false);
   const surfaceRef = useRef<HTMLElement>(null);
   const [view, setView] = useState<"preview" | "source" | "provenance">(
     "preview",
@@ -70,9 +77,7 @@ export function ArtifactSurface({
       );
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(
-          data?.message || data?.error || "Could not open this artifact",
-        );
+        throw new Error(apiErrorMessage(data, "Could not open this artifact"));
       }
       setPreview(data?.data ?? data);
     } catch (cause) {
@@ -99,32 +104,6 @@ export function ArtifactSurface({
     };
   }, [load]);
 
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setFullscreen(document.fullscreenElement === surfaceRef.current);
-    };
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () =>
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, []);
-
-  async function toggleFullscreen() {
-    if (document.fullscreenElement === surfaceRef.current) {
-      await document.exitFullscreen();
-      return;
-    }
-    if (fullscreen) {
-      setFullscreen(false);
-      return;
-    }
-    try {
-      await surfaceRef.current?.requestFullscreen({ navigationUI: "hide" });
-    } catch {
-      // Preserve the in-app fullscreen mode when the browser denies the native API.
-      setFullscreen(true);
-    }
-  }
-
   const loadProvenance = useCallback(async () => {
     if (provenance || provenanceAbortRef.current) return;
     const controller = new AbortController();
@@ -142,9 +121,7 @@ export function ArtifactSurface({
       );
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(
-          data?.message || data?.error || "Could not load provenance",
-        );
+        throw new Error(apiErrorMessage(data, "Could not load provenance"));
       }
       setProvenance(data?.data ?? data);
     } catch (cause) {
@@ -186,157 +163,96 @@ export function ArtifactSurface({
     [artifact, preview],
   );
 
+  const hasSource = Boolean(
+    preview && (preview.kind === "code" || preview.kind === "app" || preview.codeProject),
+  );
+
   return (
     <aside
       ref={surfaceRef}
-      className={cn(
-        "relative z-40 flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-l border-stone-200 bg-stone-50 shadow-2xl max-lg:absolute max-lg:inset-0 max-lg:w-full",
-        fullscreen
-          ? "absolute inset-0 w-full"
-          : "w-[min(760px,58vw)] min-w-[460px]",
-      )}
+      className="relative z-40 flex h-full min-h-0 w-[min(720px,56vw)] min-w-[420px] shrink-0 flex-col overflow-hidden border-l border-border bg-white shadow-floating max-lg:absolute max-lg:inset-0 max-lg:w-full max-lg:min-w-0"
     >
-      <header
-        className={cn(
-          "flex h-14 shrink-0 items-center gap-3 border-b border-stone-200 bg-white px-3",
-          fullscreen &&
-            view === "preview" &&
-            artifactKind(resolved) === "presentation" &&
-            "hidden",
-        )}
-      >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-100 text-stone-600">
-          <ArtifactIcon artifact={resolved} className="h-4.5 w-4.5" />
-        </span>
-        <div className="min-w-0">
+      <header className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border/70 px-3">
+        <ArtifactIcon artifact={resolved} className="ml-1 h-4 w-4 shrink-0 text-stone-500" strokeWidth={1.75} />
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-stone-900">
             {resolved.name || "Artifact"}
           </p>
-          <p className="flex items-center gap-1.5 text-[11px] text-stone-500">
-            <span>{artifactLabel(resolved)}</span>
-            {resolved.sizeBytes ? (
-              <>
-                <span className="text-stone-300">·</span>
-                <span>{prettyBytes(resolved.sizeBytes)}</span>
-              </>
-            ) : null}
-            {preview?.status ? (
-              <>
-                <span className="text-stone-300">·</span>
-                <span className="capitalize">{preview.status}</span>
-              </>
-            ) : null}
+          <p className="truncate text-xs text-stone-500">
+            {[artifactLabel(resolved), resolved.sizeBytes ? prettyBytes(resolved.sizeBytes) : null]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-0.5">
-          <Link
-            href={`/studio/canvas/${encodeURIComponent(artifact.fileId)}`}
-            title="Open in Canvas"
-            className="mr-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-stone-900 px-2.5 text-[11px] font-medium text-white hover:bg-stone-800"
-          >
-            <PencilLine className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Open in Canvas</span>
-          </Link>
+        <div className="flex shrink-0 items-center gap-0.5">
           <ToolbarButton
-            label="View provenance"
+            label={view === "provenance" ? "Hide provenance" : "Provenance"}
+            active={view === "provenance"}
             onClick={() => {
-              setView("provenance");
+              setView((current) => (current === "provenance" ? "preview" : "provenance"));
               void loadProvenance();
             }}
           >
-            <span className="text-[10px] font-semibold">Pr</span>
+            <BadgeCheck className="h-4 w-4" />
           </ToolbarButton>
-          {onRevise && (
-            <ToolbarButton
-              label="Revise with agent"
-              onClick={() => onRevise(resolved)}
-            >
-              <PencilLine className="h-4 w-4" />
-            </ToolbarButton>
-          )}
-          {preview?.download?.url && (
-            <>
-              <a
-                href={preview.download.url}
-                download={preview.name}
-                title="Download original"
-                className="flex h-8 w-8 items-center justify-center rounded-md text-stone-500 hover:bg-stone-100 hover:text-stone-900"
-              >
-                <Download className="h-4 w-4" />
-              </a>
-              <a
-                href={preview.inline?.url || preview.download.url}
-                target="_blank"
-                rel="noreferrer"
-                title="Open in a new tab"
-                className="flex h-8 w-8 items-center justify-center rounded-md text-stone-500 hover:bg-stone-100 hover:text-stone-900"
-              >
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </>
-          )}
-          <ToolbarButton
-            label={fullscreen ? "Exit full screen" : "Full screen"}
-            onClick={() => void toggleFullscreen()}
+          <Link
+            href={`/library/${encodeURIComponent(artifact.fileId)}`}
+            title="Open in canvas"
+            aria-label="Open in canvas"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
           >
-            {fullscreen ? (
-              <Minimize2 className="h-4 w-4" />
-            ) : (
-              <Maximize2 className="h-4 w-4" />
-            )}
-          </ToolbarButton>
-          <ToolbarButton label="Close artifact" onClick={onClose}>
+            <Maximize2 className="h-4 w-4" />
+          </Link>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="More actions"
+                title="More actions"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {hasSource && (
+                <DropdownMenuItem onSelect={() => setView((current) => (current === "source" ? "preview" : "source"))}>
+                  <Code2 className="mr-2 h-4 w-4" />
+                  {view === "source" ? "Show preview" : "View source"}
+                </DropdownMenuItem>
+              )}
+              {onRevise && (
+                <DropdownMenuItem onSelect={() => onRevise(resolved)}>
+                  <PencilLine className="mr-2 h-4 w-4" /> Revise with agent
+                </DropdownMenuItem>
+              )}
+              {preview?.download?.url && (
+                <DropdownMenuItem asChild>
+                  <a href={preview.download.url} download={preview.name}>
+                    <Download className="mr-2 h-4 w-4" /> Download
+                  </a>
+                </DropdownMenuItem>
+              )}
+              {preview?.download?.url && (
+                <DropdownMenuItem asChild>
+                  <a href={preview.inline?.url || preview.download.url} target="_blank" rel="noreferrer">
+                    <ExternalLink className="mr-2 h-4 w-4" /> Open in new tab
+                  </a>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <ToolbarButton label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
           </ToolbarButton>
         </div>
       </header>
 
-      {!loading && !error && preview ? (
-        <nav
-          className={cn(
-            "flex h-10 shrink-0 items-center gap-1 border-b border-stone-200 bg-white px-3",
-            fullscreen &&
-              view === "preview" &&
-              artifactKind(resolved) === "presentation" &&
-              "hidden",
-          )}
-        >
-          <SurfaceTab
-            active={view === "preview"}
-            onClick={() => setView("preview")}
-            icon={Eye}
-          >
-            Preview
-          </SurfaceTab>
-          {preview.kind === "code" ||
-          preview.kind === "app" ||
-          preview.codeProject ? (
-            <SurfaceTab
-              active={view === "source"}
-              onClick={() => setView("source")}
-              icon={Code2}
-            >
-              Source
-            </SurfaceTab>
-          ) : null}
-          <SurfaceTab
-            active={view === "provenance"}
-            onClick={() => {
-              setView("provenance");
-              void loadProvenance();
-            }}
-            icon={BadgeCheck}
-          >
-            Provenance
-          </SurfaceTab>
-        </nav>
-      ) : null}
-
       {loading ? (
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <div className="text-center text-stone-500">
-            <Loader2 className="mx-auto h-5 w-5 animate-spin" />
-            <p className="mt-2 text-xs">Preparing preview…</p>
+          <div className="flex flex-col items-center gap-2 text-stone-400">
+            <ArtifactIcon artifact={resolved} className="h-10 w-10 animate-pulse" strokeWidth={1.25} />
+            <span className="text-xs">{artifactLabel(resolved)}</span>
           </div>
         </div>
       ) : error ? (
@@ -349,7 +265,7 @@ export function ArtifactSurface({
             <button
               type="button"
               onClick={load}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-medium shadow-sm hover:bg-stone-50"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-medium shadow-card hover:bg-stone-50"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Try again
@@ -379,6 +295,13 @@ export function ArtifactSurface({
 
 function ArtifactPreviewBody({ preview }: { preview: ArtifactPreview }) {
   const kind = artifactKind(preview);
+  if (isMermaid(preview) && (preview.content || preview.textPreview)) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-white p-8">
+        <MermaidDiagram source={preview.content || preview.textPreview || ""} className="flex justify-center" />
+      </div>
+    );
+  }
   const inlineUrl = preview.inline?.url || preview.download?.url;
   const visualPages = (preview.artifacts || []).filter(
     (artifact) => artifact.url && artifact.kind !== "image",
@@ -703,32 +626,6 @@ function SpreadsheetPreview({ preview }: { preview: ArtifactPreview }) {
   );
 }
 
-function SurfaceTab({
-  active,
-  onClick,
-  icon: Icon,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: typeof Eye;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-stone-500 hover:bg-stone-100 hover:text-stone-900",
-        active && "bg-stone-100 text-stone-900",
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      {children}
-    </button>
-  );
-}
-
 function CenteredMessage({
   message,
   loading = false,
@@ -1024,10 +921,12 @@ function codeLanguage(fileName: string) {
 function ToolbarButton({
   label,
   onClick,
+  active,
   children,
 }: {
   label: string;
   onClick: () => void;
+  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -1035,8 +934,12 @@ function ToolbarButton({
       type="button"
       title={label}
       aria-label={label}
+      aria-pressed={active}
       onClick={onClick}
-      className="flex h-8 w-8 items-center justify-center rounded-md text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900",
+        active && "bg-stone-100 text-stone-900",
+      )}
     >
       {children}
     </button>

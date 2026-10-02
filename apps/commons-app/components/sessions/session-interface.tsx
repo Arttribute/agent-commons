@@ -98,6 +98,13 @@ interface SessionInterfaceImprovedProps {
   uiContext?: Record<string, unknown>;
   externalPrompt?: ExternalComposerPrompt | null;
   viewMode?: "chat" | "trajectory";
+  /** Context chips shown above the composer's message field. */
+  composerHeader?: React.ReactNode;
+  /** Called once a message is sent from the composer. */
+  onComposerSent?: () => void;
+  /** Context appended to messages in Private Local (see ChatInputBox). */
+  composerLocalContext?: string;
+  composerPlaceholder?: string;
 }
 
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
@@ -157,6 +164,10 @@ export default function SessionInterfaceImproved({
   uiContext,
   externalPrompt,
   viewMode = "chat",
+  composerHeader,
+  onComposerSent,
+  composerLocalContext,
+  composerPlaceholder,
 }: SessionInterfaceImprovedProps) {
   const { mode } = useWorkspaceMode();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -463,6 +474,10 @@ export default function SessionInterfaceImproved({
       allowComputer={allowComputer}
       uiContext={uiContext}
       externalPrompt={composerPrompt}
+      headerSlot={composerHeader}
+      onSent={onComposerSent}
+      localContext={composerLocalContext}
+      placeholder={composerPlaceholder}
     />
   );
 
@@ -578,7 +593,6 @@ export default function SessionInterfaceImproved({
                       </div>
                     )}
                     {conversationAddon}
-                  <InlineApprovals sessionId={sessionId} />
                     <InlineApprovals sessionId={sessionId} />
                   </div>
                   <div ref={bottomRef} />

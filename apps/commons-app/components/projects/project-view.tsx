@@ -8,14 +8,12 @@ import {
   Clock,
   Cloud,
   FolderInput,
-  Eye,
   GitBranch,
   HardDriveUpload,
   Laptop,
   LibraryBig,
   Loader2,
   Lock,
-  MessageSquare,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -67,6 +65,7 @@ import { StudioAgentLauncher } from "@/components/studio/agent-launcher";
 import { LibraryPickerDialog } from "@/components/sessions/chat/library-picker-dialog";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { InfoHint } from "@/components/ui/info-hint";
+import { ProjectNavigationToggle } from "./project-navigation";
 
 type ProjectSession = Awaited<ReturnType<typeof projectsApi.sessions>>[number];
 
@@ -153,6 +152,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
   return (
     <div className="mx-auto w-full max-w-6xl px-6 pb-8 pt-5">
       <nav className="flex items-center gap-1.5 text-sm text-muted-foreground" aria-label="Breadcrumb">
+        <ProjectNavigationToggle />
         <Link href="/projects" className="hover:text-foreground">Projects</Link>
         <span className="text-muted-foreground/50">/</span>
         <span className="truncate text-foreground">{project.name}</span>
@@ -235,10 +235,9 @@ export function ProjectView({ projectId }: { projectId: string }) {
                 </div>
               </>
             ) : (
-              <div className="mt-10 flex flex-col items-center text-center text-sm text-muted-foreground">
-                <MessageSquare className="mb-3 h-5 w-5 text-muted-foreground/60" strokeWidth={1.75} />
+              <p className="mt-10 text-center text-sm text-muted-foreground">
                 Agents use the same instructions and knowledge every time you chat in this project.
-              </div>
+              </p>
             )}
           </section>
         </div>
@@ -541,7 +540,20 @@ function ContextSection({ project, local, onChange, onReload }: {
           {project.files.length > 0 && (
             <div className="grid grid-cols-2 gap-2">
               {project.files.map((file) => (
-                <div key={file.itemId} className="group relative flex min-h-[92px] flex-col rounded-lg border border-border p-2.5">
+                <div
+                  key={file.itemId}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setPreviewFile(file)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setPreviewFile(file);
+                    }
+                  }}
+                  aria-label={`Open ${file.name}`}
+                  className="group relative flex min-h-[92px] cursor-pointer flex-col rounded-lg border border-border p-2.5 transition-colors hover:border-foreground/20 hover:bg-muted/30"
+                >
                   <span className="line-clamp-2 pr-4 text-xs font-medium leading-snug">{file.name}</span>
                   {file.sizeBytes ? <span className="mt-1 text-[11px] text-muted-foreground">{prettyBytes(file.sizeBytes)}</span> : null}
                   <span className="mt-auto flex items-center gap-1 pt-2">
@@ -550,14 +562,19 @@ function ContextSection({ project, local, onChange, onReload }: {
                     </span>
                     {local && file.keepOnDevice && <Lock className="h-3 w-3 text-muted-foreground" aria-label="Never leaves this computer" />}
                   </span>
-                  <button type="button" onClick={() => setPreviewFile(file)} className="absolute bottom-1 right-1 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`Preview ${file.name}`} title="Preview document"><Eye className="h-3.5 w-3.5" /></button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <button type="button" className="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted group-hover:opacity-100 data-[state=open]:opacity-100" aria-label={`${file.name} actions`}>
+                      <button
+                        type="button"
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        className="absolute right-1 top-1 rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                        aria-label={`${file.name} actions`}
+                      >
                         <MoreHorizontal className="h-3.5 w-3.5" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuContent align="end" className="w-52" onClick={(event) => event.stopPropagation()}>
                       {local && (
                         <DropdownMenuCheckboxItem
                           checked={Boolean(file.keepOnDevice)}

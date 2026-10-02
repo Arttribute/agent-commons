@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -92,7 +92,19 @@ export function KnowledgeTree({
     () => buildTree(folders, documents),
     [documents, folders],
   );
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Folders start closed; the folders above the open note open with it.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const path = documents.find((document) => document.documentId === selectedId)?.path;
+    if (!path) return;
+    const parts = path.split("/").slice(0, -1);
+    if (!parts.length) return;
+    setExpanded((current) => {
+      const next = new Set(current);
+      parts.forEach((_, index) => next.add(parts.slice(0, index + 1).join("/")));
+      return next.size === current.size ? current : next;
+    });
+  }, [documents, selectedId]);
   const [editing, setEditing] = useState<EditingItem>();
   const [dragging, setDragging] = useState<DragItem>();
   const sensors = useSensors(
@@ -144,8 +156,8 @@ export function KnowledgeTree({
         <TreeLevel
           node={tree}
           depth={0}
-          collapsed={collapsed}
-          setCollapsed={setCollapsed}
+          expanded={expanded}
+          setExpanded={setExpanded}
           editing={editing}
           setEditing={setEditing}
           finishEditing={finishEditing}
@@ -176,8 +188,8 @@ export function KnowledgeTree({
 function TreeLevel({
   node,
   depth,
-  collapsed,
-  setCollapsed,
+  expanded,
+  setExpanded,
   editing,
   setEditing,
   finishEditing,
@@ -190,8 +202,8 @@ function TreeLevel({
 }: {
   node: TreeNode;
   depth: number;
-  collapsed: Set<string>;
-  setCollapsed: React.Dispatch<React.SetStateAction<Set<string>>>;
+  expanded: Set<string>;
+  setExpanded: React.Dispatch<React.SetStateAction<Set<string>>>;
   editing?: EditingItem;
   setEditing: React.Dispatch<React.SetStateAction<EditingItem | undefined>>;
   finishEditing: () => Promise<void>;
@@ -212,7 +224,7 @@ function TreeLevel({
     <div className="space-y-0.5">
       {childFolders.map((child) => {
         if (!child.folder) return null;
-        const closed = collapsed.has(child.path);
+        const closed = !expanded.has(child.path);
         return (
           <div key={child.folder.folderId}>
             <FolderRow
@@ -230,9 +242,10 @@ function TreeLevel({
               setEditing={setEditing}
               finishEditing={finishEditing}
               onToggle={() =>
-                setCollapsed((current) => {
+                setExpanded((current) => {
                   const next = new Set(current);
-                  closed ? next.delete(child.path) : next.add(child.path);
+                  if (closed) next.add(child.path);
+                  else next.delete(child.path);
                   return next;
                 })
               }
@@ -243,8 +256,8 @@ function TreeLevel({
               <TreeLevel
                 node={child}
                 depth={depth + 1}
-                collapsed={collapsed}
-                setCollapsed={setCollapsed}
+                expanded={expanded}
+                setExpanded={setExpanded}
                 editing={editing}
                 setEditing={setEditing}
                 finishEditing={finishEditing}

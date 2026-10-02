@@ -24,6 +24,7 @@ import { projectsApi, useProjects } from "@/hooks/use-projects";
 import { isLockedStudioDetailRoute, navigationSection } from "@/lib/workspace-routes";
 import { WorkspaceModeSwitch } from "./workspace-mode-switch";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { hasSecondaryNav, useSecondaryNav } from "@/stores/secondary-nav-store";
 
 /** Routes where the sidebar starts collapsed to give the page room. */
 function isFocusRoute(pathname: string) {
@@ -46,9 +47,22 @@ export function DashboardSideBar({ username }: { username: string }) {
 
   const isLockedDetailRoute = isLockedStudioDetailRoute(pathname);
   const focusRoute = isFocusRoute(pathname);
+  // Library files and projects show their own list; the main sidebar stays a
+  // rail beside it, and opening one closes the other.
+  const secondaryRoute = hasSecondaryNav(pathname);
+  const mainExpanded = useSecondaryNav((state) => state.mainExpanded);
+  const setMainExpanded = useSecondaryNav((state) => state.setMainExpanded);
   useEffect(() => { setFocusExpanded(false); }, [pathname]);
-  const sidebarOpen = isLockedDetailRoute ? false : focusRoute ? focusExpanded : isOpen;
-  const setOpen = (open: boolean) => (focusRoute ? setFocusExpanded(open) : setIsOpen(open));
+  useEffect(() => { if (secondaryRoute) setMainExpanded(false); }, [pathname, secondaryRoute, setMainExpanded]);
+  const sidebarOpen = isLockedDetailRoute
+    ? false
+    : secondaryRoute
+      ? mainExpanded
+      : focusRoute
+        ? focusExpanded
+        : isOpen;
+  const setOpen = (open: boolean) =>
+    secondaryRoute ? setMainExpanded(open) : focusRoute ? setFocusExpanded(open) : setIsOpen(open);
 
   const currentSessionId = useMemo(() => pathname.match(/^\/sessions\/([^/]+)/)?.[1], [pathname]);
 

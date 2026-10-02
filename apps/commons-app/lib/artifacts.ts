@@ -193,7 +193,7 @@ export function collectArtifactRefs(value: unknown): ArtifactRef[] {
   return [...found.values()];
 }
 
-const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|css|scss|sql|sh|ya?ml|toml|json|xml|html?|vue|svelte)$/i;
+const CODE_FILE = /\.(?:tsx?|jsx?|mjs|cjs|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|css|scss|sql|sh|ya?ml|toml|json|xml|html?|vue|svelte|mmd|mermaid)$/i;
 
 /** Source files and code projects, which get an icon instead of raw text. */
 export function isCodeArtifact(artifact: Pick<ArtifactRef, "name" | "mimeType" | "kind">) {
@@ -206,4 +206,12 @@ export function isCodeArtifact(artifact: Pick<ArtifactRef, "name" | "mimeType" |
 export function isPagedDocument(artifact: Pick<ArtifactRef, "name" | "mimeType" | "kind">) {
   const kind = artifactKind(artifact);
   return kind === "document" || kind === "pdf" || kind === "presentation";
+}
+
+/** Mermaid diagram sources: .mmd/.mermaid files or a mermaid MIME type. */
+export function isMermaid(artifact: Pick<ArtifactRef, "name" | "mimeType">) {
+  return (
+    /mermaid/i.test(artifact.mimeType || "") ||
+    /\.(mmd|mermaid)$/i.test(artifact.name || "")
+  );
 }

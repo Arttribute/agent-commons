@@ -396,3 +396,14 @@ body {
     transform: scaleX(1);
   }
 }
+
+/* Canvas text notes, painted with the CSS Custom Highlight API. */
+::highlight(canvas-note) {
+  background-color: rgb(253 224 71 / 0.5);
+}
+::highlight(canvas-note-focus) {
+  background-color: rgb(251 191 36 / 0.7);
+}
+::highlight(canvas-note-resolved) {
+  background-color: rgb(214 211 209 / 0.45);
+}

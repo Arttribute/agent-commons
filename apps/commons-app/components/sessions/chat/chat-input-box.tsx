@@ -154,6 +154,11 @@ export default function ChatInputBox({
   onInitialLaunchSent,
   projectId,
   launching = false,
+  headerSlot,
+  footerEnd,
+  onSent,
+  localContext,
+  hideThinking = false,
 }: {
   agentId: string;
   sessionId: string;
@@ -183,6 +188,18 @@ export default function ChatInputBox({
   allowComputer?: boolean;
   uiContext?: Record<string, unknown>;
   externalPrompt?: ExternalComposerPrompt | null;
+  /** Context chips rendered above the message field (e.g. attached notes). */
+  headerSlot?: React.ReactNode;
+  /** Controls rendered before the send button (e.g. an agent picker). */
+  footerEnd?: React.ReactNode;
+  /** Called once a message is sent or handed to {@link onLaunch}. */
+  onSent?: () => void;
+  /**
+   * Text appended to the outgoing message in Private Local, whose runtime
+   * does not read uiContext. Cloud runs receive the same context server-side.
+   */
+  localContext?: string;
+  hideThinking?: boolean;
 }) {
   const { mode } = useWorkspaceMode();
   const local = mode === "private-local";
@@ -764,6 +781,7 @@ export default function ChatInputBox({
       setInputText("");
       setAttachments([]);
       setKnowledgeSpaceIds([]);
+      onSent?.();
       return;
     }
 
@@ -793,6 +811,7 @@ export default function ChatInputBox({
     activityArgsRef.current.clear();
     activeRunSessionRef.current = sessionId;
     markRunning(sessionId);
+    onSent?.();
 
     addMessage({
       role: "human",
@@ -824,7 +843,10 @@ export default function ChatInputBox({
         uiContext: !local && window.agentCommonsDesktop
           ? { ...uiContext, desktopMode: "cloud" }
           : uiContext,
-        messages: [{ role: "user", content: userMessage }],
+        messages: [{
+          role: "user",
+          content: local && localContext ? `${userMessage}\n\n${localContext}` : userMessage,
+        }],
         attachments: messageAttachments.map((attachment) => ({ fileId: attachment.fileId })),
         computerRequest,
         knowledgeSpaceIds: selectedKnowledgeSpaceIds,
@@ -1132,6 +1154,7 @@ export default function ChatInputBox({
           </Link>
         </div>
       )}
+      {headerSlot}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 px-3 pt-3">
           {attachments.map((attachment) => (
@@ -1375,7 +1398,8 @@ export default function ChatInputBox({
               </div>
             )}
             <div className="flex items-center gap-1">
-              {(
+              {footerEnd}
+              {!hideThinking && (
                 <div className="relative">
                   <button
                     type="button"
