@@ -198,6 +198,14 @@ jobs:
         if: github.ref_name == 'main'
         run: pnpm install --frozen-lockfile
 
+      # changeset publish tags each release with an annotated tag, which needs
+      # a git identity, and ignores a failed tag.
+      - name: Configure git for release tags
+        if: github.ref_name == 'main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       # changeset publish skips versions npm already has, so pushes without a
       # new version publish nothing.
       - name: Publish new package versions
