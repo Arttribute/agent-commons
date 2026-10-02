@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   backendAuthHeaders,
+  backendServiceAuthRetryAfterMs,
   invalidateBackendServiceAuthCache,
 } from "@/lib/api-headers";
 import { auth } from "@/auth";
@@ -36,37 +37,77 @@ export async function proxyBackend(
     }
     const hasBody = options.body !== undefined;
     const body = hasBody ? JSON.stringify(options.body) : undefined;
-    const request = async (preferUserToken = false) =>
-      fetch(`${baseUrl}${path}`, {
+    // A request without a credential can only come back as the gateway's
+    // 401, which reads as a sign-in problem. Skip it and say what happened.
+    const request = async (preferUserToken = false) => {
+      const authHeaders = await backendAuthHeaders({ session, preferUserToken });
+      if (!authHeaders.Authorization) return null;
+      return fetch(`${baseUrl}${path}`, {
         method: options.method ?? "GET",
         cache: options.cache ?? "no-store",
         headers: {
           ...(hasBody ? { "Content-Type": "application/json" } : {}),
-          ...(await backendAuthHeaders({ session, preferUserToken })),
+          ...authHeaders,
         },
         body,
       });
+    };
 
     // Service-token caches and upstream key rotation can briefly disagree.
     // Remint the service token first, then fall back to the user's OIDC token.
     let res = await request();
-    if (res.status === 401) {
+    if (res?.status === 401) {
       invalidateBackendServiceAuthCache();
       res = await request();
     }
     if (
-      res.status === 401 &&
+      (!res || res.status === 401) &&
       session.accessToken &&
       !session.accessTokenError
     ) {
       res = await request(true);
     }
+    if (!res) return credentialUnavailable();
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));
+    const retryAfter = res.headers.get("retry-after");
     return NextResponse.json(data, {
       status: res.status,
-      headers: { "Cache-Control": "no-store" },
+      headers: {
+        "Cache-Control": "no-store",
+        ...(retryAfter ? { "Retry-After": retryAfter } : {}),
+      },
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+function credentialUnavailable() {
+  const retryAfterMs = backendServiceAuthRetryAfterMs();
+  if (retryAfterMs > 0) {
+    const retryAfter = Math.ceil(retryAfterMs / 1000);
+    return NextResponse.json(
+      {
+        error: {
+          type: "rate_limit_error",
+          message:
+            "Agent Commons is receiving a lot of requests. Retrying shortly.",
+          retryAfter,
+        },
+      },
+      {
+        status: 429,
+        headers: { "Cache-Control": "no-store", "Retry-After": String(retryAfter) },
+      },
+    );
+  }
+  return NextResponse.json(
+    {
+      error: {
+        type: "service_unavailable",
+        message: "Agent Commons could not authorize this request. Try again in a moment.",
+      },
+    },
+    { status: 503, headers: { "Cache-Control": "no-store" } },
+  );
 }

@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import { refreshBlocked, refreshFailure } from "@/lib/token-refresh";
 
 const issuer = process.env.COMMONS_IDENTITY_ISSUER;
 const clientId = process.env.COMMONS_IDENTITY_CLIENT_ID;
@@ -68,7 +69,11 @@ async function exchangeIdentitySessionToken(identitySessionToken: string) {
     headers: { Authorization: `Bearer ${identitySessionToken}` },
     cache: "no-store",
   });
-  if (!response.ok) throw new Error("Commons Identity authorization expired.");
+  if (!response.ok) {
+    throw Object.assign(new Error("Commons Identity authorization expired."), {
+      response,
+    });
+  }
   const data = (await response.json()) as { token?: string };
   if (!data.token) throw new Error("Commons Identity did not return an access token.");
   const claims = decodeJwtPayload(data.token);
@@ -112,9 +117,10 @@ async function performAccessTokenRefresh(token: any) {
         identityUserId: exchanged.user.id,
         workspaceId: exchanged.user.workspaceId ?? token.workspaceId,
         accessTokenError: undefined,
+        refreshRetryAt: undefined,
       };
-    } catch {
-      return { ...token, accessTokenError: "RefreshAccessTokenError" };
+    } catch (error) {
+      return refreshFailure(token, (error as { response?: Response }).response);
     }
   }
   if (!issuer || !token.refreshToken) return token;
@@ -131,7 +137,7 @@ async function performAccessTokenRefresh(token: any) {
           : {}),
       }),
     });
-    if (!response.ok) return { ...token, accessTokenError: "RefreshAccessTokenError" };
+    if (!response.ok) return refreshFailure(token, response);
     const refreshed = (await response.json()) as {
       access_token: string;
       expires_in?: number;
@@ -143,13 +149,15 @@ async function performAccessTokenRefresh(token: any) {
       refreshToken: refreshed.refresh_token ?? token.refreshToken,
       accessTokenExpiresAt: Date.now() + (refreshed.expires_in ?? 3600) * 1000,
       accessTokenError: undefined,
+      refreshRetryAt: undefined,
     };
   } catch {
-    return { ...token, accessTokenError: "RefreshAccessTokenError" };
+    return refreshFailure(token);
   }
 }
 
 async function refreshAccessToken(token: any) {
+  if (refreshBlocked(token)) return token;
   const key = String(token.identitySessionToken ?? token.refreshToken ?? "");
   if (!key) return token;
   const existing = refreshFlights.get(key);
@@ -249,6 +257,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (identity?.name) token.name = identity.name;
       } else if (account) {
         token.authSessionVersion = AUTH_SESSION_VERSION;
+        token.accessTokenError = undefined;
+        token.refreshRetryAt = undefined;
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.accessTokenExpiresAt = account.expires_at

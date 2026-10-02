@@ -6,6 +6,7 @@ import Providers from "@/Providers";
 import { AuthProvider } from "@/context/AuthContext";
 import { Analytics } from "@vercel/analytics/react";
 import { Toaster } from "@/components/ui/toaster";
+import { RateLimitNotice } from "@/components/layout/rate-limit-notice";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { GlobalSearchProvider } from "@/context/SearchContext";
 import { FloatingCommonsCopilot } from "@/components/copilot/floating-commons-copilot";
@@ -121,6 +122,7 @@ export default async function RootLayout({
                 <CommonsAppWindows />
                 <DesktopApprovalBridge />
                 <Toaster />
+                <RateLimitNotice />
               </GlobalSearchProvider>
             </SidebarProvider>
           </AuthProvider>

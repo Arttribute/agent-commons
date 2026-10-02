@@ -30,5 +30,7 @@ declare module "next-auth/jwt" {
     identitySessionToken?: string;
     accessTokenExpiresAt?: number;
     accessTokenError?: string;
+    /** Earliest time (ms) to retry a refresh that failed transiently. */
+    refreshRetryAt?: number;
   }
 }
