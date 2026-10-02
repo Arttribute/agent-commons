@@ -11,7 +11,7 @@ async function getLocalTranscriber(userData: string, model: string): Promise<Tra
   if (!TRANSCRIPTION_MODELS.includes(model as typeof TRANSCRIPTION_MODELS[number])) throw new Error("Choose a supported speech model.");
   if (loaded?.model !== model) {
     const promise = (async () => {
-      const { pipeline } = await import("@xenova/transformers");
+      const { pipeline } = await import("@huggingface/transformers");
       const cache = join(userData, "private-local", "transcription-models");
       mkdirSync(cache, { recursive: true, mode: 0o700 });
       const revision = WHISPER_REVISIONS[model as keyof typeof WHISPER_REVISIONS];
@@ -24,6 +24,8 @@ async function getLocalTranscriber(userData: string, model: string): Promise<Tra
       const transcriber = await pipeline("automatic-speech-recognition", model, {
         revision,
         cache_dir: cache,
+        // The pinned weights are the 8-bit `*_quantized.onnx` files.
+        dtype: "q8",
       }) as unknown as Transcriber;
       await verifySpeechArtifacts(cache, artifacts);
       return transcriber;

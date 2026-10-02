@@ -114,19 +114,20 @@ export class LocalVoiceManager {
     if (!this.speechT5) {
       this.speechT5 = (async () => {
         this.update({ state: "downloading", label: "Preparing local voice model", model });
-        const { pipeline, AutoModel } = await import("@xenova/transformers");
+        const { pipeline, AutoModel } = await import("@huggingface/transformers");
         const cache = join(this.userData, "private-local", "voice-models");
         mkdirSync(cache, { recursive: true, mode: 0o700 });
         await repairSpeechArtifacts(cache, SPEECHT5_WEIGHT_FILES);
         assertSpeechDownloadFits(cache, SPEECHT5_WEIGHT_FILES);
+        // The pinned weights are the 8-bit `*_quantized.onnx` files.
         const speechPipeline = await pipeline("text-to-speech", "Xenova/speecht5_tts", {
-          quantized: true,
+          dtype: "q8",
           revision: SPEECHT5_REVISION,
           cache_dir: cache,
         });
         // Transformers.js loads this second model from mutable main on first speech otherwise.
         const vocoder = await AutoModel.from_pretrained("Xenova/speecht5_hifigan", {
-          quantized: false,
+          dtype: "fp32",
           revision: SPEECHT5_VOCODER_REVISION,
           cache_dir: cache,
         });

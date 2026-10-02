@@ -61,7 +61,7 @@
       "!dist/**/*.map",
       "package.json",
       "THIRD_PARTY_NOTICES.md",
-      "!**/node_modules/@huggingface/transformers/node_modules/onnxruntime-web/**",
+      "!**/node_modules/onnxruntime-web/**",
       "!**/node_modules/@huggingface/transformers/dist/*.map",
       "!**/node_modules/@huggingface/transformers/dist/*.wasm",
       "!**/node_modules/@huggingface/transformers/dist/transformers.{js,min.js,web.js,web.min.js}",
@@ -133,7 +133,6 @@
   "dependencies": {
     "@huggingface/transformers": "3.5.1",
     "@modelcontextprotocol/sdk": "1.26.0",
-    "@xenova/transformers": "2.17.2",
     "kokoro-js": "1.2.1",
     "yauzl": "3.4.0"
   }
