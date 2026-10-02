@@ -1,6 +1,7 @@
 const { execFileSync } = require("node:child_process");
-const { cpSync, existsSync } = require("node:fs");
+const { cpSync } = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 /**
  * Restore the bundled Next dependencies, then seal unsigned macOS builds.
@@ -16,14 +17,20 @@ module.exports = async function afterPack(context) {
   const resourcesPath = context.electronPlatformName === "darwin"
     ? path.join(appPath, "Contents", "Resources")
     : path.join(context.appOutDir, "resources");
-  const bundledModules = path.join(__dirname, "..", "commons-app-dist", "node_modules");
-  const packagedModules = path.join(resourcesPath, "commons-app", "node_modules");
+  const bundle = path.join(__dirname, "..", "commons-app-dist");
+  const packagedApp = path.join(resourcesPath, "commons-app");
+  const { assertPortableStandalone, moduleOwners } = await import(
+    pathToFileURL(path.join(__dirname, "flatten-standalone-modules.mjs")).href
+  );
   // Electron Builder omits node_modules nested in extraResources by default.
   // The standalone Next server needs this dependency tree at runtime.
-  cpSync(bundledModules, packagedModules, { recursive: true, force: true, verbatimSymlinks: true });
-  if (!existsSync(path.join(resourcesPath, "commons-app", "apps", "commons-app", "node_modules", "next", "package.json"))) {
-    throw new Error("Packaged Commons app cannot resolve Next.js.");
+  for (const owner of moduleOwners(bundle)) {
+    cpSync(path.join(bundle, owner, "node_modules"), path.join(packagedApp, owner, "node_modules"), {
+      recursive: true,
+      force: true,
+    });
   }
+  assertPortableStandalone(packagedApp, path.join(packagedApp, "apps", "commons-app", "server.js"));
 
   if (
     context.electronPlatformName !== "darwin" ||
