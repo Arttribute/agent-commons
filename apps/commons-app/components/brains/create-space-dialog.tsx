@@ -24,6 +24,7 @@ import {
 } from "./browser-folder";
 import type { KnowledgeSpace } from "./types";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { apiErrorMessage } from "@/lib/api-error";
 
 type ChosenFolder =
   | { kind: "local"; name: string; path: string }
@@ -106,7 +107,7 @@ export function CreateSpaceDialog({
         }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(apiMessage(payload, "Could not create space"));
+      if (!response.ok) throw new Error(apiErrorMessage(payload, "Could not create space"));
       const space = payload.data as KnowledgeSpace;
       if (browserFolder) {
         await rememberMarkdownFolder(space.spaceId, browserFolder.handle);
@@ -117,7 +118,7 @@ export function CreateSpaceDialog({
             body: JSON.stringify({ documents: browserFolder.documents, folders: browserFolder.folders }),
           });
           const importPayload = await imported.json();
-          if (!imported.ok) throw new Error(apiMessage(importPayload, "Space created, but import failed"));
+          if (!imported.ok) throw new Error(apiErrorMessage(importPayload, "Space created, but import failed"));
         }
       }
       await onCreated(space);
@@ -210,9 +211,4 @@ export function CreateSpaceDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function apiMessage(payload: any, fallback: string) {
-  const message = payload?.message || payload?.error;
-  return Array.isArray(message) ? message.join(", ") : message || fallback;
 }

@@ -1,6 +1,7 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { bearer, deviceAuthorization, jwt } from "better-auth/plugins";
 import bcrypt from "bcryptjs";
+import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { createCommonsId } from "@/lib/ids";
 import { PLATFORM_SCOPES } from "@/lib/platform-api";
 
@@ -185,6 +186,9 @@ export function commonsAuthOptions(database: unknown) {
     },
     advanced: {
       cookiePrefix: `commons-identity-${AUTH_SESSION_VERSION}`,
+      // Rate limits key on this address. src/index.ts sets it on every
+      // request before Better Auth sees it (see lib/client-ip.ts).
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
       database: {
         generateId: ({ model }: { model: string }) => {
           if (model === "user" || model === "users") {

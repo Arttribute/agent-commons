@@ -7,6 +7,7 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { auth } from "../lib/auth.js";
 import { appEmailBrand, sendIdentityEmail } from "../lib/auth-config.js";
+import { CLIENT_IP_HEADER, resolveClientIp, withClientIp } from "../lib/client-ip.js";
 import { pool } from "../lib/db.js";
 import { createCommonsId } from "../lib/ids.js";
 import { clientName, escapeHtml, page, safeReturnPath, scopeList } from "./ui.js";
@@ -106,12 +107,14 @@ async function nativeAuthResponse(
     returnTo: string;
   },
 ) {
+  const clientIp = resolveClientIp(input.request.headers);
   const request = new Request(new URL(input.endpoint, baseUrl), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       cookie: input.request.headers.get("cookie") ?? "",
       origin: new URL(baseUrl).origin,
+      ...(clientIp ? { [CLIENT_IP_HEADER]: clientIp } : {}),
     },
     body: JSON.stringify(input.body),
   });
@@ -169,8 +172,8 @@ app.get("/health", (c) =>
 
 app.get("/api/auth/native/sign-in/google", handleNativeGoogleSignIn);
 app.post("/api/auth/native/sign-in/email", handleNativeEmailSignIn);
-app.on(["GET", "POST"], "/api/auth/*", (c) => authService.handler(c.req.raw));
-app.on(["GET", "POST"], "/.well-known/*", (c) => authService.handler(c.req.raw));
+app.on(["GET", "POST"], "/api/auth/*", (c) => authService.handler(withClientIp(c.req.raw)));
+app.on(["GET", "POST"], "/.well-known/*", (c) => authService.handler(withClientIp(c.req.raw)));
 app.route("/api/platform", createPlatformRouter(authService, database));
 
 app.get("/", (c) =>

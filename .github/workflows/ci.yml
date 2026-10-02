@@ -75,6 +75,12 @@ jobs:
       - name: Test API gateway
         run: pnpm --filter commons-api-gateway run test
 
+      # Better Auth rate limits per client address. Identity sits behind
+      # CloudFront and a load balancer, and an unresolved address puts every
+      # caller in one shared bucket that 429s token minting platform-wide.
+      - name: Test identity client address resolution
+        run: node --experimental-strip-types --test apps/commons-identity/lib/client-ip.test.mjs
+
       - name: Test wallet balance response and network selection
         run: node --experimental-strip-types --test apps/commons-app/lib/wallet-networks.test.mjs
 
