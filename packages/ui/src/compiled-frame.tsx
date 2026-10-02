@@ -39,8 +39,29 @@ export type CanvasMoment = {
   timeMs: number;
   interaction?: CanvasInteraction;
 };
+export type InspectedElement = {
+  selector: string;
+  tag: string;
+  role?: string;
+  ariaLabel?: string;
+  text?: string;
+  src?: string;
+  alt?: string;
+  href?: string;
+  icon?: string;
+  html?: string;
+  /** Normalized to the 1280x720 preview viewport. */
+  rect: { x: number; y: number; width: number; height: number };
+};
 export type CompiledFrameHandle = {
   observe: () => Promise<CanvasObservation>;
+  /** Elements at a point or inside a region, in preview viewport pixels. */
+  inspect: (area: {
+    x: number;
+    y: number;
+    width?: number;
+    height?: number;
+  }) => Promise<{ elements: InspectedElement[] }>;
   act: (id: string) => Promise<CanvasObservation>;
   snapshot: () => Promise<CanvasRecording>;
   moment: () => CanvasMoment;
@@ -74,6 +95,8 @@ export const CompiledArtifactFrame = forwardRef<
     className?: string;
     revision?: string | number;
     interactive?: boolean;
+    /** Show the record/replay controls (games). Off for plain documents. */
+    recordingControls?: boolean;
     onRecording?: (recording: CanvasRecording) => void;
     onInteraction?: (interaction: CanvasInteraction) => void;
   }
@@ -84,6 +107,7 @@ export const CompiledArtifactFrame = forwardRef<
     className = "",
     revision,
     interactive = true,
+    recordingControls = true,
     onRecording,
     onInteraction,
   },
@@ -233,6 +257,7 @@ export const CompiledArtifactFrame = forwardRef<
       };
     },
     observe: () => command("observe"),
+    inspect: (area) => command("inspect", area),
     act: (id) => command("act", { id }),
     moment: () => ({
       recordingId: active.current?.id ?? saved?.id,
@@ -260,7 +285,7 @@ export const CompiledArtifactFrame = forwardRef<
       ref={host}
       className={`ac-compiled-frame ac-recordable-frame ${className}`}
     >
-      {preview.type === "html" && (
+      {preview.type === "html" && recordingControls && (
         <div className="ac-recording-controls">
           <button
             type="button"
