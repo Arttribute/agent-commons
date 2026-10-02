@@ -7,6 +7,8 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import type { LocalModelStatus } from "@agent-commons/desktop-contract";
 import { assertReviewedModelDigest } from "./reviewed-model-digests";
+import windowsCpuRuntime from "./ollama-windows-cpu-runtime.json";
+import { installPinnedFilesFromRemoteZip } from "./ranged-runtime-zip";
 
 const execFileAsync = promisify(execFile);
 const OLLAMA_VERSION = "0.34.3";
@@ -74,6 +76,20 @@ function systemCandidates() {
     ...fromPath,
   ];
   return values.filter((value): value is string => Boolean(value));
+}
+
+function releaseUrl(asset: string) {
+  return `https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/${asset}`;
+}
+
+/** NVIDIA drivers install nvidia-smi; without it the CUDA libraries cannot run. */
+async function hasNvidiaGpu() {
+  try {
+    const { stdout } = await execFileAsync("nvidia-smi", ["-L"], { timeout: 5_000, windowsHide: true });
+    return /GPU \d+:/.test(stdout);
+  } catch {
+    return false;
+  }
 }
 
 function delay(milliseconds: number) {
@@ -174,6 +190,27 @@ export class LocalModelManager {
     if (!asset) throw new Error(`Automatic local AI setup is not available for ${process.platform}/${process.arch}`);
     const downloads = join(this.directory, "downloads");
     const runtimeDirectory = join(this.directory, "runtime", OLLAMA_VERSION);
+    // The Windows archive is 1.46 GB, and 1.42 GB of it is CUDA libraries that
+    // only run on NVIDIA GPUs. Elsewhere, fetch just the CPU and Vulkan files
+    // (36 MB) so Local AI is ready sooner.
+    if (process.platform === "win32" && process.arch === "x64" &&
+        windowsCpuRuntime.version === OLLAMA_VERSION && !(await hasNvidiaGpu())) {
+      try {
+        this.update({ state: "downloading-runtime", label: "Downloading local AI runtime", progress: 0 });
+        await installPinnedFilesFromRemoteZip({
+          url: releaseUrl(windowsCpuRuntime.asset),
+          archiveSize: windowsCpuRuntime.archiveSize,
+          files: windowsCpuRuntime.files,
+          destination: runtimeDirectory,
+          onProgress: (progress) => this.update({ state: "downloading-runtime", label: "Downloading local AI runtime", progress }),
+        });
+        const executable = findFile(runtimeDirectory, executableName());
+        if (executable) return executable;
+      } catch {
+        // Some networks strip Range requests or interrupt them. The full
+        // archive below is verified against its pinned hash instead.
+      }
+    }
     mkdirSync(downloads, { recursive: true });
     mkdirSync(runtimeDirectory, { recursive: true });
     const archive = join(downloads, asset.name);
@@ -208,7 +245,7 @@ export class LocalModelManager {
   private async downloadAsset(asset: RuntimeAsset, destination: string) {
     this.update({ state: "downloading-runtime", label: "Downloading local AI runtime", progress: 0 });
     const response = await fetch(
-      `https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/${asset.name}`,
+      releaseUrl(asset.name),
       { headers: { "User-Agent": "Agent-Commons-Desktop" }, signal: AbortSignal.timeout(30 * 60_000) },
     );
     if (!response.ok || !response.body) throw new Error(`Could not download local AI runtime (${response.status})`);
