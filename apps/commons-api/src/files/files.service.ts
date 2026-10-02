@@ -3460,6 +3460,9 @@ export function normalizeMimeType(
   if (lower.endsWith('.mov')) return 'video/quicktime';
   if (lower.endsWith('.webm')) return 'video/webm';
   if (lower.endsWith('.avi')) return 'video/x-msvideo';
+  if (lower.endsWith('.mmd') || lower.endsWith('.mermaid')) {
+    return 'text/vnd.mermaid';
+  }
   if (lower.endsWith('.zip')) return 'application/zip';
   if (lower.endsWith('.tar')) return 'application/x-tar';
   if (lower.endsWith('.gz')) return 'application/gzip';
@@ -3495,7 +3498,7 @@ export function classifyFile(mimeType: string, fileName: string): FileKind {
   }
   if (mimeType === 'text/csv' || lower.endsWith('.csv')) return 'csv';
   if (
-    /\.(md|json|jsonl|xml|html|htm|css|scss|sass|less|ts|tsx|js|jsx|mjs|cjs|py|rb|php|java|kt|kts|swift|go|rs|c|h|cpp|hpp|cs|sh|zsh|bash|fish|sql|graphql|gql|yaml|yml|toml|ini|env|vue|svelte)$/i.test(
+    /\.(md|mmd|mermaid|json|jsonl|xml|html|htm|css|scss|sass|less|ts|tsx|js|jsx|mjs|cjs|py|rb|php|java|kt|kts|swift|go|rs|c|h|cpp|hpp|cs|sh|zsh|bash|fish|sql|graphql|gql|yaml|yml|toml|ini|env|vue|svelte)$/i.test(
       lower,
     )
   ) {

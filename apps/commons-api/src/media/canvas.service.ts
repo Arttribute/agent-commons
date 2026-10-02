@@ -18,6 +18,9 @@ import {
   type CanvasContextRequest,
 } from './canvas-context';
 
+const CANVAS_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 type CreateAnnotationInput = {
   revisionId: string;
   parentAnnotationId?: string;
@@ -183,6 +186,14 @@ export class CanvasService {
       .values({ itemId, scopeType: 'canvas_project', scopeId: projectId })
       .onConflictDoNothing();
     return publicArtifact(item);
+  }
+
+  /** Keep a file with a canvas artifact as a source (references, music). */
+  async linkSource(projectId: string, itemId: string) {
+    await this.db
+      .insert(schema.libraryLink)
+      .values({ itemId, scopeType: 'canvas_project', scopeId: projectId })
+      .onConflictDoNothing();
   }
 
   async editTimeline(
@@ -353,6 +364,7 @@ export class CanvasService {
       })
       .onConflictDoNothing()
       .returning();
+    const linked = [...new Set([input.itemId, ...(input.inputItemIds ?? [])])];
     await Promise.all([
       this.db
         .update(schema.canvasProject)
@@ -360,11 +372,13 @@ export class CanvasService {
         .where(eq(schema.canvasProject.projectId, input.projectId)),
       this.db
         .insert(schema.libraryLink)
-        .values({
-          itemId: input.itemId,
-          scopeType: 'canvas_project',
-          scopeId: input.projectId,
-        })
+        .values(
+          linked.map((itemId) => ({
+            itemId,
+            scopeType: 'canvas_project',
+            scopeId: input.projectId,
+          })),
+        )
         .onConflictDoNothing(),
     ]);
     return revision;
@@ -580,6 +594,9 @@ export class CanvasService {
     principal: MediaPrincipal,
     permission: 'read' | 'edit',
   ) {
+    if (!CANVAS_ID.test(projectId)) {
+      throw new NotFoundException('Canvas project not found.');
+    }
     const project = await this.db.query.canvasProject.findFirst({
       where: (table) =>
         and(eq(table.projectId, projectId), isNull(table.deletedAt)),

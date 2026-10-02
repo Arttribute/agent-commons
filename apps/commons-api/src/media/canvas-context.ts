@@ -250,7 +250,14 @@ function editGuidance(input: CanvasContextInput) {
   const { artifact, projectId } = input;
   const media = mediaKind(artifact);
   const guidance: string[] = [];
-  if (media) {
+  if (media === 'video' || media === 'audio' || media === 'music') {
+    guidance.push(
+      `- Before planning cuts, call analyzeMedia with projectId "${projectId}" for the timestamped transcript, silences and scene changes.`,
+      `- For trims, cuts, joining clips, adding or replacing sound, volume, speed, crops, fades, captions and blurring a region, use editMedia with projectId "${projectId}". Use the exact millisecond times and frame boxes from the notes. The result becomes the next version.`,
+      '- For background music or other sound, generate it with generateMedia (kind music or audio) and the same projectId: it is kept with this artifact as a source, not as a version. Then lay it in with editMedia addAudio. Offer a few variations when the user is choosing.',
+      `- For generative changes (new shots, restyling, generated speech or music), use generateMedia with projectId "${projectId}" and inputItemIds ["${artifact.itemId}"].`,
+    );
+  } else if (media) {
     guidance.push(
       `- Use generateMedia with projectId "${projectId}", operation "transform" and inputItemIds ["${artifact.itemId}"] (add reference files after it). The output becomes the next version automatically.`,
       '- For a region note, describe the region precisely in the prompt and keep everything outside it unchanged.',
@@ -298,6 +305,9 @@ function formatNote(
         `   Surrounding text: "…${prefix ?? ''}[selection]${suffix ?? ''}…"`,
       );
     }
+  } else if (type === 'region' || type === 'point') {
+    const inside = text(target?.quote, 4_000);
+    if (inside) lines.push(`   Text inside: "${inside}"`);
   } else if (type === 'cells') {
     const values = Array.isArray(target?.values)
       ? (target!.values as unknown[][])
@@ -332,6 +342,7 @@ function formatNote(
         text(element.alt, 200) && `alt "${text(element.alt, 200)}"`,
         text(element.href, 500) && `href ${text(element.href, 500)}`,
         text(element.icon, 120) && `icon ${text(element.icon, 120)}`,
+        text(element.source, 400) && `source ${text(element.source, 400)}`,
       ].filter(Boolean);
       lines.push(`   Element ${elementIndex + 1}: ${parts.join(', ')}`);
       const html = text(element.html, 1_500);

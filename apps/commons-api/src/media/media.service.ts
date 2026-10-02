@@ -385,10 +385,22 @@ export class MediaService {
           billing: output.billing,
         },
       });
-      if (job.projectId) {
-        const project = await this.db.query.canvasProject.findFirst({
-          where: (table) => eq(table.projectId, job.projectId!),
-        });
+      const project = job.projectId
+        ? await this.db.query.canvasProject.findFirst({
+            where: (table) => eq(table.projectId, job.projectId!),
+          })
+        : null;
+      const current = project
+        ? await this.db.query.libraryItem.findFirst({
+            where: (table) => eq(table.itemId, project.activeItemId),
+            columns: { mimeType: true },
+          })
+        : null;
+      if (job.projectId && current && mediaFamily(current.mimeType) !== mediaFamily(output.mimeType)) {
+        // Music for a video, or an image for a deck: keep it with the
+        // artifact as a source instead of replacing what is on the canvas.
+        await this.canvas.linkSource(job.projectId, created.fileId);
+      } else if (job.projectId) {
         await this.canvas.addRevision({
           projectId: job.projectId,
           itemId: created.fileId,
@@ -549,4 +561,9 @@ function resolveProvider(input: CreateMediaGenerationInput) {
   if (input.provider) return input.provider;
   const prefixed = input.modelKey?.split(':')[0];
   return prefixed || 'google';
+}
+
+/** image, video or audio: what kind of thing a file is on the canvas. */
+function mediaFamily(mimeType: string) {
+  return mimeType.split('/')[0] || mimeType;
 }

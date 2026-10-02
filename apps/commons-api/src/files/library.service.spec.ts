@@ -28,7 +28,7 @@ describe('artifact share URL configuration', () => {
 describe('LibraryService preview ownership', () => {
   it('passes a delegated service principal through as the file owner', async () => {
     const item = {
-      itemId: 'item-1',
+      itemId: 'a1a1a1a1-0000-4000-8000-000000000001',
       name: 'brief.docx',
       kind: 'document',
       mimeType:
@@ -57,31 +57,31 @@ describe('LibraryService preview ownership', () => {
     } as any;
     const service = new LibraryService(db, files, {} as any, {} as any);
 
-    await service.preview('item-1', {
+    await service.preview('a1a1a1a1-0000-4000-8000-000000000001', {
       principalId: 'user-1',
       principalType: 'service',
     });
 
     expect(files.readFileForAgent).toHaveBeenCalledWith(
       expect.objectContaining({
-        fileId: 'item-1',
+        fileId: 'a1a1a1a1-0000-4000-8000-000000000001',
         agentId: undefined,
         ownerId: 'user-1',
       }),
     );
     expect(files.createDownloadUrl).toHaveBeenCalledWith(
-      'item-1',
+      'a1a1a1a1-0000-4000-8000-000000000001',
       expect.objectContaining({ ownerId: 'user-1' }),
     );
     expect(files.createInlineUrl).toHaveBeenCalledWith(
-      'item-1',
+      'a1a1a1a1-0000-4000-8000-000000000001',
       expect.objectContaining({ ownerId: 'user-1' }),
     );
   });
 
   it('previews code projects from source when no original blob exists', async () => {
     const item = {
-      itemId: 'item-app',
+      itemId: 'a1a1a1a1-0000-4000-8000-000000000002',
       name: 'Interactive app',
       kind: 'app',
       source: 'code_project',
@@ -142,7 +142,7 @@ describe('LibraryService preview ownership', () => {
     } as any;
     const service = new LibraryService(db, files, {} as any, builder);
 
-    const preview = (await service.preview('item-app', {
+    const preview = (await service.preview('a1a1a1a1-0000-4000-8000-000000000002', {
       principalId: 'user-1',
       principalType: 'user',
     })) as any;
@@ -154,7 +154,7 @@ describe('LibraryService preview ownership', () => {
     });
     expect(preview.codeProject.files[0].path).toBe('app/page.tsx');
 
-    await service.preview('item-app', {
+    await service.preview('a1a1a1a1-0000-4000-8000-000000000002', {
       principalId: 'user-1',
       principalType: 'user',
     });
@@ -164,7 +164,7 @@ describe('LibraryService preview ownership', () => {
 
 describe('LibraryService agent discovery', () => {
   const item = {
-    itemId: 'item-1',
+    itemId: 'a1a1a1a1-0000-4000-8000-000000000001',
     ownerUserId: 'user-1',
     name: 'Kenyan coding bootcamps.xlsx',
     description: 'Research workbook',
@@ -220,8 +220,8 @@ describe('LibraryService agent discovery', () => {
 
     expect(results).toEqual([
       expect.objectContaining({
-        itemId: 'item-1',
-        fileId: 'item-1',
+        itemId: 'a1a1a1a1-0000-4000-8000-000000000001',
+        fileId: 'a1a1a1a1-0000-4000-8000-000000000001',
         name: 'Kenyan coding bootcamps.xlsx',
         match: 'recent',
       }),
@@ -241,7 +241,7 @@ describe('LibraryService agent discovery', () => {
 
     expect(results[0]).toEqual(
       expect.objectContaining({
-        fileId: 'item-1',
+        fileId: 'a1a1a1a1-0000-4000-8000-000000000001',
         kind: 'spreadsheet',
         match: 'metadata',
         excerpt: 'Provider Location Format',
@@ -366,7 +366,7 @@ describe('LibraryService artifact provenance', () => {
   it('returns only the newest 40 events in chronological display order', async () => {
     const { db, service } = harness();
 
-    const record = (await service.provenance('item-1', {
+    const record = (await service.provenance('a1a1a1a1-0000-4000-8000-000000000001', {
       principalId: 'user-1',
       principalType: 'user',
     })) as any;
@@ -388,7 +388,7 @@ describe('LibraryService artifact provenance', () => {
     const { db, service } = harness();
 
     const record = (await service.provenance(
-      'item-1',
+      'a1a1a1a1-0000-4000-8000-000000000001',
       { principalId: 'user-1', principalType: 'user' },
       0,
     )) as any;

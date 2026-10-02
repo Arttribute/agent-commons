@@ -32,6 +32,9 @@ export type LibraryPrincipal = {
   workspaceId?: string | null;
 };
 
+const LIBRARY_ITEM_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class LibraryService {
   private readonly logger = new Logger(LibraryService.name);
@@ -1135,6 +1138,9 @@ export class LibraryService {
   }
 
   private async getAccessible(itemId: string, principal: LibraryPrincipal) {
+    // Local desktop items use non-UUID ids; asking Postgres about them is a
+    // 500, but to the caller it is simply an artifact that is not here.
+    if (!LIBRARY_ITEM_ID.test(itemId)) throw new NotFoundException('Artifact not found');
     const item = await this.db.query.libraryItem.findFirst({
       where: (table) =>
         and(
@@ -1148,6 +1154,7 @@ export class LibraryService {
   }
 
   private async getOwned(itemId: string, principal: LibraryPrincipal) {
+    if (!LIBRARY_ITEM_ID.test(itemId)) throw new NotFoundException('Artifact not found');
     const item = await this.db.query.libraryItem.findFirst({
       where: (table) => and(eq(table.itemId, itemId), isNull(table.deletedAt)),
     });
