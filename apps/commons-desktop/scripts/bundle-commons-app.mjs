@@ -1,7 +1,8 @@
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertPortableStandalone, flattenStandaloneModules } from "./flatten-standalone-modules.mjs";
+import { assertPortableStandalone, flattenStandaloneModules, moduleOwners } from "./flatten-standalone-modules.mjs";
+import { pruneBuildOnlyPackages } from "./prune-bundle.mjs";
 
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const commonsApp = resolve(desktop, "../commons-app");
@@ -20,6 +21,9 @@ cpSync(standalone, target, {
   filter: (path) => basename(path) !== "node_modules",
 });
 flattenStandaloneModules(standalone, target);
+for (const owner of moduleOwners(target)) {
+  pruneBuildOnlyPackages(join(target, owner, "node_modules"));
+}
 
 const bundledApp = join(target, "apps", "commons-app");
 mkdirSync(join(bundledApp, ".next"), { recursive: true });
