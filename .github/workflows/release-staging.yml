@@ -9,7 +9,7 @@ name: Release (staging snapshot)
 # Production consumers always get the stable `latest` tag published from `main`
 # by release.yml. Snapshot releases do NOT consume changeset files or bump the
 # committed versions, so the changelog/version history stays clean and driven
-# solely by the main-branch "Version Packages" PR flow.
+# solely by the "chore: version packages" PR into `staging`.
 
 on:
   push:
@@ -34,27 +34,43 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Without pending changesets there is nothing to snapshot. Publishing
+      # then would put the merged version PR's real versions on the `staging`
+      # tag, and main would skip them because npm already has them.
+      - name: Check for pending changesets
+        id: pending
+        run: |
+          count=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l | tr -d ' ')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          [ "$count" -gt 0 ] || echo "No pending changesets — skipping the snapshot"
+
       - name: Setup pnpm
+        if: steps.pending.outputs.count != '0'
         uses: pnpm/action-setup@v4
         with:
           version: 9.15.3
 
       - name: Setup Node.js
+        if: steps.pending.outputs.count != '0'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
+        if: steps.pending.outputs.count != '0'
         run: pnpm install --no-frozen-lockfile
 
       - name: Build packages
+        if: steps.pending.outputs.count != '0'
         run: pnpm --filter './packages/*' run build
 
       - name: Version as snapshot
+        if: steps.pending.outputs.count != '0'
         run: pnpm changeset version --snapshot staging
 
       - name: Publish to the `staging` dist-tag
+        if: steps.pending.outputs.count != '0'
         run: pnpm changeset publish --tag staging --no-git-tag
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
