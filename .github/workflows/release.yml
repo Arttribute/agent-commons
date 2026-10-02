@@ -1,9 +1,16 @@
 name: Release
 
+# Package releases follow the same route as every other change:
+# - A push to `staging` with pending changesets opens or updates the
+#   "chore: version packages" pull request into `staging`.
+# - A push to `main` publishes every package version that npm does not have
+#   yet, so a version reaches npm only after it has been promoted.
+
 on:
   push:
     branches:
       - main
+      - staging
   workflow_dispatch:
 
 concurrency:
@@ -11,13 +18,91 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  release:
-    name: Release
+  version:
+    name: Version packages
+    if: github.ref_name == 'staging'
     runs-on: ubuntu-latest
 
     permissions:
       contents: write
       pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Auto-generate patch changeset when packages changed without one
+        shell: bash
+        run: |
+          EXISTING=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l)
+          if [ "$EXISTING" -gt "0" ]; then
+            echo "Changesets already present — skipping auto-patch"
+            exit 0
+          fi
+
+          # Compare with the last merged version PR. Tags are not a reliable
+          # base: desktop releases are tagged too, and package tags only
+          # appear once main publishes.
+          LAST_VERSION=$(git log -1 --format=%H --grep='chore: version packages')
+          BASE="${LAST_VERSION:-$(git rev-list --max-parents=0 HEAD)}"
+          CHANGED_FILES=$(git diff --name-only "$BASE" HEAD -- packages/ | grep -v 'node_modules' || true)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No package source changes since the last version PR — skipping auto-patch"
+            exit 0
+          fi
+
+          echo "Package changes detected since ${BASE:0:8} — generating auto patch changeset"
+
+          FRONTMATTER=""
+          if echo "$CHANGED_FILES" | grep -q "^packages/commons-sdk/"; then
+            FRONTMATTER="${FRONTMATTER}'@agent-commons/sdk': patch"$'\n'
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^packages/agc-cli/"; then
+            FRONTMATTER="${FRONTMATTER}'@agent-commons/cli': patch"$'\n'
+          fi
+
+          if [ -z "$FRONTMATTER" ]; then
+            echo "No matching packages — skipping changeset"
+            exit 0
+          fi
+
+          ID=$(openssl rand -hex 4)
+          printf -- "---\n%s---\n\nAuto patch release\n" "$FRONTMATTER" > ".changeset/auto-${ID}.md"
+          echo "Created .changeset/auto-${ID}.md"
+
+      - name: Open or update the version packages PR
+        uses: changesets/action@v1
+        with:
+          version: pnpm version-ci
+          title: "chore: version packages"
+          commit: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HUSKY: 0
+
+  publish:
+    name: Publish packages
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -48,79 +133,15 @@ jobs:
           restore-keys: pnpm-store-${{ runner.os }}-
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      - name: Build packages
-        run: pnpm --filter './packages/*' run build
-
-      - name: Auto-generate patch changeset when packages changed without one
-        shell: bash
-        run: |
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          if echo "$COMMIT_MSG" | grep -q "chore: version packages"; then
-            echo "Version commit — skipping auto-patch to allow publish"
-            exit 0
-          fi
-
-          EXISTING=$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | wc -l)
-          if [ "$EXISTING" -gt "0" ]; then
-            echo "Changesets already present — skipping auto-patch"
-            exit 0
-          fi
-
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
-          CHANGED_FILES=$(git diff --name-only "$LAST_TAG" HEAD -- packages/ | grep -v 'node_modules' || true)
-
-          if [ -z "$CHANGED_FILES" ]; then
-            echo "No package source changes since last tag — skipping auto-patch"
-            exit 0
-          fi
-
-          echo "Package changes detected since $LAST_TAG — generating auto patch changeset"
-
-          FRONTMATTER=""
-          if echo "$CHANGED_FILES" | grep -q "^packages/commons-sdk/"; then
-            FRONTMATTER="${FRONTMATTER}'@agent-commons/sdk': patch"$'\n'
-          fi
-          if echo "$CHANGED_FILES" | grep -q "^packages/agc-cli/"; then
-            FRONTMATTER="${FRONTMATTER}'@agent-commons/cli': patch"$'\n'
-          fi
-
-          if [ -z "$FRONTMATTER" ]; then
-            echo "No matching packages — skipping changeset"
-            exit 0
-          fi
-
-          ID=$(openssl rand -hex 4)
-          printf -- "---\n%s---\n\nAuto patch release\n" "$FRONTMATTER" > ".changeset/auto-${ID}.md"
-          echo "Created .changeset/auto-${ID}.md"
-
-      - name: Create Release PR or Publish
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          publish: pnpm release
-          version: pnpm version-ci
-          title: "chore: version packages"
-          commit: "chore: version packages"
+      # changeset publish skips versions npm already has, so pushes without a
+      # new version publish nothing.
+      - name: Publish new package versions
+        run: pnpm release
         env:
-          GITHUB_TOKEN: ${{ github.token }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           HUSKY: 0
 
-      - name: Bump commons-app SDK dependency after publish
-        if: steps.changesets.outputs.published == 'true'
-        run: |
-          SDK_VERSION=$(node -p "require('./packages/commons-sdk/package.json').version")
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('apps/commons-app/package.json', 'utf8'));
-            pkg.dependencies['@agent-commons/sdk'] = '^${SDK_VERSION}';
-            fs.writeFileSync('apps/commons-app/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-          git diff --quiet apps/commons-app/package.json || {
-            pnpm install --no-frozen-lockfile
-            git add apps/commons-app/package.json pnpm-lock.yaml
-            HUSKY=0 git commit -m "chore: bump commons-app to @agent-commons/sdk@${SDK_VERSION}"
-            git push origin HEAD:main
-          }
+      - name: Push release tags
+        run: git push origin --tags
