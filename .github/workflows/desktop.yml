@@ -135,10 +135,10 @@ jobs:
             echo "| Artifact | Size |"
             echo "| --- | --- |"
             for file in *.dmg *.zip *.exe *.AppImage; do
-              [ -f "$file" ] && echo "| $file (download) | $(( $(wc -c < "$file") / 1048576 )) MB |"
+              if [ -f "$file" ]; then echo "| $file (download) | $(( $(wc -c < "$file") / 1048576 )) MB |"; fi
             done
             for dir in mac/*.app mac-arm64/*.app win-unpacked linux-unpacked; do
-              [ -d "$dir" ] && echo "| $dir (installed) | $(du -sm "$dir" | cut -f1) MB |"
+              if [ -d "$dir" ]; then echo "| $dir (installed) | $(du -sm "$dir" | cut -f1) MB |"; fi
             done
           } | tee -a "$GITHUB_STEP_SUMMARY"
       # Smoke the artifacts users install, not the unpacked build folders.
