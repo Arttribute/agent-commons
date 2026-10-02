@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
-import RandomPixelAvatar from "@/components/account/random-avatar";
+import { UserAvatar } from "@/components/account/user-avatar";
 import {
   SettingsPanel,
   type SettingsSection,
@@ -129,7 +129,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
             }
           >
             <div className="rounded-full overflow-hidden shrink-0 ring-1 ring-border">
-              {authState.profileImage ? <img src={authState.profileImage} alt="" className="h-7 w-7 object-cover" referrerPolicy="no-referrer" /> : <RandomPixelAvatar username={principalId || displayName} size={28} />}
+              <UserAvatar image={authState.profileImage} seed={principalId || displayName} size={28} />
             </div>
             {!collapsed && (
               <>

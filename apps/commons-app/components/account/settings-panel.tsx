@@ -25,6 +25,7 @@ import {
   Plug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/account/user-avatar";
 import { useAuth } from "@/context/AuthContext";
 import { UsageSection } from "@/components/account/usage-section";
 import { BillingPanel } from "@/components/billing/billing-panel";
@@ -119,7 +120,9 @@ function ProfileSection({ walletAddress, local }: { walletAddress: string; local
         </p>
       </div>
       <div className="space-y-4">
-        {(profile?.image || authState.profileImage) && <img src={profile?.image || authState.profileImage} alt="Profile" className="h-16 w-16 rounded-full object-cover" referrerPolicy="no-referrer" />}
+        <div className="w-fit overflow-hidden rounded-full ring-1 ring-border">
+          <UserAvatar image={profile?.image || authState.profileImage} seed={walletAddress || authState.username || ""} size={64} alt="Profile" />
+        </div>
         {!local && <div className="space-y-2">
           <Label htmlFor="profile-photo" className="text-xs">Profile photo</Label>
           <Input id="profile-photo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy} onChange={(event) => {

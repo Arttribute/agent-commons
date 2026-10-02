@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import RandomPixelAvatar from "@/components/account/random-avatar";
+import { UserAvatar } from "@/components/account/user-avatar";
 
 function AccountMenu() {
   const { authState, login, logout } = useAuth();
@@ -23,11 +23,7 @@ function AccountMenu() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div className="rounded-full overflow-hidden">
-                {authState.profileImage ? (
-                  <img src={authState.profileImage} alt="" className="h-8 w-8 object-cover" referrerPolicy="no-referrer" />
-                ) : (
-                  <RandomPixelAvatar username={username || walletAddress || ""} size={32} />
-                )}
+                <UserAvatar image={authState.profileImage} seed={username || walletAddress || ""} size={32} />
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
