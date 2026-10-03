@@ -10,6 +10,7 @@ import { appEmailBrand, sendIdentityEmail } from "../lib/auth-config.js";
 import { CLIENT_IP_HEADER, resolveClientIp, withClientIp } from "../lib/client-ip.js";
 import { pool } from "../lib/db.js";
 import { createCommonsId } from "../lib/ids.js";
+import { authErrorMessage, authErrorMessages } from "./auth-errors.js";
 import { clientName, escapeHtml, page, safeReturnPath, scopeList } from "./ui.js";
 import { createPlatformRouter } from "./platform.js";
 
@@ -83,6 +84,36 @@ function safeExternalReturnTo(value: string | undefined, app: NativeApp) {
   return nativeApps[app].defaultReturnTo;
 }
 
+/**
+ * The app's return URL marked with how email verification stands: "registered"
+ * (check your email) or "verified" (the link was opened, which signed the
+ * person in here, so the app can finish signing in without asking again).
+ */
+function returnWith(returnTo: string, appId: NativeApp, state: "registered" | "verified") {
+  const url = new URL(returnTo);
+  url.searchParams.set(state, "1");
+  url.searchParams.set("commons_app", appId);
+  return url.toString();
+}
+
+function withAuthError(returnTo: string, message: string | undefined) {
+  const url = new URL(returnTo);
+  url.searchParams.set("authError", message || "We couldn't sign you in. Please try again.");
+  return url.toString();
+}
+
+/**
+ * The hosted pages' query without the error we may have added. It is only an
+ * OAuth request, and only sent as `oauth_query`, when the plugin signed it:
+ * links like /sign-in?redirect=/device are not, and fail as invalid_signature.
+ */
+function hostedQuery(url: string) {
+  const query = new URL(url).searchParams;
+  query.delete("error");
+  query.delete("error_description");
+  return { query: query.toString(), oauthQuery: query.has("sig") ? query.toString() : "" };
+}
+
 function validOAuthQuery(value: string | undefined) {
   if (!value) return "";
   try {
@@ -104,7 +135,10 @@ async function nativeAuthResponse(
     endpoint: "/api/auth/sign-in/email" | "/api/auth/sign-up/email" | "/api/auth/sign-in/social";
     body: Record<string, unknown>;
     request: Request;
+    /** Where success lands when Better Auth gives no redirect of its own. */
     returnTo: string;
+    /** Where failures land, with `authError` added. Defaults to returnTo. */
+    errorReturnTo?: string;
   },
 ) {
   const clientIp = resolveClientIp(input.request.headers);
@@ -124,13 +158,15 @@ async function nativeAuthResponse(
     redirect?: string;
     message?: string;
     error?: string;
+    code?: string;
   };
   const location = data.url ?? data.redirect;
   const target = response.ok
     ? location ?? input.returnTo
-    : `${input.returnTo}${input.returnTo.includes("?") ? "&" : "?"}authError=${encodeURIComponent(
-        data.message ?? data.error ?? "Authentication failed",
-      )}`;
+    : withAuthError(
+        input.errorReturnTo ?? input.returnTo,
+        authErrorMessage(data.code ?? data.error) || data.message,
+      );
   const headers = new Headers({ location: target });
   const responseHeaders = response.headers as Headers &
     Partial<{ getSetCookie(): string[] }>;
@@ -176,17 +212,29 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => authService.handler(withClientIp(c
 app.on(["GET", "POST"], "/.well-known/*", (c) => authService.handler(withClientIp(c.req.raw)));
 app.route("/api/platform", createPlatformRouter(authService, database));
 
-app.get("/", (c) =>
-  c.html(
+app.get("/", async (c) => {
+  // Older error redirects land here; the sign-in page explains them.
+  const error = c.req.query("error");
+  if (error) return c.redirect(`/sign-in?${new URLSearchParams({ error })}`);
+  const session = await authService.api
+    .getSession({ headers: c.req.raw.headers })
+    .catch(() => null);
+  const appLinks = `<a class="button" href="${escapeHtml(nativeApps["agent-commons"].defaultReturnTo)}">Open Agent Commons</a>
+       <a class="button secondary" href="${escapeHtml(nativeApps.commonlabs.defaultReturnTo)}">Open CommonLab</a>`;
+  return c.html(
     page(
       "Commons Identity",
-      `<h1>Your Commons account</h1>
+      session?.user
+        ? `<h1>You're signed in</h1>
+       <p>Signed in as ${escapeHtml(session.user.email)}. Your Commons account works across every Commons app.</p>
+       <div class="row">${appLinks}</div>`
+        : `<h1>Your Commons account</h1>
        <p>One account for Agent Commons, CommonLab, the desktop app, the CLI, and the SDKs.</p>
        <div class="row"><a class="button" href="/sign-in">Sign in</a>
        <a class="button secondary" href="/platform">API platform</a></div>`,
     ),
-  ),
-);
+  );
+});
 
 app.get("/platform", async (c) => {
   const session = await authService.api.getSession({ headers: c.req.raw.headers });
@@ -275,7 +323,8 @@ app.get("/platform", async (c) => {
 
 app.get("/sign-in", (c) => {
   const redirect = safeReturnPath(c.req.query("redirect") ?? null, "/");
-  const oauthQuery = new URL(c.req.url).search.slice(1);
+  const { query, oauthQuery } = hostedQuery(c.req.url);
+  const error = authErrorMessage(c.req.query("error"));
   return c.html(
     page(
       "Sign in",
@@ -296,11 +345,15 @@ app.get("/sign-in", (c) => {
          <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
          <button type="submit">Sign in</button>
        </form>
-       <p id="message" class="error" role="alert"></p>
-       <p class="footnote">New to Commons? <a href="/sign-up${oauthQuery ? `?${escapeHtml(oauthQuery)}` : ""}">Create an account</a></p>`,
+       <p id="message" class="error" role="alert">${escapeHtml(error)}</p>
+       <p class="footnote"><a href="/forgot-password">Forgot password?</a></p>
+       <p class="footnote">New to Commons? <a href="/sign-up${query ? `?${escapeHtml(query)}` : ""}">Create an account</a></p>`,
       `
       const redirect = ${JSON.stringify(redirect)};
       const oauthQuery = ${JSON.stringify(oauthQuery)};
+      // Google errors come back to this page, request intact, to be shown.
+      const errorCallbackURL = ${JSON.stringify(`/sign-in${query ? `?${query}` : ""}`)};
+      const messages = ${JSON.stringify(authErrorMessages())};
       const message = document.querySelector("#message");
       async function post(path, body) {
         const response = await fetch(path, {
@@ -309,7 +362,7 @@ app.get("/sign-in", (c) => {
           body: JSON.stringify(body)
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.message || data.error || "Sign in failed");
+        if (!response.ok) throw new Error(messages[data.code || data.error] || data.message || "Sign in failed");
         return data;
       }
       document.querySelector("#email-form").addEventListener("submit", async (event) => {
@@ -327,7 +380,7 @@ app.get("/sign-in", (c) => {
       document.querySelector("#google").addEventListener("click", async () => {
         try {
           const data = await post("/api/auth/sign-in/social", {
-            provider: "google", callbackURL: redirect,
+            provider: "google", callbackURL: redirect, errorCallbackURL,
             ...(oauthQuery ? { oauth_query: oauthQuery } : {})
           });
           location.href = data.url;
@@ -341,7 +394,7 @@ async function handleNativeGoogleSignIn(c: any) {
   const appId = nativeApp(c.req.query("app"));
   const returnTo = safeExternalReturnTo(c.req.query("return_to"), appId);
   const oauthQuery = validOAuthQuery(c.req.query("oauth_query"));
-  if (!oauthQuery) return c.redirect(`${returnTo}?authError=Invalid+sign-in+request`);
+  if (!oauthQuery) return c.redirect(withAuthError(returnTo, authErrorMessage("invalid_signature")));
   return nativeAuthResponse(authService, {
     endpoint: "/api/auth/sign-in/social",
     request: c.req.raw,
@@ -349,10 +402,19 @@ async function handleNativeGoogleSignIn(c: any) {
     body: {
       provider: "google",
       callbackURL: returnTo,
+      // Without this, a failed Google sign-in ends on identity's own pages
+      // instead of back in the app the person started from.
+      errorCallbackURL: `/native/error?${new URLSearchParams({ app: appId, return_to: returnTo })}`,
       oauth_query: oauthQuery,
     },
   });
 }
+
+app.get("/native/error", (c) => {
+  const appId = nativeApp(c.req.query("app"));
+  const returnTo = safeExternalReturnTo(c.req.query("return_to"), appId);
+  return c.redirect(withAuthError(returnTo, authErrorMessage(c.req.query("error") ?? "unknown")));
+});
 
 app.get("/native/sign-in/google", handleNativeGoogleSignIn);
 
@@ -361,7 +423,7 @@ async function handleNativeEmailSignIn(c: any) {
   const appId = nativeApp(String(form.app ?? ""));
   const returnTo = safeExternalReturnTo(String(form.return_to ?? ""), appId);
   const oauthQuery = validOAuthQuery(String(form.oauth_query ?? ""));
-  if (!oauthQuery) return c.redirect(`${returnTo}?authError=Invalid+sign-in+request`);
+  if (!oauthQuery) return c.redirect(withAuthError(returnTo, authErrorMessage("invalid_signature")));
   return nativeAuthResponse(authService, {
     endpoint: "/api/auth/sign-in/email",
     request: c.req.raw,
@@ -369,7 +431,8 @@ async function handleNativeEmailSignIn(c: any) {
     body: {
       email: String(form.email ?? ""),
       password: String(form.password ?? ""),
-      callbackURL: returnTo,
+      // Used by the verification link an unverified sign-in sends.
+      callbackURL: returnWith(returnTo, appId, "verified"),
       oauth_query: oauthQuery,
     },
   });
@@ -380,23 +443,19 @@ app.post("/native/sign-in/email", handleNativeEmailSignIn);
 app.post("/native/sign-up/email", async (c) => {
   const form = await c.req.parseBody();
   const appId = nativeApp(String(form.app ?? ""));
-  const returnToUrl = new URL(
-    safeExternalReturnTo(String(form.return_to ?? ""), appId),
-  );
-  returnToUrl.searchParams.set("registered", "1");
-  returnToUrl.searchParams.set("commons_app", appId);
-  const returnTo = returnToUrl.toString();
+  const returnTo = safeExternalReturnTo(String(form.return_to ?? ""), appId);
   const oauthQuery = validOAuthQuery(String(form.oauth_query ?? ""));
-  if (!oauthQuery) return c.redirect(`${returnTo}?authError=Invalid+sign-up+request`);
+  if (!oauthQuery) return c.redirect(withAuthError(returnTo, authErrorMessage("invalid_signature")));
   return nativeAuthResponse(authService, {
     endpoint: "/api/auth/sign-up/email",
     request: c.req.raw,
-    returnTo,
+    returnTo: returnWith(returnTo, appId, "registered"),
+    errorReturnTo: returnTo,
     body: {
       name: String(form.name ?? ""),
       email: String(form.email ?? ""),
       password: String(form.password ?? ""),
-      callbackURL: returnTo,
+      callbackURL: returnWith(returnTo, appId, "verified"),
       oauth_query: oauthQuery,
     },
   });
@@ -404,7 +463,7 @@ app.post("/native/sign-up/email", async (c) => {
 
 app.get("/sign-up", (c) => {
   const redirect = safeReturnPath(c.req.query("redirect") ?? null, "/");
-  const oauthQuery = new URL(c.req.url).search.slice(1);
+  const { query, oauthQuery } = hostedQuery(c.req.url);
   return c.html(
     page(
       "Create account",
@@ -417,10 +476,11 @@ app.get("/sign-up", (c) => {
          <button type="submit">Create account</button>
        </form>
        <p id="message" role="alert"></p>
-       <p class="footnote">Already have an account? <a href="/sign-in${oauthQuery ? `?${escapeHtml(oauthQuery)}` : ""}">Sign in</a></p>`,
+       <p class="footnote">Already have an account? <a href="/sign-in${query ? `?${escapeHtml(query)}` : ""}">Sign in</a></p>`,
       `
       const redirect = ${JSON.stringify(redirect)};
       const oauthQuery = ${JSON.stringify(oauthQuery)};
+      const messages = ${JSON.stringify(authErrorMessages())};
       document.querySelector("#signup-form").addEventListener("submit", async (event) => {
         event.preventDefault();
         const message = document.querySelector("#message");
@@ -439,10 +499,88 @@ app.get("/sign-up", (c) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           message.className="error";
-          message.textContent=data.message||data.error||"Could not create account";
+          message.textContent=messages[data.code||data.error]||data.message||"Could not create account";
           return;
         }
-        document.querySelector("main").innerHTML = '<div class="done">✓</div><h1>Check your email</h1><p>We sent a link to verify your account. Open it on this device to continue.</p>';
+        document.querySelector("main").innerHTML = '<div class="done">✓</div><h1>Check your email</h1><p>We sent you a link to finish signing up. Open it on this device to continue. If it does not arrive, check spam, or sign in with your email and password to get a new link.</p>';
+      });`,
+    ),
+  );
+});
+
+app.get("/forgot-password", (c) => {
+  const email = c.req.query("email") ?? "";
+  const appId = nativeApp(c.req.query("app"));
+  return c.html(
+    page(
+      "Reset password",
+      `<h1>Reset your password</h1>
+       <p>We'll email you a link to choose a new password. If you signed up with Google, this also lets you sign in with email.</p>
+       <form id="forgot-form">
+         <label>Email<input id="email" type="email" autocomplete="email" value="${escapeHtml(email)}" required></label>
+         <button type="submit">Send reset link</button>
+       </form>
+       <p id="message" class="error" role="alert"></p>
+       <p class="footnote"><a href="${escapeHtml(nativeApps[appId].defaultReturnTo)}">Back to sign in</a></p>`,
+      `
+      document.querySelector("#forgot-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const response = await fetch("/api/auth/request-password-reset", {
+          method: "POST", credentials: "include",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({
+            email: document.querySelector("#email").value,
+            redirectTo: ${JSON.stringify(`/reset-password?app=${appId}`)}
+          })
+        });
+        if (!response.ok) {
+          document.querySelector("#message").textContent = "We couldn't send the link. Please try again in a minute.";
+          return;
+        }
+        document.querySelector("main").innerHTML = '<div class="done">✓</div><h1>Check your email</h1><p>If there is an account for that address, a reset link is on its way. It works for one hour.</p>';
+      });`,
+    ),
+  );
+});
+
+app.get("/reset-password", (c) => {
+  const token = c.req.query("token") ?? "";
+  const appId = nativeApp(c.req.query("app"));
+  const signIn = escapeHtml(nativeApps[appId].defaultReturnTo);
+  if (!token || c.req.query("error")) {
+    return c.html(
+      page(
+        "Reset password",
+        `<h1>This link has expired</h1>
+         <p>Reset links work once, for one hour.</p>
+         <div class="row"><a class="button" href="/forgot-password?app=${escapeHtml(appId)}">Send a new link</a></div>`,
+      ),
+    );
+  }
+  return c.html(
+    page(
+      "Reset password",
+      `<h1>Choose a new password</h1>
+       <form id="reset-form">
+         <label>New password<input id="password" type="password" minlength="8" autocomplete="new-password" required></label>
+         <button type="submit">Save password</button>
+       </form>
+       <p id="message" class="error" role="alert"></p>`,
+      `
+      const messages = ${JSON.stringify(authErrorMessages())};
+      document.querySelector("#reset-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const response = await fetch("/api/auth/reset-password", {
+          method: "POST", credentials: "include",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ token: ${JSON.stringify(token)}, newPassword: document.querySelector("#password").value })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          document.querySelector("#message").textContent = messages[data.code] || data.message || "Could not save the password";
+          return;
+        }
+        document.querySelector("main").innerHTML = '<div class="done">✓</div><h1>Password saved</h1><p>Sign in with your email and new password.</p><div class="row"><a class="button" href="${signIn}">Sign in</a></div>';
       });`,
     ),
   );

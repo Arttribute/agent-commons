@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signIn } from "@/auth";
 import { safeAuthCallback } from "@/lib/auth-callback";
+import { loginOutcome, loginPageUrl, startFailedUrl } from "@/lib/login-flow";
 
 async function start(request: NextRequest, callbackUrl: string) {
   const origin = request.nextUrl.origin;
   const safeCallbackUrl = safeAuthCallback(callbackUrl);
+  // Messages identity sent back to /login, shown once the new request is ready.
+  const outcome = loginOutcome(Object.fromEntries(request.nextUrl.searchParams));
+  const failed = (message: string) =>
+    NextResponse.redirect(new URL(startFailedUrl(safeCallbackUrl, message), origin));
   if (
     !process.env.COMMONS_IDENTITY_ISSUER ||
     !process.env.COMMONS_IDENTITY_CLIENT_ID
@@ -13,9 +18,7 @@ async function start(request: NextRequest, callbackUrl: string) {
       hasIssuer: Boolean(process.env.COMMONS_IDENTITY_ISSUER),
       hasClientId: Boolean(process.env.COMMONS_IDENTITY_CLIENT_ID),
     });
-    return NextResponse.redirect(
-      new URL("/login?authError=Sign-in+is+not+configured", origin),
-    );
+    return failed("Sign-in is not configured");
   }
 
   let authorizeUrl: string | undefined;
@@ -28,12 +31,10 @@ async function start(request: NextRequest, callbackUrl: string) {
     console.error("[auth/native/start] Could not start Commons sign-in", {
       message: error instanceof Error ? error.message : String(error),
     });
-    return NextResponse.redirect(
-      new URL("/login?authError=Could+not+start+sign-in", origin),
-    );
+    return failed("Could not start sign-in");
   }
   if (!authorizeUrl || authorizeUrl.includes("error=Configuration")) {
-    return NextResponse.redirect(new URL("/login?authError=Could+not+start+sign-in", origin));
+    return failed("Could not start sign-in");
   }
   if (request.nextUrl.searchParams.get("direct") === "1") {
     return NextResponse.redirect(authorizeUrl);
@@ -51,10 +52,10 @@ async function start(request: NextRequest, callbackUrl: string) {
     ? new URL(preparedUrl, authorizeUrl).search.slice(1)
     : "";
   if ((!prepared.ok && !preparedUrl) || !oauthQuery) {
-    return NextResponse.redirect(new URL("/login?authError=Could+not+prepare+sign-in", origin));
+    return failed("Could not prepare sign-in");
   }
   return NextResponse.redirect(
-    new URL(`/login?oauth_query=${encodeURIComponent(oauthQuery)}&callbackUrl=${encodeURIComponent(safeCallbackUrl)}`, origin),
+    new URL(loginPageUrl(oauthQuery, safeCallbackUrl, outcome), origin),
   );
 }
 

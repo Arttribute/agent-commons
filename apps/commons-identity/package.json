@@ -11,7 +11,7 @@
     "auth:migrate": "better-auth migrate --config lib/auth.ts --yes",
     "db:migrate": "tsx scripts/migrate-database.ts",
     "oauth:bootstrap": "tsx scripts/bootstrap-oauth-clients.ts",
-    "test:e2e": "tsx scripts/e2e-smoke.ts",
+    "test:e2e": "tsx scripts/e2e-smoke.ts && tsx scripts/e2e-sign-in.ts",
     "identity:migrate": "tsx scripts/migrate-legacy-identities.ts",
     "identity:migrate:apply": "tsx scripts/migrate-legacy-identities.ts --apply"
   },
