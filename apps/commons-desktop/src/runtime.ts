@@ -708,7 +708,7 @@ export class PrivateLocalRuntime {
     for (const [index, server] of selected.entries()) {
       const approved = await this.requestApproval(`Connect to MCP server ${server.name} at ${server.url} and discover its tool names${server.apiKey ? " using the saved API key" : ""}.`, `mcp_connect:${server.id}`, { conversationId });
       if (!approved) continue;
-      const client = new Client({ name: "agent-commons-local", version: "0.4.4" });
+      const client = new Client({ name: "agent-commons-local", version: "0.4.5" });
       try {
         await client.connect(new StreamableHTTPClientTransport(new URL(server.url), { requestInit: server.apiKey ? { headers: { Authorization: `Bearer ${server.apiKey}` } } : undefined }));
         const catalog = await client.listTools(undefined, { timeout: 10_000 });

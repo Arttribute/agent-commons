@@ -227,9 +227,58 @@ jobs:
           file "$applications/Agent Commons.app/Contents/MacOS/Agent Commons"
           COMMONS_DESKTOP_SMOKE_EXECUTABLE="$applications/Agent Commons.app/Contents/MacOS/Agent Commons" pnpm --filter commons-desktop smoke
 
+  # Real Windows installs upgrade from older releases, which CI's fresh install
+  # never does. 0.4.2 is the last release that shipped the deep pnpm tree, and
+  # upgrading over it left Next.js unable to find styled-jsx. Upgrade from it
+  # with this build and start the bundled server the way the app does.
+  upgrade-windows:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-Windows
+          path: desktop-release
+      - name: Upgrade from 0.4.2 and start the bundled server
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\commons-desktop'
+          $bundle = Join-Path $dir 'resources\commons-app'
+          $old = Join-Path $env:RUNNER_TEMP 'Agent-Commons-0.4.2.exe'
+          curl.exe -sSfL -o $old 'https://github.com/Arttribute/agent-commons/releases/download/desktop-v0.4.2/Agent-Commons-win-x64.exe'
+          foreach ($installer in $old, (Resolve-Path 'desktop-release/Agent-Commons-win-x64.exe').Path) {
+            $started = Get-Date
+            $process = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "$installer exited with $($process.ExitCode)" }
+            "Installed $(Split-Path $installer -Leaf) in $([int]((Get-Date) - $started).TotalSeconds)s: $((Get-Item "$dir\Agent Commons.exe").VersionInfo.ProductVersion)"
+          }
+          if (Test-Path (Join-Path $bundle 'node_modules\.pnpm')) { throw 'The 0.4.2 pnpm tree is still installed' }
+          if (-not (Test-Path (Join-Path $bundle 'node_modules\styled-jsx\package.json'))) { throw 'styled-jsx is missing after the upgrade' }
+
+          $app = Join-Path $bundle 'apps\commons-app'
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          $env:NODE_ENV = 'production'
+          $env:COMMONS_DESKTOP_SERVER = '1'
+          $env:PORT = '3999'
+          $env:HOSTNAME = 'localhost'
+          $env:AUTH_URL = 'http://localhost:3999'
+          $env:AUTH_SECRET = 'upgrade-check-secret-upgrade-check-secret-1'
+          $log = Join-Path $env:RUNNER_TEMP 'server.err'
+          $server = Start-Process -FilePath "$dir\Agent Commons.exe" -ArgumentList "`"$app\server.js`"" -WorkingDirectory $app -RedirectStandardError $log -PassThru
+          $started = $false
+          for ($i = 0; $i -lt 60 -and -not $server.HasExited; $i++) {
+            try { if ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 'http://localhost:3999/desktop/auth').StatusCode -eq 200) { $started = $true; break } } catch { }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+          if (-not $started) { Get-Content $log -Tail 25 -ErrorAction SilentlyContinue; throw 'The upgraded Commons app did not start' }
+          'The upgraded Commons app started'
+
   release:
     if: startsWith(github.ref, 'refs/tags/desktop-v')
-    needs: [build, smoke-intel-mac]
+    needs: [build, smoke-intel-mac, upgrade-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
