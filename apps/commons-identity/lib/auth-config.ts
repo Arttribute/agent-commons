@@ -1,6 +1,8 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
+import { APIError, createEmailVerificationToken } from "better-auth/api";
 import { bearer, deviceAuthorization, jwt } from "better-auth/plugins";
 import bcrypt from "bcryptjs";
+import { decodeJwt } from "jose";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { createCommonsId } from "@/lib/ids";
 import { PLATFORM_SCOPES } from "@/lib/platform-api";
@@ -33,18 +35,32 @@ type IdentityEmailBrand = {
   body: string;
 };
 
-function appFromVerificationUrl(url: string): string | null {
+function appFromCallbackUrl(callbackURL: string | null): string | null {
   try {
-    const verificationUrl = new URL(url);
-    const callbackURL =
-      verificationUrl.searchParams.get("callbackURL") ??
-      verificationUrl.searchParams.get("callbackUrl");
-    if (!callbackURL) return null;
-    const callback = new URL(callbackURL);
-    return callback.searchParams.get("commons_app");
+    return callbackURL ? new URL(callbackURL).searchParams.get("commons_app") : null;
   } catch {
     return null;
   }
+}
+
+function appFromVerificationUrl(url: string): string | null {
+  try {
+    const verificationUrl = new URL(url);
+    return appFromCallbackUrl(
+      verificationUrl.searchParams.get("callbackURL") ??
+        verificationUrl.searchParams.get("callbackUrl"),
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** The callbackURL a sign-up or sign-in request asked to return to. */
+async function requestedCallbackUrl(request?: Request) {
+  const body = (await request?.json().catch(() => null)) as
+    | { callbackURL?: unknown }
+    | null;
+  return typeof body?.callbackURL === "string" ? body.callbackURL : "/";
 }
 
 export function appEmailBrand(app: string | null): IdentityEmailBrand {
@@ -124,6 +140,23 @@ export function commonsAuthOptions(database: unknown) {
   const googleEnabled =
     Boolean(process.env.GOOGLE_CLIENT_ID) &&
     Boolean(process.env.GOOGLE_CLIENT_SECRET);
+  const db = database as QueryableDatabase;
+
+  async function sendVerificationLink(
+    user: { email: string },
+    url: string,
+  ) {
+    const brand = appEmailBrand(appFromVerificationUrl(url));
+    await sendIdentityEmail({
+      to: user.email,
+      from: brand.from,
+      subject: brand.subject,
+      heading: brand.heading,
+      body: brand.body,
+      url,
+      action: "Verify email",
+    });
+  }
 
   return {
     appName: "Commons",
@@ -131,9 +164,57 @@ export function commonsAuthOptions(database: unknown) {
     secret: process.env.BETTER_AUTH_SECRET,
     database,
     trustedOrigins,
+    // Production otherwise sends OAuth errors to "/?error=...", a page that
+    // ignores them and whose "Sign in" link restarts the same failing flow.
+    onAPIError: { errorURL: `${baseURL}/sign-in` },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
+      revokeSessionsOnPasswordReset: true,
+      // The reset link reached their inbox, which proves they own the address.
+      onPasswordReset: async ({ user }: { user: { id: string } }) => {
+        await db.query(
+          `update "user" set "emailVerified" = true where id = $1`,
+          [user.id],
+        );
+      },
+      // Signing up with an email that already has an account succeeds without
+      // saying so, to avoid revealing which emails are registered. Tell the
+      // owner by email instead of leaving them waiting for nothing.
+      onExistingUserSignUp: async (
+        { user }: { user: { id: string; email: string; emailVerified: boolean } },
+        request?: Request,
+      ) => {
+        const callbackURL = await requestedCallbackUrl(request);
+        const accounts = await db.query(
+          `select "providerId" from account where "userId" = $1`,
+          [user.id],
+        );
+        const methods = new Set(accounts.rows.map((row) => String(row.providerId)));
+        if (!user.emailVerified && methods.has("credential")) {
+          const token = await createEmailVerificationToken(
+            process.env.BETTER_AUTH_SECRET!,
+            user.email,
+          );
+          await sendVerificationLink(
+            user,
+            `${baseURL}/api/auth/verify-email?token=${token}&callbackURL=${encodeURIComponent(callbackURL)}`,
+          );
+          return;
+        }
+        const brand = appEmailBrand(appFromCallbackUrl(callbackURL));
+        await sendIdentityEmail({
+          to: user.email,
+          from: brand.from,
+          subject: `You already have a ${brand.product} account`,
+          heading: "You already have an account",
+          body: methods.has("google")
+            ? "Someone, probably you, tried to create an account with this email. Sign in with Continue with Google, or reset your password below to sign in with email."
+            : "Someone, probably you, tried to create an account with this email. Sign in with your password. If you forgot it, reset it below.",
+          url: `${baseURL}/forgot-password?email=${encodeURIComponent(user.email)}`,
+          action: "Reset password",
+        });
+      },
       sendResetPassword: async ({ user, url }: IdentityEmailContext) => {
         await sendIdentityEmail({
           to: user.email,
@@ -144,6 +225,7 @@ export function commonsAuthOptions(database: unknown) {
           heading: "Reset your Commons password",
           body: "Use the secure link below to choose a new password.",
           url,
+          action: "Choose a new password",
         });
       },
       password: {
@@ -154,21 +236,14 @@ export function commonsAuthOptions(database: unknown) {
     },
     emailVerification: {
       sendOnSignUp: true,
+      // An unverified sign-in gets a fresh link, so a lost or expired email
+      // never locks anyone out.
+      sendOnSignIn: true,
       autoSignInAfterVerification: true,
       sendVerificationEmail: async ({
         user,
         url,
-      }: IdentityEmailContext) => {
-        const brand = appEmailBrand(appFromVerificationUrl(url));
-        await sendIdentityEmail({
-          to: user.email,
-          from: brand.from,
-          subject: brand.subject,
-          heading: brand.heading,
-          body: brand.body,
-          url,
-        });
-      },
+      }: IdentityEmailContext) => sendVerificationLink(user, url),
     },
     socialProviders: googleEnabled
       ? {
@@ -182,6 +257,10 @@ export function commonsAuthOptions(database: unknown) {
       accountLinking: {
         enabled: true,
         trustedProviders: ["google"],
+        // People often sign up with a password, miss the verification email,
+        // then try Google. Refusing that link ("account_not_linked") left them
+        // unable to sign in at all. The account hook below makes it safe.
+        requireLocalEmailVerified: false,
       },
     },
     advanced: {
@@ -208,6 +287,53 @@ export function commonsAuthOptions(database: unknown) {
       },
     },
     databaseHooks: {
+      account: {
+        create: {
+          // Google is linking to an account whose email was never verified.
+          // Its password proves nothing about who owns the address, and
+          // whoever set it could be someone else, so Google must prove the
+          // address and the unverified password is removed.
+          before: async (account: {
+            userId: string;
+            providerId: string;
+            idToken?: string | null;
+          }) => {
+            if (account.providerId === "credential") return;
+            const owner = await db.query(
+              `select email, "emailVerified" from "user" where id = $1`,
+              [account.userId],
+            );
+            const user = owner.rows[0] as
+              | { email: string; emailVerified: boolean }
+              | undefined;
+            if (!user || user.emailVerified) return;
+            const password = await db.query(
+              `select id from account where "userId" = $1 and "providerId" = 'credential'`,
+              [account.userId],
+            );
+            if (password.rows.length === 0) return;
+            let claims: { email?: unknown; email_verified?: unknown } = {};
+            try {
+              claims = account.idToken ? decodeJwt(account.idToken) : {};
+            } catch {}
+            if (
+              claims.email_verified !== true ||
+              String(claims.email ?? "").toLowerCase() !== user.email.toLowerCase()
+            ) {
+              throw new APIError("FORBIDDEN", {
+                message: "Google did not verify this email address.",
+              });
+            }
+            await db.query(
+              `delete from account where "userId" = $1 and "providerId" = 'credential'`,
+              [account.userId],
+            );
+            await db.query(`delete from session where "userId" = $1`, [
+              account.userId,
+            ]);
+          },
+        },
+      },
       user: {
         create: {
           after: async (user: { id: string; name: string; email: string }) => {
@@ -341,6 +467,7 @@ export async function sendIdentityEmail(input: {
   heading: string;
   body: string;
   url: string;
+  action?: string;
   template?: "commonlab" | "default";
 }) {
   const apiKey = process.env.RESEND_API_KEY;
@@ -396,7 +523,7 @@ export async function sendIdentityEmail(input: {
       html:
         input.template === "commonlab"
           ? commonLabHtml
-          : `<h1>${input.heading}</h1><p>${input.body}</p><p><a href="${input.url}">Continue</a></p>`,
+          : `<h1>${input.heading}</h1><p>${input.body}</p><p><a href="${input.url}">${input.action ?? "Continue"}</a></p>`,
     }),
   });
   if (!response.ok) {

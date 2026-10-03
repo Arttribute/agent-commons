@@ -81,6 +81,17 @@ jobs:
       - name: Test identity client address resolution
         run: node --experimental-strip-types --test apps/commons-identity/lib/client-ip.test.mjs
 
+      # Identity has no staging deployment, so these are its only check before
+      # production: OAuth, platform keys, and every way to sign in or sign up
+      # (Google, email and password, and mixes of the two).
+      - name: Test identity sign-in journeys
+        run: pnpm --filter commons-identity run test:e2e
+
+      # /login must keep identity's messages ("check your email", errors) when
+      # it restarts sign-in, and sign people in after they verify their email.
+      - name: Test login flow
+        run: node --experimental-strip-types --test apps/commons-app/lib/login-flow.test.mjs
+
       # A failed token refresh must back off instead of retrying on every
       # request; retry storms exhausted identity's rate limit for everyone.
       - name: Test session token refresh backoff
