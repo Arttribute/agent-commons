@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { GoogleLogo } from "@/components/auth/google-logo";
 import { safeAuthCallback } from "@/lib/auth-callback";
+import { loginOutcome, restartSignInUrl } from "@/lib/login-flow";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -21,9 +22,7 @@ export default async function LoginPage({ searchParams }: Props) {
   const callbackUrl = safeAuthCallback(params.callbackUrl);
   const oauthQuery =
     typeof params.oauth_query === "string" ? params.oauth_query : "";
-  const error = typeof params.authError === "string" ? params.authError : "";
-  const authJsError = typeof params.error === "string" ? params.error : "";
-  const registered = params.registered === "1";
+  const { authError: error, registered, startFailed } = loginOutcome(params);
   const identityUrl =
     process.env.COMMONS_IDENTITY_ISSUER?.replace(/\/api\/auth\/?$/, "") ??
     "https://auth.agentcommons.io";
@@ -31,8 +30,20 @@ export default async function LoginPage({ searchParams }: Props) {
   const session = await auth();
   if (session?.user) redirect(callbackUrl);
 
+  if (!oauthQuery && !startFailed) redirect(restartSignInUrl(callbackUrl, params));
+
   if (!oauthQuery) {
-    redirect(`/api/auth/native/start?callbackUrl=${encodeURIComponent(callbackUrl)}`);
+    return (
+      <AuthShell>
+        <AuthTitle description="Sign-in could not start. Please try again.">Sign in</AuthTitle>
+        <p className="mb-4 rounded-[10px] border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700" role="alert">
+          {error || "Sign-in could not start."}
+        </p>
+        <Link className={authPrimaryButtonClass} href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
+          Try again
+        </Link>
+      </AuthShell>
+    );
   }
 
   return (
@@ -44,12 +55,9 @@ export default async function LoginPage({ searchParams }: Props) {
           Check your email to verify your account.
         </p>
       )}
-      {(error || authJsError) && (
+      {error && (
         <p className="mb-4 rounded-[10px] border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700" role="alert">
-          {error ||
-            (authJsError === "Configuration"
-              ? "Sign-in could not start because the server auth provider is not configured correctly."
-              : "Sign-in failed. Please try again.")}
+          {error}
         </p>
       )}
       <a
@@ -75,6 +83,14 @@ export default async function LoginPage({ searchParams }: Props) {
         </label>
         <button type="submit" className={authPrimaryButtonClass}>Sign in</button>
       </form>
+      <p className="mt-3 text-center text-sm">
+        <a
+          className="text-stone-600 underline-offset-2 transition-colors hover:text-stone-950 hover:underline"
+          href={`${identityUrl}/forgot-password?app=agent-commons`}
+        >
+          Forgot password?
+        </a>
+      </p>
       <details className="group mt-5 text-sm">
         <summary className="flex cursor-pointer list-none items-center justify-center gap-1.5 text-stone-600 transition-colors hover:text-stone-950">
           New here? Create an account
