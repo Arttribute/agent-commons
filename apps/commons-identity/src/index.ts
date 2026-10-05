@@ -10,7 +10,7 @@ import { appEmailBrand, sendIdentityEmail } from "../lib/auth-config.js";
 import { CLIENT_IP_HEADER, resolveClientIp, withClientIp } from "../lib/client-ip.js";
 import { pool } from "../lib/db.js";
 import { createCommonsId } from "../lib/ids.js";
-import { authErrorMessage, authErrorMessages } from "./auth-errors.js";
+import { authErrorMessage, authErrorMessages, deviceErrorMessage, deviceErrorMessages } from "./auth-errors.js";
 import { clientName, escapeHtml, page, safeReturnPath, scopeList } from "./ui.js";
 import { createPlatformRouter } from "./platform.js";
 
@@ -178,6 +178,29 @@ async function nativeAuthResponse(
         );
   setCookies.forEach((cookie) => headers.append("set-cookie", cookie));
   return new Response(null, { status: 302, headers });
+}
+
+/**
+ * Claims a device code for the signed-in person and returns its status, or the
+ * error code when it cannot be claimed. Approving needs a claimed code, and the
+ * plugin only claims on `GET /device` with a session. People who sign in on the
+ * way to approval (everyone, the first time) never sent that request, so their
+ * Connect failed as invalid_request.
+ */
+async function claimDeviceCode(
+  authService: typeof auth,
+  userCode: string,
+  headers: Headers,
+) {
+  try {
+    const result = await authService.api.deviceVerify({
+      query: { user_code: userCode },
+      headers,
+    });
+    return result.status;
+  } catch (error) {
+    return (error as { body?: { error?: string } }).body?.error ?? "invalid_request";
+  }
 }
 
 export function createIdentityApp(
@@ -630,18 +653,16 @@ app.get("/device", (c) => {
        <form id="device-form"><label>Code<input id="code" class="code-input" value="${escapeHtml(initialCode)}" autocomplete="one-time-code" spellcheck="false" required></label>
        <button>Continue</button></form><p id="message" class="error"></p>`,
       `
+      const messages = ${JSON.stringify(deviceErrorMessages())};
       async function claimDevice(code) {
         code = code.replaceAll("-", "").trim().toUpperCase();
         const response = await fetch("/api/auth/device?user_code=" + encodeURIComponent(code), {credentials:"include"});
-        if (response.status === 401) {
-          location.href = "/sign-in?redirect=" + encodeURIComponent("/device?user_code=" + code);
-          return;
-        }
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          document.querySelector("#message").textContent = data.error_description || data.message || "Invalid code";
+          document.querySelector("#message").textContent = messages[data.error] || data.error_description || "Invalid code";
           return;
         }
+        // Approval signs people in first when they need it, then claims the code.
         location.href = "/device/approve?user_code=" + encodeURIComponent(code);
       }
       document.querySelector("#device-form").addEventListener("submit", async (event) => {
@@ -655,11 +676,20 @@ app.get("/device", (c) => {
 });
 
 app.get("/device/approve", async (c) => {
-  const code = c.req.query("user_code") ?? "";
+  const code = (c.req.query("user_code") ?? "").replaceAll("-", "").trim().toUpperCase();
   const session = await authService.api.getSession({ headers: c.req.raw.headers });
   if (!session) {
     return c.redirect(
       `/sign-in?redirect=${encodeURIComponent(`/device/approve?user_code=${code}`)}`,
+    );
+  }
+  const status = await claimDeviceCode(authService, code, c.req.raw.headers);
+  if (status !== "pending") {
+    return c.html(
+      page(
+        "Connect a device",
+        `<h1>This device can't be connected</h1><p>${escapeHtml(deviceErrorMessage(status))}</p>`,
+      ),
     );
   }
   return c.html(
@@ -673,6 +703,7 @@ app.get("/device/approve", async (c) => {
        <p id="message"></p>`,
       `
       const code = ${JSON.stringify(code)};
+      const messages = ${JSON.stringify(deviceErrorMessages())};
       async function decide(action) {
         const response = await fetch("/api/auth/device/" + action, {
           method:"POST", credentials:"include", headers:{"Content-Type":"application/json"},
@@ -680,7 +711,7 @@ app.get("/device/approve", async (c) => {
         });
         const data = await response.json().catch(() => ({}));
         const message = document.querySelector("#message");
-        if (!response.ok) { message.className="error"; message.textContent=data.message||data.error||"Request failed"; return; }
+        if (!response.ok) { message.className="error"; message.textContent=messages[data.error]||data.error_description||data.message||"Request failed"; return; }
         document.querySelector("main").innerHTML = action==="approve"
           ? '<div class="done">✓</div><h1>You are connected</h1><p>Return to Agent Commons. It finishes signing in on its own.</p>'
           : '<h1>Request denied</h1><p>The device was not connected. You can close this page.</p>';
