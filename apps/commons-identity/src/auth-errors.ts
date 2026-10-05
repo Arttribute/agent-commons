@@ -42,3 +42,24 @@ export function authErrorMessage(code: string | null | undefined) {
   if (!code) return "";
   return MESSAGES[code] ?? "We couldn't sign you in. Please try again.";
 }
+
+const RESTART_DEVICE = "Start sign-in again from the desktop app or the CLI.";
+
+// What to tell a person when connecting a device fails. Keys are the device
+// plugin's error codes and the statuses a code can no longer be approved in.
+const DEVICE_MESSAGES: Record<string, string> = {
+  invalid_request: `This code isn't valid or was already used. ${RESTART_DEVICE}`,
+  expired_token: `This code has expired. ${RESTART_DEVICE}`,
+  access_denied: `This code was opened with a different account. ${RESTART_DEVICE}`,
+  approved: "This device is already connected. Return to the app to continue.",
+  denied: `This request was denied. ${RESTART_DEVICE}`,
+};
+
+/** Every device message by code, for pages that map errors in the browser. */
+export function deviceErrorMessages() {
+  return { ...DEVICE_MESSAGES };
+}
+
+export function deviceErrorMessage(code: string) {
+  return DEVICE_MESSAGES[code] ?? `We couldn't connect this device. ${RESTART_DEVICE}`;
+}
