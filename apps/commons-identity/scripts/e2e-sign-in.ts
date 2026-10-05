@@ -418,4 +418,94 @@ await journey("hosted sign-in for the CLI device page signs in", async () => {
   assert(response.ok, `device sign-in failed: ${response.status} ${await response.text()}`);
 });
 
+/** Starts a sign-in the way the desktop app does. */
+async function startDeviceSignIn() {
+  const response = await app.request(`${IDENTITY}/api/auth/device/code`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: "commons-desktop", scope: "openid profile email" }),
+  });
+  const device = (await response.json()) as { device_code: string; user_code: string };
+  assert(response.ok && device.user_code, `device sign-in did not start: ${response.status}`);
+  return device;
+}
+
+/** Opens the device link signed out, as a new person does, and returns where sign-in sends them back. */
+async function openDeviceLinkSignedOut(go: ReturnType<typeof browser>, userCode: string) {
+  // The /device page checks the code first, then moves on to approval.
+  const check = await go(`${IDENTITY}/api/auth/device?user_code=${userCode}`);
+  assert(check.ok, `the device page rejected a fresh code: ${check.status}`);
+  const signIn = location(await go(`${IDENTITY}/device/approve?user_code=${userCode}`));
+  assert(signIn.pathname === "/sign-in", `approval did not ask a signed-out person to sign in: ${signIn}`);
+  const redirect = signIn.searchParams.get("redirect") ?? "";
+  assert(redirect.startsWith("/device/approve"), `sign-in would not return to approval: ${redirect}`);
+  return redirect;
+}
+
+/** Clicks Connect on the approval page, then polls like the desktop app. */
+async function connectDevice(
+  go: ReturnType<typeof browser>,
+  device: { device_code: string; user_code: string },
+) {
+  const page = await go(`${IDENTITY}/device/approve?user_code=${device.user_code}`);
+  assert(page.status === 200 && /id="approve"/.test(await page.text()), `no Connect button: ${page.status}`);
+  const approve = await go(`${IDENTITY}/api/auth/device/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", origin: IDENTITY },
+    body: JSON.stringify({ userCode: device.user_code }),
+  });
+  assert(approve.ok, `Connect failed: ${approve.status} ${await approve.text()}`);
+  const token = await app.request(`${IDENTITY}/api/auth/device/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      device_code: device.device_code,
+      client_id: "commons-desktop",
+    }),
+  });
+  const body = (await token.json()) as { access_token?: string };
+  assert(token.ok && body.access_token, `the desktop app got no token: ${token.status} ${JSON.stringify(body)}`);
+}
+
+await journey("first-time person connects the desktop app with Google", async () => {
+  const device = await startDeviceSignIn();
+  const go = browser();
+  const redirect = await openDeviceLinkSignedOut(go, device.user_code);
+  googleProfile = { sub: "google-desktop", email: "desktop-google@example.com", email_verified: true, name: "Desk Top" };
+  const social = await go(`${IDENTITY}/api/auth/sign-in/social`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", origin: IDENTITY },
+    body: JSON.stringify({ provider: "google", callbackURL: redirect }),
+  });
+  const google = new URL(((await social.json()) as { url: string }).url);
+  const back = location(await go(`${IDENTITY}/api/auth/callback/google?${new URLSearchParams({
+    code: "google-code", state: google.searchParams.get("state")!,
+  })}`));
+  assert(back.pathname === "/device/approve", `Google did not return to approval: ${back}`);
+  await connectDevice(go, device);
+  const again = await (await go(`${IDENTITY}/device/approve?user_code=${device.user_code}`)).text();
+  assert(/already (connected|used)/.test(again) && !/id="approve"/.test(again),
+    "reopening a connected code should say so instead of offering Connect");
+});
+
+await journey("first-time person connects the desktop app after signing up with email", async () => {
+  const device = await startDeviceSignIn();
+  const go = browser();
+  const redirect = await openDeviceLinkSignedOut(go, device.user_code);
+  const signUp = await go(`${IDENTITY}/api/auth/sign-up/email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", origin: IDENTITY },
+    body: JSON.stringify({
+      name: "Desk Top", email: "desktop-email@example.com", password: "desktop-password-123", callbackURL: redirect,
+    }),
+  });
+  assert(signUp.ok, `sign-up failed: ${signUp.status} ${await signUp.text()}`);
+  const verify = sentTo("desktop-email@example.com").at(-1);
+  assert(verify, "no verification email was sent");
+  const back = location(await go(linkIn(verify)));
+  assert(back.pathname === "/device/approve", `verification did not return to approval: ${back}`);
+  await connectDevice(go, device);
+});
+
 console.log(JSON.stringify({ passed: Object.keys(results).length }, null, 2));
