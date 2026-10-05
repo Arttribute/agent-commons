@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Cloud, Cpu, Laptop } from "lucide-react";
+import { ChevronDown, Cloud, Cpu, Laptop } from "lucide-react";
+import { MacFirstLaunch } from "@/components/download/mac-first-launch";
 import { PrimaryDownload } from "@/components/download/primary-download";
 import { DESKTOP_DOWNLOADS, DESKTOP_RELEASE_PAGE, DESKTOP_RELEASE_ROOT } from "@/lib/desktop-release";
 
@@ -17,7 +18,7 @@ const FEATURES = [
 
 export default function DesktopDownloadPage() {
   return (
-    <main className="min-h-full overflow-y-auto bg-page">
+    <main className="h-dvh overflow-y-auto overscroll-contain bg-page">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-5 pt-5 sm:px-6">
         <Link href="/" aria-label="Agent Commons" className="flex items-center">
           <Image src="/logo.jpg" alt="Agent Commons" width={131} height={60} priority className="h-8 w-auto rounded-md object-contain" />
@@ -38,6 +39,9 @@ export default function DesktopDownloadPage() {
         <div className="mt-8">
           <PrimaryDownload />
         </div>
+        <a href="#open-on-mac" className="mt-3 text-xs text-stone-500 underline-offset-2 transition-colors hover:text-stone-900 hover:underline">
+          On a Mac? See how to open it the first time
+        </a>
       </section>
 
       <section className="mx-auto grid max-w-3xl gap-3 px-5 sm:grid-cols-3">
@@ -50,8 +54,10 @@ export default function DesktopDownloadPage() {
         ))}
       </section>
 
+      <MacFirstLaunch id="open-on-mac" />
+
       <section className="mx-auto max-w-3xl px-5 pb-16 pt-10">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-stone-500">All downloads</h2>
+        <h2 className="text-sm font-medium text-stone-900">All downloads</h2>
         <div className="mt-3 divide-y divide-stone-200 overflow-hidden rounded-xl border border-stone-200 bg-white">
           {DESKTOP_DOWNLOADS.map((download) => (
             <a
@@ -68,12 +74,14 @@ export default function DesktopDownloadPage() {
         </div>
 
         <details className="group mt-4 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm">
-          <summary className="cursor-pointer list-none text-stone-700 marker:hidden">
-            First time opening it?
+          <summary className="flex cursor-pointer list-none items-center justify-between text-stone-700 [&::-webkit-details-marker]:hidden">
+            More install notes
+            <ChevronDown className="h-4 w-4 text-stone-400 transition-transform group-open:rotate-180" strokeWidth={1.75} />
           </summary>
           <div className="mt-3 space-y-2 text-xs leading-5 text-stone-600">
-            <p>This early release is not yet notarized. On macOS, drag Agent Commons to Applications, Control-click it, and choose Open. If macOS still blocks it, open System Settings, then Privacy &amp; Security, and choose Open Anyway.</p>
-            <p>If an older download says the app is damaged, delete that file and download this version. Windows may ask you to confirm the download before it opens.</p>
+            <p>Windows: if SmartScreen says it protected your PC, click More info, then Run anyway.</p>
+            <p>Linux: make the AppImage executable with <code className="rounded bg-stone-100 px-1 py-px font-mono text-[11px]">chmod +x</code>, then run it.</p>
+            <p>If an older Mac download says the app is damaged, delete that file and download this version.</p>
             <p>Local AI downloads a verified runtime and model on first use: about 1 GB on macOS and up to 4 GB on Windows or Linux.</p>
           </div>
         </details>
