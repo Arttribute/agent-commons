@@ -332,6 +332,8 @@ assert(
     ),
   "CLI JWT is missing Commons account platform scopes",
 );
+assert(!(platformClaims.scopes as unknown[]).includes("credits:write"),
+  "Ordinary user JWT must not gain the service-only credit scope");
 
 const jwks = await app.request(
   "http://identity.test/api/auth/.well-known/jwks.json",
@@ -379,6 +381,39 @@ assert(
   `service token subject is incorrect: ${JSON.stringify(serviceClaims)}`,
 );
 assert(serviceClaims.actor_type === "service", "service actor type is missing");
+const ordinaryCreditScope = await app.request("http://identity.test/api/auth/oauth2/token", {
+  method: "POST",
+  headers: {
+    Authorization: `Basic ${Buffer.from(`${serviceClient.client_id}:${serviceClient.client_secret}`).toString("base64")}`,
+    "Content-Type": "application/x-www-form-urlencoded",
+  },
+  body: new URLSearchParams({
+    grant_type: "client_credentials", scope: "credits:write", resource: "commons-platform",
+  }).toString(),
+});
+assert(!ordinaryCreditScope.ok, "An ordinary client must not mint credits:write");
+const creditClient = await ensureOAuthClient(database, {
+  name: "E2E Credit Service",
+  redirectUris: ["https://invalid.local/service"],
+  grantTypes: ["client_credentials"],
+  scopes: ["credits:write"],
+  metadata: { serviceAccountId: "svc_credit_e2e", workspaceId: "credit-test" },
+});
+const creditTokenResponse = await app.request("http://identity.test/api/auth/oauth2/token", {
+  method: "POST",
+  headers: {
+    Authorization: `Basic ${Buffer.from(`${creditClient.client_id}:${creditClient.client_secret}`).toString("base64")}`,
+    "Content-Type": "application/x-www-form-urlencoded",
+  },
+  body: new URLSearchParams({
+    grant_type: "client_credentials", scope: "credits:write", resource: "commons-platform",
+  }).toString(),
+});
+assert(creditTokenResponse.ok, "Explicitly registered credit client could not mint its scope");
+const creditToken = await creditTokenResponse.json() as { access_token: string };
+const creditClaims = JSON.parse(Buffer.from(creditToken.access_token.split(".")[1]!, "base64url").toString("utf8")) as Record<string, unknown>;
+assert(creditClaims.actor_type === "service" && creditClaims.workspace_id === "credit-test", "Credit token lost its service binding");
+assert(Array.isArray(creditClaims.scopes) && creditClaims.scopes.includes("credits:write"), "Credit token lost its explicit scope");
 
 const lookup = (query: string, token = serviceToken.access_token!) =>
   app.request(`http://identity.test/api/identity/users/resolve?${query}`, {
