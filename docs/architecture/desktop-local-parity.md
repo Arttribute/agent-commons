@@ -68,3 +68,31 @@ Do not label Private Local as equivalent to Commons Cloud until the same UI
 tree runs with the local provider, the parity suite passes, and a real installed
 local model completes the scripted journeys. A renderer build or a mocked model
 response alone does not meet this gate.
+
+## Local account profiles
+
+Desktop selects a local profile using the authenticated Commons principal ID.
+Names and email addresses do not determine ownership. Each profile contains its
+own agents, chats, Library files, canvas versions and notes, Knowledge Spaces,
+tasks, app settings, connection credentials, preferences and folder grants.
+Signing out selects a separate guest profile; signing back in restores the
+account's existing data. Local account snapshots contain display information,
+not authentication tokens.
+
+On upgrade, the existing local profile remains at its original location so its
+absolute artifact paths remain valid. It belongs to the account recorded in
+that profile, or to the original guest when no account was recorded. Other
+accounts get separate directories under `private-local/accounts/`. Model weights,
+voice weights and the managed Python interpreter are shared downloads; their
+outputs and per-agent choices belong to the active profile.
+
+Switching accounts closes old tasks, approval requests, model streams and app
+servers before selecting the new profile. Renderer state is recreated to clear
+canvas selections, chat caches and folder context. Connected-app requests verify
+that the cloud session belongs to the current local profile. An old local run
+cannot use a newly signed-in account's connections.
+
+`local-profiles.test.mjs` exercises legacy profile preservation, A → B → guest → A
+switches, real Library text and canvas notes, independent defaults and stored
+keys, and rejection of late writes from the closed profile. Desktop CI also
+installs and launches the shared app on macOS, Windows and Linux.
