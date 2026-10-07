@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { totalmem } from "node:os";
 import { safeStorage } from "electron";
 import type { LocalState } from "@agent-commons/desktop-contract";
-import { DEFAULT_LOCAL_WEB_SEARCH_URL } from "@agent-commons/desktop-contract";
+import { DEFAULT_LOCAL_WEB_SEARCH_URL, managedLocalWebSearchUrl } from "@agent-commons/desktop-contract";
 
 export const DEFAULT_LOCAL_MODEL = totalmem() >= 8 * 1024 ** 3 ? "qwen3.5:2b-q4_K_M" : "qwen3:1.7b";
 
@@ -39,7 +39,8 @@ export const initialState = (): LocalState => ({
     ollamaUrl: "http://127.0.0.1:11434",
     defaultModel: DEFAULT_LOCAL_MODEL,
     permissionMode: "ask",
-    webSearchUrl: DEFAULT_LOCAL_WEB_SEARCH_URL,
+    managedWebSearchUrl: managedLocalWebSearchUrl(process.env.COMMONS_DESKTOP_CLOUD_URL),
+    webSearchUrl: managedLocalWebSearchUrl(process.env.COMMONS_DESKTOP_CLOUD_URL),
     webSearchDefaultEnabled: true,
   },
 });
@@ -192,6 +193,8 @@ export class LocalStore {
 
   private normalize() {
     this.state.settings.defaultModel ||= DEFAULT_LOCAL_MODEL;
+    this.state.settings.managedWebSearchUrl = managedLocalWebSearchUrl(process.env.COMMONS_DESKTOP_CLOUD_URL);
+    if (this.state.settings.webSearchUrl === DEFAULT_LOCAL_WEB_SEARCH_URL) this.state.settings.webSearchUrl = this.state.settings.managedWebSearchUrl;
     if (!["female", "male", "kokoro-heart", "kokoro-bella", "kokoro-michael", "kokoro-george"].includes(this.state.settings.voiceModel ?? "")) {
       this.state.settings.voiceModel = "female";
     }

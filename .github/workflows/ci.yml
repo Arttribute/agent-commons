@@ -90,7 +90,7 @@ jobs:
       # /login must keep identity's messages ("check your email", errors) when
       # it restarts sign-in, and sign people in after they verify their email.
       - name: Test login flow
-        run: node --experimental-strip-types --test apps/commons-app/lib/login-flow.test.mjs
+        run: node --experimental-strip-types --test apps/commons-app/lib/login-flow.test.mjs apps/commons-app/lib/desktop-request-policy.test.mjs
 
       # A failed token refresh must back off instead of retrying on every
       # request; retry storms exhausted identity's rate limit for everyone.

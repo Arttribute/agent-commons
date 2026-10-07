@@ -25,7 +25,7 @@ import {
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
-import { BRAVE_SEARCH_BASE_URL, DEFAULT_LOCAL_WEB_SEARCH_URL, hasConfiguredLocalWebSearch, type LocalSettings, type LocalConnectedApp } from "@agent-commons/desktop-contract";
+import { BRAVE_SEARCH_BASE_URL, DEFAULT_LOCAL_WEB_SEARCH_URL, isManagedLocalWebSearchUrl, hasConfiguredLocalWebSearch, type LocalSettings, type LocalConnectedApp } from "@agent-commons/desktop-contract";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
@@ -316,6 +316,7 @@ export default function ChatInputBox({
   const [webSearchConfigured, setWebSearchConfigured] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [webSearchDialogOpen, setWebSearchDialogOpen] = useState(false);
+  const [managedSearchUrl, setManagedSearchUrl] = useState(DEFAULT_LOCAL_WEB_SEARCH_URL);
   const [webSearchProvider, setWebSearchProvider] = useState<"managed" | "brave" | "searxng">("managed");
   const [webSearchUrl, setWebSearchUrl] = useState("");
   const [webSearchApiKey, setWebSearchApiKey] = useState("");
@@ -412,7 +413,8 @@ export default function ChatInputBox({
     setWebSearchError("");
     setWebSearchDialogOpen(true);
     void window.agentCommonsLocal?.getState().then((state) => {
-      setWebSearchProvider(!state.settings.webSearchUrl || state.settings.webSearchUrl === DEFAULT_LOCAL_WEB_SEARCH_URL ? "managed" : state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "brave" : "searxng");
+      setManagedSearchUrl(state.settings.managedWebSearchUrl || DEFAULT_LOCAL_WEB_SEARCH_URL);
+      setWebSearchProvider(!state.settings.webSearchUrl || isManagedLocalWebSearchUrl(state.settings.webSearchUrl) ? "managed" : state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "brave" : "searxng");
       setWebSearchUrl(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "" : state.settings.webSearchUrl ?? "");
       setWebSearchApiKey(state.settings.webSearchApiKey ?? "");
     }).catch((cause) => setWebSearchError(cause instanceof Error ? cause.message : "Could not load web search settings."));
@@ -424,7 +426,7 @@ export default function ChatInputBox({
     setWebSearchError("");
     try {
       if (webSearchProvider === "brave" && !webSearchApiKey.trim()) throw new Error("Enter your Brave Search API key.");
-      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl: webSearchProvider === "managed" ? DEFAULT_LOCAL_WEB_SEARCH_URL : webSearchProvider === "brave" ? BRAVE_SEARCH_BASE_URL : webSearchUrl, webSearchApiKey: webSearchProvider === "managed" ? "" : webSearchApiKey });
+      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl: webSearchProvider === "managed" ? managedSearchUrl : webSearchProvider === "brave" ? BRAVE_SEARCH_BASE_URL : webSearchUrl, webSearchApiKey: webSearchProvider === "managed" ? "" : webSearchApiKey });
       const configured = hasConfiguredLocalWebSearch(state.settings);
       if (configured && state.conversations.some((conversation) => conversation.id === sessionId)) {
         await window.agentCommonsLocal.setConversationWebSearch(sessionId, true);

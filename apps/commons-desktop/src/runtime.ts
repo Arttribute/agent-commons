@@ -1821,7 +1821,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       }
     } else if (name === "web_search") {
       const searchSettings = this.store.get().settings;
-      const endpoint = searchSettings.webSearchUrl || DEFAULT_LOCAL_WEB_SEARCH_URL;
+      const endpoint = searchSettings.webSearchUrl || searchSettings.managedWebSearchUrl || DEFAULT_LOCAL_WEB_SEARCH_URL;
       const query = String(args.query ?? "").trim().slice(0, 500);
       if (!this.webSearchAllowed(conversationId) || !endpoint) result = "Error: Web search is off. The user can enable it in the composer.";
       else if (!query) result = "Error: A search query is required.";
@@ -2039,7 +2039,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         (current.artifacts ??= []).push(...artifacts);
         for (const artifact of artifacts) (draft.library ??= []).push({ ...artifact, mimeType: mimeFor(artifact.path), source: "agent", agentId: conversation.agentId, conversationId, updatedAt: now() });
       });
-      return `${output.exitCode ? "Error: Python execution failed.\n" : ""}${JSON.stringify({ ...output, artifacts: artifacts.map(({ id, name, path }) => ({ itemId: id, name, sha256: createHash("sha256").update(readFileSync(path)).digest("hex") })) })}`;
+      return `${output.exitCode ? "Error: Python execution failed.\n" : ""}${JSON.stringify({ ...output, ...(output.exitCode === 0 && artifacts.length === 0 ? { outputHint: "No generated files were found in the managed output directory. For requested artifacts, use the existing OUTPUT_DIR Path or its environment variable; do not replace it with a guessed folder. Files saved elsewhere are not returned to the Library." } : {}), artifacts: artifacts.map(({ id, name, path }) => ({ itemId: id, name, sha256: createHash("sha256").update(readFileSync(path)).digest("hex") })) })}`;
     } catch (error) { return `Error: ${error instanceof Error ? error.message : String(error)}`; }
   }
 

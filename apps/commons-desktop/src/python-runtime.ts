@@ -127,7 +127,7 @@ export class PythonRuntime {
     const prelude = `from pathlib import Path\nINPUT_FILES = ${JSON.stringify(stagedInputs)}\nOUTPUT_DIR = Path(${JSON.stringify(output)})\nWORKSPACE_ROOT = ${JSON.stringify(workspace ?? "")}\n`;
     writeFileSync(script, prelude + code, { mode: 0o600 });
     try {
-      const { stdout, stderr } = await exec(python, ["-I", script], { cwd: output, env: this.environment(), signal, timeout: Math.max(1, Math.min(timeoutSeconds, 300)) * 1000, maxBuffer: 2_000_000, windowsHide: true });
+      const { stdout, stderr } = await exec(python, ["-I", script], { cwd: output, env: { ...this.environment(), OUTPUT_DIR: output, WORKSPACE_ROOT: workspace ?? "" }, signal, timeout: Math.max(1, Math.min(timeoutSeconds, 300)) * 1000, maxBuffer: 2_000_000, windowsHide: true });
       const files: string[] = [];
       let visited = 0;
       const collect = (folder: string, depth = 0) => {
@@ -144,10 +144,10 @@ export class PythonRuntime {
         }
       };
       collect(output);
-      return { exitCode: 0, stdout, stderr, python, files };
+      return { exitCode: 0, stdout, stderr, python, files, outputDirectory: output };
     } catch (error) {
       const failure = error as Error & { code?: number | string; stdout?: string; stderr?: string; killed?: boolean };
-      return { exitCode: typeof failure.code === "number" ? failure.code : -1, stdout: failure.stdout ?? "", stderr: failure.stderr || failure.message, timedOut: Boolean(failure.killed), python, files: [] as string[] };
+      return { exitCode: typeof failure.code === "number" ? failure.code : -1, stdout: failure.stdout ?? "", stderr: failure.stderr || failure.message, timedOut: Boolean(failure.killed), python, files: [] as string[], outputDirectory: output };
     }
   }
 }

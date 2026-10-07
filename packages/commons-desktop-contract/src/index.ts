@@ -244,6 +244,8 @@ export type LocalSettings = {
   ollamaUrl: string;
   defaultModel: string;
   permissionMode: PermissionMode;
+  /** Build-selected managed endpoint; cannot be changed through updateSettings. */
+  managedWebSearchUrl?: string;
   webSearchUrl?: string;
   webSearchApiKey?: string;
   /** Default for new conversations; saved conversation switches take precedence. */
@@ -257,8 +259,17 @@ export type LocalSettings = {
 export const BRAVE_SEARCH_BASE_URL = "https://api.search.brave.com/res/v1/web";
 export const DEFAULT_LOCAL_WEB_SEARCH_URL = "https://api.agentcommons.io/v1/desktop-search";
 
-export function hasConfiguredLocalWebSearch(settings: Pick<LocalSettings, "webSearchUrl" | "webSearchApiKey">) {
-  const endpoint = (settings.webSearchUrl || DEFAULT_LOCAL_WEB_SEARCH_URL).replace(/\/$/, "");
+export const STAGING_LOCAL_WEB_SEARCH_URL = "https://staging.agentcommons.io/api/desktop-search";
+export function managedLocalWebSearchUrl(cloudUrl?: string) {
+  try { if (cloudUrl && new URL(cloudUrl).origin === 'https://staging.agentcommons.io') return STAGING_LOCAL_WEB_SEARCH_URL; } catch { /* Use production defaults for an invalid optional override. */ }
+  return DEFAULT_LOCAL_WEB_SEARCH_URL;
+}
+export function isManagedLocalWebSearchUrl(url: string) {
+  return [DEFAULT_LOCAL_WEB_SEARCH_URL, STAGING_LOCAL_WEB_SEARCH_URL].includes(url.replace(/\/$/, ''));
+}
+
+export function hasConfiguredLocalWebSearch(settings: Pick<LocalSettings, "webSearchUrl" | "webSearchApiKey" | "managedWebSearchUrl">) {
+  const endpoint = (settings.webSearchUrl || settings.managedWebSearchUrl || DEFAULT_LOCAL_WEB_SEARCH_URL).replace(/\/$/, "");
   return Boolean(endpoint && (endpoint !== BRAVE_SEARCH_BASE_URL || settings.webSearchApiKey?.trim()));
 }
 

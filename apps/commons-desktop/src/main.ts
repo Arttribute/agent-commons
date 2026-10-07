@@ -317,11 +317,12 @@ async function loadCloudEntry(cloudSession: Electron.Session, path?: string) {
   const appOrigin = commonsServer?.origin ?? CLOUD_ORIGIN;
   try {
     const response = await cloudSession.fetch(`${appOrigin}/api/auth/session`, {
+      headers: nativeSessionHeaders(),
       cache: "no-store",
       signal: AbortSignal.timeout(8_000),
     });
     const current = (await response.json()) as { user?: { id?: string } };
-    if (response.ok && current.user?.id) {
+    if (response.ok && current?.user?.id) {
       await syncAuthenticatedAccount();
       await unifiedView?.webContents.loadURL(path ? new URL(path, appOrigin).toString() : appOrigin);
       void syncCloudAgentsToLocal();
@@ -371,6 +372,7 @@ async function syncCloudAgentsToLocal() {
   try {
     const cloudSession = session.fromPartition("persist:commons-unified");
     const response = await cloudSession.fetch(`${commonsServer?.origin ?? CLOUD_ORIGIN}/api/agents`, {
+      headers: nativeSessionHeaders(),
       cache: "no-store",
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
     });
@@ -617,14 +619,18 @@ function localHandler<T extends unknown[]>(channel: string, handler: (...args: T
   });
 }
 
+function nativeSessionHeaders(): Record<string, string> {
+  return commonsServer ? { 'x-commons-desktop-main': commonsServer.requestToken } : {};
+}
+
 async function connectedAppRequest(path: string, body?: Record<string, unknown>) {
   const expectedOwner = localProfiles.owner;
   const controller = accountRequests;
   if (!commonsServer) throw new Error('Connected apps are not ready.');
-  const sessionResponse = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/auth/session`, { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]) });
+  const sessionResponse = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/auth/session`, { headers: nativeSessionHeaders(), cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]) });
   const identity = await sessionResponse.json() as { user?: { id?: string } };
-  if (!sessionResponse.ok || !expectedOwner || identity.user?.id !== expectedOwner || controller.signal.aborted) throw new Error('Sign in to this local workspace’s account to connect apps.');
-  const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}${path}`, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]) });
+  if (!sessionResponse.ok || !expectedOwner || identity?.user?.id !== expectedOwner || controller.signal.aborted) throw new Error('Sign in to this local workspace’s account to connect apps.');
+  const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}${path}`, { method: body ? 'POST' : 'GET', headers: { ...nativeSessionHeaders(), 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]) });
   const payload = await response.json() as any;
   if (!response.ok) throw new Error(response.status === 401 ? 'Sign in to Agent Commons to connect apps. Your local model and files stay on this computer.' : `${payload.message ?? 'Connected app request failed.'}${payload.details ? ` ${JSON.stringify(payload.details).slice(0, 1500)}` : ''}`);
   return payload;
@@ -676,10 +682,10 @@ async function selectLocalAccount(account?: DesktopAccount) {
 function syncAuthenticatedAccount() {
   const pending = accountSync.then(async () => {
     if (!commonsServer) throw new Error('Account session is not ready.');
-    const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/auth/session`, { cache: 'no-store', signal: AbortSignal.timeout(8_000) });
+    const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/auth/session`, { headers: nativeSessionHeaders(), cache: 'no-store', signal: AbortSignal.timeout(8_000) });
     if (!response.ok) throw new Error('Could not verify the desktop account.');
     const current = await response.json() as { user?: { id?: string; name?: string; email?: string; image?: string } };
-    const user = current.user;
+    const user = current?.user;
     // Identity comes from the authenticated session, never renderer-supplied IDs.
     await selectLocalAccount(user?.id ? { userId: user.id, displayName: user.name || user.email || user.id, email: user.email, profileImage: user.image } : undefined);
   });
@@ -708,7 +714,7 @@ function registerIpc() {
   });
   localHandler('local:disconnect-app', async (connectionId: string) => {
     if (!/^[a-f0-9-]{36}$/i.test(connectionId) || !commonsServer) throw new Error('Invalid connection.');
-    const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/oauth/connections/${connectionId}`, { method: 'DELETE', signal: AbortSignal.timeout(30_000) });
+    const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/oauth/connections/${connectionId}`, { method: 'DELETE', headers: nativeSessionHeaders(), signal: AbortSignal.timeout(30_000) });
     if (!response.ok) throw new Error('Could not disconnect this app.');
   });
   const cloudPreferences = () => cloudVisiblePreferences(runtime.preferences());

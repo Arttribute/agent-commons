@@ -86,6 +86,17 @@ try {
             throw new Error(`Local data providers failed: ${JSON.stringify(provider)}`);
           }
           checksStarted = true;
+          const accountBoundary = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const session = await (await fetch('/api/auth/session')).json();
+            const csrf = await fetch('/api/auth/csrf');
+            let connectionError = '';
+            try { await window.agentCommonsLocal.getConnectedApps(); }
+            catch (error) { connectionError = String(error.message || error); }
+            return { session, csrf: csrf.status, connectionError };
+          })()`);
+          if (accountBoundary.session !== null || accountBoundary.csrf !== 200 || !accountBoundary.connectionError.includes('Sign in to this local workspace')) {
+            throw new Error(`Local account boundary failed: ${JSON.stringify(accountBoundary)}`);
+          }
           const identities = await evaluate(page.webSocketDebuggerUrl, `(async () => {
             const bridge = window.agentCommonsLocal;
             const agent = (await bridge.getState()).agents.find((item) => item.name === "Commons Copilot");

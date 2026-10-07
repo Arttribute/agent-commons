@@ -92,6 +92,12 @@ canvas selections, chat caches and folder context. Connected-app requests verify
 that the cloud session belongs to the current local profile. An old local run
 cannot use a newly signed-in account's connections.
 
+The loopback server gives the native process a private request capability for
+account verification and connected-app calls. It is never exposed to the
+renderer, and those routes still require the authenticated session. Local
+renderer cloud APIs remain blocked; CSRF and sign-out remain available so
+logging out can actually select the guest profile.
+
 `local-profiles.test.mjs` exercises legacy profile preservation, A → B → guest → A
 switches, real Library text and canvas notes, independent defaults and stored
 keys, and rejection of late writes from the closed profile. Desktop CI also

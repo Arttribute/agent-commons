@@ -23,7 +23,9 @@ try {
   symlinkSync(join(managed, 'data-3.12.11-v1'), join(cloud, 'data-3.12.11-v1'));
   writeFileSync(join(directory, 'sales.csv'), 'revenue\n10\n20\n30\n');
   writeFileSync(join(directory, 'inputs.json'), JSON.stringify({ files: [{ itemId: 'file-731', name: 'sales.csv', url: pathToFileURL(join(directory, 'sales.csv')).toString() }], packages: ['json', 'os', 'pathlib', 'numpy', 'pandas', 'PIL', 'sklearn'], timeoutSeconds: 120 }));
-  writeFileSync(join(directory, 'analysis.py'), `import json, pandas as pd, matplotlib.pyplot as plt
+  writeFileSync(join(directory, 'analysis.py'), `import json, os, pandas as pd, matplotlib.pyplot as plt
+assert os.environ["OUTPUT_DIR"] == str(OUTPUT_DIR)
+assert os.environ["WORKSPACE_ROOT"] == WORKSPACE_ROOT
 assert INPUT_FILES['sales.csv'] == INPUT_FILES['file-731']
 data = pd.read_csv('sales.csv')
 out = OUTPUT_DIR / 'reports'
@@ -32,15 +34,18 @@ out.mkdir()
 plt.plot(data.revenue)
 plt.savefig(out / 'sales.png')
 (out / 'external-link').symlink_to(INPUT_FILES['sales.csv'])
+Path(INPUT_FILES['sales.csv']).write_text('revenue\\n40\\n50\\n')
 print('Verified cloud bootstrap')`);
   const bootstrap = CLOUD_PYTHON_BOOTSTRAP.replace("Path('/mnt/shared/.commons-python')", `Path(${JSON.stringify(cloud)})`);
   writeFileSync(join(directory, 'bootstrap.py'), bootstrap);
   await promisify(execFile)(python, ['-I', join(directory, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
   const result = JSON.parse(readFileSync(join(directory, 'result.json'), 'utf8'));
   assert.equal(result.exitCode, 0, result.stderr);
-  assert.equal(result.files.length, 2, 'Only actual generated files belong in the result manifest');
+  assert.equal(result.files.length, 3, 'Only actual generated files belong in the result manifest');
   const file = (name) => Buffer.from(result.files.find((item) => item.name === name).base64, 'base64');
   assert.equal(JSON.parse(file('reports/totals.json').toString()).sum, 60);
+  assert.equal(file('sales.csv').toString(), 'revenue\n40\n50\n');
+  assert.equal(readFileSync(join(directory, 'sales.csv'), 'utf8'), 'revenue\n10\n20\n30\n', 'The source input was changed');
   assert.equal(file('reports/sales.png').subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
   console.log('Cloud bootstrap executed real Python with staged inputs, nested artifacts and no stdlib installation.');
 } finally { rmSync(directory, { recursive: true, force: true }); }

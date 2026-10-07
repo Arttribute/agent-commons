@@ -47,6 +47,7 @@ inputs = {}
 output = run / 'outputs'
 output.mkdir(exist_ok=True)
 input_paths = set()
+input_hashes = {}
 for item in config['files']:
     target = output / Path(item['name']).name
     if target in input_paths: target = output / (item['itemId'] + '-' + Path(item['name']).name)
@@ -55,13 +56,14 @@ for item in config['files']:
     if len(data) > 25 * 1024 * 1024: raise RuntimeError('Input file exceeds 25 MB')
     target.write_bytes(data)
     input_paths.add(target)
+    input_hashes[target] = hashlib.sha256(data).hexdigest()
     inputs[item['name']] = str(target)
     inputs[item['itemId']] = str(target)
 script = run / 'analysis.py'
 code = script.read_text()
 script.write_text('from pathlib import Path\nINPUT_FILES = ' + repr(inputs) + '\nOUTPUT_DIR = Path(' + repr(str(output)) + ')\nWORKSPACE_ROOT = "/mnt/shared"\n' + code)
 try:
-    result = subprocess.run([str(python), '-I', str(script)], cwd=str(output), env=env, capture_output=True, text=True, timeout=config['timeoutSeconds'])
+    result = subprocess.run([str(python), '-I', str(script)], cwd=str(output), env={**env, "OUTPUT_DIR": str(output), "WORKSPACE_ROOT": "/mnt/shared"}, capture_output=True, text=True, timeout=config['timeoutSeconds'])
     files = []
     visited = 0
     total_bytes = 0
@@ -71,7 +73,8 @@ try:
         for path in folder.iterdir():
             visited += 1
             if visited > 2000: raise RuntimeError('Python output exceeds the 2,000-entry limit')
-            if path in input_paths or path.is_symlink(): continue
+            if path.is_symlink(): continue
+            if path.is_file() and path in input_paths and path.stat().st_size <= 25 * 1024 * 1024 and hashlib.sha256(path.read_bytes()).hexdigest() == input_hashes[path]: continue
             if path.is_dir(): collect(path, depth + 1)
             elif path.is_file():
                 size = path.stat().st_size
