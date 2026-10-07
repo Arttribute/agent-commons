@@ -112,6 +112,11 @@ phases:
           | jq -r 'if (.AGENT_COMMONS_SERVICE_CLIENT_ID // "") != "" and (.AGENT_COMMONS_SERVICE_CLIENT_SECRET // "") != "" then "true" else "false" end')
         echo "Arcade connector enabled: $ARCADE_CONNECTOR_ENABLED"
 
+        # Only boolean availability leaves Secrets Manager; API keys stay in the
+        # runtime secret and reach containers through ECS secret references.
+        MODEL_KEYS_AVAILABLE=$(aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_ARN" --query SecretString --output text --region "$AWS_REGION" \
+          | jq -c '{anthropic: ((.ANTHROPIC_API_KEY // "") != ""), google: ((.GOOGLE_API_KEY // "") != ""), groq: ((.GROQ_API_KEY // "") != ""), mistral: ((.MISTRAL_API_KEY // "") != "")}')
+
         aws cloudformation deploy \
           --stack-name "$STACK_NAME" \
           --template-file infra/aws/ecs-express-service.yml \
@@ -132,6 +137,10 @@ phases:
           SlackOAuthEnabled="${SLACK_OAUTH_ENABLED:-false}" \
           CanvaOAuthEnabled="${CANVA_OAUTH_ENABLED:-false}" \
           XOAuthEnabled="${X_OAUTH_ENABLED:-false}" \
+          AnthropicModelsEnabled="${ANTHROPIC_MODELS_ENABLED:-$(jq -r '.anthropic' <<<"$MODEL_KEYS_AVAILABLE")}" \
+          GoogleModelsEnabled="${GOOGLE_MODELS_ENABLED:-$(jq -r '.google' <<<"$MODEL_KEYS_AVAILABLE")}" \
+          GroqModelsEnabled="${GROQ_MODELS_ENABLED:-$(jq -r '.groq' <<<"$MODEL_KEYS_AVAILABLE")}" \
+          MistralModelsEnabled="${MISTRAL_MODELS_ENABLED:-$(jq -r '.mistral' <<<"$MODEL_KEYS_AVAILABLE")}" \
           GoogleMediaEnabled="${GOOGLE_MEDIA_ENABLED:-false}" \
           KlingMediaEnabled="${KLING_MEDIA_ENABLED:-false}" \
           BytePlusMediaEnabled="${BYTEPLUS_MEDIA_ENABLED:-false}" \

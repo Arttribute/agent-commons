@@ -296,6 +296,11 @@ export class LocalModelManager {
         OLLAMA_HOST: "127.0.0.1:11434",
         ...(managedRuntime ? { OLLAMA_MODELS: join(this.directory, "models") } : {}),
         OLLAMA_NO_CLOUD: "1",
+        // llama.cpp's multi-prompt cache otherwise defaults to up to 8 GiB.
+        // Keep app-owned inference within a modest host-memory budget.
+        LLAMA_ARG_CACHE_RAM: process.env.LLAMA_ARG_CACHE_RAM ?? "256",
+        OLLAMA_MAX_LOADED_MODELS: process.env.OLLAMA_MAX_LOADED_MODELS ?? "1",
+        OLLAMA_NUM_PARALLEL: process.env.OLLAMA_NUM_PARALLEL ?? "1",
       },
       stdio: "ignore",
       windowsHide: true,
