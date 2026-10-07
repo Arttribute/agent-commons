@@ -113,3 +113,10 @@ print(json.dumps(missing))
 `;
 
 module.exports = { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE, DATA_EXECUTION_CONTRACT, requiresComputedData, findMatchingSkills, buildSkillPromptIndex, AUTONOMOUS_EXECUTION_CONTRACT, buildWorkspaceModeContext, buildAgentIdentityPrompt };
+
+const canvasContext = require("./canvas-context.cjs");
+module.exports.canvasContextRequest = canvasContext.canvasContextRequest;
+module.exports.formatCanvasContext = canvasContext.formatCanvasContext;
+module.exports.normalizeCreativeDefaults = canvasContext.normalizeCreativeDefaults;
+module.exports.noteLocation = canvasContext.noteLocation;
+module.exports.CANVAS_MEDIA_KINDS = canvasContext.CANVAS_MEDIA_KINDS;

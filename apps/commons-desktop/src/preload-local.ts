@@ -9,6 +9,7 @@ const bridge: LocalDesktopBridge = {
   disconnectApp: (connectionId) => invoke("local:disconnect-app", connectionId),
   getInfo: () => invoke("desktop:get-info", "private-local"),
   getState: () => invoke("local:get-state"),
+  analyzeAudio: (samples, itemId, agentId) => invoke("local:analyze-audio", samples, itemId, agentId),
   transcribeAudio: (samples, agentId) => invoke("local:transcribe-audio", samples, agentId),
   prepareTranscriptionModel: () => invoke("local:prepare-transcription-model"),
   getImageModelStatus: () => invoke("local:get-image-model-status"),

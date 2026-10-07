@@ -23,6 +23,8 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     ({ PrivateLocalRuntime } = createRequire(import.meta.url)(join(output, 'runtime.cjs')));
   } finally { Module._load = originalLoad; }
   const requests = [];
+  let canvasProjectId;
+  let unrelatedCanvasId;
   const server = createServer(async (request, response) => {
     response.setHeader('Content-Type', 'application/json');
     if (request.url === '/api/tags') return response.end(JSON.stringify({ models: ['default-a', 'default-b', 'fixed-agent'].map((name) => ({ name })) }));
@@ -36,6 +38,10 @@ test('session folders, model inheritance, media overrides and disabled knowledge
       ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'cli_read_file', arguments: { path: 'Two/Two.txt' } } }] }
       : last.role === 'user' && last.content.startsWith('Extract ')
       ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'extract_library_archive', arguments: { itemId: last.content.slice(8) } } }] }
+      : last.role === 'user' && last.content.startsWith('Inspect persisted canvas')
+      ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_canvas', arguments: { projectId: canvasProjectId } } }] }
+      : last.role === 'user' && last.content.startsWith('Inspect unrelated canvas')
+      ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_canvas', arguments: { projectId: unrelatedCanvasId } } }] }
       : last.role === 'user' && last.content.startsWith('Read ')
       ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_library_item', arguments: { itemId: last.content.slice(5) } } }] }
       : { role: 'assistant', content: last.role === 'tool' ? last.content : 'Hello' };
@@ -81,9 +87,59 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     const read = await runtime.sendMessage({ agentId: inherited, conversationId: extraction.conversation.id, prompt: 'Read START HERE.md' });
     assert.ok(read.conversation.messages.some((message) => message.toolName === 'read_library_item' && message.content.includes('Approved workflow input')), JSON.stringify(read.conversation.messages.slice(-3)));
     assert.equal(read.conversation.workspaceRoot, undefined);
+    const recording = runtime.importLibraryFiles([{ name: 'Recording.wav', mimeType: 'audio/wav', bytes: Buffer.from('test binary recording') }])[0];
+    assert.match((await runtime.readLibraryItem(recording.id)).content, /binary/);
+    runtime.updateLibraryItem(recording.id, { mediaAnalysis: { durationMs: 3000, transcript: { segments: [{ startMs: 1234, endMs: 2500, text: 'Exact spoken phrase' }] } } });
+    assert.match((await runtime.readLibraryItem(recording.id)).content, /\[1234-2500 ms\] Exact spoken phrase/);
+    const [report, revised, unrelated] = runtime.importLibraryFiles([
+      { name: 'Report.txt', mimeType: 'text/plain', bytes: Buffer.from('Revenue increased by 12%. This is the original report.') },
+      { name: 'Report revised.txt', mimeType: 'text/plain', bytes: Buffer.from('Revenue increased by 15%. This is the revised report.') },
+      { name: 'Other.txt', mimeType: 'text/plain', bytes: Buffer.from('Unrelated private canvas') },
+    ]);
+    const canvas = runtime.canvas.open(report.id);
+    canvasProjectId = canvas.project.projectId;
+    unrelatedCanvasId = runtime.canvas.open(unrelated.id).project.projectId;
+    const revisionId = canvas.revisions[0].revisionId;
+    const notes = [
+      { kind: 'comment', body: 'Check the percentage', metadata: { target: { type: 'text', quote: 'Revenue increased by 12%.', page: 3, prefix: 'Summary: ', suffix: ' Next paragraph.', start: 50, end: 74 } } },
+      { kind: 'comment', body: 'Check totals', metadata: { target: { type: 'cells', sheet: 'Sales', range: 'B2:C3', values: [['120', '80'], ['150', '90']] } } },
+      { kind: 'comment', body: 'Fix code', metadata: { target: { type: 'source', file: 'src/chart.py', lineStart: 12, lineEnd: 14, code: 'total = df.amount.sum()' } } },
+      { kind: 'region', body: 'This corner', geometry: { x: .25, y: .5, width: .2, height: .1 }, metadata: { target: { type: 'region', page: 3, quote: 'Legend' }, intrinsicSize: { width: 1000, height: 800 } } },
+      { kind: 'time_range', body: 'Shorten this', startMs: 1234, endMs: 2500, metadata: { target: { type: 'time', transcript: 'Actual spoken words' } } },
+    ].map((note) => runtime.canvas.createNote(canvasProjectId, { ...note, revisionId }));
+    runtime.canvas.addVersion(canvasProjectId, revised.id, 'Corrected report');
+    const uiContext = { resourceType: 'canvas', resourceId: canvasProjectId, canvasRevisionId: revisionId, annotationIds: notes.map((note) => note.annotationId), canvasViewer: { view: 'source', sourceFile: 'src/chart.py', page: 3, pageCount: 5, sheet: 'Sales', timeMs: 1234 } };
+    assert.ok(runtime.canvasModelCatalog().models.every((model) => model.provider === 'local' && model.pricing.usd === 0 && model.modelKey.startsWith('local:')));
+    runtime.canvas.patch(canvasProjectId, { settings: { creativeDefaults: { image: { modelKey: 'local:image:tiny-sd-q4.gguf' }, audio: { modelKey: 'local:voice:kokoro-bella' } } } });
+    const inspected = await runtime.sendMessage({ agentId: inherited, prompt: 'Inspect persisted canvas', uiContext, workspaceRoot: null });
+    const user = inspected.conversation.messages.find((message) => message.role === 'user');
+    assert.ok(user.attachments.some((attachment) => attachment.id === report.id), 'Snapshot attached a later revision instead of the viewed original');
+    assert.equal(user.canvasProjectId, canvasProjectId);
+    assert.deepEqual(user.canvasMediaModels, { imageModel: 'tiny-sd-q4.gguf', voiceModel: 'kokoro-bella' });
+    assert.equal(user.canvasAnnotations[0].metadata.canvasItemId, report.id);
+    for (const exact of ['Revenue increased by 12%.', 'sheet "Sales", cells B2:C3', '120 | 80', 'src/chart.py lines 12-14', 'pixels 250,400 to 450,480 of 1000x800', '0:01.2-0:02.5', 'Actual spoken words', 'Showing version 1 of 2']) assert.ok(user.canvasContext.includes(exact), exact);
+    const sent = requests.filter((request) => request.stream).at(-1);
+    assert.ok(sent.messages.some((message) => message.content.includes('Revenue increased by 12%.') && message.content.includes('B2:C3')));
+    assert.ok(inspected.conversation.messages.some((message) => message.toolName === 'read_canvas' && message.content.includes('Check totals')));
+    runtime.canvas.updateNote(canvasProjectId, notes[0].annotationId, { body: 'Edited after turn', status: 'resolved' });
+    assert.ok(runtime.state().conversations.find((entry) => entry.id === inspected.conversation.id).messages[0].canvasContext.includes('Check the percentage'), 'Editing a note mutated an earlier turn');
+    const refused = await runtime.sendMessage({ agentId: inherited, prompt: 'Inspect unrelated canvas', uiContext, workspaceRoot: null });
+    assert.ok(refused.conversation.messages.some((message) => message.toolName === 'read_canvas' && /not attached to the current turn/.test(message.content)));
+    await assert.rejects(runtime.sendMessage({ agentId: inherited, prompt: 'Hello', uiContext: { ...uiContext, canvasRevisionId: runtime.canvas.get(unrelatedCanvasId).revisions[0].revisionId } }), /Viewed revision/);
+    assert.throws(() => runtime.canvas.createNote(canvasProjectId, { kind: 'region', body: 'Invalid box', revisionId, geometry: { x: 1.1, y: 0 } }), /normalized/);
+    assert.throws(() => runtime.canvas.updateNote(unrelatedCanvasId, notes[0].annotationId, { status: 'resolved' }), /does not belong/);
     runtime.close();
     runtime = new PrivateLocalRuntime(join(root, 'profile'));
     assert.equal(runtime.state().settings.defaultModel, 'default-b');
+    assert.equal(runtime.canvas.get(canvasProjectId).annotations.length, 5);
+    assert.equal(runtime.canvas.get(canvasProjectId).annotations[0].body, 'Edited after turn');
+    assert.equal(runtime.canvas.get(canvasProjectId).annotations[0].status, 'resolved');
+    assert.equal(runtime.canvas.get(canvasProjectId).project.activeItemId, revised.id);
+    runtime.canvas.updateNote(canvasProjectId, notes[1].annotationId, { deleted: true });
+    assert.equal(runtime.canvas.get(canvasProjectId).annotations.length, 4);
+    runtime.deleteLibraryItem(revised.id);
+    assert.equal(runtime.canvas.get(canvasProjectId).project.activeItemId, report.id);
+    assert.equal(runtime.canvas.get(canvasProjectId).revisions.length, 1);
     assert.equal(runtime.state().conversations.find((chat) => chat.id === first.conversation.id).webSearchEnabled, false);
     assert.equal(runtime.state().agents.find((agent) => agent.id === fixed).model, 'fixed-agent');
     assert.equal(runtime.state().agents.find((agent) => agent.id === fixed).mediaModels.voiceModel, 'kokoro-bella');

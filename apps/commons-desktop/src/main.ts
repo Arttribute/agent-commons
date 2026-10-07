@@ -3,7 +3,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { computerWorkspace, terminalCommand } from "./local-computer";
 import { initializeCommandPath } from "./local-command";
-import { prepareLocalTranscriber, transcribeLocalAudio } from "./local-transcription";
+import { prepareLocalTranscriber, transcribeLocalAudio, transcribeLocalMedia } from "./local-transcription";
 import {
   app,
   BrowserWindow,
@@ -35,6 +35,7 @@ import { resolveWorkspaceRoute, workspacePaths } from "../../commons-app/lib/wor
 import { cloudVisiblePreferences } from "./workspace-preferences";
 import { startCommonsAppServer, type CommonsAppServer } from "./commons-app-server";
 import { handleLocalKnowledgeApi } from "./local-knowledge-api";
+import { handleLocalCanvasApi } from "./local-canvas-api";
 import { handleLocalLibraryApi } from "./local-library-api";
 import { handleLocalUiPluginsApi } from "./local-ui-plugins-api";
 import { handleLocalSkillsApi } from "./local-skills-api";
@@ -643,6 +644,7 @@ function registerIpc() {
     if (url.pathname === "/api/knowledge" || url.pathname.startsWith("/api/knowledge/")) {
       return handleLocalKnowledgeApi(runtime, url, method, body);
     }
+    if (url.pathname.startsWith("/api/canvas/")) return handleLocalCanvasApi(runtime, url, method, body);
     if (url.pathname === "/api/library" || url.pathname.startsWith("/api/library/") || url.pathname === "/api/files/upload") {
       return handleLocalLibraryApi(runtime, url, method, body);
     }
@@ -931,6 +933,16 @@ function registerIpc() {
     const agent = agentId ? state.agents.find((item) => item.id === agentId) : undefined;
     if (agentId && !agent) throw new Error("Local agent not found");
     return transcribeLocalAudio(samples, app.getPath("userData"), agent?.mediaModels?.transcriptionModel || state.settings.transcriptionModel);
+  });
+  localHandler<[Float32Array, string, string?]>("local:analyze-audio", async (samples, itemId, agentId) => {
+    const state = runtime.state();
+    const item = state.library?.find((entry) => entry.id === itemId);
+    if (!item || !/^(audio|video)\//.test(item.mimeType)) throw new Error("Local audio/video artifact not found");
+    const agent = agentId ? state.agents.find((entry) => entry.id === agentId) : undefined;
+    if (agentId && !agent) throw new Error("Local agent not found");
+    const analysis = await transcribeLocalMedia(samples, app.getPath("userData"), agent?.mediaModels?.transcriptionModel || state.settings.transcriptionModel);
+    runtime.updateLibraryItem(itemId, { mediaAnalysis: analysis });
+    return analysis;
   });
   localHandler("local:prepare-transcription-model", () => prepareLocalTranscriber(app.getPath("userData"), runtime.state().settings.transcriptionModel));
   localHandler("local:get-image-model-status", () => runtime.imageModelStatus());

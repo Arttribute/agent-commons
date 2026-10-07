@@ -1,3 +1,4 @@
+export type * from './canvas';
 export const DESKTOP_PROTOCOL_VERSION = 1;
 
 export type DesktopCapability =
@@ -53,6 +54,11 @@ export type LocalMessage = {
   toolName?: string;
   toolArgs?: Record<string, unknown>;
   attachments?: LocalMessageAttachment[];
+  /** Reloaded, validated canvas snapshot for this turn. */
+  canvasContext?: string;
+  canvasProjectId?: string;
+  canvasMediaModels?: { imageModel?: string; voiceModel?: string };
+  canvasAnnotations?: import("./canvas").CanvasAnnotation[];
 };
 
 export type LocalConversation = {
@@ -96,6 +102,7 @@ export type LocalLibraryItem = {
   cloudItemId?: string;
   cloudCopiedAt?: string;
   sourceArchiveId?: string;
+  mediaAnalysis?: { durationMs: number; transcript: { segments: Array<{ startMs: number; endMs: number; text: string }>; note?: string } };
   createdAt: string;
   updatedAt: string;
 };
@@ -286,6 +293,7 @@ export type LocalState = {
   agents: LocalAgent[];
   conversations: LocalConversation[];
   library?: LocalLibraryItem[];
+  canvases?: import("./canvas").CanvasProjectBundle[];
   spaces: KnowledgeSpace[];
   skills?: LocalSkill[];
   tasks: LocalTask[];
@@ -298,6 +306,7 @@ export type LocalState = {
 };
 
 export type ChatRequest = {
+  uiContext?: Record<string, unknown>;
   agentId: string;
   conversationId?: string;
   prompt: string;
@@ -437,6 +446,7 @@ export interface LocalDesktopBridge {
   chooseKnowledgeFolders(): Promise<string[]>;
   clearAccount(): Promise<void>;
   transcribeAudio(samples: Float32Array, agentId?: string): Promise<string>;
+  analyzeAudio(samples: Float32Array, itemId: string, agentId?: string): Promise<NonNullable<LocalLibraryItem["mediaAnalysis"]>>;
   prepareTranscriptionModel(): Promise<void>;
   getImageModelStatus(): Promise<ImageModelStatus>;
   prepareImageModel(modelId?: string): Promise<void>;

@@ -545,23 +545,27 @@ export class CanvasService {
       principal,
       'read',
     );
-    const [revisions, annotations, artifact, codeProject] = await Promise.all([
+    const [revisions, annotations] = await Promise.all([
       this.db.query.canvasRevision.findMany({
         where: (table) => eq(table.projectId, project.projectId),
         orderBy: (table) => asc(table.createdAt),
         limit: 200,
       }),
       this.db.query.canvasAnnotation.findMany({
-        where: (table) =>
-          and(eq(table.projectId, project.projectId), isNull(table.deletedAt)),
+        where: (table) => and(eq(table.projectId, project.projectId), isNull(table.deletedAt)),
         orderBy: (table) => asc(table.createdAt),
         limit: 500,
       }),
-      this.db.query.libraryItem.findFirst({
-        where: (table) => eq(table.itemId, project.activeItemId),
-      }),
+    ]);
+    const activeRevision = request.revisionId
+      ? revisions.find((revision) => revision.revisionId === request.revisionId)
+      : revisions.find((revision) => revision.itemId === project.activeItemId);
+    if (request.revisionId && !activeRevision) throw new BadRequestException('Viewed revision does not belong to this canvas.');
+    const viewedItemId = activeRevision?.itemId ?? project.activeItemId;
+    const [artifact, codeProject] = await Promise.all([
+      this.db.query.libraryItem.findFirst({ where: (table) => eq(table.itemId, viewedItemId) }),
       this.db.query.codeProject.findFirst({
-        where: (table) => eq(table.libraryItemId, project.activeItemId),
+        where: (table) => eq(table.libraryItemId, viewedItemId),
         columns: { projectId: true, entryFile: true, name: true },
       }),
     ]);
@@ -575,9 +579,7 @@ export class CanvasService {
         mimeType: artifact.mimeType,
         metadata: artifact.metadata,
       },
-      activeRevision: revisions.find(
-        (revision) => revision.itemId === project.activeItemId,
-      ),
+      activeRevision,
       revisions,
       annotations,
       attachedIds: request.annotationIds,

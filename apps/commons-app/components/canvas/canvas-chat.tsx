@@ -130,6 +130,8 @@ function CanvasChatInner() {
   }, [agents, copilot]);
   const agent = agentList.find((entry) => entry.agentId === agentId) ?? copilot ?? agentList[0] ?? null;
 
+  useEffect(() => { useCanvasStore.getState().setAgentId(agent?.agentId ?? ""); }, [agent?.agentId]);
+
   const chooseAgent = (next: ChatAgent) => {
     if (next.agentId === agent?.agentId) return;
     setAgentId(next.agentId);
@@ -204,6 +206,7 @@ function CanvasChatInner() {
         ? {
             resourceType: "canvas",
             resourceId: context.projectId,
+            canvasRevisionId: context.revisionId,
             annotationIds: attached.map((note) => note.annotationId),
             canvasViewer: context.viewer,
           }
@@ -212,14 +215,6 @@ function CanvasChatInner() {
       locale: typeof navigator !== "undefined" ? navigator.language : undefined,
     };
   }, [attached, context, pathname]);
-
-  // Private Local runs do not read uiContext, so describe the canvas inline.
-  const localContext = useMemo(() => {
-    if (!local || !context) return undefined;
-    const lines = [`[Canvas: the user is viewing "${context.artifact.name}" (${context.artifact.mimeType}), Library file ${context.artifact.itemId}.]`];
-    for (const note of attached) lines.push(`[Note ${note.number}: ${note.body}]`);
-    return lines.join("\n");
-  }, [attached, context, local]);
 
   const begin = useCallback(
     async (value: ComposerLaunch) => {
@@ -252,7 +247,7 @@ function CanvasChatInner() {
         setStarting(false);
       }
     },
-    [activateSession, agent, projectId, sessionId, setSessionHistory, toast],
+    [activateSession, agent, context, projectId, sessionId, setSessionHistory, toast],
   );
 
   // Prompts from canvas controls (quick actions).
@@ -422,7 +417,6 @@ function CanvasChatInner() {
             onInitialLaunchSent={() => setLaunch((current) => (current ? { ...current, value: { ...current.value, text: "", attachments: [] } } : current))}
             onComposerSent={clearAttached}
             composerHeader={noteChips}
-            composerLocalContext={localContext}
             composerPlaceholder="Ask about this file"
             externalPrompt={panelPrompt}
           />

@@ -153,6 +153,7 @@ export function useAgentStream(
               agentId: params.agentId,
               conversationId: params.sessionId || undefined,
               prompt,
+              uiContext: params.uiContext,
               spaceIds: params.knowledgeSpaceIds,
               knowledgeMode: params.knowledgeMode,
               workspaceRoot: params.localWorkspaceRoot,

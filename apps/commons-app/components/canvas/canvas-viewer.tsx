@@ -134,6 +134,8 @@ export function CanvasViewer({
   const [switching, setSwitching] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const activatedRef = useRef(false);
+  const bundleRequest = useRef(0);
+  const previewRequest = useRef(0);
 
   const fail = useCallback(
     (message: string) => toast({ title: message, variant: "destructive" }),
@@ -143,10 +145,7 @@ export function CanvasViewer({
   /* ---------------------------------------------------- loading */
 
   const loadBundle = useCallback(async () => {
-    if (local) {
-      setBundle(null);
-      return null;
-    }
+    const request = ++bundleRequest.current;
     const attempt = async () => {
       const response = await desktopApiFetch("/api/canvas/projects/open", {
         method: "POST",
@@ -169,10 +168,12 @@ export function CanvasViewer({
         if (!(error as { retry?: boolean }).retry) throw error;
         next = await attempt();
       }
+      if (request !== bundleRequest.current) return null;
       setBundle(next);
       setCanvasError("");
       return next;
     } catch (cause) {
+      if (request !== bundleRequest.current) return null;
       setCanvasError(cause instanceof Error ? cause.message : "Notes and history could not be loaded");
       return null;
     }
@@ -182,19 +183,24 @@ export function CanvasViewer({
   const viewedItemId = bundle?.project.activeItemId ?? itemId;
 
   const loadPreview = useCallback(async (id: string) => {
+    const request = ++previewRequest.current;
     setPreviewError("");
     try {
       const response = await desktopApiFetch(`/api/library/${encodeURIComponent(id)}/preview`, { cache: "no-store" });
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiErrorMessage(payload, "This file could not be opened"));
+      if (request !== previewRequest.current) return;
       setPreview(unwrapCanvasPayload<ArtifactPreview>(payload));
     } catch (cause) {
+      if (request !== previewRequest.current) return;
       setPreviewError(cause instanceof Error ? cause.message : "This file could not be opened");
     }
   }, []);
 
   useEffect(() => {
     activatedRef.current = false;
+    setContext(null);
+    useCanvasStore.getState().clearAttached();
     setBundle(null);
     setPreview(null);
     setDraft(null);
@@ -204,7 +210,8 @@ export function CanvasViewer({
     setTool("interact");
     setZoom(1);
     void loadBundle();
-  }, [loadBundle]);
+    return () => { ++bundleRequest.current; ++previewRequest.current; };
+  }, [loadBundle, setContext]);
 
   useEffect(() => {
     void loadPreview(viewedItemId);
@@ -233,7 +240,7 @@ export function CanvasViewer({
   // Seed creative preferences from the last canvas this person configured.
   useEffect(() => {
     if (!bundle || bundle.project.settings?.creativeDefaults) return;
-    const remembered = rememberedCreativeDefaults();
+    const remembered = rememberedCreativeDefaults(local ? "private-local" : "cloud");
     if (remembered && Object.keys(remembered).length) void saveSettings({ creativeDefaults: remembered });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bundle?.project.projectId]);
@@ -256,7 +263,7 @@ export function CanvasViewer({
   const otherVersionNotes = (bundle?.annotations.length ?? 0) - notes.length;
   const attachedIds = useMemo(() => new Set(attached.map((note) => note.annotationId)), [attached]);
   const stage = preview ? stageKindFor(preview) : null;
-  const canAnnotate = Boolean(bundle && activeRevision && !local);
+  const canAnnotate = Boolean(bundle && activeRevision);
   const hasSource =
     Boolean(preview?.codeProject?.files?.length) ||
     (stage === "code" && Boolean(preview?.content)) ||
@@ -265,14 +272,14 @@ export function CanvasViewer({
 
   // Tell the chat what is on screen.
   useEffect(() => {
-    if (!preview) return;
+    if (!preview || preview.itemId !== viewedItemId || (activeRevision && activeRevision.itemId !== preview.itemId)) return;
     setContext({
       projectId: bundle?.project.projectId,
       revisionId: activeRevision?.revisionId,
       artifact: { itemId: preview.itemId, name: preview.name, kind: preview.kind, mimeType: preview.mimeType },
       viewer: { view },
     });
-  }, [activeRevision?.revisionId, bundle?.project.projectId, preview, setContext, view]);
+  }, [activeRevision?.revisionId, bundle?.project.projectId, preview, setContext, view, viewedItemId]);
   useEffect(() => () => setContext(null), [setContext]);
 
   const onViewer = useCallback((viewer: Partial<CanvasViewerState>) => setViewer(viewer), [setViewer]);
@@ -655,11 +662,7 @@ export function CanvasViewer({
                       ) : null
                     }
                   >
-                    {local ? (
-                      <p className="px-4 pb-4 text-xs leading-5 text-stone-500">
-                        Notes are saved in Commons Cloud. In Local mode, describe the part you mean in chat.
-                      </p>
-                    ) : canvasError ? (
+                    {canvasError ? (
                       <div className="px-4 pb-4 text-xs leading-5 text-stone-500">
                         <p>{canvasError}</p>
                         <button type="button" onClick={() => void loadBundle()} className="mt-2 text-stone-900 underline">

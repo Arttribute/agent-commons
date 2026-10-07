@@ -1,9 +1,11 @@
+import { speechSegments } from "./local-transcript-segments";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { WHISPER_REVISIONS, WHISPER_WEIGHT_FILES } from "./local-speech-model-revisions";
 import { assertSpeechDownloadFits, repairSpeechArtifacts, verifySpeechArtifacts } from "./local-speech-model-cache";
 
-type Transcriber = (audio: Float32Array, options?: Record<string, unknown>) => Promise<{ text?: string } | string>;
+type SpeechResult = { text?: string; chunks?: Array<{ text?: string; timestamp?: [number | null, number | null] }> };
+type Transcriber = (audio: Float32Array, options?: Record<string, unknown>) => Promise<SpeechResult | string>;
 export const TRANSCRIPTION_MODELS = Object.keys(WHISPER_REVISIONS) as Array<keyof typeof WHISPER_REVISIONS>;
 let loaded: { model: string; promise: Promise<Transcriber> } | undefined;
 
@@ -47,4 +49,19 @@ export async function transcribeLocalAudio(samples: Float32Array, userData: stri
   const transcriber = await getLocalTranscriber(userData, model);
   const result = await transcriber(samples, { chunk_length_s: 30, stride_length_s: 5 });
   return (typeof result === "string" ? result : result.text ?? "").trim();
+}
+
+/** Timestamped artifact transcription uses the saved model and never uploads audio. */
+export async function transcribeLocalMedia(samples: Float32Array, userData: string, model = "Xenova/whisper-base") {
+  if (!(samples instanceof Float32Array) || !samples.length || samples.length > 16000 * 1800) throw new Error("Canvas transcription supports recordings up to 30 minutes long.");
+  const transcriber = await getLocalTranscriber(userData, model);
+  const segments: Array<{ startMs: number; endMs: number; text: string }> = [];
+  const text: string[] = [];
+  for (let offset = 0; offset < samples.length; offset += 16000 * 120) {
+    const chunk = samples.subarray(offset, offset + 16000 * 120);
+    const result = await transcriber(chunk, { chunk_length_s: 30, stride_length_s: 5, return_timestamps: true });
+    text.push(typeof result === 'string' ? result : result.text ?? '');
+    if (typeof result !== 'string') segments.push(...speechSegments(result.chunks ?? [], Math.round(chunk.length / 16), Math.round(offset / 16)));
+  }
+  return { durationMs: Math.round(samples.length / 16), transcript: { segments, ...(segments.length ? {} : { note: text.join(' ').trim() || 'No speech detected.' }) } };
 }
