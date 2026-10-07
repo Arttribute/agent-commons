@@ -1,5 +1,11 @@
 # @agent-commons/cli
 
+## 0.6.2
+
+### Patch Changes
+
+- bab8de8: Include the resolved directory and session root in local directory listings so agents can distinguish a selected folder from a subfolder.
+
 ## 0.6.1
 
 ### Patch Changes
