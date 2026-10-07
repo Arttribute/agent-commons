@@ -289,21 +289,23 @@ export class PrivateLocalRuntime {
   private readonly reindexing = new Map<string, Promise<LocalState>>();
   private target?: WebContents;
 
-  constructor(userDataDirectory: string) {
+  private readonly lifecycle = new AbortController();
+
+  constructor(userDataDirectory: string, sharedResourcesDirectory = userDataDirectory) {
     setDocumentExtractor(extractDocumentText);
     this.store = new LocalStore(userDataDirectory);
     this.layout = new LocalStorageLayout(userDataDirectory);
-    this.python = new PythonRuntime(join(userDataDirectory, "private-local", "python"));
+    this.python = new PythonRuntime(join(sharedResourcesDirectory, "private-local", "python"));
     this.watcher = new KnowledgeWatcher((spaceId) => {
       void this.reindexKnowledgeSpace(spaceId).catch(() => undefined);
     });
     this.modelManager = new LocalModelManager(
-      this.layout.root,
+      join(sharedResourcesDirectory, "private-local", "workspace"),
       this.store.get().settings.defaultModel || DEFAULT_LOCAL_MODEL,
       (model) => this.emit({ type: "model", model }),
     );
-    this.imageManager = new LocalImageManager(this.layout.root, (status) => this.emit({ type: "image-model", status }));
-    this.voiceManager = new LocalVoiceManager(userDataDirectory, (status) => this.emit({ type: "voice-model", status }));
+    this.imageManager = new LocalImageManager(this.layout.root, (status) => this.emit({ type: "image-model", status }), join(sharedResourcesDirectory, "private-local", "workspace"));
+    this.voiceManager = new LocalVoiceManager(sharedResourcesDirectory, (status) => this.emit({ type: "voice-model", status }));
     this.layout.sync(this.store.get());
     this.scheduler = setInterval(() => void this.runDueTasks(), 30_000);
     this.scheduler.unref();
@@ -332,6 +334,7 @@ export class PrivateLocalRuntime {
   }
 
   state() {
+    this.lifecycle.signal.throwIfAborted();
     return this.store.get();
   }
 
@@ -1407,6 +1410,8 @@ export class PrivateLocalRuntime {
   }
 
   close() {
+    this.lifecycle.abort(new Error("The local account changed. Reopen this task in its account."));
+    this.target = undefined;
     this.watcher.close();
     for (const server of this.staticApps.values()) server.close();
     clearInterval(this.scheduler);
@@ -1613,7 +1618,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         redirect: "error",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(nativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: !nativeTools ? undefined : tools.filter((entry) => entry.function.name !== "web_search" || this.webSearchAllowed(conversationId)), stream: true, ...(!nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: reasoningEffort ? ["medium", "high", "xhigh", "max"].includes(reasoningEffort) : (requiresComputedData(lastUser) || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells")) || (/\b(?:draft|generate|build|execute|finish|create|debug|analy[sz]e|train)\b/i.test(lastUser) && /\b(?:workflow kit|campaign|multi.step|debug|machine learning|workflow)\b/i.test(lastUser))) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: 4096 } }),
-        signal: AbortSignal.timeout(10 * 60_000),
+        signal: AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(10 * 60_000)]),
       });
       if (!response.ok) {
         const detail = await response.text();
@@ -1715,6 +1720,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       try { args = normalizeLocalCommand(args); }
       catch (error) { commandError = `Error: ${error instanceof Error ? error.message : String(error)}`; }
     }
+    this.lifecycle.signal.throwIfAborted();
     this.emit({ type: "activity", label: label.replaceAll("_", " "), detail: JSON.stringify(args), status: "running", conversationId, toolName: name, args });
     let result: string;
     if (commandError) result = commandError;
@@ -2024,7 +2030,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const inputs: Record<string, string> = {};
       for (const item of files) { inputs[item.name] = item.path; inputs[item.id] = item.path; }
       const directory = join(this.layout.path("artifacts", conversationId), randomUUID());
-      const output = await this.python.run(code, directory, inputs, workspace, Number(args.timeoutSeconds) || 120, packages);
+      const output = await this.python.run(code, directory, inputs, workspace, Number(args.timeoutSeconds) || 120, packages, this.lifecycle.signal);
       const artifacts = output.files.filter((path) => statSync(path).size <= 25 * 1024 * 1024).map((path) => ({ id: randomUUID(), name: relative(join(directory, "outputs"), path).replaceAll("\\", "/"), path, createdAt: now() }));
       this.change((draft) => {
         const current = draft.conversations.find((entry) => entry.id === conversationId)!;
@@ -2069,7 +2075,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     return {
       rootDir,
       sessionId,
-      signal,
+      signal: signal ? AbortSignal.any([signal, this.lifecycle.signal]) : this.lifecycle.signal,
       permissions: new Map(
         state.settings.permissionMode === "read-only"
           ? ["write_file", "run_command", "start_process"].map((key) => [key, "deny" as const])
@@ -2109,6 +2115,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
   }
 
   private change(mutator: (state: LocalState) => void) {
+    this.lifecycle.signal.throwIfAborted();
     const state = this.store.update(mutator);
     this.layout.sync(state);
     this.emit({ type: "state", state });
@@ -2116,7 +2123,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
   }
 
   private emit(event: RuntimeEvent) {
-    if (this.target && !this.target.isDestroyed()) this.target.send("local:event", event);
+    if (!this.lifecycle.signal.aborted && this.target && !this.target.isDestroyed()) this.target.send("local:event", event);
   }
 }
 

@@ -30,6 +30,7 @@ import {
   type WorkspacePreferences,
 } from "@agent-commons/desktop-contract";
 import { ensureLocalPreview, PrivateLocalRuntime } from "./runtime";
+import { LocalProfiles } from "./local-profiles";
 import { buildDirSnapshot, buildLocalToolsManifest, runLocalTool } from "../../../packages/agc-cli/src/local-tools";
 import { resolveWorkspaceRoute, workspacePaths } from "../../commons-app/lib/workspace-routes";
 import { cloudVisiblePreferences } from "./workspace-preferences";
@@ -74,6 +75,9 @@ let visibleView: WebContentsView | null = null;
 let unifiedView: WebContentsView | null = null;
 let commonsServer: CommonsAppServer | null = null;
 let runtime: PrivateLocalRuntime;
+let localProfiles: LocalProfiles;
+let accountSync: Promise<void> = Promise.resolve();
+let accountRequests = new AbortController();
 let activeMode: "cloud" | "private-local" = "private-local";
 let cloudTransition = false;
 let cloudWorkspace: string | null = null;
@@ -106,7 +110,7 @@ function assertCloudWorkspacePrivacy(selected: string) {
   }
 }
 
-function cloudAccessPath() { return join(app.getPath("userData"), "cloud-access.json"); }
+function cloudAccessPath() { return join(localProfiles.directory, "cloud-access.json"); }
 
 function loadCloudAccess() {
   if (!existsSync(cloudAccessPath())) return;
@@ -317,6 +321,7 @@ async function loadCloudEntry(cloudSession: Electron.Session, path?: string) {
     });
     const current = (await response.json()) as { user?: { id?: string } };
     if (response.ok && current.user?.id) {
+      await syncAuthenticatedAccount();
       await unifiedView?.webContents.loadURL(path ? new URL(path, appOrigin).toString() : appOrigin);
       void syncCloudAgentsToLocal();
       return;
@@ -361,6 +366,7 @@ async function syncCloudAgentsToLocal() {
   cloudSyncController?.abort();
   const controller = new AbortController();
   cloudSyncController = controller;
+  const instance = runtime;
   try {
     const cloudSession = session.fromPartition("persist:commons-unified");
     const response = await cloudSession.fetch(`${commonsServer?.origin ?? CLOUD_ORIGIN}/api/agents`, {
@@ -391,7 +397,7 @@ async function syncCloudAgentsToLocal() {
       ...snapshot,
       avatar: await cacheCloudAgentAvatar(cloudSession, snapshot.avatarUrl, controller.signal),
     })));
-    if (!controller.signal.aborted) runtime.syncCloudAgents(agents);
+    if (!controller.signal.aborted && runtime === instance) instance.syncCloudAgents(agents);
   } catch {
     // Local mode remains usable from its on-disk state when offline.
   } finally {
@@ -609,11 +615,66 @@ function localHandler<T extends unknown[]>(channel: string, handler: (...args: T
 }
 
 async function connectedAppRequest(path: string, body?: Record<string, unknown>) {
+  const expectedOwner = localProfiles.owner;
+  const controller = accountRequests;
   if (!commonsServer) throw new Error('Connected apps are not ready.');
-  const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}${path}`, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store', signal: AbortSignal.timeout(30_000) });
+  const sessionResponse = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/auth/session`, { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]) });
+  const identity = await sessionResponse.json() as { user?: { id?: string } };
+  if (!sessionResponse.ok || !expectedOwner || identity.user?.id !== expectedOwner || controller.signal.aborted) throw new Error('Sign in to this local workspace’s account to connect apps.');
+  const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}${path}`, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]) });
   const payload = await response.json() as any;
   if (!response.ok) throw new Error(response.status === 401 ? 'Sign in to Agent Commons to connect apps. Your local model and files stay on this computer.' : `${payload.message ?? 'Connected app request failed.'}${payload.details ? ` ${JSON.stringify(payload.details).slice(0, 1500)}` : ''}`);
   return payload;
+}
+
+function bindLocalRuntime() {
+  const instance = runtime;
+  instance.setTarget(unifiedView?.webContents);
+  const request = (path: string, body?: Record<string, unknown>) => {
+    if (runtime !== instance) throw new Error('The account changed. Reopen this chat.');
+    return connectedAppRequest(path, body);
+  };
+  instance.setConnectedAppsTransport({ catalog: () => request('/api/connected-apps?discover=1'), invoke: (name, args) => request(`/api/connected-apps/${encodeURIComponent(name)}/invoke`, args) });
+}
+
+function selectLocalAccount(account?: DesktopAccount) {
+  const owner = account?.userId ?? null;
+  if (localProfiles.owner !== owner) {
+    // Stop work and detach the old event target before publishing any new state.
+    cloudSyncController?.abort();
+    for (const controller of cloudToolControllers) controller.abort();
+    for (const pending of cloudApprovals.values()) { clearTimeout(pending.timeout); pending.resolve(false); }
+    cloudApprovals.clear(); cloudRememberedApprovals.clear();
+    accountRequests.abort(); accountRequests = new AbortController();
+    runtime.close();
+    const directory = localProfiles.select(owner);
+    runtime = new PrivateLocalRuntime(directory, app.getPath('userData'));
+    bindLocalRuntime();
+    cloudWorkspace = null; cloudAccess = { ...DEFAULT_CLOUD_ACCESS };
+    cloudWorkspaceGrants.clear(); cloudSessionWorkspaces.clear();
+    loadCloudAccess();
+    if (account) runtime.syncAccount(account);
+    unifiedView?.webContents.send('desktop:preferences-changed', activeMode === 'cloud' ? cloudVisiblePreferences(runtime.preferences()) : runtime.preferences());
+    // Recreate renderer caches, including canvas notes, selected folders and chats.
+    if (account && commonsServer) {
+      void unifiedView?.webContents.loadURL(commonsServer.origin);
+      void syncCloudAgentsToLocal();
+    }
+  } else if (account) runtime.syncAccount(account);
+}
+
+function syncAuthenticatedAccount() {
+  const pending = accountSync.then(async () => {
+    if (!commonsServer) throw new Error('Account session is not ready.');
+    const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/auth/session`, { cache: 'no-store', signal: AbortSignal.timeout(8_000) });
+    if (!response.ok) throw new Error('Could not verify the desktop account.');
+    const current = await response.json() as { user?: { id?: string; name?: string; email?: string; image?: string } };
+    const user = current.user;
+    // Identity comes from the authenticated session, never renderer-supplied IDs.
+    selectLocalAccount(user?.id ? { userId: user.id, displayName: user.name || user.email || user.id, email: user.email, profileImage: user.image } : undefined);
+  });
+  accountSync = pending.catch(() => undefined);
+  return pending;
 }
 
 function registerIpc() {
@@ -925,9 +986,9 @@ function registerIpc() {
       cloudToolControllers.delete(controller);
     }
   });
-  ipcMain.handle("cloud:sync-account", (event, account: DesktopAccount) => {
-    assertCloudSender(event);
-    runtime.syncAccount(account);
+  ipcMain.handle("cloud:sync-account", (event) => {
+    assertCloudOrigin(event);
+    return syncAuthenticatedAccount();
   });
   ipcMain.handle("cloud:get-preferences", (event) => { assertCloudSender(event); return cloudPreferences(); });
   ipcMain.handle("cloud:sync-preferences", (event, incoming: WorkspacePreferences) => { assertCloudSender(event); return syncPreferences(incoming, "cloud"); });
@@ -940,13 +1001,15 @@ function registerIpc() {
     return transcribeLocalAudio(samples, app.getPath("userData"), agent?.mediaModels?.transcriptionModel || state.settings.transcriptionModel);
   });
   localHandler<[Float32Array, string, string?]>("local:analyze-audio", async (samples, itemId, agentId) => {
-    const state = runtime.state();
+    const instance = runtime;
+    const state = instance.state();
     const item = state.library?.find((entry) => entry.id === itemId);
     if (!item || !/^(audio|video)\//.test(item.mimeType)) throw new Error("Local audio/video artifact not found");
     const agent = agentId ? state.agents.find((entry) => entry.id === agentId) : undefined;
     if (agentId && !agent) throw new Error("Local agent not found");
     const analysis = await transcribeLocalMedia(samples, app.getPath("userData"), agent?.mediaModels?.transcriptionModel || state.settings.transcriptionModel);
-    runtime.updateLibraryItem(itemId, { mediaAnalysis: analysis });
+    if (runtime !== instance) throw new Error("The account changed during transcription.");
+    instance.updateLibraryItem(itemId, { mediaAnalysis: analysis });
     return analysis;
   });
   localHandler("local:prepare-transcription-model", () => prepareLocalTranscriber(app.getPath("userData"), runtime.state().settings.transcriptionModel));
@@ -960,7 +1023,7 @@ function registerIpc() {
   });
   localHandler("local:get-voice-model-status", () => runtime.voiceModelStatus());
   localHandler("local:prepare-voice-model", () => runtime.prepareVoiceModel());
-  localHandler("local:clear-account", () => runtime.clearAccount());
+  localHandler("local:clear-account", () => syncAuthenticatedAccount());
   localHandler<[{ agentId: string; conversationId?: string; target: "files" | "terminal" }]>("local:open-computer", async (input) => {
     const path = computerWorkspace(runtime.state(), input.agentId, input.conversationId);
     if (input.target === "files") {
@@ -1078,7 +1141,9 @@ async function openLocalApp(id: string) {
 app.whenReady().then(async () => {
   await initializeCommandPath();
   runtime = new PrivateLocalRuntime(app.getPath("userData"));
-  runtime.setConnectedAppsTransport({ catalog: () => connectedAppRequest('/api/connected-apps?discover=1'), invoke: (name, args) => connectedAppRequest(`/api/connected-apps/${encodeURIComponent(name)}/invoke`, args) });
+  localProfiles = new LocalProfiles(app.getPath("userData"), runtime.state().account?.userId ?? null);
+  if (localProfiles.directory !== app.getPath("userData")) { runtime.close(); runtime = new PrivateLocalRuntime(localProfiles.directory, app.getPath("userData")); }
+  bindLocalRuntime();
   loadCloudAccess();
   registerIpc();
   installApplicationMenu();

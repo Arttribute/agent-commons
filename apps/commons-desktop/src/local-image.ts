@@ -82,10 +82,11 @@ export class LocalImageManager {
   private modelPending?: Promise<void>;
   private status: ImageModelStatus = { state: "idle", label: "Image model downloads when first used" };
 
-  constructor(storageRoot: string, private readonly onStatus: (status: ImageModelStatus) => void) {
+  constructor(storageRoot: string, private readonly onStatus: (status: ImageModelStatus) => void, sharedStorageRoot = storageRoot) {
     this.root = join(storageRoot, "image-generation");
-    this.models = join(this.root, "models");
-    this.runtime = join(this.root, "runtime");
+    this.models = join(sharedStorageRoot, "image-generation", "models");
+    this.runtime = join(sharedStorageRoot, "image-generation", "runtime");
+    mkdirSync(this.root, { recursive: true, mode: 0o700 });
     mkdirSync(this.models, { recursive: true, mode: 0o700 });
     const model = join(this.models, this.starter.id);
     if (existsSync(this.executable()) && existsSync(model) && statSync(model).size === this.starter.bytes) {

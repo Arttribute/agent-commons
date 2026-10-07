@@ -417,7 +417,7 @@ export interface CloudDesktopBridge {
   onApproval(listener: (approval: ApprovalRequest) => void): () => void;
   onApprovalResolved(listener: (id: string) => void): () => void;
   answerApproval(id: string, allow: boolean, remember?: boolean): Promise<void>;
-  syncAccount(account: DesktopAccount): Promise<void>;
+  syncAccount(account?: DesktopAccount): Promise<void>;
   getPreferences(): Promise<WorkspacePreferences>;
   syncPreferences(preferences: WorkspacePreferences): Promise<WorkspacePreferences>;
   onPreferences(listener: (preferences: WorkspacePreferences) => void): () => void;

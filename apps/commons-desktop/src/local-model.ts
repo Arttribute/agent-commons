@@ -99,6 +99,7 @@ function delay(milliseconds: number) {
 export class LocalModelManager {
   private status: LocalModelStatus = { state: "checking", label: "Checking local AI" };
   private preparation?: Promise<void>;
+  private stopped = false;
   private server?: ChildProcess;
 
   constructor(
@@ -132,6 +133,7 @@ export class LocalModelManager {
   }
 
   stop() {
+    this.stopped = true;
     if (this.server && !this.server.killed) this.server.kill();
     this.server = undefined;
   }
@@ -142,12 +144,15 @@ export class LocalModelManager {
   }
 
   private async prepareOnce(model: string) {
+    if (this.stopped) throw new Error("The local account changed.");
     this.update({ state: "checking", label: "Checking local AI" });
     if (!(await this.serverReady())) {
       const executable = this.findInstalledRuntime() ?? (await this.installRuntime());
+      if (this.stopped) throw new Error("The local account changed.");
       await this.startServer(executable);
     }
 
+    if (this.stopped) throw new Error("The local account changed.");
     let models = await this.listModels();
     let selected = models.find((candidate) => candidate.name === model || candidate.name === `${model}:latest`);
     if (!selected) {

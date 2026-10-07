@@ -97,9 +97,11 @@ export class PythonRuntime {
     return this.extensions.get(key)!;
   }
 
-  async run(code: string, directory: string, inputs: Record<string, string>, workspace?: string, timeoutSeconds = 120, packages: string[] = []) {
+  async run(code: string, directory: string, inputs: Record<string, string>, workspace?: string, timeoutSeconds = 120, packages: string[] = [], signal?: AbortSignal) {
+    signal?.throwIfAborted();
     if (!code.trim() || code.length > 100_000) throw new Error("Provide Python code between 1 and 100,000 characters.");
     const python = await this.withPackages(packages);
+    signal?.throwIfAborted();
     const output = join(directory, "outputs");
     mkdirSync(output, { recursive: true, mode: 0o700 });
     const stagedInputs: Record<string, string> = {};
@@ -125,7 +127,7 @@ export class PythonRuntime {
     const prelude = `from pathlib import Path\nINPUT_FILES = ${JSON.stringify(stagedInputs)}\nOUTPUT_DIR = Path(${JSON.stringify(output)})\nWORKSPACE_ROOT = ${JSON.stringify(workspace ?? "")}\n`;
     writeFileSync(script, prelude + code, { mode: 0o600 });
     try {
-      const { stdout, stderr } = await exec(python, ["-I", script], { cwd: output, env: this.environment(), timeout: Math.max(1, Math.min(timeoutSeconds, 300)) * 1000, maxBuffer: 2_000_000, windowsHide: true });
+      const { stdout, stderr } = await exec(python, ["-I", script], { cwd: output, env: this.environment(), signal, timeout: Math.max(1, Math.min(timeoutSeconds, 300)) * 1000, maxBuffer: 2_000_000, windowsHide: true });
       const files: string[] = [];
       let visited = 0;
       const collect = (folder: string, depth = 0) => {
