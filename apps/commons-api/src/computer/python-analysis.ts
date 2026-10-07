@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE } from '@agent-commons/agent-core';
 
 // Bootstrap runs in the agent's isolated CommonOS computer, never in the API
@@ -44,8 +44,8 @@ with (root / '.prepare.lock').open('w') as lock:
         requirements = [name for name in base_packages if name.split('==')[0] not in overridden] + packages
         python = prepare(root / ('extension-' + hashlib.sha256(json.dumps(sorted(packages)).encode()).hexdigest()[:16]), requirements)
 inputs = {}
-output = run / 'outputs'
-output.mkdir(exist_ok=True)
+output = root / config['workingDirectory'] if config.get('workingDirectory') else run / 'outputs'
+output.mkdir(parents=True, exist_ok=True)
 input_paths = set()
 input_hashes = {}
 for item in config['files']:
@@ -54,11 +54,33 @@ for item in config['files']:
     with urllib.request.urlopen(item['url'], timeout=60) as response:
         data = response.read(25 * 1024 * 1024 + 1)
     if len(data) > 25 * 1024 * 1024: raise RuntimeError('Input file exceeds 25 MB')
-    target.write_bytes(data)
+    if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest() != hashlib.sha256(data).hexdigest():
+        target = run / 'revised-inputs' / item['itemId'] / Path(item['name']).name
+        target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.exists(): target.write_bytes(data)
     input_paths.add(target)
     input_hashes[target] = hashlib.sha256(data).hexdigest()
     inputs[item['name']] = str(target)
     inputs[item['itemId']] = str(target)
+def working_hashes(folder):
+    hashes = {}
+    entries = 0
+    size = 0
+    def visit(current, depth=0):
+        nonlocal entries, size
+        if depth > 16: raise RuntimeError('Python working folders exceed the supported depth')
+        for path in current.iterdir():
+            entries += 1
+            if entries > 2000: raise RuntimeError('Python working files exceed the entry limit')
+            if path.is_symlink(): continue
+            if path.is_dir(): visit(path, depth + 1)
+            elif path.is_file():
+                size += path.stat().st_size
+                if size > 250 * 1024 * 1024: raise RuntimeError('Python working files exceed 250 MB')
+                hashes[path] = hashlib.sha256(path.read_bytes()).hexdigest()
+    visit(folder)
+    return hashes
+baseline = working_hashes(output)
 script = run / 'analysis.py'
 code = script.read_text()
 script.write_text('from pathlib import Path\nINPUT_FILES = ' + repr(inputs) + '\nOUTPUT_DIR = Path(' + repr(str(output)) + ')\nWORKSPACE_ROOT = "/mnt/shared"\n' + code)
@@ -74,7 +96,7 @@ try:
             visited += 1
             if visited > 2000: raise RuntimeError('Python output exceeds the 2,000-entry limit')
             if path.is_symlink(): continue
-            if path.is_file() and path in input_paths and path.stat().st_size <= 25 * 1024 * 1024 and hashlib.sha256(path.read_bytes()).hexdigest() == input_hashes[path]: continue
+            if path.is_file() and path.stat().st_size <= 25 * 1024 * 1024 and hashlib.sha256(path.read_bytes()).hexdigest() == baseline.get(path): continue
             if path.is_dir(): collect(path, depth + 1)
             elif path.is_file():
                 size = path.stat().st_size
@@ -83,20 +105,26 @@ try:
                 if len(files) >= 100: raise RuntimeError('Python produced more than 100 output files')
                 files.append(dict(name=str(path.relative_to(output)), mimeType=mimetypes.guess_type(path.name)[0] or 'application/octet-stream', base64=base64.b64encode(path.read_bytes()).decode()))
     collect(output)
-    manifest = dict(exitCode=result.returncode, stdout=result.stdout[-32000:], stderr=result.stderr[-16000:], files=files)
+    for path in input_paths:
+        if path.is_relative_to(output) or hashlib.sha256(path.read_bytes()).hexdigest() == input_hashes[path]: continue
+        size = path.stat().st_size
+        total_bytes += size
+        if size > 10 * 1024 * 1024 or total_bytes > 25 * 1024 * 1024 or len(files) >= 100: raise RuntimeError('Python outputs exceed the size limit')
+        files.append(dict(name=str(path.relative_to(run)), mimeType=mimetypes.guess_type(path.name)[0] or 'application/octet-stream', base64=base64.b64encode(path.read_bytes()).decode()))
+    manifest = dict(exitCode=result.returncode, stdout=result.stdout[-32000:], stderr=result.stderr[-16000:], files=files, outputDirectory=str(output))
 except subprocess.TimeoutExpired:
     manifest = dict(exitCode=-1, stdout='', stderr='Python execution timed out', files=[])
 (run / 'result.json').write_text(json.dumps(manifest))
 print(json.dumps({k: v for k, v in manifest.items() if k != 'files'}))
 `;
 
-export function cloudPythonFiles(code: string, files: Array<{ itemId: string; name: string; url: string }>, timeoutSeconds = 120, packages: string[] = []) {
+export function cloudPythonFiles(code: string, files: Array<{ itemId: string; name: string; url: string }>, timeoutSeconds = 120, packages: string[] = [], workspaceKey?: string) {
   if (!code.trim() || code.length > 100_000) throw new Error('Provide Python code between 1 and 100,000 characters.');
   if (packages.length > 10 || packages.some((name) => !/^[a-zA-Z][a-zA-Z0-9_.-]*(?:\[[a-zA-Z0-9_,.-]+\])?(?:(?:==|>=|<=|~=)[a-zA-Z0-9_.+-]+)?$/.test(name))) throw new Error('Use package names with optional versions, without URLs or installer flags.');
   const directory = `.commons-python/runs/${randomUUID()}`;
   return { directory, files: [
     { path: `${directory}/bootstrap.py`, content: CLOUD_PYTHON_BOOTSTRAP },
     { path: `${directory}/analysis.py`, content: code },
-    { path: `${directory}/inputs.json`, content: JSON.stringify({ files, packages, timeoutSeconds: Math.max(1, Math.min(timeoutSeconds, 300)) }) },
+    { path: `${directory}/inputs.json`, content: JSON.stringify({ files, packages, ...(workspaceKey ? { workingDirectory: `sessions/${createHash('sha256').update(workspaceKey).digest('hex')}/outputs` } : {}), timeoutSeconds: Math.max(1, Math.min(timeoutSeconds, 300)) }) },
   ] };
 }

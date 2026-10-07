@@ -1,3 +1,4 @@
+import { cloudPythonFiles } from '~/computer/python-analysis';
 import { CommonToolService } from './common-tool.service';
 
 // This boundary test supplies its own file and computer services. Avoid booting
@@ -113,5 +114,16 @@ describe('saved media preferences win over model-chosen defaults', () => {
     const service = setup();
     await service.generateMedia({ agentId: 'agent', kind: 'audio', modelKey: 'google:audio:gemini-3.1-flash-tts-preview', overrideAgentDefault: true, prompt: 'Hello', settings: { voice: 'Kore' } }, { agentId: 'agent' });
     expect(service.media.generateAndWait).toHaveBeenCalledWith(expect.objectContaining({ modelKey: 'google:audio:gemini-3.1-flash-tts-preview', settings: { voice: 'Kore' } }), expect.anything());
+  });
+});
+
+
+describe('Python working folder isolation', () => {
+  const config = (key: string) => JSON.parse(cloudPythonFiles('print(1)', [], 120, [], key).files.find((file) => file.path.endsWith('inputs.json'))!.content);
+  it('keeps successive calls together without sharing files between accounts or chats', () => {
+    expect(config('owner-A:agent:chat-A').workingDirectory).toBe(config('owner-A:agent:chat-A').workingDirectory);
+    expect(config('owner-A:agent:chat-A').workingDirectory).not.toBe(config('owner-B:agent:chat-A').workingDirectory);
+    expect(config('owner-A:agent:chat-A').workingDirectory).not.toBe(config('owner-A:agent:chat-B').workingDirectory);
+    expect(config('owner-A:agent:chat-A').workingDirectory).not.toContain('owner-A');
   });
 });

@@ -22,7 +22,7 @@ try {
   copyFileSync(join(managed, 'uv-0.12.23/uv'), join(cloud, 'uv-0.12.23')); chmodSync(join(cloud, 'uv-0.12.23'), 0o700);
   symlinkSync(join(managed, 'data-3.12.11-v1'), join(cloud, 'data-3.12.11-v1'));
   writeFileSync(join(directory, 'sales.csv'), 'revenue\n10\n20\n30\n');
-  writeFileSync(join(directory, 'inputs.json'), JSON.stringify({ files: [{ itemId: 'file-731', name: 'sales.csv', url: pathToFileURL(join(directory, 'sales.csv')).toString() }], packages: ['json', 'os', 'pathlib', 'numpy', 'pandas', 'PIL', 'sklearn'], timeoutSeconds: 120 }));
+  writeFileSync(join(directory, 'inputs.json'), JSON.stringify({ files: [{ itemId: 'file-731', name: 'sales.csv', url: pathToFileURL(join(directory, 'sales.csv')).toString() }], packages: ['json', 'os', 'pathlib', 'numpy', 'pandas', 'PIL', 'sklearn'], timeoutSeconds: 120, workingDirectory: 'sessions/acceptance/outputs' }));
   writeFileSync(join(directory, 'analysis.py'), `import json, os, pandas as pd, matplotlib.pyplot as plt
 assert os.environ["OUTPUT_DIR"] == str(OUTPUT_DIR)
 assert os.environ["WORKSPACE_ROOT"] == WORKSPACE_ROOT
@@ -47,5 +47,20 @@ print('Verified cloud bootstrap')`);
   assert.equal(file('sales.csv').toString(), 'revenue\n40\n50\n');
   assert.equal(readFileSync(join(directory, 'sales.csv'), 'utf8'), 'revenue\n10\n20\n30\n', 'The source input was changed');
   assert.equal(file('reports/sales.png').subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  const nextRun = join(directory, 'next-run'); mkdirSync(nextRun);
+  copyFileSync(join(directory, 'inputs.json'), join(nextRun, 'inputs.json'));
+  writeFileSync(join(nextRun, 'analysis.py'), `import json
+assert (OUTPUT_DIR / 'reports' / 'totals.json').exists()
+assert Path(INPUT_FILES['sales.csv']).read_text() == 'revenue\\n10\\n20\\n30\\n'
+(OUTPUT_DIR / 'reports' / 'totals.json').write_text(json.dumps({'sum': 90}))
+print('Cloud working files persisted')`);
+  writeFileSync(join(nextRun, 'bootstrap.py'), bootstrap);
+  await promisify(execFile)(python, ['-I', join(nextRun, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
+  const next = JSON.parse(readFileSync(join(nextRun, 'result.json'), 'utf8'));
+  assert.equal(next.exitCode, 0, next.stderr);
+  assert.equal(next.outputDirectory, result.outputDirectory);
+  assert.equal(next.files.length, 1, 'Unchanged files were exported again');
+  assert.equal(JSON.parse(Buffer.from(next.files[0].base64, 'base64').toString()).sum, 90);
+  assert.equal(JSON.parse(file('reports/totals.json').toString()).sum, 60, 'The previous cloud artifact changed');
   console.log('Cloud bootstrap executed real Python with staged inputs, nested artifacts and no stdlib installation.');
 } finally { rmSync(directory, { recursive: true, force: true }); }

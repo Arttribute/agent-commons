@@ -97,17 +97,39 @@ export class PythonRuntime {
     return this.extensions.get(key)!;
   }
 
-  async run(code: string, directory: string, inputs: Record<string, string>, workspace?: string, timeoutSeconds = 120, packages: string[] = [], signal?: AbortSignal) {
+  async run(code: string, directory: string, inputs: Record<string, string>, workspace?: string, timeoutSeconds = 120, packages: string[] = [], signal?: AbortSignal, workingOutput?: string) {
     signal?.throwIfAborted();
     if (!code.trim() || code.length > 100_000) throw new Error("Provide Python code between 1 and 100,000 characters.");
     const python = await this.withPackages(packages);
     signal?.throwIfAborted();
-    const output = join(directory, "outputs");
+    const output = workingOutput ?? join(directory, "outputs");
+    const snapshotDirectory = join(directory, "snapshot");
+    const hash = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
+    const scan = (folder: string) => {
+      const paths = new Map<string, string>();
+      let visited = 0; let bytes = 0;
+      const collect = (current: string, depth = 0) => {
+        if (depth > 16) throw new Error("Python output folders exceed the supported depth.");
+        for (const name of readdirSync(current)) {
+          if (++visited > 2_000) throw new Error("Python output exceeds the 2,000-entry limit.");
+          const path = join(current, name); const info = lstatSync(path);
+          if (info.isSymbolicLink()) continue;
+          if (info.isDirectory()) collect(path, depth + 1);
+          else if (info.isFile()) {
+            bytes += info.size;
+            if (bytes > 250 * 1024 * 1024) throw new Error("Python working files exceed 250 MB.");
+            paths.set(path, hash(path));
+          }
+        }
+      };
+      collect(folder); return paths;
+    };
     mkdirSync(output, { recursive: true, mode: 0o700 });
     const stagedInputs: Record<string, string> = {};
     const copied = new Map<string, string>();
     const inputPaths = new Set<string>();
     const inputHashes = new Map<string, string>();
+    const revisedInputs = new Map<string, string>();
     for (const [name, source] of Object.entries(inputs)) {
       let target = copied.get(source);
       if (!target) {
@@ -115,39 +137,56 @@ export class PythonRuntime {
         if (inputPaths.has(target)) target = resolve(output, `input-${randomUUID()}`, name);
         const offset = relative(output, target);
         if (isAbsolute(offset) || offset === ".." || offset.startsWith(`..${sep}`)) throw new Error("Invalid input filename.");
+        // Reject existing symlink parents before staging an input.
+        for (let parent = target; parent !== output; parent = dirname(parent)) {
+          try { if (lstatSync(parent).isSymbolicLink()) throw new Error("Python input path contains a symbolic link."); }
+          catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+        }
+        // Keep earlier generated files in place; a reference attachment with the
+        // same name gets its own copy instead of overwriting the working draft.
+        if (existsSync(target) && hash(target) !== hash(source)) {
+          const revisedName = join("revised-inputs", randomUUID(), name);
+          target = join(directory, revisedName);
+          revisedInputs.set(target, revisedName);
+        }
         mkdirSync(dirname(target), { recursive: true });
-        copyFileSync(source, target);
+        if (!existsSync(target)) copyFileSync(source, target);
         copied.set(source, target);
         inputPaths.add(target);
         inputHashes.set(target, createHash("sha256").update(readFileSync(target)).digest("hex"));
       }
       stagedInputs[name] = target;
     }
+    const baseline = scan(output);
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
     const script = join(directory, `analysis-${randomUUID()}.py`);
     const prelude = `from pathlib import Path\nINPUT_FILES = ${JSON.stringify(stagedInputs)}\nOUTPUT_DIR = Path(${JSON.stringify(output)})\nWORKSPACE_ROOT = ${JSON.stringify(workspace ?? "")}\n`;
     writeFileSync(script, prelude + code, { mode: 0o600 });
     try {
       const { stdout, stderr } = await exec(python, ["-I", script], { cwd: output, env: { ...this.environment(), OUTPUT_DIR: output, WORKSPACE_ROOT: workspace ?? "" }, signal, timeout: Math.max(1, Math.min(timeoutSeconds, 300)) * 1000, maxBuffer: 2_000_000, windowsHide: true });
+      signal?.throwIfAborted();
+      const current = scan(output);
+      const changed = [...current].filter(([path, digest]) => baseline.get(path) !== digest);
+      const changedInputs = [...revisedInputs].filter(([path]) => hash(path) !== inputHashes.get(path));
+      if (changed.length + changedInputs.length > 100) throw new Error("Python produced more than 100 output files. Save only the files needed for this request.");
       const files: string[] = [];
-      let visited = 0;
-      const collect = (folder: string, depth = 0) => {
-        if (depth > 16) throw new Error("Python output folders exceed the supported depth.");
-        for (const name of readdirSync(folder)) {
-          if (++visited > 2_000) throw new Error("Python output exceeds the 2,000-entry limit.");
-          const path = join(folder, name);
-          const info = lstatSync(path);
-          if (info.isSymbolicLink()) continue;
-          if (info.isFile() && inputPaths.has(path) && inputHashes.get(path) === createHash("sha256").update(readFileSync(path)).digest("hex")) continue;
-          if (info.isDirectory()) collect(path, depth + 1);
-          else if (info.isFile()) files.push(path);
-          if (files.length > 100) throw new Error("Python produced more than 100 output files. Save only the files needed for this request.");
+      // Snapshot the whole working tree so relative HTML/image/script links keep
+      // working and later Python calls cannot mutate an earlier Library revision.
+      if (changed.length || changedInputs.length) {
+        for (const [path] of current) {
+          const target = join(snapshotDirectory, relative(output, path));
+          mkdirSync(dirname(target), { recursive: true }); copyFileSync(path, target);
         }
-      };
-      collect(output);
-      return { exitCode: 0, stdout, stderr, python, files, outputDirectory: output };
+        for (const [path] of changed) files.push(join(snapshotDirectory, relative(output, path)));
+        for (const [path, name] of changedInputs) {
+          const target = join(snapshotDirectory, name);
+          mkdirSync(dirname(target), { recursive: true }); copyFileSync(path, target); files.push(target);
+        }
+      }
+      return { exitCode: 0, stdout, stderr, python, files, outputDirectory: output, snapshotDirectory };
     } catch (error) {
       const failure = error as Error & { code?: number | string; stdout?: string; stderr?: string; killed?: boolean };
-      return { exitCode: typeof failure.code === "number" ? failure.code : -1, stdout: failure.stdout ?? "", stderr: failure.stderr || failure.message, timedOut: Boolean(failure.killed), python, files: [] as string[], outputDirectory: output };
+      return { exitCode: typeof failure.code === "number" ? failure.code : -1, stdout: failure.stdout ?? "", stderr: failure.stderr || failure.message, timedOut: Boolean(failure.killed), python, files: [] as string[], outputDirectory: output, snapshotDirectory };
     }
   }
 }
