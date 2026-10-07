@@ -1436,7 +1436,13 @@ export class PrivateLocalRuntime {
     }));
     const availableAttachments = [...new Map(conversation.messages.flatMap((message) => message.attachments ?? []).map((attachment) => [attachment.id, attachment])).values()]
       .slice(-20).map((attachment) => `- ${attachment.name} (itemId: ${attachment.id})`);
-    const generatedFiles = (conversation.artifacts ?? []).slice(-40).map((file) => `- ${file.name} (itemId: ${file.id})`);
+    const libraryById = new Map((state.library ?? []).map((file) => [file.id, file]));
+    const generatedFiles = (conversation.artifacts ?? []).filter((file) => !libraryById.get(file.id)?.sourceArchiveId).slice(-40).map((file) => `- ${file.name} (itemId: ${file.id})`);
+    const archiveFiles = (conversation.artifacts ?? []).flatMap((file) => {
+      const item = libraryById.get(file.id);
+      return item?.sourceArchiveId ? [item] : [];
+    });
+    const archiveDirectories = [...new Set(archiveFiles.map((file) => file.name.split('/').slice(0, -1).slice(0, 2).join('/')))].sort().slice(0, 16);
     const relatedChats = project ? state.conversations.filter((entry) => entry.projectId === project.id && entry.id !== conversationId && entry.messages.length)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 8)
       .map((entry) => `- ${entry.title} (sessionId: ${entry.id}): ${entry.messages.find((message) => message.role === "user")?.content.slice(0, 180) ?? ""}`) : [];
@@ -1484,7 +1490,8 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       "For spoken audio requests, use generate_audio. The result is a local WAV artifact. Do not claim audio exists unless the tool succeeds.",
       skillsBlock,
       projectBlock,
-      generatedFiles.length ? `Use list_session_files to find exact filenames and itemIds, including all extracted archive members. Files created or extracted in this chat are readable with read_library_item and available to run_python INPUT_FILES by filename or itemId:\n${generatedFiles.join("\n")}` : "",
+      archiveFiles.length ? `Archive reference files: ${archiveFiles.length} extracted inputs in these directories:\n${archiveDirectories.join("\n")}\nThese are reference documents and supplied example outputs, not files you generated. Use list_session_files(query) to locate the matching instructions across the archive; search_library_item searches only one file's contents. Do not search an unrelated file for another document's filename. Read references through read_library_item; Python INPUT_FILES contains their archive-relative names and itemIds.` : "",
+      generatedFiles.length ? `Generated outputs from this chat's executed tools (archive references are excluded). Read with read_library_item and reuse through run_python INPUT_FILES:\n${generatedFiles.join("\n")}` : "",
       availableAttachments.length ? `Files previously attached in this chat remain searchable with search_library_item and readable with read_library_item:\n${availableAttachments.join("\n")}` : "",
       attachmentBlocks.length ? `## Files attached to the latest message\nThe files stay on this computer. Their text is below.\n\n${attachmentBlocks.join("\n\n")}` : "",
       knowledge.length
@@ -1820,10 +1827,12 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const conversation = state.conversations.find((item) => item.id === conversationId)!;
       const project = state.projects?.find((item) => item.id === conversation.projectId);
       const ids = new Set([...conversation.messages.flatMap((message) => message.attachments?.map((file) => file.id) ?? []), ...(project?.libraryItemIds ?? []), ...(conversation.artifacts?.map((file) => file.id) ?? [])]);
-      const query = String(args.query ?? "").toLowerCase();
-      const files = (state.library ?? []).filter((file) => ids.has(file.id) && file.name.toLowerCase().includes(query));
+      const normalize = (value: string) => value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ');
+      const query = normalize(String(args.query ?? '')).trim().split(/\s+/).filter(Boolean);
+      const attachedIds = new Set(conversation.messages.flatMap((message) => message.attachments?.map((file) => file.id) ?? []));
+      const files = (state.library ?? []).filter((file) => ids.has(file.id) && query.every((word) => normalize(file.name).includes(word)));
       const offset = Math.max(0, Math.floor(Number(args.offset) || 0));
-      result = JSON.stringify({ files: files.slice(offset, offset + 30).map((file) => ({ itemId: file.id, name: file.name, mimeType: file.mimeType })), totalFiles: files.length, nextOffset: offset + 30 < files.length ? offset + 30 : null });
+      result = JSON.stringify({ files: files.slice(offset, offset + 30).map((file) => ({ itemId: file.id, name: file.name, mimeType: file.mimeType, role: file.sourceArchiveId ? 'archive-reference' : attachedIds.has(file.id) ? 'attachment' : file.source === 'agent' && file.conversationId === conversationId ? 'generated' : 'project-reference' })), totalFiles: files.length, nextOffset: offset + 30 < files.length ? offset + 30 : null });
     } else if (name === "read_library_item" || name === "search_library_item") {
       const state = this.store.get();
       const conversation = state.conversations.find((item) => item.id === conversationId);

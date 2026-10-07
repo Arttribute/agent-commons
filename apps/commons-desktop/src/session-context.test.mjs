@@ -42,6 +42,8 @@ test('session folders, model inheritance, media overrides and disabled knowledge
       ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'cli_read_file', arguments: { path: 'Two/Two.txt' } } }] }
       : last.role === 'user' && last.content.startsWith('Extract ')
       ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'extract_library_archive', arguments: { itemId: last.content.slice(8) } } }] }
+      : last.role === 'user' && last.content === 'List the START reference'
+      ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'list_session_files', arguments: { query: 'start-here' } } }] }
       : last.role === 'user' && last.content.startsWith('Inspect persisted canvas')
       ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_canvas', arguments: { projectId: canvasProjectId } } }] }
       : last.role === 'user' && last.content.startsWith('Inspect unrelated canvas')
@@ -94,6 +96,13 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     const read = await runtime.sendMessage({ agentId: inherited, conversationId: extraction.conversation.id, prompt: 'Read START HERE.md' });
     assert.ok(read.conversation.messages.some((message) => message.toolName === 'read_library_item' && message.content.includes('Approved workflow input')), JSON.stringify(read.conversation.messages.slice(-3)));
     assert.equal(read.conversation.workspaceRoot, undefined);
+    const reference = await runtime.sendMessage({ agentId: inherited, conversationId: extraction.conversation.id, prompt: 'List the START reference' });
+    const manifest = JSON.parse(reference.response);
+    assert.equal(manifest.files[0].name, 'A kit/START HERE.md');
+    assert.equal(manifest.files[0].role, 'archive-reference');
+    const referencePrompt = requests.filter((request) => request.stream).at(-1).messages[0].content;
+    assert.match(referencePrompt, /Archive reference files/);
+    assert.doesNotMatch(referencePrompt, /Generated outputs from this chat/);
     const recording = runtime.importLibraryFiles([{ name: 'Recording.wav', mimeType: 'audio/wav', bytes: Buffer.from('test binary recording') }])[0];
     assert.match((await runtime.readLibraryItem(recording.id)).content, /binary/);
     runtime.updateLibraryItem(recording.id, { mediaAnalysis: { durationMs: 3000, transcript: { segments: [{ startMs: 1234, endMs: 2500, text: 'Exact spoken phrase' }] } } });
