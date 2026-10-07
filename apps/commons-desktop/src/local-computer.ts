@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import { statSync } from "node:fs";
 import type { LocalState } from "@agent-commons/desktop-contract";
 
@@ -6,7 +5,8 @@ export function computerWorkspace(state: LocalState, agentId: string, conversati
   if (!state.agents.some((agent) => agent.id === agentId)) throw new Error("Local agent not found");
   const conversation = conversationId ? state.conversations.find((item) => item.id === conversationId) : undefined;
   if (conversationId && (!conversation || conversation.agentId !== agentId)) throw new Error("Local conversation not found for this agent");
-  const path = conversation?.workspaceRoot || homedir();
+  const path = conversation?.workspaceRoot;
+  if (!path) throw new Error("Choose a folder for this chat before opening its computer workspace.");
   if (!statSync(path).isDirectory()) throw new Error("The workspace folder is no longer available");
   return path;
 }

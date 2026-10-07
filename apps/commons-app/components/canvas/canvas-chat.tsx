@@ -199,6 +199,7 @@ function CanvasChatInner() {
       pathname,
       pageTitle: context.artifact.name,
       routeName: "Canvas",
+      activeLibraryItemId: context.artifact.itemId,
       ...(context.projectId
         ? {
             resourceType: "canvas",
@@ -239,7 +240,11 @@ function CanvasChatInner() {
           setSessionId(id);
         }
         activateSession(id);
-        setLaunch({ key: `${id}:${Date.now()}`, value });
+        const file = context?.artifact;
+        const attachments = file && !value.attachments.some((item) => item.fileId === file.itemId)
+          ? [...value.attachments, { fileId: file.itemId, name: file.name, mimeType: file.mimeType, kind: "file" as const, sizeBytes: 0 }]
+          : value.attachments;
+        setLaunch({ key: `${id}:${Date.now()}`, value: { ...value, attachments } });
         setMode("panel");
       } catch (cause) {
         toast({ title: cause instanceof Error ? cause.message : "The chat could not be started", variant: "destructive" });

@@ -302,7 +302,7 @@ export function searchSpaces(spaces: KnowledgeSpace[], query: string, ids?: stri
 }
 
 export function accessibleSpaces(spaces: KnowledgeSpace[], agentId: string, ids?: string[]) {
-  return spaces.filter((space) => (!ids?.length || ids.includes(space.id)) &&
+  return spaces.filter((space) => (ids === undefined || ids.includes(space.id)) &&
     (space.autoGrantNewAgents !== false || space.grants?.some((grant) =>
       grant.subjectType === "agent" && grant.subjectId === agentId)));
 }

@@ -32,6 +32,8 @@ export type LocalAgent = {
   copilotScopes?: string[];
   instructions: string;
   model: string;
+  /** Empty/absent overrides inherit workspace defaults. */
+  mediaModels?: Pick<LocalSettings, "imageModel" | "voiceModel" | "transcriptionModel">;
   createdAt: string;
   updatedAt: string;
 };
@@ -61,6 +63,8 @@ export type LocalConversation = {
   webSearchEnabled?: boolean;
   workspaceRoot?: string;
   spaceIds?: string[];
+  knowledgeMode?: "auto" | "selected" | "off";
+  mcpServerIds?: string[];
   /** Chats in the same project share its instructions, files, and knowledge. */
   projectId?: string;
   messages: LocalMessage[];
@@ -91,6 +95,7 @@ export type LocalLibraryItem = {
   /** Cloud Library item created from this file with the user's consent. */
   cloudItemId?: string;
   cloudCopiedAt?: string;
+  sourceArchiveId?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -295,11 +300,13 @@ export type ChatRequest = {
   prompt: string;
   workspaceRoot?: string | null;
   spaceIds?: string[];
+  knowledgeMode?: "auto" | "selected" | "off";
   /** Local Library items attached to this message. Files never leave the computer. */
   attachmentIds?: string[];
   /** Project for a new conversation. Existing conversations keep their project. */
   projectId?: string;
   interactive?: boolean;
+  reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
   webSearchEnabled?: boolean;
   mcpServerIds?: string[];
 };
@@ -344,6 +351,7 @@ export type AgentInput = Pick<LocalAgent, "name" | "instructions" | "model"> & {
   persona?: string;
   copilotAccessMode?: "full" | "scoped" | "confirm";
   copilotScopes?: string[];
+  mediaModels?: LocalAgent["mediaModels"];
 };
 
 export type SkillInput = Pick<LocalSkill, "slug" | "name" | "description" | "instructions" | "triggers" | "tags"> & {
@@ -381,8 +389,8 @@ export interface CloudDesktopBridge {
   openPrivateWorkspace(path?: string): Promise<void>;
   getWorkspace(): Promise<string | null>;
   chooseWorkspace(): Promise<string | null>;
-  getToolContext(): Promise<string | null>;
-  runTool(request: { tool: string; args: Record<string, unknown>; sessionId?: string }): Promise<string>;
+  getToolContext(workspace?: string | null, sessionId?: string): Promise<string | null>;
+  runTool(request: { tool: string; args: Record<string, unknown>; sessionId?: string; workspaceRoot?: string | null }): Promise<string>;
   getAccess(): Promise<CloudAccess>;
   updateAccess(access: CloudAccess): Promise<CloudAccess>;
   importCloudLibraryItemToLocal(itemId: string, name: string, mimeType: string): Promise<void>;
@@ -409,6 +417,8 @@ export interface LocalDesktopBridge {
   getModelStatus(): Promise<LocalModelStatus>;
   getHardwareInfo(): Promise<{ ramGiB: number; freeDiskGiB: number; platform: string; arch: string }>;
   prepareModel(): Promise<void>;
+  preparePython(): Promise<void>;
+  testMcpServer(id: string): Promise<{ toolCount: number; readTools: number; writeTools: number }>;
   getStorageRoot(): Promise<string>;
   openComputer(input: { agentId: string; conversationId?: string; target: "files" | "terminal" }): Promise<void>;
   openStorageRoot(): Promise<void>;
@@ -420,7 +430,7 @@ export interface LocalDesktopBridge {
   chooseWorkspace(): Promise<string | null>;
   chooseKnowledgeFolders(): Promise<string[]>;
   clearAccount(): Promise<void>;
-  transcribeAudio(samples: Float32Array): Promise<string>;
+  transcribeAudio(samples: Float32Array, agentId?: string): Promise<string>;
   prepareTranscriptionModel(): Promise<void>;
   getImageModelStatus(): Promise<ImageModelStatus>;
   prepareImageModel(modelId?: string): Promise<void>;

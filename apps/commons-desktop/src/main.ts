@@ -75,6 +75,8 @@ let runtime: PrivateLocalRuntime;
 let activeMode: "cloud" | "private-local" = "private-local";
 let cloudTransition = false;
 let cloudWorkspace: string | null = null;
+const cloudWorkspaceGrants = new Set<string>();
+const cloudSessionWorkspaces = new Map<string, string>();
 let cloudAccess: CloudAccess = { ...DEFAULT_CLOUD_ACCESS };
 let cloudAuthAttempt = 0;
 let cloudAuthController: AbortController | null = null;
@@ -95,6 +97,7 @@ function pathContains(parent: string, child: string) {
 }
 
 function assertCloudWorkspacePrivacy(selected: string) {
+  if (realpathSync(selected) !== selected || !statSync(selected).isDirectory()) throw new Error("The selected folder has changed. Choose it again before continuing.");
   const privateRoot = join(realpathSync(app.getPath("userData")), "private-local");
   if (pathContains(selected, privateRoot) || pathContains(privateRoot, selected)) {
     throw new Error("Choose a project folder outside the Private Local data directory so local conversations and settings stay private.");
@@ -106,13 +109,18 @@ function cloudAccessPath() { return join(app.getPath("userData"), "cloud-access.
 function loadCloudAccess() {
   if (!existsSync(cloudAccessPath())) return;
   try {
-    const saved = JSON.parse(readFileSync(cloudAccessPath(), "utf8")) as { access?: CloudAccess; workspace?: string };
+    const saved = JSON.parse(readFileSync(cloudAccessPath(), "utf8")) as { access?: CloudAccess; workspace?: string; folders?: string[]; sessions?: Record<string, string> };
     cloudAccess = normalizeCloudAccess(saved.access);
     if (saved.workspace && statSync(saved.workspace).isDirectory()) {
       const selected = realpathSync(saved.workspace);
       assertCloudWorkspacePrivacy(selected);
       cloudWorkspace = selected;
+      cloudWorkspaceGrants.add(selected);
     }
+    for (const folder of saved.folders ?? []) {
+      try { const path = realpathSync(folder); assertCloudWorkspacePrivacy(path); if (statSync(path).isDirectory()) cloudWorkspaceGrants.add(path); } catch { /* unavailable folder */ }
+    }
+    for (const [id, path] of Object.entries(saved.sessions ?? {})) if (cloudWorkspaceGrants.has(path)) cloudSessionWorkspaces.set(id, path);
   } catch {
     cloudWorkspace = null;
     cloudAccess = { ...DEFAULT_CLOUD_ACCESS };
@@ -122,7 +130,7 @@ function loadCloudAccess() {
 function saveCloudAccess() {
   const path = cloudAccessPath();
   const temporary = `${path}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify({ access: cloudAccess, workspace: cloudWorkspace })}\n`, { mode: 0o600 });
+  writeFileSync(temporary, `${JSON.stringify({ access: cloudAccess, workspace: cloudWorkspace, folders: [...cloudWorkspaceGrants], sessions: Object.fromEntries(cloudSessionWorkspaces) })}\n`, { mode: 0o600 });
   renameSync(temporary, path);
 }
 
@@ -686,6 +694,7 @@ function registerIpc() {
     if (!statSync(selected).isDirectory()) throw new Error("Choose a directory");
     assertCloudWorkspacePrivacy(selected);
     cloudWorkspace = selected;
+    cloudWorkspaceGrants.add(selected);
     saveCloudAccess();
     return cloudWorkspace;
   });
@@ -810,20 +819,30 @@ function registerIpc() {
     unifiedView?.webContents.send("desktop:cloud-approval-resolved", id);
     pending.resolve(Boolean(allow));
   });
-  ipcMain.handle("cloud:get-tool-context", (event) => {
+  ipcMain.handle("cloud:get-tool-context", (event, selected?: string | null, sessionId?: string) => {
     assertCloudSender(event);
-    if (!cloudWorkspace || (!cloudAccess.readFiles && !cloudAccess.writeFiles && !cloudAccess.runCommands)) return null;
-    assertCloudWorkspacePrivacy(cloudWorkspace);
+    const workspace = selected === undefined ? cloudWorkspace : selected;
+    if (workspace && !cloudWorkspaceGrants.has(workspace)) throw new Error("Choose this folder again to grant Cloud access.");
+    if (sessionId) {
+      if (workspace) cloudSessionWorkspaces.set(sessionId, workspace);
+      else cloudSessionWorkspaces.delete(sessionId);
+      saveCloudAccess();
+    }
+    if (!workspace || (!cloudAccess.readFiles && !cloudAccess.writeFiles && !cloudAccess.runCommands)) return null;
+    assertCloudWorkspacePrivacy(workspace);
     const access = `Cloud desktop permissions: file reading ${cloudAccess.readFiles ? "on" : "off"}; file editing ${cloudAccess.writeFiles ? "on" : "off"}; full computer commands ${cloudAccess.runCommands ? "on, with approval for each command" : "off"}. Only use permitted tools. File tools stay inside the selected workspace. Command tools, when enabled, can access other files on this computer.`;
     return cloudAccess.runCommands
-      ? `${buildLocalToolsManifest(cloudWorkspace, cloudAccess.readFiles ? buildDirSnapshot(cloudWorkspace, 2) : "(file reading disabled)")}\n${access}`
-      : `## Desktop workspace tools\nWorkspace: ${cloudWorkspace}\n${access}\nAvailable: ${[cloudAccess.readFiles && "cli_list_directory, cli_read_file, cli_search_files, cli_disk_usage", cloudAccess.writeFiles && "cli_write_file"].filter(Boolean).join(", ")}.\n${cloudAccess.readFiles ? buildDirSnapshot(cloudWorkspace, 2) : ""}`;
+      ? `${buildLocalToolsManifest(workspace, cloudAccess.readFiles ? buildDirSnapshot(workspace, 2) : "(file reading disabled)")}\n${access}`
+      : `## Desktop workspace tools\nWorkspace: ${workspace}\n${access}\nAvailable: ${[cloudAccess.readFiles && "cli_list_directory, cli_read_file, cli_search_files, cli_disk_usage", cloudAccess.writeFiles && "cli_write_file"].filter(Boolean).join(", ")}.\n${cloudAccess.readFiles ? buildDirSnapshot(workspace, 2) : ""}`;
   });
-  ipcMain.handle("cloud:run-tool", async (event, request: { tool: string; args: Record<string, unknown>; sessionId?: string }) => {
+  ipcMain.handle("cloud:run-tool", async (event, request: { tool: string; args: Record<string, unknown>; sessionId?: string; workspaceRoot?: string | null }) => {
     assertCloudSender(event);
     if (activeMode !== "cloud") throw new Error("Cloud tools are unavailable while switching modes");
-    if (!cloudWorkspace) throw new Error("Choose a local workspace first");
-    assertCloudWorkspacePrivacy(cloudWorkspace);
+    const workspace = request.workspaceRoot === undefined ? cloudSessionWorkspaces.get(request.sessionId ?? "") : request.workspaceRoot;
+    if (workspace && !cloudWorkspaceGrants.has(workspace)) throw new Error("This folder has not been selected for Cloud access.");
+    if (workspace && request.sessionId) { cloudSessionWorkspaces.set(request.sessionId, workspace); saveCloudAccess(); }
+    if (!workspace) throw new Error("Choose a local workspace first");
+    assertCloudWorkspacePrivacy(workspace);
     const tool = request?.tool?.replace(/^cli_/, "");
     if (!tool || !cloudToolNames.has(tool)) throw new Error("Unsupported local tool");
     assertCloudToolAllowed(tool, cloudAccess);
@@ -832,7 +851,7 @@ function registerIpc() {
     cloudToolControllers.add(controller);
     try {
       return await runLocalTool({ tool, args: request.args }, {
-        rootDir: cloudWorkspace,
+        rootDir: workspace,
         sessionId: request.sessionId ?? "cloud-desktop",
         permissions: new Map(),
         signal: controller.signal,
@@ -864,7 +883,7 @@ function registerIpc() {
               conversationId: request.sessionId, toolName: request.tool,
               note: isCommand
                 ? "Full computer command access is on. This command can read outside the selected folder, including Private Local files, and its output may be sent to Commons Cloud."
-                : `Runs in ${cloudWorkspace}. The result is sent to your Cloud agent.`,
+                : `Runs in ${workspace}. The result is sent to your Cloud agent.`,
             });
           });
           return allowed && !controller.signal.aborted && activeMode === "cloud";
@@ -882,7 +901,12 @@ function registerIpc() {
   ipcMain.handle("cloud:sync-preferences", (event, incoming: WorkspacePreferences) => { assertCloudSender(event); return syncPreferences(incoming, "cloud"); });
 
   localHandler("local:get-state", () => runtime.state());
-  localHandler<[Float32Array]>("local:transcribe-audio", (samples) => transcribeLocalAudio(samples, app.getPath("userData"), runtime.state().settings.transcriptionModel));
+  localHandler<[Float32Array, string?]>("local:transcribe-audio", (samples, agentId) => {
+    const state = runtime.state();
+    const agent = agentId ? state.agents.find((item) => item.id === agentId) : undefined;
+    if (agentId && !agent) throw new Error("Local agent not found");
+    return transcribeLocalAudio(samples, app.getPath("userData"), agent?.mediaModels?.transcriptionModel || state.settings.transcriptionModel);
+  });
   localHandler("local:prepare-transcription-model", () => prepareLocalTranscriber(app.getPath("userData"), runtime.state().settings.transcriptionModel));
   localHandler("local:get-image-model-status", () => runtime.imageModelStatus());
   localHandler<[string?]>("local:prepare-image-model", (modelId) => runtime.prepareImageModel(modelId));
@@ -911,6 +935,8 @@ function registerIpc() {
     } else throw new Error("Unsupported Local computer window");
   });
   localHandler("local:get-model-status", () => runtime.modelStatus());
+  localHandler<[string]>("local:test-mcp", (id) => runtime.testMcpServer(id));
+  localHandler("local:prepare-python", () => runtime.preparePython());
   localHandler("local:prepare-model", () => runtime.prepareLocalModel());
   localHandler("local:get-preferences", () => runtime.preferences());
   localHandler<[WorkspacePreferences]>("local:sync-preferences", (incoming) => syncPreferences(incoming, "private-local"));

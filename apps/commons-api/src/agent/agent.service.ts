@@ -1,4 +1,6 @@
 import * as schema from '#/models/schema';
+import { MEDIA_MODEL_REGISTRY } from "~/media/media-model.registry";
+import { TRANSCRIPTION_MODELS } from "~/audio/audio-models";
 import { CanvasService } from '~/media/canvas.service';
 import { CanvasVisualsService } from '~/media/canvas-visuals.service';
 import { canvasContextRequest } from '~/media/canvas-context';
@@ -90,7 +92,7 @@ import { durableRole, restoreSessionMessages } from '~/session/session-history';
 import { filterPlatformToolsForAgent } from './copilot-tool-policy';
 import { selectModelTools } from './model-tool-selection';
 import { MAX_CONSECUTIVE_TOOL_SCHEMA_FAILURES, nextToolSchemaFailureCount } from './tool-schema-retry';
-import { AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
+import { DATA_EXECUTION_CONTRACT, requiresComputedData, AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
 
 const got = import('got');
 
@@ -796,6 +798,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     uiContext?: CopilotUiContext;
     /** Knowledge Spaces explicitly selected by the user for this turn. */
     knowledgeSpaceIds?: string[];
+    knowledgeMode?: "auto" | "selected" | "off";
     /** Project for a new session. Existing sessions keep their own project. */
     projectId?: string;
     /**
@@ -949,6 +952,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                   initiator: initiator,
                   projectId: requestedProject?.projectId,
                   model: {
+                    source: "agent",
                     name: agent.modelId ?? 'gpt-5.4-mini', // legacy compat
                     provider: agent.modelProvider ?? 'openai',
                     modelId: agent.modelId ?? 'gpt-5.4-mini',
@@ -989,6 +993,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                   initiator,
                   parentSessionId: parentSessionId ?? undefined,
                   model: {
+                    source: "agent",
                     name: agent.modelId ?? 'gpt-5.4-mini',
                     provider: agent.modelProvider ?? 'openai',
                     modelId: agent.modelId ?? 'gpt-5.4-mini',
@@ -1028,6 +1033,9 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           const sessionRecord = await this.session.getSession({
             id: currentSessionId,
           });
+          const knowledgeMode = props.knowledgeMode ?? sessionRecord?.runContext?.knowledgeMode ?? "auto";
+          const knowledgeSpaceIds = props.knowledgeSpaceIds ?? sessionRecord?.runContext?.knowledgeSpaceIds ?? [];
+          if (props.knowledgeMode !== undefined || props.knowledgeSpaceIds !== undefined) await this.session.updateSession({ id: currentSessionId, delta: { runContext: { knowledgeMode, knowledgeSpaceIds } } });
           // Chats opened before their first message (new chats and project
           // chats) exist without history; their first run starts the
           // conversation like any new session.
@@ -1706,7 +1714,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             ? latestUserMessage.content.slice(0, 4_000)
             : '';
           const selectedTools = selectModelTools(
-            toolDefs,
+            toolDefs.filter((entry) => (knowledgeMode !== "off" || !/Knowledge/.test(entry.function.name)) && (!requiresComputedData(requestText) || !["generateImage", "generateMedia"].includes(entry.function.name))),
             cliToolSchemas,
             requestText,
             effectiveModel.provider === 'hosted-free' ? HOSTED_FREE_MAX_TOOLS : undefined,
@@ -1744,6 +1752,10 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 let data: any;
                 let status: 'success' | 'error' = 'success';
                 try {
+                  if (knowledgeMode === "selected" && fn === "searchKnowledge") {
+                    if (!knowledgeSpaceIds.length) throw new BadRequestException("No Knowledge Spaces are selected for this chat.");
+                    args = { ...(args as Record<string, unknown>), spaceIds: knowledgeSpaceIds };
+                  }
                   data = await got_.default
                     .post(
                       `http://localhost:${process.env.PORT}/v1/agents/tools`,
@@ -2307,6 +2319,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             } as any);
           }
 
+          if (props.uiContext?.activeLibraryItemId) props.attachments = [...new Map([...(props.attachments ?? []), { fileId: props.uiContext.activeLibraryItemId }].map((file) => [file.fileId, file])).values()];
           const attachmentContext = props.attachments?.length
             ? await (async () => {
                 emitStatus(
@@ -2440,6 +2453,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 .catch(() => null)) ?? null,
               initiator,
               agentId,
+              knowledgeMode !== "off",
             )
             .catch((error) => {
               this.logger.warn(`Project context unavailable: ${error.message}`);
@@ -2447,14 +2461,14 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             });
           const selectedKnowledgeSpaceIds = [
             ...new Set(
-              (props.knowledgeSpaceIds ?? [])
+              (knowledgeSpaceIds ?? [])
                 .filter((value): value is string => typeof value === 'string')
                 .map((value) => value.trim())
                 .filter((value) => /^[a-zA-Z0-9_-]{1,160}$/.test(value))
                 .slice(0, 20),
             ),
           ];
-          const knowledgeSelectionBlock = selectedKnowledgeSpaceIds.length
+          const knowledgeSelectionBlock = knowledgeMode === "off" ? "Knowledge Spaces are explicitly off for this chat. Use attached files and folder tools for task inputs; do not retrieve or write Knowledge documents." : selectedKnowledgeSpaceIds.length
             ? [
                 '## USER-SELECTED KNOWLEDGE',
                 'The user explicitly referenced Knowledge Spaces for this turn.',
@@ -2495,6 +2509,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             : '';
 
           const extraSystemContent = [
+            DATA_EXECUTION_CONTRACT,
+            `Agent media defaults: ${JSON.stringify(agent.mediaModels ?? {})}. Use generateMedia with these exact model keys for the relevant modality unless the user explicitly chooses a different model.`,
             buildWorkspaceModeContext('cloud', Boolean(props.cliContext), props.uiContext?.desktopMode === 'cloud'),
             memoryBlock,
             projectContext?.block,
@@ -3256,7 +3272,18 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       'frequencyPenalty',
       'ttsProvider',
       'ttsVoice',
+      'mediaModels',
     ];
+    if (updateData.mediaModels) {
+      for (const [key, value] of Object.entries(updateData.mediaModels)) {
+        if (key === "transcriptionModel") {
+          if (value && !TRANSCRIPTION_MODELS.includes(value)) throw new BadRequestException("Choose a supported transcription model.");
+          continue;
+        }
+        const kind = key.replace(/Model$/, '');
+        if (!['image', 'video', 'audio', 'music'].includes(kind) || (value && !MEDIA_MODEL_REGISTRY.some((model) => model.modelKey === value && model.kind === kind))) throw new BadRequestException('Choose a supported media model for each modality.');
+      }
+    }
     const data = (
       existing.isSystemManaged
         ? Object.fromEntries(

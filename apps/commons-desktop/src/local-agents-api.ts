@@ -9,7 +9,7 @@ function view(agent: LocalAgent, runtime: PrivateLocalRuntime) {
   return { agentId: agent.id, name: agent.name, avatar: agent.avatar,
     description: agent.description, persona: agent.persona, instructions: agent.instructions,
     owner: runtime.state().account?.userId ?? "local-workspace", isDefault: agent.isDefault,
-    modelProvider: "ollama", modelId: agent.model || runtime.state().settings.defaultModel,
+    modelProvider: "ollama", modelId: agent.model, effectiveModelId: agent.model || runtime.state().settings.defaultModel, mediaModels: agent.mediaModels ?? {},
     runtimeType: "native", runtimeStatus: "running", createdAt: agent.createdAt, updatedAt: agent.updatedAt };
 }
 
@@ -21,7 +21,8 @@ export function handleLocalAgentsApi(runtime: PrivateLocalRuntime, url: URL, met
       if (method === "GET") return ok(agents.map((agent) => view(agent, runtime)));
       if (method === "POST") {
         const state = runtime.saveAgent({ name: String(body.name ?? ""), instructions: String(body.instructions ?? ""),
-          model: String(body.modelId ?? body.model ?? runtime.state().settings.defaultModel),
+          model: String(body.modelId ?? body.model ?? ""),
+          mediaModels: body.mediaModels as LocalAgent["mediaModels"],
           description: typeof body.description === "string" ? body.description : undefined,
           persona: typeof body.persona === "string" ? body.persona : undefined });
         return ok(view(state.agents.at(-1)!, runtime));
@@ -37,6 +38,7 @@ export function handleLocalAgentsApi(runtime: PrivateLocalRuntime, url: URL, met
           name: typeof body.name === "string" ? body.name : agent.name,
           instructions: typeof body.instructions === "string" ? body.instructions : agent.instructions,
           model: typeof body.modelId === "string" ? body.modelId : agent.model,
+          mediaModels: body.mediaModels as LocalAgent["mediaModels"],
           description: typeof body.description === "string" ? body.description : agent.description,
           persona: typeof body.persona === "string" ? body.persona : agent.persona,
         });

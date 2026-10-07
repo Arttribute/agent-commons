@@ -187,6 +187,7 @@ export function buildLocalToolsManifest(rootDir: string, snapshot: string, fileC
 You are running inside a CLI session with DIRECT access to the user's local machine. The following tools are in your tool list and execute on the user's machine in real time.
 
 **Session root:** ${rootDir}
+Use paths relative to this root: "." lists the selected folder; "file.txt" reads a file directly inside it. Do not prefix relative paths with the selected folder's own name. The current root overrides folder names in older messages.
 
 ### Current file system (live snapshot)
 
@@ -666,7 +667,7 @@ async function toolListDirectory(args: Record<string, any>, cfg: LocalToolsConfi
     const type = e.isDirectory() ? 'd' : e.isSymbolicLink() ? 'l' : 'f';
     return `[${type}] ${e.name}`;
   });
-  return lines.join('\n') || '(empty directory)';
+  return `Directory: ${abs}\nSession root: ${realpathSync(cfg.rootDir)}\n${lines.join('\n') || '(empty directory)'}`;
 }
 
 async function toolDiskUsage(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {

@@ -33,7 +33,7 @@ export class AudioController {
   )
   async transcribe(
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { durationMs?: string },
+    @Body() body: { durationMs?: string; model?: string },
     @Headers('x-idempotency-key') idempotencyKey: string | undefined,
     @Req() req: Request,
   ) {
@@ -43,6 +43,7 @@ export class AudioController {
       principalId,
       durationMs: Number(body.durationMs || 0),
       idempotencyKey: idempotencyKey || randomUUID(),
+      model: body.model,
     });
     return { data };
   }

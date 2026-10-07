@@ -6,7 +6,7 @@ const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(ch
 const bridge: LocalDesktopBridge = {
   getInfo: () => invoke("desktop:get-info", "private-local"),
   getState: () => invoke("local:get-state"),
-  transcribeAudio: (samples) => invoke("local:transcribe-audio", samples),
+  transcribeAudio: (samples, agentId) => invoke("local:transcribe-audio", samples, agentId),
   prepareTranscriptionModel: () => invoke("local:prepare-transcription-model"),
   getImageModelStatus: () => invoke("local:get-image-model-status"),
   prepareImageModel: (modelId) => invoke("local:prepare-image-model", modelId),
@@ -18,6 +18,8 @@ const bridge: LocalDesktopBridge = {
   clearAccount: () => invoke("local:clear-account"),
   getModelStatus: () => invoke("local:get-model-status"),
   getHardwareInfo: () => invoke("local:get-hardware-info"),
+  testMcpServer: (id) => invoke("local:test-mcp", id),
+  preparePython: () => invoke("local:prepare-python"),
   prepareModel: () => invoke("local:prepare-model"),
   getStorageRoot: () => invoke("local:get-storage-root"),
   openComputer: (input) => invoke("local:open-computer", input),

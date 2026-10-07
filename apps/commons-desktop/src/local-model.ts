@@ -103,7 +103,7 @@ export class LocalModelManager {
 
   constructor(
     private readonly directory: string,
-    private readonly model: string,
+    private model: string,
     private readonly onStatus: (status: LocalModelStatus) => void,
   ) {}
 
@@ -116,8 +116,9 @@ export class LocalModelManager {
     assertReviewedModelDigest(model, installed?.digest);
   }
 
-  prepare() {
-    this.preparation ??= this.prepareOnce().catch((error) => {
+  prepare(model = this.model): Promise<void> {
+    if (this.preparation) return this.preparation.then(() => this.prepare(model));
+    this.preparation = this.prepareOnce(model).catch((error) => {
       const rawMessage = error instanceof Error ? error.message : "Local AI could not be prepared";
       const storageMessage = "Agent Commons needs about 5 GB of free space to prepare Local AI on this computer.";
       const label = /no space left|not enough space|disk full/i.test(rawMessage) ? storageMessage : rawMessage;
@@ -140,7 +141,7 @@ export class LocalModelManager {
     this.onStatus({ ...status });
   }
 
-  private async prepareOnce() {
+  private async prepareOnce(model: string) {
     this.update({ state: "checking", label: "Checking local AI" });
     if (!(await this.serverReady())) {
       const executable = this.findInstalledRuntime() ?? (await this.installRuntime());
@@ -148,16 +149,16 @@ export class LocalModelManager {
     }
 
     let models = await this.listModels();
-    let selected = models.find((candidate) => candidate.name === this.model || candidate.name === `${this.model}:latest`);
+    let selected = models.find((candidate) => candidate.name === model || candidate.name === `${model}:latest`);
     if (!selected) {
-      await this.pullModel();
+      await this.pullModel(model);
       models = await this.listModels();
-      selected = models.find((candidate) => candidate.name === this.model || candidate.name === `${this.model}:latest`);
+      selected = models.find((candidate) => candidate.name === model || candidate.name === `${model}:latest`);
       if (!selected) {
         throw new Error("The local model download did not complete. Try again from Local settings.");
       }
     }
-    assertReviewedModelDigest(this.model, selected.digest);
+    assertReviewedModelDigest(model, selected.digest);
     this.update({ state: "ready", label: "Local AI ready", progress: 1 });
   }
 
@@ -303,12 +304,12 @@ export class LocalModelManager {
     throw new Error("Local AI did not start. Restart Agent Commons to try again.");
   }
 
-  private async pullModel() {
+  private async pullModel(model: string) {
     this.update({ state: "downloading-model", label: "Downloading the private local model", progress: 0 });
     const response = await fetch(`${OLLAMA_ORIGIN}/api/pull`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, stream: true }),
+      body: JSON.stringify({ model, stream: true }),
       signal: AbortSignal.timeout(60 * 60_000),
     });
     if (!response.ok || !response.body) throw new Error(`Could not download the local model (${response.status})`);

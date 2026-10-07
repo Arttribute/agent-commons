@@ -24,6 +24,7 @@ import { ModuleRef } from '@nestjs/core';
 import { randomUUID } from 'crypto';
 import { WorkflowExecutorService } from '~/tool/workflow-executor.service';
 import { FilesService, LibraryService } from '~/files';
+import { cloudPythonFiles } from "~/computer/python-analysis";
 import { ComputerService } from '~/computer';
 import {
   CodeProjectService,
@@ -417,7 +418,8 @@ export interface CommonTool {
    */
   generateMedia(props: {
     projectId?: string;
-    modelKey: string;
+    modelKey?: string;
+    kind?: "image" | "video" | "audio" | "music";
     prompt: string;
     operation?: 'generate' | 'transform';
     inputItemIds?: string[];
@@ -833,6 +835,9 @@ export interface CommonTool {
     sessionId?: string;
     includeTerminated?: boolean;
   }): Promise<any>;
+
+  /** Execute Python analysis, computed plots or ML in the agent's isolated computer with managed pandas, numpy, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow. Start the agent computer first. INPUT_FILES maps input Library names and IDs to readable paths. OUTPUT_DIR is a pathlib.Path; save charts and reports there to return Library artifacts. ZIP inputs can be inspected and extracted with Python zipfile. */
+  runPythonAnalysis(props: { agentId?: string; sessionId?: string; code: string; inputItemIds?: string[]; timeoutSeconds?: number; packages?: string[] }): Promise<any>;
 
   /**
    * Run a terminal command on an agent computer.
@@ -1801,6 +1806,17 @@ export class CommonToolService {
       model: string;
     }[]
   > {
+    if (props.n !== undefined && (!Number.isInteger(props.n) || props.n < 1 || props.n > 4)) throw new BadRequestException("Image count must be between 1 and 4.");
+    const configuredAgentId = this.requireToolAgentId(props.agentId, metadata);
+    const configuredAgent = await this.agent.getAgent({ agentId: configuredAgentId });
+    if (configuredAgent.mediaModels?.imageModel) {
+      const results = [];
+      for (let i = 0; i < (props.n ?? 1); i++) {
+        const result = await this.generateMedia({ agentId: configuredAgentId, sessionId: props.sessionId, modelKey: configuredAgent.mediaModels.imageModel, prompt: props.prompt, settings: { quality: props.quality, aspectRatio: props.size === "1536x1024" ? "3:2" : props.size === "1024x1536" ? "2:3" : "1:1" } }, metadata);
+        results.push({ fileId: result.artifact.itemId, name: result.artifact.name, url: result.artifact.url, prompt: props.prompt, model: configuredAgent.mediaModels.imageModel });
+      }
+      return results;
+    }
     const { prompt, n = 1, size = '1024x1024' } = props;
     if (!Number.isInteger(n) || n < 1 || n > 4) {
       throw new BadRequestException('Image count must be between 1 and 4.');
@@ -2079,7 +2095,8 @@ export class CommonToolService {
   async generateMedia(
     props: {
       projectId?: string;
-      modelKey: string;
+      modelKey?: string;
+      kind?: "image" | "video" | "audio" | "music";
       prompt: string;
       operation?: 'generate' | 'transform';
       inputItemIds?: string[];
@@ -2091,10 +2108,14 @@ export class CommonToolService {
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     const owner = await this.capabilityOwner(agentId);
+    const agent = await this.agent.getAgent({ agentId });
+    const kind = props.kind ?? "image";
+    const modelKey = props.modelKey || agent.mediaModels?.[`${kind}Model`];
+    if (!modelKey) throw new BadRequestException("Choose a model with listMediaModels or save an agent media default.");
     return this.media.generateAndWait(
       {
         projectId: props.projectId,
-        modelKey: props.modelKey,
+        modelKey,
         prompt: props.prompt,
         operation: props.operation,
         inputItemIds: props.inputItemIds,
@@ -2493,6 +2514,33 @@ export class CommonToolService {
       agentId,
       sessionId: props.sessionId ?? metadata?.sessionId,
     });
+  }
+
+  async runPythonAnalysis(props: { agentId?: string; sessionId?: string; code: string; inputItemIds?: string[]; timeoutSeconds?: number; packages?: string[] }, metadata?: ToolExecutionMetadata) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const sessionId = metadata?.sessionId ?? props.sessionId;
+    const owner = await this.capabilityOwner(agentId);
+    const inputIds = [...new Set(props.inputItemIds ?? [])];
+    if (inputIds.length > 20) throw new BadRequestException('Python accepts up to 20 input files.');
+    const inputs = await Promise.all(inputIds.map((id) => this.files.createDownloadUrl(id, { agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId ?? undefined })));
+    const execution = cloudPythonFiles(props.code, inputs, props.timeoutSeconds, props.packages);
+    await this.computers.writeFiles({ agentId, sessionId, files: execution.files, runId: metadata?.runId, toolCallId: metadata?.toolCallId });
+    const command = await this.computers.runCommand({ agentId, sessionId, command: `python3 /mnt/shared/${execution.directory}/bootstrap.py`, cwd: '/mnt/shared', timeoutSeconds: 600, runId: metadata?.runId, toolCallId: metadata?.toolCallId });
+    let output: { exitCode: number; stdout: string; stderr: string; files: Array<{ name: string; mimeType: string; base64: string }> };
+    try {
+      const result = await this.computers.readFile({ agentId, sessionId, path: `${execution.directory}/result.json` });
+      output = JSON.parse(result.content);
+      if (!Number.isInteger(output.exitCode) || !Array.isArray(output.files)) throw new Error('Incomplete result');
+    } catch { throw new BadRequestException(`Python did not produce a verified result. Runtime response: ${JSON.stringify(command).slice(0, 3000)}`); }
+    const artifacts = [];
+    for (const file of output.files.slice(0, 20)) {
+      const buffer = Buffer.from(file.base64, 'base64');
+      if (buffer.length > 10 * 1024 * 1024) throw new BadRequestException('Python output exceeds 10 MB.');
+      const created = await this.files.createGeneratedFile({ buffer, fileName: file.name, mimeType: file.mimeType, agentId, sessionId, metadata: { source: 'computed-python', toolCallId: metadata?.toolCallId } });
+      artifacts.push({ fileId: created.fileId, name: created.name });
+    }
+    if (output.exitCode !== 0) throw new BadRequestException(`Python failed (${output.exitCode}): ${output.stderr.slice(0, 16000)}\n${output.stdout.slice(0, 16000)}`);
+    return { exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, artifacts, workspace: `/mnt/shared/${execution.directory}` };
   }
 
   async runComputerCommand(

@@ -10,3 +10,6 @@ export declare function buildSkillPromptIndex(index: SkillIndexEntry[], matchedP
 export declare const AUTONOMOUS_EXECUTION_CONTRACT: string;
 export declare function buildWorkspaceModeContext(mode: "cloud" | "private-local", hasDesktopWorkspace?: boolean, isDesktop?: boolean): string;
 export declare function buildAgentIdentityPrompt(agent: { id: string; name?: string | null; description?: string | null; persona?: string | null; instructions?: string | null }): string;
+
+export declare const DATA_EXECUTION_CONTRACT: string;
+export declare function requiresComputedData(text: string): boolean;

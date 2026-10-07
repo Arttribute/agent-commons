@@ -115,6 +115,7 @@ export type ComposerLaunch = {
     previewUrl?: string;
   }>;
   knowledgeSpaceIds: string[];
+  knowledgeMode?: "auto" | "selected" | "off";
   reasoningEffort?: "low" | "medium" | "high" | "xhigh";
   webSearchEnabled?: boolean;
   mcpServerIds?: string[];
@@ -220,6 +221,7 @@ export default function ChatInputBox({
     KnowledgeSpaceOption[]
   >([]);
   const [knowledgeSpaceIds, setKnowledgeSpaceIds] = useState<string[]>([]);
+  const [knowledgeMode, setKnowledgeMode] = useState<"auto" | "selected" | "off">("auto");
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("auto");
@@ -322,30 +324,62 @@ export default function ChatInputBox({
   const [mcpServers, setMcpServers] = useState<NonNullable<LocalSettings["mcpServers"]>>([]);
   const [mcpServerIds, setMcpServerIds] = useState<string[]>([]);
   const [workspaceRemoved, setWorkspaceRemoved] = useState(false);
+  const workspaceRevision = useRef(0);
+  const contextRevision = useRef(0);
   useEffect(() => {
     if (!local || !initialLaunch || initialLaunch.workspaceRoot === undefined) return;
     setDesktopWorkspace(initialLaunch.workspaceRoot);
     setWorkspaceRemoved(initialLaunch.workspaceRoot === null);
   }, [initialLaunch, local]);
   useEffect(() => {
+    let cancelled = false;
+    const revision = workspaceRevision.current;
+    const contextVersion = contextRevision.current;
     if (local) {
       const bridge = window.agentCommonsLocal;
       void bridge?.getState().then((state) => {
+        if (cancelled || revision !== workspaceRevision.current) return;
         const conversation = state.conversations.find((item) => item.id === sessionId);
-        if (initialLaunch?.workspaceRoot === undefined) setDesktopWorkspace(conversation?.workspaceRoot ?? null);
+        if (initialLaunch?.workspaceRoot === undefined) {
+          setDesktopWorkspace(conversation?.workspaceRoot ?? null);
+          setWorkspaceRemoved(!conversation?.workspaceRoot);
+        }
+        if (contextVersion === contextRevision.current) {
+          setKnowledgeMode(conversation?.knowledgeMode ?? initialLaunch?.knowledgeMode ?? "auto");
+          setKnowledgeSpaceIds(conversation?.spaceIds ?? initialLaunch?.knowledgeSpaceIds ?? []);
+          setMcpServerIds(conversation?.mcpServerIds ?? initialLaunch?.mcpServerIds ?? []);
+        }
         setWebSearchConfigured(hasConfiguredLocalWebSearch(state.settings));
         setWebSearchEnabled(Boolean(hasConfiguredLocalWebSearch(state.settings) && (conversation?.webSearchEnabled ?? initialLaunch?.webSearchEnabled)));
         setMcpServers(state.settings.mcpServers ?? []);
       }).catch(() => undefined);
-      return bridge?.onEvent((event) => {
+      const unsubscribe = bridge?.onEvent((event) => {
+        if (cancelled) return;
         if (event.type === "state") {
           setWebSearchConfigured(hasConfiguredLocalWebSearch(event.state.settings));
           if (!hasConfiguredLocalWebSearch(event.state.settings)) setWebSearchEnabled(false);
           setMcpServers(event.state.settings.mcpServers ?? []);
         }
       });
+      return () => { cancelled = true; unsubscribe?.(); };
     } else {
-      void window.agentCommonsDesktop?.getWorkspace().then(setDesktopWorkspace).catch(() => undefined);
+      setKnowledgeMode(initialLaunch?.knowledgeMode ?? "auto");
+      setKnowledgeSpaceIds(initialLaunch?.knowledgeSpaceIds ?? []);
+      const saved = sessionId ? localStorage.getItem(`commons-chat-context:${sessionId}`) : null;
+      if (saved) {
+        try { const context = JSON.parse(saved); setDesktopWorkspace(context.workspaceRoot ?? null); setWorkspaceRemoved(!context.workspaceRoot); setKnowledgeMode(context.knowledgeMode ?? "auto"); setKnowledgeSpaceIds(context.spaceIds ?? []); } catch { /* old context */ }
+      } else {
+        void window.agentCommonsDesktop?.getWorkspace().then((folder) => { if (!cancelled && revision === workspaceRevision.current) { setDesktopWorkspace(folder); setWorkspaceRemoved(!folder); } }).catch(() => undefined);
+      }
+      if (sessionId) void fetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
+        .then((response) => response.ok ? response.json() : null)
+        .then((result) => {
+          if (cancelled || contextVersion !== contextRevision.current || !result?.data?.runContext) return;
+          const context = result.data.runContext;
+          setKnowledgeMode(context.knowledgeMode ?? "auto");
+          setKnowledgeSpaceIds(context.knowledgeSpaceIds ?? []);
+        }).catch(() => undefined);
+      return () => { cancelled = true; };
     }
   }, [local, sessionId, initialLaunch?.webSearchEnabled]);
   const setChatWebSearch = async (enabled: boolean) => {
@@ -645,6 +679,7 @@ export default function ChatInputBox({
 
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const voice = useVoiceRecorder({
+    agentId,
     onTranscribed: (text) => {
       setInputText((current) =>
         current.trim() ? `${current.trimEnd()} ${text}` : text,
@@ -773,6 +808,7 @@ export default function ChatInputBox({
         text: userMessage,
         attachments: sendAttachments,
         knowledgeSpaceIds: [...knowledgeSpaceIds],
+        knowledgeMode,
         reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
         webSearchEnabled,
         mcpServerIds,
@@ -780,7 +816,6 @@ export default function ChatInputBox({
       });
       setInputText("");
       setAttachments([]);
-      setKnowledgeSpaceIds([]);
       onSent?.();
       return;
     }
@@ -805,7 +840,6 @@ export default function ChatInputBox({
     );
     previewUrlsRef.current.clear();
     setAttachments([]);
-    setKnowledgeSpaceIds([]);
     accumulatedRef.current = "";
     runningToolActivitiesRef.current.clear();
     activityArgsRef.current.clear();
@@ -833,10 +867,13 @@ export default function ChatInputBox({
       isStreaming: true,
     }, sessionId);
 
-    const cliContext = !local && desktopWorkspace
-      ? await window.agentCommonsDesktop?.getToolContext().catch(() => null)
-      : null;
+    const runWorkspace = launched?.workspaceRoot !== undefined ? launched.workspaceRoot : workspaceRemoved ? null : desktopWorkspace;
+    const runKnowledgeMode = launched?.knowledgeMode ?? knowledgeMode;
+    if (!local && sessionId) localStorage.setItem(`commons-chat-context:${sessionId}`, JSON.stringify({ workspaceRoot: runWorkspace, knowledgeMode: runKnowledgeMode, spaceIds: selectedKnowledgeSpaceIds }));
     try {
+      const cliContext = !local
+        ? await window.agentCommonsDesktop?.getToolContext(runWorkspace, sessionId)
+        : null;
       await stream({
         agentId,
         sessionId,
@@ -850,12 +887,13 @@ export default function ChatInputBox({
         attachments: messageAttachments.map((attachment) => ({ fileId: attachment.fileId })),
         computerRequest,
         knowledgeSpaceIds: selectedKnowledgeSpaceIds,
+        knowledgeMode: runKnowledgeMode,
         reasoningEffort: effort,
         webSearchEnabled: launched?.webSearchEnabled ?? webSearchEnabled,
         mcpServerIds: launched?.mcpServerIds ?? mcpServerIds,
         provenance,
         cliContext: cliContext ?? undefined,
-        localWorkspaceRoot: local ? (launched?.workspaceRoot !== undefined ? launched.workspaceRoot : workspaceRemoved ? null : desktopWorkspace ?? undefined) : undefined,
+        localWorkspaceRoot: runWorkspace,
         projectId: sessionId ? undefined : projectId,
       });
     } finally {
@@ -1278,22 +1316,24 @@ export default function ChatInputBox({
                             Knowledge Spaces
                           </span>
                           <span className="block text-[11px] font-normal text-muted-foreground">
-                            Use selected spaces for this message
+                            Choose how this chat uses indexed knowledge
                           </span>
                         </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {(["auto", "selected", "off"] as const).map((mode) => <DropdownMenuCheckboxItem key={mode} checked={knowledgeMode === mode} onCheckedChange={() => { contextRevision.current += 1; setKnowledgeMode(mode); }}>{mode === "auto" ? "Automatic" : mode === "selected" ? "Selected spaces" : "Off"}</DropdownMenuCheckboxItem>)}
                         <DropdownMenuSeparator />
                         {knowledgeSpaces.map((space) => (
                           <DropdownMenuCheckboxItem
                             key={space.spaceId}
                             checked={knowledgeSpaceIds.includes(space.spaceId)}
                             onCheckedChange={(checked) =>
-                              setKnowledgeSpaceIds((current) =>
+                              (contextRevision.current += 1, setKnowledgeMode("selected"), setKnowledgeSpaceIds((current) =>
                                 checked
                                   ? [...new Set([...current, space.spaceId])]
                                   : current.filter(
                                       (id) => id !== space.spaceId,
                                     ),
-                              )
+                              ))
                             }
                           >
                             <span className="min-w-0">
@@ -1382,7 +1422,7 @@ export default function ChatInputBox({
                   <div className="flex min-w-0 items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then((folder) => { if (folder) { setDesktopWorkspace(folder); setWorkspaceRemoved(false); } })}
+                      onClick={() => void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then((folder) => { if (folder) { workspaceRevision.current += 1; setDesktopWorkspace(folder); setWorkspaceRemoved(false); } })}
                       disabled={!!isLoading}
                       title={desktopWorkspace ?? "Choose a local workspace for agent file access"}
                       aria-label="Choose local workspace"
@@ -1391,9 +1431,10 @@ export default function ChatInputBox({
                       <FolderOpen className="h-4 w-4 shrink-0" />
                       {desktopWorkspace && <span className="truncate text-xs">{desktopWorkspace.split(/[\\/]/).filter(Boolean).at(-1)}</span>}
                     </button>
-                    {desktopWorkspace && <button type="button" disabled={!!isLoading} onClick={() => { setDesktopWorkspace(null); setWorkspaceRemoved(true); }} title="Remove folder from this chat" aria-label="Remove folder from this chat" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>}
+                    {desktopWorkspace && <button type="button" disabled={!!isLoading} onClick={() => { workspaceRevision.current += 1; setDesktopWorkspace(null); setWorkspaceRemoved(true); }} title="Remove folder from this chat" aria-label="Remove folder from this chat" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>}
                   </div>
                 )}
+                <button type="button" disabled={!!isLoading} onClick={() => { contextRevision.current += 1; setKnowledgeMode((mode) => mode === "off" ? "auto" : "off"); }} title="Automatic lets the agent choose when to search knowledge. Use Reference Knowledge to pick specific spaces." className="flex items-center gap-1 rounded-lg p-1.5 text-xs text-muted-foreground"><Brain className="h-4 w-4" />Knowledge: {knowledgeMode === "off" ? "off" : knowledgeMode === "selected" ? `${knowledgeSpaceIds.length} selected` : "auto"}</button>
                 {footerLeft && <div className="ml-1 min-w-0">{footerLeft}</div>}
               </div>
             )}

@@ -37,3 +37,11 @@ https://github.com/hexgrad/kokoro
 The runtime download is pinned to a specific release and verified against its
 published SHA-256 digest before execution. Agent Commons does not silently
 upload local prompts, files, tool output, or model traffic to Commons Cloud.
+
+Managed Python analysis downloads uv from its official, pinned releases. uv is
+licensed under Apache-2.0 or MIT: https://github.com/astral-sh/uv. uv installs
+CPython from python-build-standalone into the Commons data directory, with its
+upstream licenses: https://github.com/astral-sh/python-build-standalone. Data
+libraries retain their upstream NumPy, pandas, Matplotlib, SciPy, scikit-learn,
+seaborn, openpyxl, and Pillow licenses. This environment does not change the
+user's Python installation or shell configuration.

@@ -116,3 +116,8 @@ jobs:
 
       - name: Test Commons app grants, gateway, data and network guards
         run: pnpm --filter commons-api exec jest --runInBand ui-plugin
+
+      - name: Build API and test session context, model and Python contracts
+        run: |
+          pnpm --filter commons-api build
+          pnpm --filter commons-api exec jest --runInBand src/modules/model-provider/model-provider.factory.spec.ts src/tool/tools/python-analysis.spec.ts src/agent/model-tool-selection.spec.ts src/audio/audio.service.spec.ts

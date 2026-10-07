@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills } from "./index.cjs";
+import { buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills, requiresComputedData } from "./index.cjs";
 
 test("cloud and local skill matching uses the same trigger rules", () => {
   const skills = [
@@ -33,4 +33,9 @@ test("cloud and local agent prompts use one identity block", () => {
   assert.match(prompt, /model provider as the engine powering you, not your assistant identity/);
   assert.match(prompt, /Persona: Helpful guide/);
   assert.match(prompt, /Instructions: Verify work\./);
+});
+
+test("computed data tasks cannot select the creative image generator", () => {
+  for (const request of ["Use Python for these measurements", "Visualize the attached dataset", "Plot sales from this CSV", "Fit a regression model"]) assert.equal(requiresComputedData(request), true);
+  for (const request of ["Create a product ad image", "Illustrate our workflow", "Hello there"]) assert.equal(requiresComputedData(request), false);
 });

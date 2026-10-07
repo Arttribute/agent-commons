@@ -282,7 +282,7 @@ export class ProjectService {
    * chatting agent can read the project's Knowledge Spaces, adding a read
    * grant only where the agent has none so existing grants are never lowered.
    */
-  async buildRunContext(projectId: string | null | undefined, ownerId: string, agentId: string) {
+  async buildRunContext(projectId: string | null | undefined, ownerId: string, agentId: string, knowledgeEnabled = true) {
     if (!projectId || !ownerId) return null;
     const row = await this.db
       .select()
@@ -293,7 +293,7 @@ export class ProjectService {
       .catch(() => undefined);
     if (!row) return null;
     const principal = { principalId: ownerId, principalType: 'user' as const };
-    if (row.knowledgeSpaceIds.length) {
+    if (knowledgeEnabled && row.knowledgeSpaceIds.length) {
       const existing = await this.db
         .select({ spaceId: schema.knowledgeSpaceGrant.spaceId })
         .from(schema.knowledgeSpaceGrant)
@@ -317,7 +317,7 @@ export class ProjectService {
           .from(schema.libraryItem)
           .where(and(inArray(schema.libraryItem.itemId, row.libraryItemIds), isNull(schema.libraryItem.deletedAt)))
       : [];
-    const spaces = row.knowledgeSpaceIds.length
+    const spaces = knowledgeEnabled && row.knowledgeSpaceIds.length
       ? await this.db
           .select({ spaceId: schema.knowledgeSpace.spaceId, name: schema.knowledgeSpace.name })
           .from(schema.knowledgeSpace)

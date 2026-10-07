@@ -170,9 +170,9 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
       } else if (prompt === "Focus on mango instead") {
         answer.content = "Focused on mango.";
       } else if (prompt === "Read from MCP") {
-        assert.ok(body.tools.some((tool) => tool.function.name === "mcp_0_read_mango"));
-        assert.ok(!body.tools.some((tool) => tool.function.name === "mcp_0_write_mango"), "write tool leaked into read mode");
-        if (last.role === "user") answer = call("mcp_0_read_mango", {});
+        assert.ok(body.tools.some((tool) => tool.function.name === "mcp_04d588cb_read_mango_b785aa"));
+        assert.ok(!body.tools.some((tool) => tool.function.name === "mcp_04d588cb_write_mango_550f0a"), "write tool leaked into read mode");
+        if (last.role === "user") answer = call("mcp_04d588cb_read_mango_b785aa", {});
         else { assert.match(last.content, /mango-731/); answer.content = "MCP read returned mango-731."; }
       } else if (prompt === "Search is off") {
         assert.ok(!body.tools.some((tool) => tool.function.name === "web_search"), "Web search was offered without chat consent");
