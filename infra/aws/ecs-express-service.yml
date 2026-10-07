@@ -73,6 +73,26 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: Inject the X OAuth app credentials after both keys exist in the runtime secret.
+  AnthropicModelsEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject ANTHROPIC_API_KEY when it exists in the runtime secret.
+  GoogleModelsEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject GOOGLE_API_KEY when it exists in the runtime secret.
+  GroqModelsEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject GROQ_API_KEY when it exists in the runtime secret.
+  MistralModelsEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject MISTRAL_API_KEY when it exists in the runtime secret.
   GoogleMediaEnabled:
     Type: String
     Default: "false"
@@ -191,6 +211,11 @@ Conditions:
   IsSlackOAuthEnabled: !Equals [!Ref SlackOAuthEnabled, "true"]
   IsCanvaOAuthEnabled: !Equals [!Ref CanvaOAuthEnabled, "true"]
   IsXOAuthEnabled: !Equals [!Ref XOAuthEnabled, "true"]
+  IsAnthropicModelsEnabled: !Equals [!Ref AnthropicModelsEnabled, "true"]
+  IsGoogleModelsEnabled: !Equals [!Ref GoogleModelsEnabled, "true"]
+  IsGroqModelsEnabled: !Equals [!Ref GroqModelsEnabled, "true"]
+  IsMistralModelsEnabled: !Equals [!Ref MistralModelsEnabled, "true"]
+  IsGoogleApiEnabled: !Or [!Condition IsGoogleModelsEnabled, !Condition IsGoogleMediaEnabled]
   IsGoogleMediaEnabled: !Equals [!Ref GoogleMediaEnabled, "true"]
   IsKlingMediaEnabled: !Equals [!Ref KlingMediaEnabled, "true"]
   IsBytePlusMediaEnabled: !Equals [!Ref BytePlusMediaEnabled, "true"]
@@ -367,7 +392,22 @@ Resources:
           - Name: OPENAI_API_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:OPENAI_API_KEY::"
           - !If
-            - IsGoogleMediaEnabled
+            - IsAnthropicModelsEnabled
+            - Name: ANTHROPIC_API_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:ANTHROPIC_API_KEY::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsGroqModelsEnabled
+            - Name: GROQ_API_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:GROQ_API_KEY::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsMistralModelsEnabled
+            - Name: MISTRAL_API_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:MISTRAL_API_KEY::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsGoogleApiEnabled
             - Name: GOOGLE_API_KEY
               ValueFrom: !Sub "${RuntimeSecretArn}:GOOGLE_API_KEY::"
             - !Ref AWS::NoValue

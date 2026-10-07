@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   BadRequestException,
   forwardRef,
@@ -850,7 +851,7 @@ export interface CommonTool {
     includeTerminated?: boolean;
   }): Promise<any>;
 
-  /** Execute Python analysis, computed plots or ML in the agent's isolated computer with managed pandas, numpy, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow. Start the agent computer first. INPUT_FILES maps input Library names and IDs to readable paths. OUTPUT_DIR is a pathlib.Path; save charts and reports there to return Library artifacts. ZIP inputs can be inspected and extracted with Python zipfile. */
+  /** Execute Python analysis, computed plots or ML in the agent's isolated computer with managed pandas, numpy, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow. Start the agent computer first. INPUT_FILES maps input Library names and IDs to readable paths. OUTPUT_DIR is a stable pathlib.Path scoped to this chat and owner; working files persist across calls, while Python variables do not. Save charts and reports there to return immutable Library artifacts. ZIP inputs can be inspected and extracted with Python zipfile. */
   runPythonAnalysis(props: { agentId?: string; sessionId?: string; code: string; inputItemIds?: string[]; timeoutSeconds?: number; packages?: string[] }): Promise<any>;
 
   /**
@@ -2577,10 +2578,10 @@ export class CommonToolService {
     const inputIds = [...new Set(props.inputItemIds ?? metadata?.attachmentFileIds ?? [])];
     if (inputIds.length > 20) throw new BadRequestException('Python accepts up to 20 input files.');
     const inputs = await Promise.all(inputIds.map((id) => this.files.createDownloadUrl(id, { agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId ?? undefined })));
-    const execution = cloudPythonFiles(props.code, inputs, props.timeoutSeconds, props.packages);
+    const execution = cloudPythonFiles(props.code, inputs, props.timeoutSeconds, props.packages, `${owner.principalId}:${agentId}:${sessionId ?? "agent"}`);
     await this.computers.writeFiles({ agentId, sessionId, files: execution.files, runId: metadata?.runId, toolCallId: metadata?.toolCallId });
     const command = await this.computers.runCommand({ agentId, sessionId, command: `python3 /mnt/shared/${execution.directory}/bootstrap.py`, cwd: '/mnt/shared', timeoutSeconds: 600, runId: metadata?.runId, toolCallId: metadata?.toolCallId });
-    let output: { exitCode: number; stdout: string; stderr: string; files: Array<{ name: string; mimeType: string; base64: string }> };
+    let output: { exitCode: number; stdout: string; stderr: string; outputDirectory?: string; files: Array<{ name: string; mimeType: string; base64?: string; chunks?: string[]; size?: number; sha256?: string }> };
     try {
       const result = await this.computers.readFile({ agentId, sessionId, path: `${execution.directory}/result.json` });
       output = JSON.parse(result.content);
@@ -2589,13 +2590,30 @@ export class CommonToolService {
     const artifacts = [];
     if (output.files.length > 100) throw new BadRequestException('Python produced too many outputs.');
     for (const file of output.files) {
-      const buffer = Buffer.from(file.base64, 'base64');
+      let buffer: Buffer;
+      if (file.chunks) {
+        if (!Array.isArray(file.chunks) || file.chunks.length > 35 || file.chunks.some((path) => !/^payloads\/\d+-\d+\.b64$/.test(path))) throw new BadRequestException('Invalid Python output payloads.');
+        const chunks = [];
+        let bytes = 0;
+        for (const path of file.chunks) {
+          const chunk = await this.computers.readFile({ agentId, sessionId, path: `${execution.directory}/${path}` });
+          const decoded = Buffer.from(chunk.content, 'base64');
+          bytes += decoded.length;
+          if (bytes > 10 * 1024 * 1024) throw new BadRequestException('Python output exceeds 10 MB.');
+          chunks.push(decoded);
+        }
+        buffer = Buffer.concat(chunks);
+        if (buffer.length !== file.size || createHash('sha256').update(buffer).digest('hex') !== file.sha256) throw new BadRequestException('Python output integrity check failed.');
+      } else {
+        if (typeof file.base64 !== 'string') throw new BadRequestException('Missing Python output bytes.');
+        buffer = Buffer.from(file.base64, 'base64');
+      }
       if (buffer.length > 10 * 1024 * 1024) throw new BadRequestException('Python output exceeds 10 MB.');
       const created = await this.files.createGeneratedFile({ buffer, fileName: file.name, mimeType: file.mimeType, agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId, metadata: { source: 'computed-python', toolCallId: metadata?.toolCallId } });
       artifacts.push({ fileId: created.fileId, name: created.name });
     }
     if (output.exitCode !== 0) throw new BadRequestException(`Python failed (${output.exitCode}): ${output.stderr.slice(0, 16000)}\n${output.stdout.slice(0, 16000)}`);
-    return { exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, artifacts, workspace: `/mnt/shared/${execution.directory}` };
+    return { exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, artifacts, workspace: output.outputDirectory ?? `/mnt/shared/${execution.directory}/outputs` };
   }
 
   async runComputerCommand(

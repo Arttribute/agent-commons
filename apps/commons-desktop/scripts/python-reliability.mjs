@@ -49,6 +49,24 @@ print('Verified managed analysis')`, join(directory, 'run'), { 'sales.csv': join
   assert.equal(updated.files.length, 1, 'Changed staged input was hidden instead of returned as a revised artifact');
   assert.equal(readFileSync(updated.files[0], 'utf8').replaceAll('\r\n', '\n'), 'revenue\n40\n50\n');
   assert.equal(readFileSync(join(directory, 'sales.csv'), 'utf8'), 'revenue\n10\n20\n30\n', 'The source file was modified');
+  const workingOutput = join(directory, 'conversation', 'outputs');
+  const first = await runtime.run("(OUTPUT_DIR / 'draft.md').write_text('Approved draft v1')\n(OUTPUT_DIR / 'campaign-data.js').write_text('window.price = 49;')", join(directory, 'step-1'), {}, undefined, 120, [], undefined, workingOutput);
+  assert.equal(first.exitCode, 0, first.stderr);
+  const originalDraft = first.files.find((path) => path.endsWith('draft.md'));
+  writeFileSync(join(directory, 'reference-draft.md'), 'Supplied example');
+  const second = await runtime.run(`assert (OUTPUT_DIR / 'draft.md').read_text() == 'Approved draft v1'
+assert Path(INPUT_FILES['draft.md']).read_text() == 'Supplied example'
+(OUTPUT_DIR / 'draft.md').write_text('Approved draft v2')
+(OUTPUT_DIR / 'landing.html').write_text('<script src="campaign-data.js"></script>')`, join(directory, 'step-2'), { 'draft.md': join(directory, 'reference-draft.md') }, undefined, 120, [], undefined, workingOutput);
+  assert.equal(second.exitCode, 0, second.stderr);
+  assert.equal(second.outputDirectory, first.outputDirectory);
+  assert.equal(second.files.length, 2, 'Unchanged earlier outputs or reference inputs were re-exported');
+  assert.equal(readFileSync(originalDraft, 'utf8'), 'Approved draft v1', 'A prior Library revision changed');
+  assert.equal(readFileSync(second.files.find((path) => path.endsWith('draft.md')), 'utf8'), 'Approved draft v2');
+  assert.equal(readFileSync(join(second.snapshotDirectory, 'campaign-data.js'), 'utf8'), 'window.price = 49;', 'A relative HTML dependency is missing from its immutable snapshot');
+  const third = await runtime.run("assert Path.cwd().samefile(OUTPUT_DIR)\nassert (OUTPUT_DIR / 'draft.md').read_text() == 'Approved draft v2'\nprint('Persistent working files verified')", join(directory, 'step-3'), {}, undefined, 120, [], undefined, workingOutput);
+  assert.equal(third.exitCode, 0, third.stderr);
+  assert.equal(third.files.length, 0);
   const cancelled = new AbortController(); cancelled.abort(new Error('Account switched'));
   await assert.rejects(runtime.run("raise Exception('Must not run after logout')", join(directory, 'cancelled'), {}, undefined, 120, [], cancelled.signal), /Account switched/);
   assert.ok(result.python.startsWith(managed));
