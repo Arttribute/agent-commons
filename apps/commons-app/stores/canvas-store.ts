@@ -17,7 +17,7 @@ export type CanvasChatContext = {
   /** Canvas record id, persisted in the active local or cloud workspace. */
   projectId?: string;
   revisionId?: string;
-  artifact: { itemId: string; name: string; kind: string; mimeType: string };
+  artifact: { itemId: string; name: string; kind: string; mimeType: string; sizeBytes?: number };
   viewer: CanvasViewerState;
 };
 

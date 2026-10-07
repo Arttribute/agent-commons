@@ -38,6 +38,12 @@ describe('computed Python output boundary', () => {
     await service.runPythonAnalysis({ code: 'print(64)' }, { agentId: 'agent', sessionId: 'session', attachmentFileIds: ['input'] });
     expect(service.files.createDownloadUrl).toHaveBeenCalledWith('input', expect.objectContaining({ sessionId: 'session' }));
   });
+  it('uses the authenticated chat owner for inputs and generated outputs when an agent is shared', async () => {
+    const service = setup();
+    await service.runPythonAnalysis({ code: 'print(64)', inputItemIds: ['input'] }, { agentId: 'shared-agent', sessionId: 'session', ownerId: 'viewer' });
+    expect(service.files.createDownloadUrl).toHaveBeenCalledWith('input', expect.objectContaining({ ownerId: 'viewer', workspaceId: undefined }));
+    expect(service.files.createGeneratedFile).toHaveBeenCalledWith(expect.objectContaining({ ownerId: 'viewer', workspaceId: null }));
+  });
   it('unauthorized inputs prevent code execution', async () => {
     const service = setup(); service.files.createDownloadUrl.mockRejectedValue(new Error('Access denied'));
     await expect(service.runPythonAnalysis({ code: 'print(64)', inputItemIds: ['private'] }, { agentId: 'agent' })).rejects.toThrow('Access denied');

@@ -108,14 +108,19 @@ export async function handleLocalLibraryApi(runtime: PrivateLocalRuntime, url: U
     if (parts[1] === "preview" && method === "GET") {
       const itemKind = libraryKind(item);
       let content: string | undefined;
+      let totalChars: number | undefined;
+      let truncated = false;
       if (["text", "code"].includes(itemKind) && stats.size <= 2_000_000) content = readFileSync(item.path, "utf8");
       else if (["pdf", "document", "presentation", "spreadsheet"].includes(itemKind)) {
-        content = (await runtime.readLibraryItem(item.id).then((read) => read.content).catch(() => undefined)) || undefined;
+        const read = await runtime.readLibraryItem(item.id, 0, 200_000).catch(() => undefined);
+        content = read?.content || undefined;
+        totalChars = read?.totalChars;
+        truncated = Boolean(read?.nextOffset);
       }
       return ok({
       ...view(item, runtime), content,
-      totalChars: content?.length,
-      truncated: false, artifacts: [],
+      totalChars: totalChars ?? content?.length,
+      truncated, artifacts: [],
       download: inline ? { itemId: item.id, name: item.name, mimeType: item.mimeType, url: inline, expiresInSeconds: 0 } : undefined,
       inline: inline ? { itemId: item.id, name: item.name, mimeType: item.mimeType, url: inline, expiresInSeconds: 0 } : undefined,
       });

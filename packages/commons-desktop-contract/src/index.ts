@@ -57,6 +57,7 @@ export type LocalMessage = {
   /** Reloaded, validated canvas snapshot for this turn. */
   canvasContext?: string;
   canvasProjectId?: string;
+  canvasRevisionId?: string;
   canvasMediaModels?: { imageModel?: string; voiceModel?: string };
   canvasAnnotations?: import("./canvas").CanvasAnnotation[];
 };

@@ -98,13 +98,14 @@ export class LocalCanvasRepository {
     return updated;
   }
 
-  addVersion(projectId: string, itemId: string, summary?: string) {
+  addVersion(projectId: string, itemId: string, summary?: string, baseRevisionId?: string) {
     this.artifact(this.state(), itemId);
     this.mutate(projectId, (bundle) => {
+      if (baseRevisionId && !bundle.revisions.some((entry) => entry.revisionId === baseRevisionId)) throw new Error("Base revision does not belong to this canvas");
       const other = this.state().canvases?.find((entry) => entry.project.projectId !== projectId && entry.revisions.some((revision) => revision.itemId === itemId));
       if (other) throw new Error('This file already belongs to another canvas');
       if (!bundle.revisions.some((entry) => entry.itemId === itemId)) bundle.revisions.push({ revisionId: randomUUID(), projectId, itemId,
-        parentRevisionId: bundle.revisions.find((entry) => entry.itemId === bundle.project.activeItemId)?.revisionId,
+        parentRevisionId: baseRevisionId ?? bundle.revisions.find((entry) => entry.itemId === bundle.project.activeItemId)?.revisionId,
         operation: summary?.trim().slice(0, 200) || 'edit', createdByType: 'agent', createdAt: new Date().toISOString() });
       bundle.project.activeItemId = itemId;
     });
@@ -126,7 +127,7 @@ export class LocalCanvasRepository {
     const image = defaults.image?.modelKey;
     const voice = defaults.audio?.modelKey;
     const mediaModels = { ...(image?.startsWith('local:image:') ? { imageModel: image.slice('local:image:'.length) } : {}), ...(voice?.startsWith('local:voice:') ? { voiceModel: voice.slice('local:voice:'.length) } : {}) };
-    return { mediaModels, annotations: attached, itemIds, text: formatCanvasContext({ projectId: request.projectId, artifact: revision.artifact, activeRevision: revision, revisions: bundle.revisions, annotations: bundle.annotations,
+    return { revisionId: revision.revisionId, mediaModels, annotations: attached, itemIds, text: formatCanvasContext({ projectId: request.projectId, artifact: revision.artifact, activeRevision: revision, revisions: bundle.revisions, annotations: bundle.annotations,
       attachedIds: request.annotationIds, viewer: request.viewer, creativeDefaults: normalizeCreativeDefaults(bundle.project.settings?.creativeDefaults), local: true }), itemId: revision.itemId };
   }
 }

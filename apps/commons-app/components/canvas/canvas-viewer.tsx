@@ -276,7 +276,7 @@ export function CanvasViewer({
     setContext({
       projectId: bundle?.project.projectId,
       revisionId: activeRevision?.revisionId,
-      artifact: { itemId: preview.itemId, name: preview.name, kind: preview.kind, mimeType: preview.mimeType },
+      artifact: { itemId: preview.itemId, name: preview.name, kind: preview.kind, mimeType: preview.mimeType, sizeBytes: preview.sizeBytes },
       viewer: { view },
     });
   }, [activeRevision?.revisionId, bundle?.project.projectId, preview, setContext, view, viewedItemId]);

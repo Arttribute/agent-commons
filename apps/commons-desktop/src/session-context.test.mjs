@@ -120,7 +120,11 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     for (const exact of ['Revenue increased by 12%.', 'sheet "Sales", cells B2:C3', '120 | 80', 'src/chart.py lines 12-14', 'pixels 250,400 to 450,480 of 1000x800', '0:01.2-0:02.5', 'Actual spoken words', 'Showing version 1 of 2']) assert.ok(user.canvasContext.includes(exact), exact);
     const sent = requests.filter((request) => request.stream).at(-1);
     assert.ok(sent.messages.some((message) => message.content.includes('Revenue increased by 12%.') && message.content.includes('B2:C3')));
-    assert.ok(inspected.conversation.messages.some((message) => message.toolName === 'read_canvas' && message.content.includes('Check totals')));
+    const canvasRead = JSON.parse(inspected.conversation.messages.find((message) => message.toolName === 'read_canvas').content);
+    assert.equal(canvasRead.project.activeItemId, report.id);
+    assert.equal(canvasRead.savedActiveItemId, revised.id);
+    assert.equal(canvasRead.viewedRevisionId, revisionId);
+    assert.ok(JSON.stringify(canvasRead).includes('Check totals'));
     runtime.canvas.updateNote(canvasProjectId, notes[0].annotationId, { body: 'Edited after turn', status: 'resolved' });
     assert.ok(runtime.state().conversations.find((entry) => entry.id === inspected.conversation.id).messages[0].canvasContext.includes('Check the percentage'), 'Editing a note mutated an earlier turn');
     const refused = await runtime.sendMessage({ agentId: inherited, prompt: 'Inspect unrelated canvas', uiContext, workspaceRoot: null });

@@ -56,7 +56,12 @@ try {
         prompt: 'Look at the attached image and exact region in the attached note. Return JSON with marked_region_color and other_side_color. Identify which color belongs to the marked region using the annotation coordinates and actual pixels.' });
       const colors = JSON.parse(result.response.match(/\{[^{}]*\}/)?.[0] ?? 'null');
       assert.ok(colors, 'No verifiable color mapping');
-      assert.match(colors.marked_region_color, /yellow/i); assert.match(colors.other_side_color, /blue/i);
+      const equivalent = (actual, name, rgb) => {
+        const value = String(actual).toLowerCase();
+        return value.includes(name) || value.replace(/\s/g, '').includes(`rgb(${rgb.join(',')})`);
+      };
+      assert.ok(equivalent(colors.marked_region_color, 'yellow', [255, 230, 0]), `Wrong marked-region color: ${colors.marked_region_color}`);
+      assert.ok(equivalent(colors.other_side_color, 'blue', [0, 60, 230]), `Wrong opposite-side color: ${colors.other_side_color}`);
       return { conversationId: result.conversation.id, response: result.response };
     });
   }

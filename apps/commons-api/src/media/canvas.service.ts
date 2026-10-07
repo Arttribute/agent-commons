@@ -287,6 +287,15 @@ export class CanvasService {
     return timeline;
   }
 
+  /** Keep canvas tools on the artifact captured by the viewer for this turn. */
+  async getProjectForAgent(projectId: string, principal: MediaPrincipal, viewedRevisionId?: string) {
+    const bundle = await this.getProject(projectId, principal);
+    if (!viewedRevisionId) return bundle;
+    const revision = bundle.revisions.find((entry) => entry.revisionId === viewedRevisionId);
+    if (!revision) throw new BadRequestException('Viewed revision does not belong to this canvas.');
+    return { ...bundle, project: { ...bundle.project, activeItemId: revision.itemId }, viewedRevisionId, savedActiveItemId: bundle.project.activeItemId };
+  }
+
   async updateProject(
     projectId: string,
     principal: MediaPrincipal,
@@ -472,7 +481,7 @@ export class CanvasService {
   async addVersion(
     projectId: string,
     principal: MediaPrincipal,
-    input: { itemId: string; summary?: string },
+    input: { itemId: string; summary?: string; baseRevisionId?: string },
   ) {
     const project = await this.requireProject(projectId, principal, 'edit');
     const item = await this.library.get(
@@ -489,11 +498,13 @@ export class CanvasService {
       });
       return { revision: existing, created: false };
     }
+    const baseRevision = input.baseRevisionId ? await this.db.query.canvasRevision.findFirst({ where: (table) => and(eq(table.projectId, projectId), eq(table.revisionId, input.baseRevisionId!)) }) : undefined;
+    if (input.baseRevisionId && !baseRevision) throw new BadRequestException('Base revision does not belong to this canvas.');
     const summary = input.summary?.trim().slice(0, 500);
     const revision = await this.addRevision({
       projectId,
       itemId: item.itemId,
-      parentItemId: project.activeItemId,
+      parentItemId: baseRevision?.itemId ?? project.activeItemId,
       operation: 'edit',
       settings: summary ? { summary } : {},
       createdByType: principal.actorId ? 'agent' : 'human',

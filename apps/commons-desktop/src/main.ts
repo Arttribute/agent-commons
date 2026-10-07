@@ -622,11 +622,16 @@ function registerIpc() {
     const { apps } = await connectedAppRequest('/api/connected-apps') as { apps: LocalConnectedApp[] };
     const app = apps.find((entry) => entry.providerKey === providerKey);
     if (!app) throw new Error('This provider is not configured yet.');
-    const url = new URL('/oauth/connect', CLOUD_URL);
-    url.searchParams.set('provider', app.providerKey);
-    url.searchParams.set('scopes', app.scopes.join(' '));
-    url.searchParams.set('label', app.name);
-    await shell.openExternal(url.toString());
+    // Start with this desktop session, so a different Commons account in the
+    // system browser cannot receive the connection intended for this user.
+    const flow = await connectedAppRequest('/api/oauth/connect', {
+      providerKey: app.providerKey,
+      scopes: app.scopes,
+      redirectUri: new URL(`/api/oauth/callback/${app.providerKey}`, CLOUD_URL).toString(),
+    }) as { authorizationUrl?: string };
+    const authorization = new URL(flow.authorizationUrl ?? '');
+    if (authorization.protocol !== 'https:' || authorization.username || authorization.password) throw new Error('Invalid connector authorization URL.');
+    await shell.openExternal(authorization.toString());
   });
   localHandler('local:disconnect-app', async (connectionId: string) => {
     if (!/^[a-f0-9-]{36}$/i.test(connectionId) || !commonsServer) throw new Error('Invalid connection.');

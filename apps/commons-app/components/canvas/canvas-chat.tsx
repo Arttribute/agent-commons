@@ -237,7 +237,7 @@ function CanvasChatInner() {
         activateSession(id);
         const file = context?.artifact;
         const attachments = file && !value.attachments.some((item) => item.fileId === file.itemId)
-          ? [...value.attachments, { fileId: file.itemId, name: file.name, mimeType: file.mimeType, kind: "file" as const, sizeBytes: 0 }]
+          ? [...value.attachments, { fileId: file.itemId, name: file.name, mimeType: file.mimeType, kind: "file" as const, sizeBytes: file.sizeBytes ?? 0 }]
           : value.attachments;
         setLaunch({ key: `${id}:${Date.now()}`, value: { ...value, attachments } });
         setMode("panel");

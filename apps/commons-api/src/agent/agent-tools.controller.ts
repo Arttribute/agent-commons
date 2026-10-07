@@ -73,6 +73,8 @@ export class AgentToolsController {
         attachmentFileIds?: string[];
         knowledgeMode?: "auto" | "selected" | "off";
         knowledgeSpaceIds?: string[];
+        canvasProjectId?: string;
+        canvasRevisionId?: string;
         spaceId?: string;
         runId?: string;
         toolCallId?: string;

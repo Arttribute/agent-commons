@@ -66,6 +66,8 @@ type ToolExecutionMetadata = {
   attachmentFileIds?: string[];
   knowledgeMode?: "auto" | "selected" | "off";
   knowledgeSpaceIds?: string[];
+  canvasProjectId?: string;
+  canvasRevisionId?: string;
   runId?: string;
   toolCallId?: string;
 };
@@ -1361,6 +1363,11 @@ export class CommonToolService {
     }
     return { principalId, workspaceId: agent?.workspaceId ?? null };
   }
+  private async resourceOwner(agentId: string, metadata?: ToolExecutionMetadata) {
+    const owner = await this.capabilityOwner(agentId);
+    if (!metadata?.ownerId || metadata.ownerId === owner.principalId) return owner;
+    return { principalId: metadata.ownerId, workspaceId: null };
+  }
   async listCommonsResources(
     props: {
       resourceTypes?: Array<
@@ -1959,13 +1966,13 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    const owner = await this.capabilityOwner(agentId);
-    return this.canvas.getProject(props.projectId, {
+    const owner = await this.resourceOwner(agentId, metadata);
+    return this.canvas.getProjectForAgent(props.projectId, {
       principalId: owner.principalId,
       principalType: 'user',
       workspaceId: owner.workspaceId,
       actorId: agentId,
-    });
+    }, metadata?.canvasProjectId === props.projectId ? metadata.canvasRevisionId : undefined);
   }
 
   async annotateCanvas(
@@ -1988,7 +1995,7 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    const owner = await this.capabilityOwner(agentId);
+    const owner = await this.resourceOwner(agentId, metadata);
     return this.canvas.createAnnotation(
       props.projectId,
       {
@@ -2020,7 +2027,7 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    const owner = await this.capabilityOwner(agentId);
+    const owner = await this.resourceOwner(agentId, metadata);
     return this.mediaEdit.analyze(
       {
         projectId: props.projectId,
@@ -2048,7 +2055,7 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    const owner = await this.capabilityOwner(agentId);
+    const owner = await this.resourceOwner(agentId, metadata);
     return this.mediaEdit.edit(
       {
         projectId: props.projectId,
@@ -2073,7 +2080,7 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    const owner = await this.capabilityOwner(agentId);
+    const owner = await this.resourceOwner(agentId, metadata);
     const result = await this.canvas.addVersion(
       props.projectId,
       {
@@ -2082,7 +2089,7 @@ export class CommonToolService {
         workspaceId: owner.workspaceId,
         actorId: agentId,
       },
-      { itemId: props.fileId, summary: props.summary },
+      { itemId: props.fileId, summary: props.summary, baseRevisionId: metadata?.canvasProjectId === props.projectId ? metadata.canvasRevisionId : undefined },
     );
     return {
       projectId: props.projectId,
@@ -2102,7 +2109,7 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    const owner = await this.capabilityOwner(agentId);
+    const owner = await this.resourceOwner(agentId, metadata);
     return this.canvas.setNotesStatus(
       props.projectId,
       {
@@ -2564,7 +2571,7 @@ export class CommonToolService {
   async runPythonAnalysis(props: { agentId?: string; sessionId?: string; code: string; inputItemIds?: string[]; timeoutSeconds?: number; packages?: string[] }, metadata?: ToolExecutionMetadata) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     const sessionId = metadata?.sessionId ?? props.sessionId;
-    const owner = await this.capabilityOwner(agentId);
+    const owner = await this.resourceOwner(agentId, metadata);
     const inputIds = [...new Set(props.inputItemIds ?? metadata?.attachmentFileIds ?? [])];
     if (inputIds.length > 20) throw new BadRequestException('Python accepts up to 20 input files.');
     const inputs = await Promise.all(inputIds.map((id) => this.files.createDownloadUrl(id, { agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId ?? undefined })));
@@ -2582,7 +2589,7 @@ export class CommonToolService {
     for (const file of output.files) {
       const buffer = Buffer.from(file.base64, 'base64');
       if (buffer.length > 10 * 1024 * 1024) throw new BadRequestException('Python output exceeds 10 MB.');
-      const created = await this.files.createGeneratedFile({ buffer, fileName: file.name, mimeType: file.mimeType, agentId, sessionId, metadata: { source: 'computed-python', toolCallId: metadata?.toolCallId } });
+      const created = await this.files.createGeneratedFile({ buffer, fileName: file.name, mimeType: file.mimeType, agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId, metadata: { source: 'computed-python', toolCallId: metadata?.toolCallId } });
       artifacts.push({ fileId: created.fileId, name: created.name });
     }
     if (output.exitCode !== 0) throw new BadRequestException(`Python failed (${output.exitCode}): ${output.stderr.slice(0, 16000)}\n${output.stdout.slice(0, 16000)}`);

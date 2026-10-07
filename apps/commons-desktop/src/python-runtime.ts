@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -105,6 +105,7 @@ export class PythonRuntime {
     const stagedInputs: Record<string, string> = {};
     const copied = new Map<string, string>();
     const inputPaths = new Set<string>();
+    const inputHashes = new Map<string, string>();
     for (const [name, source] of Object.entries(inputs)) {
       let target = copied.get(source);
       if (!target) {
@@ -116,6 +117,7 @@ export class PythonRuntime {
         copyFileSync(source, target);
         copied.set(source, target);
         inputPaths.add(target);
+        inputHashes.set(target, createHash("sha256").update(readFileSync(target)).digest("hex"));
       }
       stagedInputs[name] = target;
     }
@@ -132,7 +134,8 @@ export class PythonRuntime {
           if (++visited > 2_000) throw new Error("Python output exceeds the 2,000-entry limit.");
           const path = join(folder, name);
           const info = lstatSync(path);
-          if (info.isSymbolicLink() || inputPaths.has(path)) continue;
+          if (info.isSymbolicLink()) continue;
+          if (info.isFile() && inputPaths.has(path) && inputHashes.get(path) === createHash("sha256").update(readFileSync(path)).digest("hex")) continue;
           if (info.isDirectory()) collect(path, depth + 1);
           else if (info.isFile()) files.push(path);
           if (files.length > 100) throw new Error("Python produced more than 100 output files. Save only the files needed for this request.");

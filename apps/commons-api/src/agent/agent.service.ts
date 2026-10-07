@@ -1773,6 +1773,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                               ) ?? [],
                             knowledgeMode,
                             knowledgeSpaceIds,
+                            canvasProjectId: canvasContextRequest(props.uiContext)?.projectId,
+                            canvasRevisionId: canvasContextRequest(props.uiContext)?.revisionId,
                             spaceId,
                             runId: traceId,
                             toolCallId: config.toolCall?.id,
