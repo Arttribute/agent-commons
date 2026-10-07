@@ -1771,6 +1771,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                               props.attachments?.map(
                                 (attachment) => attachment.fileId,
                               ) ?? [],
+                            knowledgeMode,
+                            knowledgeSpaceIds,
                             spaceId,
                             runId: traceId,
                             toolCallId: config.toolCall?.id,
@@ -2454,6 +2456,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               initiator,
               agentId,
               knowledgeMode !== "off",
+              knowledgeMode === "selected" ? knowledgeSpaceIds ?? [] : undefined,
             )
             .catch((error) => {
               this.logger.warn(`Project context unavailable: ${error.message}`);
@@ -2510,7 +2513,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
 
           const extraSystemContent = [
             DATA_EXECUTION_CONTRACT,
-            `Agent media defaults: ${JSON.stringify(agent.mediaModels ?? {})}. Use generateMedia with these exact model keys for the relevant modality unless the user explicitly chooses a different model.`,
+            `Agent media defaults: ${JSON.stringify(agent.mediaModels ?? {})}. Speech preference: ${agent.ttsProvider ?? "openai"}/${agent.ttsVoice ?? "platform default"}. Use generateMedia with kind for the relevant modality; saved model and voice defaults are authoritative. Set overrideAgentDefault=true only if the user explicitly requests another model or voice for this output.`,
             buildWorkspaceModeContext('cloud', Boolean(props.cliContext), props.uiContext?.desktopMode === 'cloud'),
             memoryBlock,
             projectContext?.block,

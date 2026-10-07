@@ -11,6 +11,8 @@ token only into the provider request.
 | Provider         | Runtime credentials                                    | Callback path                          | Notes                                                                                                         |
 | ---------------- | ------------------------------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Google Workspace | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | `/api/oauth/callback/google_workspace` | Request offline access. Sensitive Gmail and Workspace scopes may require Google verification.                 |
+| HubSpot MCP      | `HUBSPOT_MCP_CLIENT_ID`, `HUBSPOT_MCP_CLIENT_SECRET` | `/api/oauth/callback/hubspot_mcp` | Register a HubSpot MCP connector, with PKCE; tools follow the account’s permissions. |
+| HubSpot          | `HUBSPOT_OAUTH_CLIENT_ID`, `HUBSPOT_OAUTH_CLIENT_SECRET` | `/api/oauth/callback/hubspot` | Native CRM tools use OAuth, refresh expiring tokens, and require confirmation for writes. |
 | GitHub           | `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | `/api/oauth/callback/github`           | Uses a GitHub OAuth App. Its normal access token has no refresh token and is tested directly against `/user`. Native tools cover profiles, repositories, issues, and pull requests. |
 | Slack            | `SLACK_OAUTH_CLIENT_ID`, `SLACK_OAUTH_CLIENT_SECRET`   | `/api/oauth/callback/slack`            | Configure bot scopes and the redirect URL in the Slack app. Token rotation is supported.                      |
 | Canva            | `CANVA_OAUTH_CLIENT_ID`, `CANVA_OAUTH_CLIENT_SECRET`   | `/api/oauth/callback/canva`            | Enable Authorization Code with PKCE.                                                                          |
@@ -49,6 +51,8 @@ matching CodeBuild flag:
 
 ```text
 GOOGLE_OAUTH_ENABLED=true
+HUBSPOT_MCP_ENABLED=true
+HUBSPOT_OAUTH_ENABLED=true
 GITHUB_OAUTH_ENABLED=true
 SLACK_OAUTH_ENABLED=true
 CANVA_OAUTH_ENABLED=true
@@ -80,3 +84,29 @@ Also test a denied consent, an expired state (wait more than ten minutes), and a
 reconnect that adds scopes. Previously granted scopes remain until the account
 is disconnected because most providers do not support reducing an existing
 grant through incremental authorization.
+
+## HubSpot staging acceptance
+
+The two options use separate platform applications. End users connect by approving
+HubSpot's browser consent screen; they do not enter API keys.
+
+For MCP, register an **Agent Commons Staging** connector in HubSpot Development →
+MCP Connectors with the redirect URL
+`https://staging.agentcommons.io/api/oauth/callback/hubspot_mcp`. Store its client
+ID and secret under `HUBSPOT_MCP_CLIENT_ID` and `HUBSPOT_MCP_CLIENT_SECRET` in the
+staging runtime secret, then set CodeBuild `HUBSPOT_MCP_ENABLED=true`. MCP requires
+PKCE and uses its published authorization server metadata at
+`https://mcp.hubspot.com/.well-known/oauth-authorization-server`.
+
+For native CRM, register an OAuth app with redirect URL
+`https://staging.agentcommons.io/api/oauth/callback/hubspot` and scopes `oauth`,
+`crm.objects.contacts.read`, and `crm.objects.contacts.write`. Store the two
+`HUBSPOT_OAUTH_*` credentials and enable its deployment flag.
+
+Start in the staging web app. Connect, approve access to a test account, check
+its connection status, and for MCP run `get_user_details` to discover account
+permissions. Search an existing disposable test contact, create an approved
+note, read it back, test expired-token refresh, then disconnect and verify that
+further calls are blocked. Repeat with Desktop Private Local using its Connected
+Apps selection. Only approved connector requests cross the network; local chat
+inference remains local. Configure separate production apps after staging passes.

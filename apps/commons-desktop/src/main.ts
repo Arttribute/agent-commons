@@ -23,6 +23,7 @@ import {
   type CloudAccess,
   type DesktopAccount,
   type LocalSettings,
+  type LocalConnectedApp,
   type SkillInput,
   type TaskInput,
   type WorkflowInput,
@@ -606,7 +607,31 @@ function localHandler<T extends unknown[]>(channel: string, handler: (...args: T
   });
 }
 
+async function connectedAppRequest(path: string, body?: Record<string, unknown>) {
+  if (!commonsServer) throw new Error('Connected apps are not ready.');
+  const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}${path}`, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store', signal: AbortSignal.timeout(30_000) });
+  const payload = await response.json() as any;
+  if (!response.ok) throw new Error(response.status === 401 ? 'Sign in to Agent Commons to connect apps. Your local model and files stay on this computer.' : `${payload.message ?? 'Connected app request failed.'}${payload.details ? ` ${JSON.stringify(payload.details).slice(0, 1500)}` : ''}`);
+  return payload;
+}
+
 function registerIpc() {
+  localHandler('local:get-connected-apps', () => connectedAppRequest('/api/connected-apps'));
+  localHandler('local:connect-app', async (providerKey: string) => {
+    const { apps } = await connectedAppRequest('/api/connected-apps') as { apps: LocalConnectedApp[] };
+    const app = apps.find((entry) => entry.providerKey === providerKey);
+    if (!app) throw new Error('This provider is not configured yet.');
+    const url = new URL('/oauth/connect', CLOUD_URL);
+    url.searchParams.set('provider', app.providerKey);
+    url.searchParams.set('scopes', app.scopes.join(' '));
+    url.searchParams.set('label', app.name);
+    await shell.openExternal(url.toString());
+  });
+  localHandler('local:disconnect-app', async (connectionId: string) => {
+    if (!/^[a-f0-9-]{36}$/i.test(connectionId) || !commonsServer) throw new Error('Invalid connection.');
+    const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/oauth/connections/${connectionId}`, { method: 'DELETE', signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) throw new Error('Could not disconnect this app.');
+  });
   const cloudPreferences = () => cloudVisiblePreferences(runtime.preferences());
   localHandler("local:api-request", async (request: { path: string; method: string; body?: unknown }) => {
     if (!request || typeof request.path !== "string" || !request.path.startsWith("/api/") || request.path.length > 2_048) {
@@ -942,7 +967,7 @@ function registerIpc() {
   localHandler<[WorkspacePreferences]>("local:sync-preferences", (incoming) => syncPreferences(incoming, "private-local"));
   localHandler("local:choose-workspace", async () => {
     const result = await dialog.showOpenDialog(desktopWindow!, { properties: ["openDirectory", "createDirectory"] });
-    return result.canceled ? null : result.filePaths[0] ?? null;
+    return result.canceled || !result.filePaths[0] ? null : realpathSync(result.filePaths[0]);
   });
   localHandler("local:choose-knowledge-folders", async () => {
     const result = await dialog.showOpenDialog(desktopWindow!, { properties: ["openDirectory", "multiSelections"] });
@@ -1036,6 +1061,7 @@ async function openLocalApp(id: string) {
 app.whenReady().then(async () => {
   await initializeCommandPath();
   runtime = new PrivateLocalRuntime(app.getPath("userData"));
+  runtime.setConnectedAppsTransport({ catalog: () => connectedAppRequest('/api/connected-apps?discover=1'), invoke: (name, args) => connectedAppRequest(`/api/connected-apps/${encodeURIComponent(name)}/invoke`, args) });
   loadCloudAccess();
   registerIpc();
   installApplicationMenu();

@@ -87,4 +87,29 @@ function requiresComputedData(text) {
   return /\b(?:python|pandas|matplotlib|seaborn|scikit.learn|machine learning|data (?:analysis|science|visuali[sz]ation)|dataset|regression|histogram|correlation|scatter plot|time.series)\b|\b(?:plot|chart|visuali[sz]e|analy[sz]e)\b.{0,80}\b(?:data|csv|xlsx|spreadsheet|measurements|heart.rate|sales)\b/i.test(text);
 }
 
-module.exports = { DATA_EXECUTION_CONTRACT, requiresComputedData, findMatchingSkills, buildSkillPromptIndex, AUTONOMOUS_EXECUTION_CONTRACT, buildWorkspaceModeContext, buildAgentIdentityPrompt };
+const PYTHON_DATA_PACKAGES = ["numpy==2.2.6", "pandas==2.2.3", "matplotlib==3.10.3", "scipy==1.15.3", "scikit-learn==1.6.1", "seaborn==0.13.2", "openpyxl==3.1.5", "pillow==11.2.1"];
+// Runs inside the managed interpreter; import names map to distributions.
+const PYTHON_PACKAGE_SELECTION_CODE = String.raw`import json, sys
+from importlib.metadata import version, PackageNotFoundError
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
+aliases = {'pil': 'pillow', 'sklearn': 'scikit-learn', 'cv2': 'opencv-python', 'yaml': 'PyYAML'}
+missing = []
+for raw in json.loads(sys.argv[1]):
+    requirement = Requirement(raw)
+    if requirement.name.lower() in sys.stdlib_module_names:
+        continue
+    name = canonicalize_name(requirement.name)
+    if name in aliases:
+        requirement = Requirement(aliases[name] + raw[len(requirement.name):])
+    try:
+        installed = version(requirement.name)
+        if not requirement.extras and requirement.specifier.contains(installed, prereleases=True):
+            continue
+    except PackageNotFoundError:
+        pass
+    missing.append(str(requirement))
+print(json.dumps(missing))
+`;
+
+module.exports = { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE, DATA_EXECUTION_CONTRACT, requiresComputedData, findMatchingSkills, buildSkillPromptIndex, AUTONOMOUS_EXECUTION_CONTRACT, buildWorkspaceModeContext, buildAgentIdentityPrompt };

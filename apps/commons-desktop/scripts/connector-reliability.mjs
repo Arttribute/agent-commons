@@ -46,7 +46,7 @@ try {
     try {
       runtime.updateSettings({ mcpServers: [{ id: 'fixture-crm', name: 'Fixture CRM', url: `http://127.0.0.1:${server.address().port}/mcp`, apiKey: 'sandbox-token', mode: 'write', enabled: true }] });
       const agentId = runtime.saveAgent({ name: `Connector ${model}`, model, instructions: 'Execute requests with the connected tools and verify their results.' }).agents.at(-1).id;
-      const result = await runtime.sendMessage({ agentId, workspaceRoot: null, knowledgeMode: 'off', mcpServerIds: ['fixture-crm'], prompt: 'Use the connected Fixture CRM to find amina@example.invalid, then add the note "Workflow complete" to the contact you find. Complete both steps and report the returned note ID.' });
+      const result = await runtime.sendMessage({ agentId, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, mcpServerIds: ['fixture-crm'], prompt: 'Use the connected Fixture CRM to find amina@example.invalid, then add the note "Workflow complete" to the contact you find. Complete both steps and report the returned note ID.' });
       const executed = calls.slice(firstCall);
       assert.ok(executed.some((call) => call.tool === 'search_contacts'));
       assert.ok(executed.some((call) => call.tool === 'create_contact_note'));

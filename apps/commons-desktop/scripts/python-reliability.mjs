@@ -29,12 +29,13 @@ try:
     (OUTPUT_DIR / 'external-link').symlink_to(INPUT_FILES['sales.csv'])
 except OSError:
     pass
-print('Verified managed analysis')`, join(directory, 'run'), { 'sales.csv': join(directory, 'sales.csv'), 'file-731': join(directory, 'sales.csv') });
+print('Verified managed analysis')`, join(directory, 'run'), { 'sales.csv': join(directory, 'sales.csv'), 'file-731': join(directory, 'sales.csv') }, undefined, 120, ['json', 'os', 'pathlib', 'zipfile', 'numpy', 'pandas', 'PIL', 'sklearn']);
   assert.equal(result.exitCode, 0, result.stderr);
   assert.equal(result.files.length, 2);
   assert.equal(JSON.parse(readFileSync(result.files.find((path) => path.endsWith('totals.json')), 'utf8')).sum, 60);
   assert.equal(readFileSync(result.files.find((path) => path.endsWith('sales.png'))).subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
   assert.ok(result.python.startsWith(managed));
+  assert.ok(!result.python.includes('extension-'), 'Bundled libraries and stdlib caused an unnecessary environment installation');
   console.log(`Managed Python and data libraries passed on ${process.platform}-${process.arch}; user Python configuration was isolated.`);
 } finally {
   for (const [name, value] of saved) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }

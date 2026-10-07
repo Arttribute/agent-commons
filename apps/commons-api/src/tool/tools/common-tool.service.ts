@@ -56,17 +56,26 @@ import {
 } from '~/ui-plugin';
 import { BrainService } from '~/brain';
 import { CanvasService, MediaEditService, MediaService } from '~/media';
+import { ManagedMcpService } from '~/oauth/managed-mcp.service';
+import { MEDIA_MODEL_REGISTRY } from '~/media/media-model.registry';
 
 type ToolExecutionMetadata = {
   agentId?: string;
   sessionId?: string;
   ownerId?: string;
   attachmentFileIds?: string[];
+  knowledgeMode?: "auto" | "selected" | "off";
+  knowledgeSpaceIds?: string[];
   runId?: string;
   toolCallId?: string;
 };
 
 export interface CommonTool {
+  /** Discover the connected user's HubSpot MCP tools and their schemas. Connect through Studio → Tools first. */
+  listConnectedMcpTools(props: { provider?: 'hubspot_mcp'; agentId?: string }): Promise<any>;
+  /** Execute a discovered HubSpot MCP tool with its exact input schema. For write tools, review the exact action with the user and set confirmed=true only after approval. */
+  callConnectedMcpTool(props: { provider?: 'hubspot_mcp'; name: string; arguments: Record<string, any>; confirmed?: boolean; agentId?: string }): Promise<any>;
+
   /**
    * Inspect the calling Commons Copilot owner's platform resources before
    * designing or changing account state.
@@ -420,6 +429,8 @@ export interface CommonTool {
     projectId?: string;
     modelKey?: string;
     kind?: "image" | "video" | "audio" | "music";
+    /** Only set true when the user explicitly requests a different model than the saved agent default. */
+    overrideAgentDefault?: boolean;
     prompt: string;
     operation?: 'generate' | 'transform';
     inputItemIds?: string[];
@@ -1325,7 +1336,20 @@ export class CommonToolService {
     private canvas: CanvasService,
     private arcade: ArcadeService,
     private mediaEdit: MediaEditService,
+    private managedMcp: ManagedMcpService,
   ) {}
+
+  async listConnectedMcpTools(props: { provider?: 'hubspot_mcp'; agentId?: string }, metadata?: ToolExecutionMetadata) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const ownerId = metadata?.ownerId || (await this.capabilityOwner(agentId)).principalId;
+    return this.managedMcp.list(ownerId, props.provider ?? 'hubspot_mcp');
+  }
+
+  async callConnectedMcpTool(props: { provider?: 'hubspot_mcp'; name: string; arguments: Record<string, any>; confirmed?: boolean; agentId?: string }, metadata?: ToolExecutionMetadata) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const ownerId = metadata?.ownerId || (await this.capabilityOwner(agentId)).principalId;
+    return this.managedMcp.invoke(ownerId, props.provider ?? 'hubspot_mcp', props.name, props.arguments, props.confirmed);
+  }
 
   private async capabilityOwner(agentId: string) {
     const agent = await this.db.query.agent.findFirst({
@@ -2097,6 +2121,7 @@ export class CommonToolService {
       projectId?: string;
       modelKey?: string;
       kind?: "image" | "video" | "audio" | "music";
+      overrideAgentDefault?: boolean;
       prompt: string;
       operation?: 'generate' | 'transform';
       inputItemIds?: string[];
@@ -2109,9 +2134,13 @@ export class CommonToolService {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     const owner = await this.capabilityOwner(agentId);
     const agent = await this.agent.getAgent({ agentId });
-    const kind = props.kind ?? "image";
-    const modelKey = props.modelKey || agent.mediaModels?.[`${kind}Model`];
+    const kind = props.kind ?? MEDIA_MODEL_REGISTRY.find((model) => model.modelKey === props.modelKey)?.kind ?? "image";
+    const configured = agent.mediaModels?.[`${kind}Model`];
+    const modelKey = props.overrideAgentDefault ? props.modelKey || configured : configured || props.modelKey;
     if (!modelKey) throw new BadRequestException("Choose a model with listMediaModels or save an agent media default.");
+    const definition = MEDIA_MODEL_REGISTRY.find((model) => model.modelKey === modelKey);
+    const voice = definition?.settings.find((field) => field.key === 'voice');
+    const savedVoice = agent.ttsVoice && definition?.provider === agent.ttsProvider && voice?.options?.some((option) => option.value === agent.ttsVoice) ? agent.ttsVoice : undefined;
     return this.media.generateAndWait(
       {
         projectId: props.projectId,
@@ -2119,7 +2148,7 @@ export class CommonToolService {
         prompt: props.prompt,
         operation: props.operation,
         inputItemIds: props.inputItemIds,
-        settings: props.settings,
+        settings: props.overrideAgentDefault ? { ...(savedVoice ? { voice: savedVoice } : {}), ...props.settings } : { ...props.settings, ...(savedVoice ? { voice: savedVoice } : {}) },
         agentId,
         sessionId: metadata?.sessionId ?? props.sessionId,
         toolCallId: metadata?.toolCallId,
@@ -2277,11 +2306,21 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    await this.brains.ensureDefaultForAgent(agentId);
-    return this.brains.listSpaces({
+    const selected = this.chatKnowledgeScope(metadata);
+    if (!selected) await this.brains.ensureDefaultForAgent(agentId);
+    const spaces = await this.brains.listSpaces({
       principalId: agentId,
       principalType: 'agent',
     });
+    return selected ? spaces.filter((space) => selected.includes(space.spaceId)) : spaces;
+  }
+
+  private chatKnowledgeScope(metadata?: ToolExecutionMetadata) {
+    if (metadata?.knowledgeMode === "off") throw new BadRequestException("Knowledge Spaces are off for this chat.");
+    if (metadata?.knowledgeMode !== "selected") return undefined;
+    const selected = metadata.knowledgeSpaceIds ?? [];
+    if (!selected.length) throw new BadRequestException("No Knowledge Spaces are selected for this chat.");
+    return selected;
   }
 
   async searchKnowledge(
@@ -2294,12 +2333,13 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    await this.brains.ensureDefaultForAgent(agentId);
+    const selected = this.chatKnowledgeScope(metadata);
+    if (!selected) await this.brains.ensureDefaultForAgent(agentId);
     return this.brains.search(
       { principalId: agentId, principalType: 'agent' },
       {
         query: props.query,
-        spaceIds: props.spaceIds,
+        spaceIds: selected ?? props.spaceIds,
         limit: props.limit,
       },
       { traceId: metadata?.runId },
@@ -2311,11 +2351,14 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    await this.brains.ensureDefaultForAgent(agentId);
-    return this.brains.getDocument(props.documentId, {
+    const selected = this.chatKnowledgeScope(metadata);
+    if (!selected) await this.brains.ensureDefaultForAgent(agentId);
+    const document = await this.brains.getDocument(props.documentId, {
       principalId: agentId,
       principalType: 'agent',
     });
+    if (selected && !selected.includes(document.spaceId)) throw new BadRequestException("That document is outside this chat's selected Knowledge Spaces.");
+    return document;
   }
 
   async writeKnowledgeDocument(
@@ -2331,6 +2374,8 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
+    const selected = this.chatKnowledgeScope(metadata);
+    if (selected && (!props.spaceId || !selected.includes(props.spaceId))) throw new BadRequestException("Choose a space from this chat's selected Knowledge Spaces before writing.");
     const defaultSpace = props.spaceId
       ? undefined
       : await this.brains.defaultWritableSpaceForAgent(agentId);
@@ -2520,7 +2565,7 @@ export class CommonToolService {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     const sessionId = metadata?.sessionId ?? props.sessionId;
     const owner = await this.capabilityOwner(agentId);
-    const inputIds = [...new Set(props.inputItemIds ?? [])];
+    const inputIds = [...new Set(props.inputItemIds ?? metadata?.attachmentFileIds ?? [])];
     if (inputIds.length > 20) throw new BadRequestException('Python accepts up to 20 input files.');
     const inputs = await Promise.all(inputIds.map((id) => this.files.createDownloadUrl(id, { agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId ?? undefined })));
     const execution = cloudPythonFiles(props.code, inputs, props.timeoutSeconds, props.packages);
@@ -2533,7 +2578,8 @@ export class CommonToolService {
       if (!Number.isInteger(output.exitCode) || !Array.isArray(output.files)) throw new Error('Incomplete result');
     } catch { throw new BadRequestException(`Python did not produce a verified result. Runtime response: ${JSON.stringify(command).slice(0, 3000)}`); }
     const artifacts = [];
-    for (const file of output.files.slice(0, 20)) {
+    if (output.files.length > 100) throw new BadRequestException('Python produced too many outputs.');
+    for (const file of output.files) {
       const buffer = Buffer.from(file.base64, 'base64');
       if (buffer.length > 10 * 1024 * 1024) throw new BadRequestException('Python output exceeds 10 MB.');
       const created = await this.files.createGeneratedFile({ buffer, fileName: file.name, mimeType: file.mimeType, agentId, sessionId, metadata: { source: 'computed-python', toolCallId: metadata?.toolCallId } });

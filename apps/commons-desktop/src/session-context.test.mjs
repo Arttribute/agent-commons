@@ -32,6 +32,8 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     const last = body.messages.at(-1);
     const message = last.role === 'user' && last.content === 'List this folder'
       ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'cli_list_directory', arguments: {} } }] }
+      : last.role === 'user' && last.content === 'Read the root-qualified selected path'
+      ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'cli_read_file', arguments: { path: 'Two/Two.txt' } } }] }
       : last.role === 'user' && last.content.startsWith('Extract ')
       ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'extract_library_archive', arguments: { itemId: last.content.slice(8) } } }] }
       : last.role === 'user' && last.content.startsWith('Read ')
@@ -55,12 +57,15 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     await runtime.sendMessage({ agentId: fixed, prompt: 'Hello' });
     assert.equal(requests.filter((request) => request.stream).at(-1).model, 'fixed-agent');
     for (const name of ['One', 'Two']) { mkdirSync(join(root, name)); writeFileSync(join(root, name, `${name}.txt`), name); }
-    const first = await runtime.sendMessage({ agentId: inherited, workspaceRoot: join(root, 'One'), knowledgeMode: 'off', prompt: 'List this folder' });
+    const first = await runtime.sendMessage({ agentId: inherited, workspaceRoot: join(root, 'One'), knowledgeMode: 'off', webSearchEnabled: false, prompt: 'List this folder' });
     assert.match(first.response, /Directory: .*One/); assert.match(first.response, /One.txt/);
     const second = await runtime.sendMessage({ agentId: inherited, conversationId: first.conversation.id, workspaceRoot: join(root, 'Two'), prompt: 'List this folder' });
     assert.match(second.response, /Directory: .*Two/); assert.match(second.response, /Two.txt/); assert.doesNotMatch(second.response, /One.txt/);
     const tools = requests.filter((request) => request.stream).at(-1).tools.map((tool) => tool.function.name);
+    assert.ok(!tools.includes('web_search')); assert.equal(second.conversation.webSearchEnabled, false);
     assert.ok(!tools.includes('search_knowledge')); assert.ok(!tools.includes('list_knowledge_spaces'));
+    const qualified = await runtime.sendMessage({ agentId: inherited, conversationId: first.conversation.id, prompt: 'Read the root-qualified selected path' });
+    assert.ok(qualified.conversation.messages.some((message) => message.toolName === 'cli_read_file' && message.content === 'Two'));
     const removed = await runtime.sendMessage({ agentId: inherited, conversationId: first.conversation.id, workspaceRoot: null, prompt: 'Hello' });
     assert.equal(removed.conversation.workspaceRoot, undefined);
     assert.ok(!requests.filter((request) => request.stream).at(-1).tools.some((tool) => tool.function.name.startsWith('cli_')));
@@ -79,6 +84,7 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     runtime.close();
     runtime = new PrivateLocalRuntime(join(root, 'profile'));
     assert.equal(runtime.state().settings.defaultModel, 'default-b');
+    assert.equal(runtime.state().conversations.find((chat) => chat.id === first.conversation.id).webSearchEnabled, false);
     assert.equal(runtime.state().agents.find((agent) => agent.id === fixed).model, 'fixed-agent');
     assert.equal(runtime.state().agents.find((agent) => agent.id === fixed).mediaModels.voiceModel, 'kokoro-bella');
     assert.equal(runtime.state().conversations.find((chat) => chat.id === first.conversation.id).knowledgeMode, 'off');

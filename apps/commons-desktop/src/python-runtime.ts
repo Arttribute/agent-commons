@@ -3,11 +3,12 @@ import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync,
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE } from "@agent-commons/agent-core";
 
 const exec = promisify(execFile);
 const UV_VERSION = "0.12.23";
 const PYTHON_VERSION = "3.12.11";
-export const DATA_PACKAGES = ["numpy==2.2.6", "pandas==2.2.3", "matplotlib==3.10.3", "scipy==1.15.3", "scikit-learn==1.6.1", "seaborn==0.13.2", "openpyxl==3.1.5", "pillow==11.2.1"];
+export const DATA_PACKAGES = PYTHON_DATA_PACKAGES;
 const ASSETS: Record<string, [string, string]> = {
   "darwin-arm64": ["aarch64-apple-darwin.tar.gz", "50487ae565ccd96e499056b4674d438f4c53170202617b4c759defe0c6a1b544"],
   "darwin-x64": ["x86_64-apple-darwin.tar.gz", "960da44cb4b73685206ddd250b19e0a117fa41095710c1038f081f5cb613efb4"],
@@ -72,9 +73,14 @@ export class PythonRuntime {
   }
 
   private async withPackages(packages: string[]) {
+    if (packages.length > 10 || packages.some((name) => !/^[a-zA-Z][a-zA-Z0-9_.-]*(?:\[[a-zA-Z0-9_,.-]+\])?(?:(?:==|>=|<=|~=)[a-zA-Z0-9_.+-]+)?$/.test(name))) throw new Error("Use up to ten Python package names, optionally with a version, without URLs or installer flags.");
     const base = await this.prepare();
     if (!packages.length) return base;
-    if (packages.length > 10 || packages.some((name) => !/^[a-zA-Z][a-zA-Z0-9_.-]*(?:\[[a-zA-Z0-9_,.-]+\])?(?:(?:==|>=|<=|~=)[a-zA-Z0-9_.+-]+)?$/.test(name))) throw new Error("Use up to ten Python package names, optionally with a version, without URLs or installer flags.");
+    const selection = await exec(base, ["-I", "-c", PYTHON_PACKAGE_SELECTION_CODE, JSON.stringify(packages)], { env: this.environment(), timeout: 30_000, maxBuffer: 32_000, windowsHide: true });
+    packages = JSON.parse(selection.stdout) as string[];
+    if (!packages.length) return base;
+    const overridden = new Set(packages.map((name) => name.split(/[<>=~\[]/, 1)[0].toLowerCase().replace(/[-_.]+/g, "-")));
+    const recipe = DATA_PACKAGES.filter((name) => !overridden.has(name.split("==")[0]));
     const key = createHash("sha256").update(JSON.stringify([...packages].sort())).digest("hex").slice(0, 16);
     if (!this.extensions.has(key)) this.extensions.set(key, (async () => {
       const venv = join(this.root, `extension-${key}`);
@@ -83,7 +89,7 @@ export class PythonRuntime {
       const options = { env: this.environment(), timeout: 300_000, maxBuffer: 2_000_000, windowsHide: true };
       if (!existsSync(join(venv, "commons-ready"))) {
         if (!existsSync(python)) await exec(uv, ["venv", "--python", PYTHON_VERSION, "--no-config", venv], options);
-        await exec(uv, ["pip", "install", "--python", python, "--no-config", ...DATA_PACKAGES, ...packages], options);
+        await exec(uv, ["pip", "install", "--python", python, "--no-config", ...recipe, ...packages], options);
         writeFileSync(join(venv, "commons-ready"), "ready", { mode: 0o600 });
       }
       return python;

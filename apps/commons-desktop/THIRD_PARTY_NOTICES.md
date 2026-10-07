@@ -9,7 +9,7 @@ runtime from the official Ollama GitHub releases. Ollama is licensed under the
 MIT License. Source and license: https://github.com/ollama/ollama
 
 On computers with at least 8 GB RAM, the default private model is
-`qwen3.5:2b`. On smaller computers it is `qwen3:1.7b`. Both are downloaded
+`qwen3.5:2b-q4_K_M`. On smaller computers it is `qwen3:1.7b`. Both are downloaded
 through Ollama's model registry and licensed under Apache 2.0. Model
 information and licenses:
 https://huggingface.co/Qwen/Qwen3.5-2B

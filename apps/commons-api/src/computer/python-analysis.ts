@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE } from '@agent-commons/agent-core';
 
 // Bootstrap runs in the agent's isolated CommonOS computer, never in the API
 // process. A managed interpreter is installed without modifying system Python.
@@ -13,8 +14,7 @@ triple, digest = ('aarch64-unknown-linux-gnu', '6524bd338177ed50d035d39354e12545
 env = {k: v for k, v in os.environ.items() if not k.startswith(('UV_', 'PYTHON', 'PIP_', 'CONDA')) and k != 'VIRTUAL_ENV'}
 env.update(UV_PYTHON_INSTALL_DIR=str(root / 'interpreters'), UV_PYTHON_BIN_DIR=str(root / 'bin'), UV_CACHE_DIR=str(root / 'cache'), UV_NO_CONFIG='1', UV_PYTHON_PREFERENCE='only-managed', PYTHONNOUSERSITE='1', MPLBACKEND='Agg', MPLCONFIGDIR=str(root / 'matplotlib'))
 packages = config.get('packages', [])
-venv = root / ('extension-' + hashlib.sha256(json.dumps(sorted(packages)).encode()).hexdigest()[:16] if packages else 'data-3.12.11-v1')
-python = venv / 'bin/python'
+base_packages = ${JSON.stringify(PYTHON_DATA_PACKAGES)}
 with (root / '.prepare.lock').open('w') as lock:
     fcntl.flock(lock, fcntl.LOCK_EX)
     if not uv.exists():
@@ -26,11 +26,23 @@ with (root / '.prepare.lock').open('w') as lock:
             member = next(m for m in tar.getmembers() if m.name.endswith('/uv') and m.isfile())
             uv.write_bytes(tar.extractfile(member).read())
         uv.chmod(0o700)
-    if not (venv / 'commons-ready').exists():
-        if not python.exists(): subprocess.run([str(uv), 'venv', '--python', '3.12.11', '--no-config', str(venv)], env=env, check=True, timeout=300)
-        subprocess.run([str(uv), 'pip', 'install', '--python', str(python), '--no-config', 'numpy==2.2.6', 'pandas==2.2.3', 'matplotlib==3.10.3', 'scipy==1.15.3', 'scikit-learn==1.6.1', 'seaborn==0.13.2', 'openpyxl==3.1.5', 'pillow==11.2.1'] + packages, env=env, check=True, timeout=300)
-        subprocess.run([str(python), '-I', '-c', 'import numpy, pandas, matplotlib, scipy, sklearn, seaborn, openpyxl, PIL'], env=env, check=True)
-        (venv / 'commons-ready').write_text('ready')
+    def prepare(venv, requirements):
+        python = venv / 'bin/python'
+        if not (venv / 'commons-ready').exists():
+            if not python.exists(): subprocess.run([str(uv), 'venv', '--python', '3.12.11', '--no-config', str(venv)], env=env, check=True, timeout=300)
+            subprocess.run([str(uv), 'pip', 'install', '--python', str(python), '--no-config'] + requirements, env=env, check=True, timeout=300)
+            subprocess.run([str(python), '-I', '-c', 'import numpy, pandas, matplotlib, scipy, sklearn, seaborn, openpyxl, PIL'], env=env, check=True)
+            (venv / 'commons-ready').write_text('ready')
+        return python
+    python = prepare(root / 'data-3.12.11-v1', base_packages)
+    if packages:
+        selection = subprocess.run([str(python), '-I', '-c', ${JSON.stringify(PYTHON_PACKAGE_SELECTION_CODE)}, json.dumps(packages)], env=env, check=True, capture_output=True, text=True, timeout=30)
+        packages = json.loads(selection.stdout)
+    if packages:
+        import re
+        overridden = {re.split(r'[<>=~\[]', name)[0].lower().replace('_', '-') for name in packages}
+        requirements = [name for name in base_packages if name.split('==')[0] not in overridden] + packages
+        python = prepare(root / ('extension-' + hashlib.sha256(json.dumps(sorted(packages)).encode()).hexdigest()[:16]), requirements)
 inputs = {}
 output = run / 'outputs'
 output.mkdir(exist_ok=True)
@@ -51,11 +63,23 @@ script.write_text('from pathlib import Path\nINPUT_FILES = ' + repr(inputs) + '\
 try:
     result = subprocess.run([str(python), '-I', str(script)], cwd=str(output), env=env, capture_output=True, text=True, timeout=config['timeoutSeconds'])
     files = []
-    for path in output.iterdir():
-        if path in input_paths or not path.is_file() or path.is_symlink(): continue
-        if path.stat().st_size > 10 * 1024 * 1024: continue
-        if len(files) >= 20: break
-        files.append(dict(name=path.name, mimeType=mimetypes.guess_type(path.name)[0] or 'application/octet-stream', base64=base64.b64encode(path.read_bytes()).decode()))
+    visited = 0
+    total_bytes = 0
+    def collect(folder, depth=0):
+        global visited, total_bytes
+        if depth > 16: raise RuntimeError('Python output folders exceed the supported depth')
+        for path in folder.iterdir():
+            visited += 1
+            if visited > 2000: raise RuntimeError('Python output exceeds the 2,000-entry limit')
+            if path in input_paths or path.is_symlink(): continue
+            if path.is_dir(): collect(path, depth + 1)
+            elif path.is_file():
+                size = path.stat().st_size
+                total_bytes += size
+                if size > 10 * 1024 * 1024 or total_bytes > 25 * 1024 * 1024: raise RuntimeError('Python outputs exceed the size limit')
+                if len(files) >= 100: raise RuntimeError('Python produced more than 100 output files')
+                files.append(dict(name=str(path.relative_to(output)), mimeType=mimetypes.guess_type(path.name)[0] or 'application/octet-stream', base64=base64.b64encode(path.read_bytes()).decode()))
+    collect(output)
     manifest = dict(exitCode=result.returncode, stdout=result.stdout[-32000:], stderr=result.stderr[-16000:], files=files)
 except subprocess.TimeoutExpired:
     manifest = dict(exitCode=-1, stdout='', stderr='Python execution timed out', files=[])

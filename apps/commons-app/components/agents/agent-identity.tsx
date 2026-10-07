@@ -167,12 +167,16 @@ export default function AgentIdentity({
           "alloy",
           "ash",
           "ballad",
-          "verse",
-          "aria",
           "coral",
+          "echo",
+          "fable",
+          "nova",
+          "onyx",
           "sage",
-          "ember",
-          "vibe",
+          "shimmer",
+          "verse",
+          "marin",
+          "cedar",
         ];
         const list = (env.length ? env : fallbacks).map((v) => ({
           id: v,
@@ -180,7 +184,7 @@ export default function AgentIdentity({
         }));
         const local = list;
         setVoices(local);
-        if (!local.find((v) => v.id === editData.ttsVoice)) {
+        if (!editData.ttsVoice) {
           setEditData((p) => ({ ...p, ttsVoice: local[0]?.id || "" }));
         }
       } else {
@@ -189,7 +193,7 @@ export default function AgentIdentity({
         const list: Array<{ id: string; name: string; provider: string }> =
           json.data || [];
         setVoices(list.map((v) => ({ id: v.id, name: v.name })));
-        if (!list.find((v: any) => v.id === editData.ttsVoice)) {
+        if (!editData.ttsVoice) {
           setEditData((p) => ({ ...p, ttsVoice: list[0]?.id || "" }));
         }
       }
@@ -202,9 +206,9 @@ export default function AgentIdentity({
   };
 
   useEffect(() => {
-    loadVoices(editData.ttsProvider);
+    if (!local) loadVoices(editData.ttsProvider);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editData.ttsProvider]);
+  }, [editData.ttsProvider, local]);
 
   return (
     <Dialog>
@@ -313,7 +317,7 @@ export default function AgentIdentity({
           />
 
           {/* Voice Settings */}
-          <div className="grid grid-cols-2 gap-2">
+          {!local && <div className="grid grid-cols-2 gap-2">
             <div className="col-span-1">
               <Label className="text-sm font-semibold">TTS Provider</Label>
               <Select
@@ -383,7 +387,7 @@ export default function AgentIdentity({
                 </div>
               )}
             </div>
-          </div>
+          </div>}
 
           <Label className="text-sm font-semibold">Description</Label>
           <Textarea

@@ -32,6 +32,10 @@ function optionalString(value: unknown) {
 
 function providerRuntimeConfig(providerKey: string): ProviderRuntimeConfig {
   switch (providerKey) {
+    case 'hubspot_mcp':
+      return { pkce: true };
+    case 'hubspot':
+      return { revokeRefreshToken: true, includeClientCredentialsOnRevoke: true };
     case 'canva':
       return {
         pkce: true,
@@ -86,7 +90,7 @@ function extractTokenSet(providerKey: string, payload: any): ProviderTokenSet {
     refreshToken: payload?.refresh_token,
     idToken: payload?.id_token,
     expiresIn: payload?.expires_in,
-    scope: payload?.scope,
+    scope: payload?.scope ?? payload?.scopes,
   };
 }
 
@@ -95,6 +99,10 @@ function extractProviderUserIdentity(
   userInfo: any,
   tokenPayload: any,
 ): ProviderUserIdentity {
+  if (['hubspot', 'hubspot_mcp'].includes(providerKey)) {
+    return { id: optionalString(userInfo?.user_id ?? tokenPayload?.hub_id), email: userInfo?.user, name: userInfo?.hub_domain ?? (tokenPayload?.hub_id ? `HubSpot account ${tokenPayload.hub_id}` : undefined) };
+  }
+
   if (providerKey === 'slack') {
     return {
       id: optionalString(
@@ -133,7 +141,17 @@ async function fetchProviderUserInfo(
   providerKey: string,
   userInfoUrl: string,
   accessToken: string,
+  clientId?: string,
+  clientSecret?: string,
 ) {
+  if (['hubspot', 'hubspot_mcp'].includes(providerKey)) {
+    const response = await fetch(userInfoUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: clientId!, client_secret: clientSecret!, [providerKey === 'hubspot_mcp' ? 'access_token' : 'token']: accessToken, token_type_hint: 'access_token' }).toString() });
+    if (!response.ok) return null;
+    const info: any = await response.json();
+    // Introspection also returns the token and signed token. Never put either
+    // in unencrypted account metadata or expose them to the UI.
+    return { active: info.active, hub_id: info.hub_id, user_id: info.user_id, user: info.user, hub_domain: info.hub_domain, scopes: info.scopes };
+  }
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     Accept: 'application/json',
@@ -427,6 +445,8 @@ export class OAuthFlowService {
             provider.providerKey,
             provider.userInfoUrl,
             tokenSet.accessToken,
+            provider.clientId,
+            clientSecret,
           );
         } catch (error) {
           this.logger.warn(`Failed to fetch user info from provider: ${error}`);
@@ -709,6 +729,8 @@ export class OAuthFlowService {
                   : tokens.accessToken,
             });
 
+            if (['hubspot', 'hubspot_mcp'].includes(provider.providerKey)) revokeParams.append('token_type_hint', tokens.refreshToken ? 'refresh_token' : 'access_token');
+
             let revokeAuthorization: string | undefined;
             if (runtimeConfig.includeClientCredentialsOnRevoke) {
               const clientSecret =
@@ -796,6 +818,12 @@ export class OAuthFlowService {
     }
 
     const accessToken = await this.getFreshAccessToken(connectionId);
+    if (['hubspot', 'hubspot_mcp'].includes(provider.providerKey)) {
+      const info = await fetchProviderUserInfo(provider.providerKey, provider.userInfoUrl, accessToken, provider.clientId, await this.providerService.getDecryptedClientSecret(provider.providerId));
+      if (!info) throw new Error('HubSpot token validation is temporarily unavailable');
+      if (!info.active) { await this.connectionService.recordError(connectionId, 'HubSpot connection expired or was revoked'); return false; }
+      return true;
+    }
     const response = await fetch(provider.userInfoUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,

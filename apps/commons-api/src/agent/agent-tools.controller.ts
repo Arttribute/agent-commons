@@ -71,6 +71,8 @@ export class AgentToolsController {
         sessionId?: string;
         ownerId?: string;
         attachmentFileIds?: string[];
+        knowledgeMode?: "auto" | "selected" | "off";
+        knowledgeSpaceIds?: string[];
         spaceId?: string;
         runId?: string;
         toolCallId?: string;

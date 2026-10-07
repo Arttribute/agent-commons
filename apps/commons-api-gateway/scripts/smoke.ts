@@ -65,6 +65,7 @@ await expectStatus("GET /health", app.request("/health"), 200);
  * left /plans spinning forever. Keep this list and the gateway in step.
  */
 const publicRoutes: Array<[string, RequestInit?]> = [
+  ["/v1/desktop-search/search?q=python"],
   ["/v1/billing/catalog"],
   ["/v1/oauth/providers"],
   ["/v1/oauth/providers/google"],

@@ -2,6 +2,7 @@ import { OAuthProviderService } from './oauth-provider.service';
 
 describe('OAuthProviderService platform provider sync', () => {
   const envKeys = [
+    'HUBSPOT_OAUTH_CLIENT_ID', 'HUBSPOT_OAUTH_CLIENT_SECRET', 'HUBSPOT_MCP_CLIENT_ID', 'HUBSPOT_MCP_CLIENT_SECRET',
     'GOOGLE_OAUTH_CLIENT_ID',
     'GOOGLE_OAUTH_CLIENT_SECRET',
     'GITHUB_OAUTH_CLIENT_ID',

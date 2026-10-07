@@ -25,7 +25,7 @@ import {
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
-import { BRAVE_SEARCH_BASE_URL, hasConfiguredLocalWebSearch, type LocalSettings } from "@agent-commons/desktop-contract";
+import { BRAVE_SEARCH_BASE_URL, DEFAULT_LOCAL_WEB_SEARCH_URL, hasConfiguredLocalWebSearch, type LocalSettings, type LocalConnectedApp } from "@agent-commons/desktop-contract";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
@@ -316,12 +316,20 @@ export default function ChatInputBox({
   const [webSearchConfigured, setWebSearchConfigured] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [webSearchDialogOpen, setWebSearchDialogOpen] = useState(false);
-  const [webSearchProvider, setWebSearchProvider] = useState<"brave" | "searxng">("brave");
+  const [webSearchProvider, setWebSearchProvider] = useState<"managed" | "brave" | "searxng">("managed");
   const [webSearchUrl, setWebSearchUrl] = useState("");
   const [webSearchApiKey, setWebSearchApiKey] = useState("");
   const [webSearchSaving, setWebSearchSaving] = useState(false);
   const [webSearchError, setWebSearchError] = useState("");
   const [mcpServers, setMcpServers] = useState<NonNullable<LocalSettings["mcpServers"]>>([]);
+  const [connectedApps, setConnectedApps] = useState<LocalConnectedApp[]>([]);
+  useEffect(() => {
+    if (!local) return;
+    let active = true;
+    const refresh = () => { void window.agentCommonsLocal?.getConnectedApps().then((result) => { if (active) setConnectedApps(result.apps); }).catch(() => undefined); };
+    refresh(); window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("focus", refresh); };
+  }, [local]);
   const [mcpServerIds, setMcpServerIds] = useState<string[]>([]);
   const [workspaceRemoved, setWorkspaceRemoved] = useState(false);
   const workspaceRevision = useRef(0);
@@ -350,7 +358,7 @@ export default function ChatInputBox({
           setMcpServerIds(conversation?.mcpServerIds ?? initialLaunch?.mcpServerIds ?? []);
         }
         setWebSearchConfigured(hasConfiguredLocalWebSearch(state.settings));
-        setWebSearchEnabled(Boolean(hasConfiguredLocalWebSearch(state.settings) && (conversation?.webSearchEnabled ?? initialLaunch?.webSearchEnabled)));
+        setWebSearchEnabled(Boolean(hasConfiguredLocalWebSearch(state.settings) && (conversation ? Boolean(conversation.webSearchEnabled) : initialLaunch?.webSearchEnabled ?? state.settings.webSearchDefaultEnabled ?? true)));
         setMcpServers(state.settings.mcpServers ?? []);
       }).catch(() => undefined);
       const unsubscribe = bridge?.onEvent((event) => {
@@ -404,7 +412,7 @@ export default function ChatInputBox({
     setWebSearchError("");
     setWebSearchDialogOpen(true);
     void window.agentCommonsLocal?.getState().then((state) => {
-      setWebSearchProvider(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL || !state.settings.webSearchUrl ? "brave" : "searxng");
+      setWebSearchProvider(!state.settings.webSearchUrl || state.settings.webSearchUrl === DEFAULT_LOCAL_WEB_SEARCH_URL ? "managed" : state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "brave" : "searxng");
       setWebSearchUrl(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "" : state.settings.webSearchUrl ?? "");
       setWebSearchApiKey(state.settings.webSearchApiKey ?? "");
     }).catch((cause) => setWebSearchError(cause instanceof Error ? cause.message : "Could not load web search settings."));
@@ -416,7 +424,7 @@ export default function ChatInputBox({
     setWebSearchError("");
     try {
       if (webSearchProvider === "brave" && !webSearchApiKey.trim()) throw new Error("Enter your Brave Search API key.");
-      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl: webSearchProvider === "brave" ? BRAVE_SEARCH_BASE_URL : webSearchUrl, webSearchApiKey });
+      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl: webSearchProvider === "managed" ? DEFAULT_LOCAL_WEB_SEARCH_URL : webSearchProvider === "brave" ? BRAVE_SEARCH_BASE_URL : webSearchUrl, webSearchApiKey: webSearchProvider === "managed" ? "" : webSearchApiKey });
       const configured = hasConfiguredLocalWebSearch(state.settings);
       if (configured && state.conversations.some((conversation) => conversation.id === sessionId)) {
         await window.agentCommonsLocal.setConversationWebSearch(sessionId, true);
@@ -1150,7 +1158,8 @@ export default function ChatInputBox({
           <form onSubmit={saveWebSearchSettings} className="space-y-4">
             <label className="block space-y-1.5 text-sm">
               <span>Provider</span>
-              <select value={webSearchProvider} onChange={(event) => { setWebSearchProvider(event.target.value as "brave" | "searxng"); setWebSearchApiKey(""); }} className="w-full rounded-md border border-border bg-background px-3 py-2">
+              <select value={webSearchProvider} onChange={(event) => { setWebSearchProvider(event.target.value as "managed" | "brave" | "searxng"); setWebSearchApiKey(""); }} className="w-full rounded-md border border-border bg-background px-3 py-2">
+                <option value="managed">Agent Commons · ready to use</option>
                 <option value="brave">Brave Search · API key</option>
                 <option value="searxng">SearXNG · your endpoint</option>
               </select>
@@ -1159,10 +1168,11 @@ export default function ChatInputBox({
               <span>Search endpoint</span>
               <input type="url" required placeholder="https://search.example.com" value={webSearchUrl} onChange={(event) => setWebSearchUrl(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
             </label>}
-            <label className="block space-y-1.5 text-sm">
+            {webSearchProvider !== "managed" && <label className="block space-y-1.5 text-sm">
               <span>API key {webSearchProvider === "searxng" && <span className="text-muted-foreground">(if required)</span>}</span>
               <input type="password" required={webSearchProvider === "brave"} autoComplete="off" value={webSearchApiKey} onChange={(event) => setWebSearchApiKey(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
-            </label>
+            </label>}
+            {webSearchProvider === "managed" && <p className="text-xs text-muted-foreground">No API key or account required. Approved queries go to Agent Commons Search.</p>}
             {webSearchError && <p role="alert" className="text-xs text-destructive">{webSearchError}</p>}
             <DialogFooter>
               <button type="button" onClick={() => setWebSearchDialogOpen(false)} className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted">Cancel</button>
@@ -1365,11 +1375,12 @@ export default function ChatInputBox({
                     </DropdownMenuCheckboxItem>}
                     {local && webSearchConfigured && <DropdownMenuItem onSelect={openWebSearchSettings} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
                     {local && <DropdownMenuSub>
-                      <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />MCP connectors</DropdownMenuSubTrigger>
+                      <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />Connected tools</DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="min-w-56">
                         <DropdownMenuLabel>Use in this chat</DropdownMenuLabel>
                         {mcpServers.filter((server) => server.enabled).map((server) => <DropdownMenuCheckboxItem key={server.id} checked={mcpServerIds.includes(server.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, server.id])] : current.filter((id) => id !== server.id))}>{server.name} · {server.mode === "read" ? "Read" : "Write"}</DropdownMenuCheckboxItem>)}
-                        {!mcpServers.some((server) => server.enabled) && <p className="px-2 py-2 text-xs text-muted-foreground">Set up a connector in Settings.</p>}
+                        {connectedApps.map((app) => <DropdownMenuCheckboxItem key={app.id} disabled={!app.connected && !mcpServerIds.includes(app.id)} checked={mcpServerIds.includes(app.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, app.id])] : current.filter((id) => id !== app.id))}>{app.name}{!app.connected ? " · Not connected" : ""}</DropdownMenuCheckboxItem>)}
+                        {!connectedApps.length && !mcpServers.some((server) => server.enabled) && <p className="px-2 py-2 text-xs text-muted-foreground">Set up a connector in Settings.</p>}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>}
                     <DropdownMenuSeparator />

@@ -52,7 +52,7 @@ const openaiModels: MediaModelDescriptor[] = [
     modelKey: 'openai:audio:gpt-4o-mini-tts', provider: 'openai', modelId: 'gpt-4o-mini-tts', displayName: 'GPT-4o mini TTS',
     description: 'Natural, instruction-guided text-to-speech.', kind: 'audio', operations: ['generate'], inputKinds: [], maxInputs: 0, tier: 'fast', async: false,
     settings: [
-      { key: 'voice', label: 'Voice', type: 'select', default: 'coral', options: options(['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']) },
+      { key: 'voice', label: 'Voice', type: 'select', default: 'coral', options: options(['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse', 'marin', 'cedar']) },
       { key: 'instructions', label: 'Delivery', type: 'text', default: 'Speak clearly and naturally.' },
       { key: 'format', label: 'Format', type: 'select', default: 'mp3', options: options(['mp3', 'wav', 'aac', 'opus']) },
     ],

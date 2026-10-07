@@ -47,7 +47,7 @@ try {
     const agentId = state.agents.at(-1).id;
     let conversationId;
     await check(model, 'selected folder and switch', async () => {
-      const first = await runtime.sendMessage({ agentId, workspaceRoot: a, knowledgeMode: 'off', prompt: 'List the selected folder and read its txt file. Tell me the actual folder path and code you found.' });
+      const first = await runtime.sendMessage({ agentId, workspaceRoot: a, knowledgeMode: 'off', webSearchEnabled: false, prompt: 'List the selected folder and read its txt file. Tell me the actual folder path and code you found.' });
       conversationId = first.conversation.id;
       assert.ok(first.conversation.messages.some((message) => message.toolName === 'cli_read_file' && message.content.includes('mango-731')), 'Did not read the selected Folder A');
       const second = await runtime.sendMessage({ agentId, conversationId, workspaceRoot: b, prompt: 'I have switched the selected folder. List it and read its txt file. Tell me the current actual folder path and code.' });
@@ -57,7 +57,7 @@ try {
       return second;
     });
     await check(model, 'attached CSV to computed PNG and JSON without folder', async () => {
-      const output = await runtime.sendMessage({ agentId, workspaceRoot: null, attachmentIds: [fileId], knowledgeMode: 'off', prompt: 'Use Python to analyze the attached heart_rate.csv. Calculate each column mean and save means.json, then plot each column against row number and save heart-rate.png. Execute this yourself and verify the saved outputs.' });
+      const output = await runtime.sendMessage({ agentId, workspaceRoot: null, attachmentIds: [fileId], knowledgeMode: 'off', webSearchEnabled: false, prompt: 'Use Python to analyze the attached heart_rate.csv. Calculate each column mean and save means.json, then plot each column against row number and save heart-rate.png. Execute this yourself and verify the saved outputs.' });
       const tools = output.conversation.messages.filter((message) => message.role === 'tool');
       assert.ok(tools.some((message) => message.toolName === 'run_python' && !message.content.startsWith('Error:')), 'No successful Python execution');
       assert.ok(!tools.some((message) => message.toolName === 'generate_image'), 'Image generator used for data');
@@ -65,7 +65,8 @@ try {
       const png = output.conversation.artifacts?.find((file) => file.name === 'heart-rate.png');
       assert.ok(json && png, 'Computed files missing');
       const means = JSON.parse(readFileSync(json.path, 'utf8'));
-      for (const [column, expected] of Object.entries({ T1: 64, T2: 74, T3: 84, T4: 94 })) assert.equal(means[column], expected);
+      const columns = ['T1', 'T2', 'T3', 'T4'];
+      for (const [index, column] of columns.entries()) assert.equal(Array.isArray(means) ? means[index] : (means[column] ?? means.means?.[column]), 64 + index * 10);
       assert.equal(readFileSync(png.path).subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
       assert.equal(runtime.getArtifactPath(output.conversation.id, png.id), realpathSync(png.path));
       return output;

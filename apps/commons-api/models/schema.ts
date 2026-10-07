@@ -1810,6 +1810,9 @@ export const tool = pgTable('tool', {
     headers?: Record<string, string>;
     queryParams?: Record<string, string>;
     bodyTemplate?: any;
+    bodyTransform?: string;
+    requiresConfirmation?: boolean;
+    oauthScopes?: string[];
     authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2';
     authKeyName?: string; // Name of the key required (e.g., 'OPENAI_API_KEY')
     oauthProviderKey?: string;

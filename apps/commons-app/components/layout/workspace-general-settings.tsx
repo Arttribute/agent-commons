@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { DEFAULT_LOCAL_WEB_SEARCH_URL } from "@agent-commons/desktop-contract";
 import type { CloudAccess, ImageModelStatus, LocalModelDownload, LocalModelStatus, LocalState, VoiceModelStatus } from "@agent-commons/desktop-contract";
 import { useWorkspacePreferences } from "../../hooks/use-workspace-preferences";
 import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+import { LocalConnectedApps } from "@/components/tools/local-connected-apps";
 
 const LOCAL_CHAT_MODELS = [
   { id: "qwen3:0.6b", name: "Qwen 3 Light", size: "523 MB", ram: 3, use: "Simple chat on limited hardware", abilities: "Tools · Reasoning" },
   { id: "qwen3:1.7b", name: "Qwen 3 Small", size: "1.4 GB", ram: 4, use: "Basic chat on smaller computers", abilities: "Tools · Reasoning" },
-  { id: "qwen3.5:2b", name: "Qwen 3.5 2B", size: "2.7 GB", ram: 8, use: "Default for research and tool work on 8 GB computers", abilities: "Tools · Reasoning" },
+  { id: "qwen3.5:2b-q4_K_M", name: "Qwen 3.5 2B", size: "1.9 GB", ram: 8, use: "Compact default for tool work on 8 GB computers", abilities: "Tools · Reasoning" },
   { id: "qwen3:4b", name: "Qwen 3 Balanced", size: "2.5 GB", ram: 12, use: "Research, writing, and tool work", abilities: "Tools · Reasoning" },
   { id: "qwen3:8b", name: "Qwen 3 Strong", size: "5.2 GB", ram: 16, use: "More demanding knowledge and coding work", abilities: "Tools · Reasoning" },
   { id: "qwen2.5-coder:3b", name: "Qwen Coder", size: "1.9 GB", ram: 8, use: "Code drafting; verify agent tool use", abilities: "Code · Experimental tools" },
@@ -326,10 +328,13 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
       </label>
       <div className="max-w-xl space-y-2 border-t border-border pt-4">
         <h3 className="font-semibold">Web search</h3>
-        <p className="text-xs text-muted-foreground">Off by default. Add a SearXNG endpoint, then enable search for a chat in the + menu. Each query and destination require approval before anything leaves this computer. Search can only read results.</p>
-        <label className="block space-y-1"><span>Search endpoint</span><input type="url" placeholder="https://search.example.com" className="w-full rounded-md border border-border bg-background px-3 py-2" value={webSearchUrl} onChange={(event) => setWebSearchUrl(event.target.value)} onBlur={() => { if (webSearchUrl !== (localState?.settings.webSearchUrl ?? "")) void saveLocalSettings({ webSearchUrl }); }} /></label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={localState?.settings.webSearchDefaultEnabled ?? true} onChange={(event) => void saveLocalSettings({ webSearchDefaultEnabled: event.target.checked })} />Available in new chats by default</label>
+        <p className="text-xs text-muted-foreground">Agent Commons Search is ready to use without an API key. Use the chat’s + menu to turn search on or off. Each query asks for approval. You can also use your own Brave or SearXNG provider.</p>
+        <label className="block space-y-1"><span>Search endpoint</span><input type="url" placeholder="Agent Commons Search (default)" className="w-full rounded-md border border-border bg-background px-3 py-2" value={webSearchUrl} onChange={(event) => setWebSearchUrl(event.target.value)} onBlur={() => { if (webSearchUrl !== (localState?.settings.webSearchUrl ?? "")) void saveLocalSettings({ webSearchUrl }); }} /></label>
+        <button type="button" className="text-xs underline text-muted-foreground" onClick={() => { setWebSearchUrl(DEFAULT_LOCAL_WEB_SEARCH_URL); setWebSearchApiKey(""); void saveLocalSettings({ webSearchUrl: DEFAULT_LOCAL_WEB_SEARCH_URL, webSearchApiKey: "" }); }}>Use Agent Commons Search</button>
         <label className="block space-y-1"><span>API key, if required</span><input type="password" autoComplete="off" className="w-full rounded-md border border-border bg-background px-3 py-2" value={webSearchApiKey} onChange={(event) => setWebSearchApiKey(event.target.value)} onBlur={() => { if (webSearchApiKey !== (localState?.settings.webSearchApiKey ?? "")) void saveLocalSettings({ webSearchApiKey }); }} /></label>
       </div>
+      <LocalConnectedApps />
       <div className="max-w-xl space-y-3 border-t border-border pt-4">
         <h3 className="font-semibold">MCP connectors</h3>
         <p className="text-xs text-muted-foreground">Connectors are off for each chat until selected in the + menu. Read mode only exposes tools marked read only by the server. Every connection and tool request asks before data leaves this computer.</p>

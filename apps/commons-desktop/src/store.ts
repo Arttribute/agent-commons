@@ -4,8 +4,9 @@ import { dirname, join } from "node:path";
 import { totalmem } from "node:os";
 import { safeStorage } from "electron";
 import type { LocalState } from "@agent-commons/desktop-contract";
+import { DEFAULT_LOCAL_WEB_SEARCH_URL } from "@agent-commons/desktop-contract";
 
-export const DEFAULT_LOCAL_MODEL = totalmem() >= 8 * 1024 ** 3 ? "qwen3.5:2b" : "qwen3:1.7b";
+export const DEFAULT_LOCAL_MODEL = totalmem() >= 8 * 1024 ** 3 ? "qwen3.5:2b-q4_K_M" : "qwen3:1.7b";
 
 function starterAgent() {
   const timestamp = new Date().toISOString();
@@ -38,6 +39,8 @@ export const initialState = (): LocalState => ({
     ollamaUrl: "http://127.0.0.1:11434",
     defaultModel: DEFAULT_LOCAL_MODEL,
     permissionMode: "ask",
+    webSearchUrl: DEFAULT_LOCAL_WEB_SEARCH_URL,
+    webSearchDefaultEnabled: true,
   },
 });
 

@@ -238,6 +238,8 @@ export type LocalSettings = {
   permissionMode: PermissionMode;
   webSearchUrl?: string;
   webSearchApiKey?: string;
+  /** Default for new conversations; saved conversation switches take precedence. */
+  webSearchDefaultEnabled?: boolean;
   transcriptionModel?: "Xenova/whisper-tiny" | "Xenova/whisper-base" | "Xenova/whisper-small";
   imageModel?: string;
   voiceModel?: "female" | "male" | "kokoro-heart" | "kokoro-bella" | "kokoro-michael" | "kokoro-george";
@@ -245,9 +247,10 @@ export type LocalSettings = {
 };
 
 export const BRAVE_SEARCH_BASE_URL = "https://api.search.brave.com/res/v1/web";
+export const DEFAULT_LOCAL_WEB_SEARCH_URL = "https://api.agentcommons.io/v1/desktop-search";
 
 export function hasConfiguredLocalWebSearch(settings: Pick<LocalSettings, "webSearchUrl" | "webSearchApiKey">) {
-  const endpoint = settings.webSearchUrl?.replace(/\/$/, "");
+  const endpoint = (settings.webSearchUrl || DEFAULT_LOCAL_WEB_SEARCH_URL).replace(/\/$/, "");
   return Boolean(endpoint && (endpoint !== BRAVE_SEARCH_BASE_URL || settings.webSearchApiKey?.trim()));
 }
 
@@ -412,6 +415,9 @@ export interface CloudDesktopBridge {
 }
 
 export interface LocalDesktopBridge {
+  getConnectedApps(): Promise<{ apps: LocalConnectedApp[] }>;
+  connectApp(providerKey: string): Promise<void>;
+  disconnectApp(connectionId: string): Promise<void>;
   getInfo(): Promise<DesktopInfo>;
   getState(): Promise<LocalState>;
   getModelStatus(): Promise<LocalModelStatus>;
@@ -475,6 +481,18 @@ export interface LocalDesktopBridge {
   openCloud(path?: string): Promise<void>;
   onEvent(listener: (event: RuntimeEvent) => void): () => void;
 }
+
+export type LocalConnectedApp = {
+  id: string;
+  providerKey: string;
+  name: string;
+  connected: boolean;
+  connectionId?: string;
+  accountName?: string;
+  error?: string;
+  scopes: string[];
+  tools: Array<{ name: string; readOnly: boolean; schema: { type: string; function: { name: string; description?: string; parameters?: Record<string, unknown> } } }>;
+};
 
 declare global {
   interface Window {

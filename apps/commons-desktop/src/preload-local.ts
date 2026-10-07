@@ -4,6 +4,9 @@ import type { LocalDesktopBridge, RuntimeEvent, WorkspacePreferences } from "@ag
 const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args) as Promise<T>;
 
 const bridge: LocalDesktopBridge = {
+  getConnectedApps: () => invoke("local:get-connected-apps"),
+  connectApp: (providerKey) => invoke("local:connect-app", providerKey),
+  disconnectApp: (connectionId) => invoke("local:disconnect-app", connectionId),
   getInfo: () => invoke("desktop:get-info", "private-local"),
   getState: () => invoke("local:get-state"),
   transcribeAudio: (samples, agentId) => invoke("local:transcribe-audio", samples, agentId),

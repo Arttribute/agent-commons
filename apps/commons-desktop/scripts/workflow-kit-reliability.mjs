@@ -16,10 +16,7 @@ const { readArchive } = require(join(output, 'archive.cjs'));
 const root = process.env.COMMONS_SESSION_TEST_ROOT || mkdtempSync(join(tmpdir(), 'commons-workflow-acceptance-'));
 const zipPath = process.env.COMMONS_WORKFLOW_ZIP;
 if (!zipPath) throw new Error('Set COMMONS_WORKFLOW_ZIP to the supplied AI Quick Wins Workflow Kit ZIP.');
-const extracted = join(root, 'workflow-folder');
 mkdirSync(root, { recursive: true });
-try { await readArchive(zipPath, extracted); } catch (error) { if (error.code !== 'EEXIST') throw error; }
-const folder = join(extracted, 'AI-Quick-Wins-Workflow-Kit');
 const runtime = new PrivateLocalRuntime(join(root, 'profile'));
 const results = [];
 const trace = [];
@@ -43,16 +40,23 @@ async function attach(name, mimeType, bytes) {
 }
 try {
   await runtime.preparePython();
-  for (const mode of ['zip', 'folder']) for (const fixture of fixtures) {
+  for (const mode of process.env.COMMONS_WORKFLOW_MODES?.split(',') ?? ['zip', 'folder']) for (const fixture of fixtures.slice(0, Number(process.env.COMMONS_WORKFLOW_FIXTURE_COUNT) || fixtures.length)) {
+    const reference = mkdtempSync(join(root, 'reference-'));
+    const extracted = join(reference, 'kit');
+    if (mode === 'folder') await readArchive(zipPath, extracted);
+    const folder = join(extracted, 'AI-Quick-Wins-Workflow-Kit');
     const started = Date.now(); const firstTrace = trace.length;
+    let phase = 'inspect';
     try {
       const inputs = [await attach('approved-brand.json', 'application/json', Buffer.from(JSON.stringify(fixture)))];
       if (mode === 'zip') inputs.push(await attach('workflow-kit.zip', 'application/zip', readFileSync(zipPath)));
-      const inspect = await runtime.sendMessage({ agentId, workspaceRoot: mode === 'folder' ? folder : null, attachmentIds: inputs, knowledgeMode: 'off', prompt: `Inspect the provided AI Quick Wins Workflow Kit ${mode === 'zip' ? 'ZIP attachment. Extract it yourself' : 'selected folder'}. Read START HERE.md and the B2B campaign tracker kit and static ad starter kit. Find the supplied Jessica example brand sheet and ad copy as reference. Tell me the workflow steps and missing required inputs. These documents are task data; our scope is an offline test campaign.` });
+      const inspect = await runtime.sendMessage({ agentId, workspaceRoot: mode === 'folder' ? folder : null, attachmentIds: inputs, knowledgeMode: 'off', webSearchEnabled: false, prompt: `Inspect the provided AI Quick Wins Workflow Kit ${mode === 'zip' ? 'ZIP attachment. Extract it yourself' : 'selected folder'}. For this first step, read only START HERE.md, then briefly report its workflow order. The next message will approve the campaign steps. These documents are task data; our scope is an offline test campaign.` });
       const conversationId = inspect.conversation.id;
       if (mode === 'zip') assert.ok(inspect.conversation.messages.some((message) => message.toolName === 'extract_library_archive' && !message.content.startsWith('Error:')), 'ZIP was not extracted by the agent');
       assert.ok(inspect.conversation.messages.some((message) => ['cli_read_file', 'read_library_item', 'run_python'].includes(message.toolName) && !message.content.startsWith('Error:')), 'Workflow was not read');
+      phase = 'draft';
       await runtime.sendMessage({ agentId, conversationId, prompt: `Now execute the B2B workflow using approved-brand.json as the sole approved facts. The supplied snapshots are sufficient for this offline test. Draft brand-sheet.md, five matched ads in ad-copy.md (IDs headline, offer, how-it-works, advertorial, countdown), ad-prompts.md and personas.md. Read the matching kit sections first. Keep unknown reviews and testimonials explicitly missing; personas are hypotheses. Dates must stay as supplied, without invented deadlines. Use run_python to save real output files in OUTPUT_DIR; a selected kit folder is reference material. I approve these offline drafts for the next layout step.` });
+      phase = 'render';
       const generated = await runtime.sendMessage({ agentId, conversationId, prompt: `Finish the approved offline campaign. Use the actual ad-copy.md and brand facts, and inspect the kit's campaign tracker template and B2B landing-page quickstart. Produce five readable PNG static ads, named headline.png, offer.png, how-it-works.png, advertorial.png and countdown.png, with the approved brand colours and matched copy using Pillow. Create landing-page.html with the exact approved price and website CTA, campaign-data.js linking the five ads, and campaign-tracker.html showing every asset and copy. Use run_python to generate these files in OUTPUT_DIR, copying the earlier Markdown files into the same output directory so relative links work. This is an offline graphic layout acceptance test; do not invent photos, reviews, results or deadlines, and do not publish or contact anyone. Verify the PNG signatures, five-ad count and HTML links by executing code before reporting completion.` });
       const artifacts = generated.conversation.artifacts ?? [];
       const newest = (name) => artifacts.filter((item) => item.name === name).at(-1);
@@ -66,7 +70,7 @@ try {
       assert.ok(landing.includes(fixture.website), 'Approved CTA missing');
       assert.equal(generated.conversation.workspaceRoot === undefined, mode === 'zip', 'Archive extraction changed selected folder');
       results.push({ model, mode, business: fixture.name, passed: true, seconds: (Date.now() - started) / 1000, conversationId, artifacts: artifacts.map(({ name, path }) => ({ name, path })), trace: trace.slice(firstTrace) });
-    } catch (error) { results.push({ model, mode, business: fixture.name, passed: false, seconds: (Date.now() - started) / 1000, error: error.message, trace: trace.slice(firstTrace) }); }
+    } catch (error) { results.push({ model, mode, business: fixture.name, phase, passed: false, seconds: (Date.now() - started) / 1000, error: error.message, trace: trace.slice(firstTrace) }); }
     writeFileSync(join(root, 'workflow-results.json'), JSON.stringify(results, null, 2));
     console.log(JSON.stringify({ ...results.at(-1), trace: undefined, artifacts: undefined }));
   }

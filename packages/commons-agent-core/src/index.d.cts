@@ -13,3 +13,5 @@ export declare function buildAgentIdentityPrompt(agent: { id: string; name?: str
 
 export declare const DATA_EXECUTION_CONTRACT: string;
 export declare function requiresComputedData(text: string): boolean;
+export declare const PYTHON_DATA_PACKAGES: string[];
+export declare const PYTHON_PACKAGE_SELECTION_CODE: string;
