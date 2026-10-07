@@ -2010,7 +2010,14 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const packages = Array.isArray(args.packages) ? args.packages.map(String) : [];
       if (!(await this.requestApproval(`Run Python in a managed environment. First use downloads its interpreter and data libraries.${packages.length ? ` Additional packages: ${packages.join(", ")}.` : ""}\n${code.slice(0, 12_000)}`, "run_python", { conversationId, toolName: name }))) return "User denied Python execution.";
       const inputs: Record<string, string> = {};
+      // Put current generated basenames first so a nested draft can be reused
+      // by its displayed filename. Exact item IDs still address every revision
+      // and archive example independently.
+      const generatedAliases = new Map<string, string>();
+      for (const item of files) if (!item.sourceArchiveId && item.source === "agent" && item.conversationId === conversationId) generatedAliases.set(basename(item.name), item.path);
+      for (const [name, path] of generatedAliases) inputs[name] = path;
       for (const item of files) { inputs[item.name] = item.path; inputs[item.id] = item.path; }
+      for (const [name, path] of generatedAliases) inputs[name] = path;
       const directory = join(this.layout.path("artifacts", conversationId), randomUUID());
       const output = await this.python.run(code, directory, inputs, workspace, Number(args.timeoutSeconds) || 120, packages, this.lifecycle.signal, join(this.layout.path("artifacts", conversationId), "python", "outputs"));
       const artifacts = output.files.filter((path) => statSync(path).size <= 25 * 1024 * 1024).map((path) => ({ id: randomUUID(), name: relative(output.snapshotDirectory, path).replaceAll("\\", "/"), path, createdAt: now() }));

@@ -67,6 +67,13 @@ describe('ComputerService', () => {
     );
   });
 
+  it('rejects a narrative file-write acknowledgement without execution evidence', async () => {
+    jest.spyOn(service, 'listInstances').mockResolvedValue([{ computerId: 'computer', agentId: 'agent_1', status: 'running', commonOsAgentId: 'runtime' }] as any);
+    const send = jest.spyOn(service, 'sendInstruction').mockResolvedValue({ status: 'responded', response: 'I wrote all requested files.' } as any);
+    await expect(service.writeFiles({ agentId: 'agent_1', files: [{ path: 'analysis.py', content: 'print(1)' }] })).rejects.toThrow(/did not verify/);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ instruction: expect.stringMatching(/^Use the CommonOS pod terminal for this computer\./) }));
+  });
+
   it('returns a clear error when no active computer can be resolved', async () => {
     jest.spyOn(service, 'listInstances').mockResolvedValue([] as any);
 

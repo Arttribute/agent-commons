@@ -35,14 +35,20 @@ plt.plot(data.revenue)
 plt.savefig(out / 'sales.png')
 (out / 'external-link').symlink_to(INPUT_FILES['sales.csv'])
 Path(INPUT_FILES['sales.csv']).write_text('revenue\\n40\\n50\\n')
+(OUTPUT_DIR / 'large-report.bin').write_bytes(b'a' * 650000)
 print('Verified cloud bootstrap')`);
   const bootstrap = CLOUD_PYTHON_BOOTSTRAP.replace("Path('/mnt/shared/.commons-python')", `Path(${JSON.stringify(cloud)})`);
   writeFileSync(join(directory, 'bootstrap.py'), bootstrap);
   await promisify(execFile)(python, ['-I', join(directory, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
   const result = JSON.parse(readFileSync(join(directory, 'result.json'), 'utf8'));
   assert.equal(result.exitCode, 0, result.stderr);
-  assert.equal(result.files.length, 3, 'Only actual generated files belong in the result manifest');
-  const file = (name) => Buffer.from(result.files.find((item) => item.name === name).base64, 'base64');
+  assert.equal(result.files.length, 4, 'Only actual generated files belong in the result manifest');
+  const file = (name) => {
+    const item = result.files.find((entry) => entry.name === name);
+    return item.chunks ? Buffer.concat(item.chunks.map((part) => Buffer.from(readFileSync(join(directory, part), 'utf8'), 'base64'))) : Buffer.from(item.base64, 'base64');
+  };
+  assert.equal(file('large-report.bin').length, 650000);
+  assert.ok(readFileSync(join(directory, 'result.json')).length < 500000, 'Result manifest exceeds the CommonOS preview limit');
   assert.equal(JSON.parse(file('reports/totals.json').toString()).sum, 60);
   assert.equal(file('sales.csv').toString(), 'revenue\n40\n50\n');
   assert.equal(readFileSync(join(directory, 'sales.csv'), 'utf8'), 'revenue\n10\n20\n30\n', 'The source input was changed');

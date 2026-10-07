@@ -20,6 +20,7 @@ import {
   agentRunProgress,
   type AgentRunProgressEvent,
 } from '~/agent/run-progress';
+import { computerFileWriteCommands } from './computer-file-writes';
 import { CapabilityProviderService } from '~/provider';
 
 /** @deprecated Input compatibility only. All assigned computers are persistent. */
@@ -975,25 +976,25 @@ export class ComputerService {
       computerId: args.computerId,
       sessionId: args.sessionId,
     });
-    const result = await this.sendInstruction({
-      agentId: args.agentId,
-      computerId: computer.computerId,
-      sessionId: args.sessionId,
-      eventType: 'workspace.write',
-      summary: `Write ${files.length} file${files.length === 1 ? '' : 's'}`,
-      instruction: [
-        'Use cli_write_file to write every file below exactly as provided.',
-        'Create parent directories as needed. Do not abbreviate, summarize, or replace file content with placeholders.',
-        'After all writes, verify the paths with cli_list_directory and report any failure.',
-        '',
-        JSON.stringify(files),
-      ].join('\n'),
-      waitMs: 300_000,
-      actorId: args.actorId,
-      actorType: args.actorType,
-      runId: args.runId,
-      toolCallId: args.toolCallId,
-    });
+    let result: Awaited<ReturnType<ComputerService['sendInstruction']>> | undefined;
+    for (const batch of computerFileWriteCommands(files)) {
+      result = await this.sendInstruction({
+        agentId: args.agentId, computerId: computer.computerId, sessionId: args.sessionId,
+        eventType: 'workspace.write', summary: `Write and verify ${files.length} file${files.length === 1 ? '' : 's'}`,
+        instruction: [
+          'Use the CommonOS pod terminal for this computer.',
+          'Run exactly this shell command and return stdout, stderr, and exit code.',
+          'Working directory: /mnt/shared', 'Timeout seconds: 120', '',
+          '```sh', batch.command, '```',
+        ].join('\n'),
+        waitMs: 180_000, actorId: args.actorId, actorType: args.actorType,
+        runId: args.runId, toolCallId: args.toolCallId,
+      });
+      if (result.error || !result.response?.includes(batch.marker)) {
+        throw new BadRequestException('The computer did not verify the requested file writes. ' + (result.error ?? result.response ?? '').slice(0, 1000));
+      }
+    }
+
     return {
       ...result,
       computerId: computer.computerId,

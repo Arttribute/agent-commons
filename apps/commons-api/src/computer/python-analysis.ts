@@ -89,6 +89,26 @@ try:
     files = []
     visited = 0
     total_bytes = 0
+    inline_bytes = 0
+    def export_file(path, name):
+        global inline_bytes
+        data = path.read_bytes()
+        file = dict(name=name, mimeType=mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
+        # CommonOS workspace previews cap each read at 500 KB. Keep the main
+        # manifest small and use bounded payload reads for larger results.
+        if inline_bytes + len(data) <= 100000:
+            inline_bytes += len(data)
+            file['base64'] = base64.b64encode(data).decode()
+        else:
+            payloads = run / 'payloads'
+            payloads.mkdir(exist_ok=True)
+            chunks = []
+            for offset in range(0, len(data), 300000):
+                part = 'payloads/' + str(len(files)) + '-' + str(offset // 300000) + '.b64'
+                (run / part).write_text(base64.b64encode(data[offset:offset + 300000]).decode())
+                chunks.append(part)
+            file.update(chunks=chunks, size=len(data), sha256=hashlib.sha256(data).hexdigest())
+        return file
     def collect(folder, depth=0):
         global visited, total_bytes
         if depth > 16: raise RuntimeError('Python output folders exceed the supported depth')
@@ -103,14 +123,14 @@ try:
                 total_bytes += size
                 if size > 10 * 1024 * 1024 or total_bytes > 25 * 1024 * 1024: raise RuntimeError('Python outputs exceed the size limit')
                 if len(files) >= 100: raise RuntimeError('Python produced more than 100 output files')
-                files.append(dict(name=str(path.relative_to(output)), mimeType=mimetypes.guess_type(path.name)[0] or 'application/octet-stream', base64=base64.b64encode(path.read_bytes()).decode()))
+                files.append(export_file(path, str(path.relative_to(output))))
     collect(output)
     for path in input_paths:
         if path.is_relative_to(output) or hashlib.sha256(path.read_bytes()).hexdigest() == input_hashes[path]: continue
         size = path.stat().st_size
         total_bytes += size
         if size > 10 * 1024 * 1024 or total_bytes > 25 * 1024 * 1024 or len(files) >= 100: raise RuntimeError('Python outputs exceed the size limit')
-        files.append(dict(name=str(path.relative_to(run)), mimeType=mimetypes.guess_type(path.name)[0] or 'application/octet-stream', base64=base64.b64encode(path.read_bytes()).decode()))
+        files.append(export_file(path, str(path.relative_to(run))))
     manifest = dict(exitCode=result.returncode, stdout=result.stdout[-32000:], stderr=result.stderr[-16000:], files=files, outputDirectory=str(output))
 except subprocess.TimeoutExpired:
     manifest = dict(exitCode=-1, stdout='', stderr='Python execution timed out', files=[])
