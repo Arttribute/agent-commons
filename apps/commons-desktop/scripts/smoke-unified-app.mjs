@@ -184,10 +184,14 @@ try {
           const webSearchDialog = await evaluate(page.webSocketDebuggerUrl, `(async () => {
             document.querySelector('button[aria-label="Add photos & files"]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' }));
             await new Promise(resolve => setTimeout(resolve, 100));
-            const item = [...document.querySelectorAll('[role="menuitem"]')].find(node => node.textContent?.startsWith('Configure web search'));
-            item?.click();
-            await new Promise(resolve => setTimeout(resolve, 100));
-            return { open: !!document.querySelector('[role="dialog"] select option[value="searxng"]'), path: location.pathname };
+            const item = [...document.querySelectorAll('[role="menuitem"]')].find(node => node.textContent?.includes('Configure web search'));
+            if (!item) return { open: false, path: location.pathname, menu: [...document.querySelectorAll('[role="menuitem"]')].map(node => node.textContent) };
+            item.click();
+            for (let attempt = 0; attempt < 20; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              if (document.querySelector('[role="dialog"] select option[value="searxng"]')) return { open: true, path: location.pathname };
+            }
+            return { open: false, clicked: item.textContent, path: location.pathname, dialogs: [...document.querySelectorAll('[role="dialog"]')].map(node => node.textContent) };
           })()`);
           if (!webSearchDialog?.open || webSearchDialog.path !== `/sessions/${savedSession.id}`) throw new Error(`Web search settings did not open inside the chat: ${JSON.stringify(webSearchDialog)}`);
           console.log("Desktop smoke: Web search dialog opened.");

@@ -1373,7 +1373,7 @@ export default function ChatInputBox({
                       <Globe2 className="mr-2 h-4 w-4" />
                       <span>Web search</span>
                     </DropdownMenuCheckboxItem>}
-                    {local && webSearchConfigured && <DropdownMenuItem onSelect={openWebSearchSettings} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
+                    {local && webSearchConfigured && <DropdownMenuItem onSelect={() => { setTimeout(openWebSearchSettings, 0); }} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
                     {local && <DropdownMenuSub>
                       <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />Connected tools</DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="min-w-56">

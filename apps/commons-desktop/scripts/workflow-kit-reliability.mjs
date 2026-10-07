@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { build } from 'tsup';
 
@@ -59,7 +59,8 @@ try {
       phase = 'render';
       const generated = await runtime.sendMessage({ agentId, conversationId, prompt: `Finish the approved offline campaign. Use the actual ad-copy.md and brand facts, and inspect the kit's campaign tracker template and B2B landing-page quickstart. Produce five readable PNG static ads, named headline.png, offer.png, how-it-works.png, advertorial.png and countdown.png, with the approved brand colours and matched copy using Pillow. Create landing-page.html with the exact approved price and website CTA, campaign-data.js linking the five ads, and campaign-tracker.html showing every asset and copy. Use run_python to generate these files in OUTPUT_DIR, copying the earlier Markdown files into the same output directory so relative links work. This is an offline graphic layout acceptance test; do not invent photos, reviews, results or deadlines, and do not publish or contact anyone. Verify the PNG signatures, five-ad count and HTML links by executing code before reporting completion.` });
       const artifacts = generated.conversation.artifacts ?? [];
-      const newest = (name) => artifacts.filter((item) => item.name === name).at(-1);
+      const generatedIds = new Set(runtime.state().library.filter((item) => item.conversationId === conversationId && !item.sourceArchiveId).map((item) => item.id));
+      const newest = (name) => artifacts.filter((item) => basename(item.name) === name && generatedIds.has(item.id)).at(-1);
       for (const name of ['brand-sheet.md', 'ad-copy.md', 'ad-prompts.md', 'personas.md', 'landing-page.html', 'campaign-data.js', 'campaign-tracker.html']) assert.ok(newest(name), `Missing ${name}`);
       for (const id of ['headline', 'offer', 'how-it-works', 'advertorial', 'countdown']) {
         const png = newest(`${id}.png`); assert.ok(png, `Missing ad ${id}`);
@@ -68,6 +69,16 @@ try {
       const landing = readFileSync(newest('landing-page.html').path, 'utf8');
       assert.ok(landing.includes(fixture.price), 'Approved price missing from landing page');
       assert.ok(landing.includes(fixture.website), 'Approved CTA missing');
+      const tracker = newest('campaign-tracker.html');
+      const data = readFileSync(newest('campaign-data.js').path, 'utf8');
+      for (const id of ['headline', 'offer', 'how-it-works', 'advertorial', 'countdown']) assert.ok(data.includes(`${id}.png`), `Tracker data does not reference ${id}.png`);
+      for (const html of [newest('landing-page.html'), tracker]) {
+        for (const match of readFileSync(html.path, 'utf8').matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
+          const link = match[1].split(/[?#]/)[0];
+          if (!link || /^[a-z][a-z0-9+.-]*:|^\/\//i.test(link)) continue;
+          assert.ok(existsSync(resolve(dirname(html.path), link)), `Broken relative link ${link} in ${html.name}`);
+        }
+      }
       assert.equal(generated.conversation.workspaceRoot === undefined, mode === 'zip', 'Archive extraction changed selected folder');
       results.push({ model, mode, business: fixture.name, passed: true, seconds: (Date.now() - started) / 1000, conversationId, artifacts: artifacts.map(({ name, path }) => ({ name, path })), trace: trace.slice(firstTrace) });
     } catch (error) { results.push({ model, mode, business: fixture.name, phase, passed: false, seconds: (Date.now() - started) / 1000, error: error.message, trace: trace.slice(firstTrace) }); }
