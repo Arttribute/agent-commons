@@ -48,7 +48,7 @@ export async function smokeLocalAccounts(evaluate, page, userData) {
   };
   const select = async (id) => {
     const previous = await state();
-    const previousDocument = id && previous.account?.userId !== id ? await evaluate(page, 'performance.timeOrigin') : undefined;
+    const previousDocument = (previous.account?.userId ?? null) !== id ? await evaluate(page, 'performance.timeOrigin') : undefined;
     const value = id ? await token(id) : '';
     // Auth.js rotates to HttpOnly cookies: use the browser cookie store just as
     // a sign-in response would, rather than trying to overwrite document.cookie.

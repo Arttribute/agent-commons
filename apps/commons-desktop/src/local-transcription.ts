@@ -2,7 +2,7 @@ import { speechSegments } from "./local-transcript-segments";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { WHISPER_REVISIONS, WHISPER_WEIGHT_FILES } from "./local-speech-model-revisions";
-import { assertSpeechDownloadFits, repairSpeechArtifacts, verifySpeechArtifacts } from "./local-speech-model-cache";
+import { assertSpeechDownloadFits, prepareSpeechArtifacts, repairSpeechArtifacts, verifySpeechArtifacts } from "./local-speech-model-cache";
 
 type SpeechResult = { text?: string; chunks?: Array<{ text?: string; timestamp?: [number | null, number | null] }> };
 type Transcriber = (audio: Float32Array, options?: Record<string, unknown>) => Promise<SpeechResult | string>;
@@ -21,6 +21,7 @@ async function getLocalTranscriber(userData: string, model: string): Promise<Tra
         .map((weight) => ({ ...weight, model, revision }));
       await repairSpeechArtifacts(cache, artifacts);
       assertSpeechDownloadFits(cache, artifacts);
+      await prepareSpeechArtifacts(cache, artifacts);
       // Downloads public model weights; audio stays local. Pass the cache per call so
       // simultaneous voice and transcription setup cannot switch each other's cache.
       const transcriber = await pipeline("automatic-speech-recognition", model, {

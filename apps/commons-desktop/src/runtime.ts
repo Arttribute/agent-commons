@@ -47,6 +47,7 @@ import { KnowledgeWatcher } from "./knowledge-watcher";
 import { approvalTitle, plainSummary } from "./approval-summary";
 import { serveStaticApp, type StaticAppServer } from "./local-static-server";
 import { compactToolLoop, localChatHistory, LOCAL_CONTEXT_SIZE, toolResult } from "./local-chat-history";
+import { requestLocalModel } from "./local-model-transport";
 import { normalizeLocalCommand } from "./local-command";
 import { DEFAULT_LOCAL_MODEL, LocalStore } from "./store";
 import { LocalModelManager } from "./local-model";
@@ -1593,10 +1594,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         fallbackPrompted = true;
         messages.push({ role: "system", content: `This model uses the text tool protocol. To take an action, output ONLY a tool envelope: {"tool":"exact_tool_name","args":{...}}. After each actual tool result, continue toward the task. When done, output {"tool":"final","args":{"response":"your final answer"}}. Example: to inspect the selected folder, output {"tool":"cli_list_directory","args":{"path":"."}}. To analyze an attached CSV, use run_python with code that reads its original filename and saves outputs. Available tools and JSON schemas: ${JSON.stringify(tools.map((entry) => entry.function))}` });
       }
-      const response = await fetch(`${endpoint}/api/chat`, {
-        method: "POST",
-        redirect: "error",
-        headers: { "Content-Type": "application/json" },
+      const response = await requestLocalModel(`${endpoint}/api/chat`, {
         body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(nativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: !nativeTools ? undefined : tools.filter((entry) => entry.function.name !== "web_search" || this.webSearchAllowed(conversationId)), stream: true, ...(!nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: reasoningEffort ? ["medium", "high", "xhigh", "max"].includes(reasoningEffort) : (requiresComputedData(lastUser) || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells")) || (/\b(?:draft|generate|build|execute|finish|create|debug|analy[sz]e|train)\b/i.test(lastUser) && /\b(?:workflow kit|campaign|multi.step|debug|machine learning|workflow)\b/i.test(lastUser))) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: /\b(?:create|build|generate|draft|finish|render|implement)\b/i.test(lastUser) ? 8192 : 4096 } }),
         signal: AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(10 * 60_000)]),
       });

@@ -79,6 +79,7 @@ let localProfiles: LocalProfiles;
 let accountSync: Promise<void> = Promise.resolve();
 let accountRequests = new AbortController();
 let profileChanging = false;
+let localProfileGeneration = 0;
 let activeMode: "cloud" | "private-local" = "private-local";
 let cloudTransition = false;
 let cloudWorkspace: string | null = null;
@@ -316,7 +317,7 @@ async function beginCloudSignIn() {
 async function loadCloudEntry(cloudSession: Electron.Session, path?: string) {
   const appOrigin = commonsServer?.origin ?? CLOUD_ORIGIN;
   try {
-    const response = await cloudSession.fetch(`${appOrigin}/api/auth/session`, {
+    const response = await cloudSession.fetch(`${appOrigin}${commonsServer ? '/api/desktop/session' : '/api/auth/session'}`, {
       headers: nativeSessionHeaders(),
       cache: "no-store",
       signal: AbortSignal.timeout(8_000),
@@ -613,8 +614,9 @@ function assertCloudSender(event: IpcMainInvokeEvent) {
 }
 
 function localHandler<T extends unknown[]>(channel: string, handler: (...args: T) => unknown) {
-  ipcMain.handle(channel, (event, ...args) => {
+  ipcMain.handle(channel, (event, generation, ...args) => {
     assertLocalSender(event);
+    if (generation !== localProfileGeneration) throw new Error('The local account changed. Reopen this task in its account.');
     return handler(...(args as T));
   });
 }
@@ -627,7 +629,7 @@ async function connectedAppRequest(path: string, body?: Record<string, unknown>)
   const expectedOwner = localProfiles.owner;
   const controller = accountRequests;
   if (!commonsServer) throw new Error('Connected apps are not ready.');
-  const sessionResponse = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/auth/session`, { headers: nativeSessionHeaders(), cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]) });
+  const sessionResponse = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/desktop/session`, { headers: nativeSessionHeaders(), cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]) });
   const identity = await sessionResponse.json() as { user?: { id?: string } };
   if (!sessionResponse.ok || !expectedOwner || identity?.user?.id !== expectedOwner || controller.signal.aborted) throw new Error('Sign in to this local workspace’s account to connect apps.');
   const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}${path}`, { method: body ? 'POST' : 'GET', headers: { ...nativeSessionHeaders(), 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]) });
@@ -650,6 +652,7 @@ async function selectLocalAccount(account?: DesktopAccount) {
   const owner = account?.userId ?? null;
   if (localProfiles.owner !== owner) {
     profileChanging = true;
+    localProfileGeneration++;
     try {
       // Stop work and detach the old event target before publishing any new state.
       cloudSyncController?.abort();
@@ -671,9 +674,9 @@ async function selectLocalAccount(account?: DesktopAccount) {
       bindLocalRuntime();
       unifiedView?.webContents.send('desktop:preferences-changed', activeMode === 'cloud' ? cloudVisiblePreferences(runtime.preferences()) : runtime.preferences());
       // Recreate renderer caches, including canvas notes, selected folders and chats.
-      if (account && commonsServer) {
+      if (commonsServer) {
         void unifiedView?.webContents.loadURL(commonsServer.origin);
-        void syncCloudAgentsToLocal();
+        if (account) void syncCloudAgentsToLocal();
       }
     } finally { profileChanging = false; }
   } else if (account) runtime.syncAccount(account);
@@ -682,7 +685,7 @@ async function selectLocalAccount(account?: DesktopAccount) {
 function syncAuthenticatedAccount() {
   const pending = accountSync.then(async () => {
     if (!commonsServer) throw new Error('Account session is not ready.');
-    const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/auth/session`, { headers: nativeSessionHeaders(), cache: 'no-store', signal: AbortSignal.timeout(8_000) });
+    const response = await session.fromPartition('persist:commons-unified').fetch(`${commonsServer.origin}/api/desktop/session`, { headers: nativeSessionHeaders(), cache: 'no-store', signal: AbortSignal.timeout(8_000) });
     if (!response.ok) throw new Error('Could not verify the desktop account.');
     const current = await response.json() as { user?: { id?: string; name?: string; email?: string; image?: string } };
     const user = current?.user;
@@ -694,6 +697,9 @@ function syncAuthenticatedAccount() {
 }
 
 function registerIpc() {
+  ipcMain.on('local:profile-generation', (event) => {
+    event.returnValue = unifiedView && event.sender === unifiedView.webContents ? localProfileGeneration : -1;
+  });
   localHandler('local:get-connected-apps', () => connectedAppRequest('/api/connected-apps'));
   localHandler('local:connect-app', async (providerKey: string) => {
     const instance = runtime;

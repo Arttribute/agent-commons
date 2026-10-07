@@ -98,6 +98,12 @@ renderer, and those routes still require the authenticated session. Local
 renderer cloud APIs remain blocked; CSRF and sign-out remain available so
 logging out can actually select the guest profile.
 
+Native verification decodes the encrypted desktop session without refreshing
+tokens or writing cookies. This prevents a pending identity read from restoring
+an old cookie after sign-out. Every local IPC call carries the profile generation
+captured when its renderer document started; calls queued by an old document are
+rejected after an account change. Guest transitions also reload the document.
+
 `local-profiles.test.mjs` exercises legacy profile preservation, A → B → guest → A
 switches, real Library text and canvas notes, independent defaults and stored
 keys, and rejection of late writes from the closed profile. Desktop CI also

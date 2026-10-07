@@ -1,7 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { LocalDesktopBridge, RuntimeEvent, WorkspacePreferences } from "@agent-commons/desktop-contract";
 
-const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args) as Promise<T>;
+// Captured once per document: queued calls from a replaced account's renderer
+// cannot be executed against the newly selected profile.
+const profileGeneration = ipcRenderer.sendSync('local:profile-generation') as number;
+const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...(channel.startsWith('local:') ? [profileGeneration] : []), ...args) as Promise<T>;
 
 const bridge: LocalDesktopBridge = {
   getConnectedApps: () => invoke("local:get-connected-apps"),
