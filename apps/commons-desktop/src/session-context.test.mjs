@@ -129,6 +129,8 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     assert.equal(canvasRead.project.activeItemId, report.id);
     assert.equal(canvasRead.savedActiveItemId, revised.id);
     assert.equal(canvasRead.viewedRevisionId, revisionId);
+    assert.equal(canvasRead.turnContext, user.canvasContext);
+    assert.deepEqual(canvasRead.attachedNotes, JSON.parse(JSON.stringify(user.canvasAnnotations)));
     assert.ok(JSON.stringify(canvasRead).includes('Check totals'));
     runtime.canvas.updateNote(canvasProjectId, notes[0].annotationId, { body: 'Edited after turn', status: 'resolved' });
     assert.ok(runtime.state().conversations.find((entry) => entry.id === inspected.conversation.id).messages[0].canvasContext.includes('Check the percentage'), 'Editing a note mutated an earlier turn');

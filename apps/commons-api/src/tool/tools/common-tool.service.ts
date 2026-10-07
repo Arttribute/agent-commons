@@ -68,6 +68,7 @@ type ToolExecutionMetadata = {
   knowledgeSpaceIds?: string[];
   canvasProjectId?: string;
   canvasRevisionId?: string;
+  canvasContextSnapshot?: string;
   runId?: string;
   toolCallId?: string;
 };
@@ -1967,12 +1968,13 @@ export class CommonToolService {
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     const owner = await this.resourceOwner(agentId, metadata);
-    return this.canvas.getProjectForAgent(props.projectId, {
+    const bundle = await this.canvas.getProjectForAgent(props.projectId, {
       principalId: owner.principalId,
       principalType: 'user',
       workspaceId: owner.workspaceId,
       actorId: agentId,
     }, metadata?.canvasProjectId === props.projectId ? metadata.canvasRevisionId : undefined);
+    return metadata?.canvasProjectId === props.projectId && metadata.canvasContextSnapshot ? { ...bundle, turnContext: metadata.canvasContextSnapshot } : bundle;
   }
 
   async annotateCanvas(

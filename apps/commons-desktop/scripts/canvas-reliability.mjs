@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { deflateSync } from 'node:zlib';
@@ -45,7 +45,7 @@ try {
       const result = await runtime.sendMessage({ agentId, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false,
         uiContext: { resourceType: 'canvas', resourceId: projectId, canvasRevisionId: canvas.revisions[0].revisionId, annotationIds: [note.annotationId], canvasViewer: { sheet: 'canvas-data' } },
         prompt: 'Analyze only the cells in the attached canvas note from the version I am viewing. Use run_python to read that exact CSV, calculate the sum of the two selected cells, and save selection-summary.json containing total and file_id (the actual Library fileId of that CSV). The canvas has a newer version, but this request concerns the viewed original. Verify your saved JSON.' });
-      const artifact = result.conversation.artifacts?.filter((entry) => entry.name === 'selection-summary.json').at(-1);
+      const artifact = result.conversation.artifacts?.filter((entry) => basename(entry.name) === 'selection-summary.json').at(-1);
       assert.ok(artifact, 'No verified JSON output');
       const data = JSON.parse(readFileSync(artifact.path, 'utf8')); assert.equal(data.total, 60); assert.equal(data.file_id, original.id);
       return { conversationId: result.conversation.id, artifact: artifact.path, total: data.total };

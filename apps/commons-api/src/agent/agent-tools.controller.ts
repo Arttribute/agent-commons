@@ -75,6 +75,7 @@ export class AgentToolsController {
         knowledgeSpaceIds?: string[];
         canvasProjectId?: string;
         canvasRevisionId?: string;
+      canvasContextSnapshot?: string;
         spaceId?: string;
         runId?: string;
         toolCallId?: string;

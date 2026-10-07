@@ -20,6 +20,17 @@ describe('computed Python output boundary', () => {
     service.files = { createDownloadUrl: jest.fn().mockResolvedValue({ itemId: 'input', name: 'heart_rate.csv', url: 'https://private.example/signed' }), createGeneratedFile: jest.fn().mockResolvedValue({ fileId: 'computed', name: 'means.json' }) };
     return service;
   };
+  it('binds canvas tool context to the authenticated viewer and captured revision', async () => {
+    const service = setup();
+    service.canvas = { getProjectForAgent: jest.fn().mockResolvedValue({ project: { activeItemId: 'viewed-file' } }) };
+    const metadata = { agentId: 'agent', ownerId: 'viewer', canvasProjectId: 'canvas', canvasRevisionId: 'viewed', canvasContextSnapshot: 'Viewed source, selected cells B2:B3' };
+    const result = await service.getCanvasProject({ projectId: 'canvas' }, metadata);
+    expect(service.canvas.getProjectForAgent).toHaveBeenCalledWith('canvas', expect.objectContaining({ principalId: 'viewer', actorId: 'agent' }), 'viewed');
+    expect(result.turnContext).toBe(metadata.canvasContextSnapshot);
+    const other = await service.getCanvasProject({ projectId: 'other-canvas' }, metadata);
+    expect(other.turnContext).toBeUndefined();
+    expect(service.canvas.getProjectForAgent).toHaveBeenLastCalledWith('other-canvas', expect.objectContaining({ principalId: 'viewer' }), undefined);
+  });
   it('authorizes every input and publishes actual output bytes from the isolated computer', async () => {
     const service = setup();
     const result = await service.runPythonAnalysis({ code: 'print(64)', inputItemIds: ['input'] }, { agentId: 'agent', sessionId: 'session' });

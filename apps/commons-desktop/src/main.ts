@@ -78,6 +78,7 @@ let runtime: PrivateLocalRuntime;
 let localProfiles: LocalProfiles;
 let accountSync: Promise<void> = Promise.resolve();
 let accountRequests = new AbortController();
+let profileChanging = false;
 let activeMode: "cloud" | "private-local" = "private-local";
 let cloudTransition = false;
 let cloudWorkspace: string | null = null;
@@ -593,6 +594,7 @@ function assertLocalOrigin(event: IpcMainInvokeEvent) {
 
 function assertLocalSender(event: IpcMainInvokeEvent) {
   assertLocalOrigin(event);
+  if (profileChanging) throw new Error("The account is changing. Wait for its workspace to open.");
   if (activeMode !== "private-local") throw new Error("Local capabilities are unavailable in Cloud mode");
 }
 
@@ -604,6 +606,7 @@ function assertCloudOrigin(event: IpcMainInvokeEvent) {
 
 function assertCloudSender(event: IpcMainInvokeEvent) {
   assertCloudOrigin(event);
+  if (profileChanging) throw new Error("The account is changing. Wait for its workspace to open.");
   if (activeMode !== "cloud" && !cloudTransition) throw new Error("Cloud capabilities are unavailable in Local mode");
 }
 
@@ -637,29 +640,36 @@ function bindLocalRuntime() {
   instance.setConnectedAppsTransport({ catalog: () => request('/api/connected-apps?discover=1'), invoke: (name, args) => request(`/api/connected-apps/${encodeURIComponent(name)}/invoke`, args) });
 }
 
-function selectLocalAccount(account?: DesktopAccount) {
+async function selectLocalAccount(account?: DesktopAccount) {
   const owner = account?.userId ?? null;
   if (localProfiles.owner !== owner) {
-    // Stop work and detach the old event target before publishing any new state.
-    cloudSyncController?.abort();
-    for (const controller of cloudToolControllers) controller.abort();
-    for (const pending of cloudApprovals.values()) { clearTimeout(pending.timeout); pending.resolve(false); }
-    cloudApprovals.clear(); cloudRememberedApprovals.clear();
-    accountRequests.abort(); accountRequests = new AbortController();
-    runtime.close();
-    const directory = localProfiles.select(owner);
-    runtime = new PrivateLocalRuntime(directory, app.getPath('userData'));
-    bindLocalRuntime();
-    cloudWorkspace = null; cloudAccess = { ...DEFAULT_CLOUD_ACCESS };
-    cloudWorkspaceGrants.clear(); cloudSessionWorkspaces.clear();
-    loadCloudAccess();
-    if (account) runtime.syncAccount(account);
-    unifiedView?.webContents.send('desktop:preferences-changed', activeMode === 'cloud' ? cloudVisiblePreferences(runtime.preferences()) : runtime.preferences());
-    // Recreate renderer caches, including canvas notes, selected folders and chats.
-    if (account && commonsServer) {
-      void unifiedView?.webContents.loadURL(commonsServer.origin);
-      void syncCloudAgentsToLocal();
-    }
+    profileChanging = true;
+    try {
+      // Stop work and detach the old event target before publishing any new state.
+      cloudSyncController?.abort();
+      for (const controller of cloudToolControllers) controller.abort();
+      for (const pending of cloudApprovals.values()) { clearTimeout(pending.timeout); pending.resolve(false); }
+      cloudApprovals.clear(); cloudRememberedApprovals.clear();
+      accountRequests.abort(); accountRequests = new AbortController();
+      runtime.close();
+      const directory = localProfiles.select(owner);
+      runtime = new PrivateLocalRuntime(directory, app.getPath('userData'));
+      cloudWorkspace = null; cloudAccess = { ...DEFAULT_CLOUD_ACCESS };
+      cloudWorkspaceGrants.clear(); cloudSessionWorkspaces.clear();
+      loadCloudAccess();
+      if (account) runtime.syncAccount(account);
+      if (commonsServer) {
+        await session.fromPartition('persist:commons-unified').clearStorageData({ origin: commonsServer.origin, storages: ['localstorage', 'indexdb', 'cachestorage'] });
+        await unifiedView?.webContents.executeJavaScript('sessionStorage.clear()').catch(() => undefined);
+      }
+      bindLocalRuntime();
+      unifiedView?.webContents.send('desktop:preferences-changed', activeMode === 'cloud' ? cloudVisiblePreferences(runtime.preferences()) : runtime.preferences());
+      // Recreate renderer caches, including canvas notes, selected folders and chats.
+      if (account && commonsServer) {
+        void unifiedView?.webContents.loadURL(commonsServer.origin);
+        void syncCloudAgentsToLocal();
+      }
+    } finally { profileChanging = false; }
   } else if (account) runtime.syncAccount(account);
 }
 
@@ -671,7 +681,7 @@ function syncAuthenticatedAccount() {
     const current = await response.json() as { user?: { id?: string; name?: string; email?: string; image?: string } };
     const user = current.user;
     // Identity comes from the authenticated session, never renderer-supplied IDs.
-    selectLocalAccount(user?.id ? { userId: user.id, displayName: user.name || user.email || user.id, email: user.email, profileImage: user.image } : undefined);
+    await selectLocalAccount(user?.id ? { userId: user.id, displayName: user.name || user.email || user.id, email: user.email, profileImage: user.image } : undefined);
   });
   accountSync = pending.catch(() => undefined);
   return pending;
@@ -680,7 +690,9 @@ function syncAuthenticatedAccount() {
 function registerIpc() {
   localHandler('local:get-connected-apps', () => connectedAppRequest('/api/connected-apps'));
   localHandler('local:connect-app', async (providerKey: string) => {
+    const instance = runtime;
     const { apps } = await connectedAppRequest('/api/connected-apps') as { apps: LocalConnectedApp[] };
+    if (runtime !== instance) throw new Error('The account changed before connecting this app.');
     const app = apps.find((entry) => entry.providerKey === providerKey);
     if (!app) throw new Error('This provider is not configured yet.');
     // Start with this desktop session, so a different Commons account in the
@@ -780,8 +792,10 @@ function registerIpc() {
     return cloudWorkspace;
   });
   ipcMain.handle("cloud:choose-workspace", async (event) => {
+    const instance = runtime;
     assertCloudSender(event);
     const result = await dialog.showOpenDialog(desktopWindow!, { properties: ["openDirectory", "createDirectory"] });
+    if (runtime !== instance) throw new Error("The account changed while selecting a folder.");
     if (result.canceled || !result.filePaths[0]) return cloudWorkspace;
     const selected = realpathSync(result.filePaths[0]);
     if (!statSync(selected).isDirectory()) throw new Error("Choose a directory");
@@ -796,6 +810,7 @@ function registerIpc() {
     return cloudAccess;
   });
   ipcMain.handle("cloud:update-access", async (event, access: CloudAccess) => {
+    const instance = runtime;
     assertCloudSender(event);
     const next = normalizeCloudAccess(access);
     const enabled = (Object.keys(next) as Array<keyof CloudAccess>).filter((key) => next[key] && !cloudAccess[key]);
@@ -808,6 +823,7 @@ function registerIpc() {
           : "The selected folder's permitted file contents can be sent to Commons Cloud by agents. Private Local data remains outside the selected folder.",
         buttons: ["Cancel", "Enable access"], defaultId: 0, cancelId: 0, noLink: true,
       });
+      if (runtime !== instance) throw new Error("The account changed during approval.");
       if (choice.response !== 1 || activeMode !== "cloud") return cloudAccess;
     }
     cloudAccess = next;
@@ -816,6 +832,7 @@ function registerIpc() {
     return cloudAccess;
   });
   ipcMain.handle("cloud:import-library-to-local", async (event, itemId: string, name: string, mimeType: string) => {
+    const instance = runtime;
     assertCloudSender(event);
     if (typeof itemId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(itemId)) throw new Error("Invalid Cloud Library item.");
     if (typeof name !== "string" || name.length > 255 || typeof mimeType !== "string" || mimeType.length > 120) throw new Error("Invalid Library file metadata.");
@@ -830,9 +847,11 @@ function registerIpc() {
     if (source.protocol !== "https:") throw new Error("The Cloud Library download must use HTTPS.");
     const bytes = await readTransfer(await cloudSession.fetch(source.toString(), { redirect: "error", signal: AbortSignal.timeout(60_000) }));
     if (activeMode !== "cloud") throw new Error("The mode changed before the transfer completed.");
-    runtime.importLibraryFiles([{ name, mimeType, bytes }]);
+    if (runtime !== instance) throw new Error("The account changed before the transfer completed.");
+    instance.importLibraryFiles([{ name, mimeType, bytes }]);
   });
   ipcMain.handle("cloud:list-local-transfer-items", async (event) => {
+    const instance = runtime;
     assertCloudSender(event);
     const choice = await dialog.showMessageBox(desktopWindow!, {
       type: "question", title: "Show Local files in Cloud mode?",
@@ -840,6 +859,7 @@ function registerIpc() {
       detail: "Only file names appear in the Cloud view. File contents require a separate confirmation before upload.",
       buttons: ["Cancel", "Show files"], defaultId: 0, cancelId: 0, noLink: true,
     });
+    if (runtime !== instance) throw new Error("The account changed during approval.");
     if (choice.response !== 1 || activeMode !== "cloud") return [];
     const root = realpathSync(runtime.storageRoot());
     return (runtime.state().library ?? []).flatMap((item) => {
@@ -852,6 +872,7 @@ function registerIpc() {
     });
   });
   ipcMain.handle("cloud:read-local-transfer-item", async (event, id: string) => {
+    const instance = runtime;
     assertCloudSender(event);
     const item = runtime.state().library?.find((entry) => entry.id === id);
     if (!item) throw new Error("Local Library item not found.");
@@ -865,10 +886,12 @@ function registerIpc() {
       detail: "This copies the selected Private Local file into your Cloud account. Other Local files stay on this computer.",
       buttons: ["Cancel", "Send to Cloud"], defaultId: 0, cancelId: 0, noLink: true,
     });
+    if (runtime !== instance) throw new Error("The account changed during approval.");
     if (choice.response !== 1 || activeMode !== "cloud") throw new Error("Transfer cancelled.");
     return { name: item.name, mimeType: item.mimeType, bytes: readFileSync(path) };
   });
   ipcMain.handle("cloud:save-app-locally", async (event, input: { pluginId?: unknown; name?: unknown; description?: unknown; entryUrl?: unknown; manifest?: unknown }) => {
+    const instance = runtime;
     assertCloudSender(event);
     if (typeof input?.pluginId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.pluginId)) throw new Error("Invalid app.");
     if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 120) throw new Error("Invalid app name.");
@@ -882,7 +905,8 @@ function registerIpc() {
       const manifest = input.manifest && typeof input.manifest === "object" && !Array.isArray(input.manifest)
         ? JSON.parse(JSON.stringify(input.manifest)) as Record<string, unknown>
         : undefined;
-      runtime.importCloudApp({
+      if (runtime !== instance) throw new Error("The account changed before the app download completed.");
+      instance.importCloudApp({
         pluginId: input.pluginId,
         name: input.name.trim(),
         description: typeof input.description === "string" ? input.description.slice(0, 500) : undefined,
@@ -1054,8 +1078,10 @@ function registerIpc() {
     return result.canceled ? [] : result.filePaths;
   });
   localHandler("local:import-project-folder", async () => {
+    const instance = runtime;
     const result = await dialog.showOpenDialog(desktopWindow!, { properties: ["openDirectory"] });
-    return result.canceled || !result.filePaths[0] ? null : runtime.importProjectFolder(result.filePaths[0]);
+    if (runtime !== instance) throw new Error("The account changed while selecting a project.");
+    return result.canceled || !result.filePaths[0] ? null : instance.importProjectFolder(result.filePaths[0]);
   });
   localHandler("local:choose-knowledge-files", async () => {
     const result = await dialog.showOpenDialog(desktopWindow!, { properties: ["openFile", "multiSelections"] });

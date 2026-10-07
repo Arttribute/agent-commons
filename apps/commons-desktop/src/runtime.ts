@@ -1661,7 +1661,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             continue;
           }
           const computedEvidenceMissing = requiresComputedData(lastUser) && !["run_python", "cli_run_command", "cli_wait_for_process"].some((name) => successfulTools.has(name));
-          if (toolEvidenceNeeded && (!successfulTools.size || computedEvidenceMissing || (mustReadFile && !["cli_read_file", "read_library_item", "run_python", "read_knowledge_document"].some((name) => successfulTools.has(name)))) && !executionRepairAttempted) {
+          if (toolEvidenceNeeded && (!executedTools || computedEvidenceMissing || (mustReadFile && !["cli_read_file", "read_library_item", "run_python", "read_knowledge_document"].some((name) => successfulTools.has(name)))) && !executionRepairAttempted) {
             executionRepairAttempted = true;
             messages.push({ role: "system", content: "The user requested work that the available tools can perform. This turn does not yet have successful tool evidence for that work. For a requested Python/computed result, execute run_python and fix any reported error. Use the appropriate tool now, with the exact current folder, attached file IDs, or connector schema. Do not give the user commands to run or claim you inspected anything without tool evidence. If an essential input is missing, ask for that input clearly." });
             continue;
@@ -1737,7 +1737,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
           const bundle = this.canvas.get(projectId);
           const revision = bundle.revisions.find((entry) => entry.revisionId === turn?.canvasRevisionId);
           if (!revision) throw new Error("The viewed revision is no longer available");
-          result = JSON.stringify({ ...bundle, project: { ...bundle.project, activeItemId: revision.itemId }, viewedRevisionId: revision.revisionId, savedActiveItemId: bundle.project.activeItemId });
+          result = JSON.stringify({ ...bundle, project: { ...bundle.project, activeItemId: revision.itemId }, viewedRevisionId: revision.revisionId, savedActiveItemId: bundle.project.activeItemId, turnContext: turn?.canvasContext, attachedNotes: turn?.canvasAnnotations ?? [] });
         }
         else if (this.store.get().settings.permissionMode === "read-only") result = "Error: This chat is read only.";
         else if (name === "add_canvas_version") {
