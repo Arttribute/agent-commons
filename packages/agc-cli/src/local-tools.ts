@@ -32,7 +32,7 @@ import {
   lstatSync,
   type Stats,
 } from 'fs';
-import { join, resolve, relative, extname, dirname, isAbsolute, sep } from 'path';
+import { join, resolve, relative, extname, dirname, basename, isAbsolute, sep } from 'path';
 import { execFile, spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as readline from 'readline';
@@ -187,6 +187,7 @@ export function buildLocalToolsManifest(rootDir: string, snapshot: string, fileC
 You are running inside a CLI session with DIRECT access to the user's local machine. The following tools are in your tool list and execute on the user's machine in real time.
 
 **Session root:** ${rootDir}
+Use paths relative to this root: "." lists the selected folder; "file.txt" reads a file directly inside it. Do not prefix relative paths with the selected folder's own name. The current root overrides folder names in older messages.
 
 ### Current file system (live snapshot)
 
@@ -400,6 +401,19 @@ export function safePath(root: string, userPath: string): string {
   return resolve(canonicalAncestor, relative(ancestor, abs));
 }
 
+/** Accept a root-qualified read path while keeping every lookup in the selected
+ * folder. An existing relative path always wins; writes keep exact semantics. */
+function readPath(root: string, userPath: string): string {
+  const path = safePath(root, userPath);
+  if (existsSync(path) || isAbsolute(userPath)) return path;
+  const parts = userPath.split(/[\\/]/).filter(Boolean);
+  if (parts[0] === basename(realpathSync(root))) {
+    const candidate = safePath(root, parts.slice(1).join(sep) || '.');
+    if (existsSync(candidate)) return candidate;
+  }
+  return path;
+}
+
 function assertNotSensitive(abs: string): void {
   const segments = abs.split(/[\\/]/);
   if (segments.some(part => /^(?:\.ssh|\.gnupg|\.agc|\.aws|\.env(?:\..*)?|id_rsa|id_ed25519)$/i.test(part))) {
@@ -538,7 +552,7 @@ async function cachedDocumentText(abs: string, stat: Stats, ext: string) {
 async function toolReadFile(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
   const { path: userPath } = args;
   if (!userPath) throw new Error('read_file requires a "path" argument');
-  const abs = safePath(cfg.rootDir, userPath);
+  const abs = readPath(cfg.rootDir, userPath);
   assertNotSensitive(abs);
   if (!existsSync(abs)) throw new Error(`File not found: ${userPath} (resolved to ${abs}). List the parent directory and use a path relative to the selected workspace root: ${cfg.rootDir}.`);
   const stat = statSync(abs);
@@ -658,7 +672,7 @@ async function toolWriteFile(args: Record<string, any>, cfg: LocalToolsConfig): 
 
 async function toolListDirectory(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
   const userPath = args.path ?? '.';
-  const abs = safePath(cfg.rootDir, userPath);
+  const abs = readPath(cfg.rootDir, userPath);
   assertNotSensitive(abs);
   if (!existsSync(abs)) throw new Error(`Directory not found: ${userPath}`);
   const entries = readdirSync(abs, { withFileTypes: true });
@@ -666,7 +680,7 @@ async function toolListDirectory(args: Record<string, any>, cfg: LocalToolsConfi
     const type = e.isDirectory() ? 'd' : e.isSymbolicLink() ? 'l' : 'f';
     return `[${type}] ${e.name}`;
   });
-  return lines.join('\n') || '(empty directory)';
+  return `Directory: ${abs}\nSession root: ${realpathSync(cfg.rootDir)}\n${lines.join('\n') || '(empty directory)'}`;
 }
 
 async function toolDiskUsage(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
@@ -677,7 +691,7 @@ async function toolDiskUsage(args: Record<string, any>, cfg: LocalToolsConfig): 
 async function toolSearchFiles(args: Record<string, any>, cfg: LocalToolsConfig): Promise<string> {
   const { pattern, directory } = args;
   if (!pattern) throw new Error('search_files requires a "pattern" argument');
-  const baseDir = safePath(cfg.rootDir, directory ?? '.');
+  const baseDir = readPath(cfg.rootDir, directory ?? '.');
   assertNotSensitive(baseDir);
 
   const results: string[] = [];

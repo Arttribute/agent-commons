@@ -287,6 +287,15 @@ export class CanvasService {
     return timeline;
   }
 
+  /** Keep canvas tools on the artifact captured by the viewer for this turn. */
+  async getProjectForAgent(projectId: string, principal: MediaPrincipal, viewedRevisionId?: string) {
+    const bundle = await this.getProject(projectId, principal);
+    if (!viewedRevisionId) return bundle;
+    const revision = bundle.revisions.find((entry) => entry.revisionId === viewedRevisionId);
+    if (!revision) throw new BadRequestException('Viewed revision does not belong to this canvas.');
+    return { ...bundle, project: { ...bundle.project, activeItemId: revision.itemId }, viewedRevisionId, savedActiveItemId: bundle.project.activeItemId };
+  }
+
   async updateProject(
     projectId: string,
     principal: MediaPrincipal,
@@ -472,7 +481,7 @@ export class CanvasService {
   async addVersion(
     projectId: string,
     principal: MediaPrincipal,
-    input: { itemId: string; summary?: string },
+    input: { itemId: string; summary?: string; baseRevisionId?: string },
   ) {
     const project = await this.requireProject(projectId, principal, 'edit');
     const item = await this.library.get(
@@ -489,11 +498,13 @@ export class CanvasService {
       });
       return { revision: existing, created: false };
     }
+    const baseRevision = input.baseRevisionId ? await this.db.query.canvasRevision.findFirst({ where: (table) => and(eq(table.projectId, projectId), eq(table.revisionId, input.baseRevisionId!)) }) : undefined;
+    if (input.baseRevisionId && !baseRevision) throw new BadRequestException('Base revision does not belong to this canvas.');
     const summary = input.summary?.trim().slice(0, 500);
     const revision = await this.addRevision({
       projectId,
       itemId: item.itemId,
-      parentItemId: project.activeItemId,
+      parentItemId: baseRevision?.itemId ?? project.activeItemId,
       operation: 'edit',
       settings: summary ? { summary } : {},
       createdByType: principal.actorId ? 'agent' : 'human',
@@ -545,23 +556,27 @@ export class CanvasService {
       principal,
       'read',
     );
-    const [revisions, annotations, artifact, codeProject] = await Promise.all([
+    const [revisions, annotations] = await Promise.all([
       this.db.query.canvasRevision.findMany({
         where: (table) => eq(table.projectId, project.projectId),
         orderBy: (table) => asc(table.createdAt),
         limit: 200,
       }),
       this.db.query.canvasAnnotation.findMany({
-        where: (table) =>
-          and(eq(table.projectId, project.projectId), isNull(table.deletedAt)),
+        where: (table) => and(eq(table.projectId, project.projectId), isNull(table.deletedAt)),
         orderBy: (table) => asc(table.createdAt),
         limit: 500,
       }),
-      this.db.query.libraryItem.findFirst({
-        where: (table) => eq(table.itemId, project.activeItemId),
-      }),
+    ]);
+    const activeRevision = request.revisionId
+      ? revisions.find((revision) => revision.revisionId === request.revisionId)
+      : revisions.find((revision) => revision.itemId === project.activeItemId);
+    if (request.revisionId && !activeRevision) throw new BadRequestException('Viewed revision does not belong to this canvas.');
+    const viewedItemId = activeRevision?.itemId ?? project.activeItemId;
+    const [artifact, codeProject] = await Promise.all([
+      this.db.query.libraryItem.findFirst({ where: (table) => eq(table.itemId, viewedItemId) }),
       this.db.query.codeProject.findFirst({
-        where: (table) => eq(table.libraryItemId, project.activeItemId),
+        where: (table) => eq(table.libraryItemId, viewedItemId),
         columns: { projectId: true, entryFile: true, name: true },
       }),
     ]);
@@ -575,9 +590,7 @@ export class CanvasService {
         mimeType: artifact.mimeType,
         metadata: artifact.metadata,
       },
-      activeRevision: revisions.find(
-        (revision) => revision.itemId === project.activeItemId,
-      ),
+      activeRevision,
       revisions,
       annotations,
       attachedIds: request.annotationIds,

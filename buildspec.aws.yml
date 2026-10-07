@@ -126,6 +126,8 @@ phases:
           RuntimeSecretArn="$RUNTIME_SECRET_ARN" \
           AppOrigin="$APP_ORIGIN" \
           GoogleOAuthEnabled="${GOOGLE_OAUTH_ENABLED:-false}" \
+          HubSpotMcpEnabled="${HUBSPOT_MCP_ENABLED:-false}" \
+          HubSpotOAuthEnabled="${HUBSPOT_OAUTH_ENABLED:-false}" \
           GitHubOAuthEnabled="${GITHUB_OAUTH_ENABLED:-false}" \
           SlackOAuthEnabled="${SLACK_OAUTH_ENABLED:-false}" \
           CanvaOAuthEnabled="${CANVA_OAUTH_ENABLED:-false}" \

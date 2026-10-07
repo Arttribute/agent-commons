@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { smokeLocalTools } from "./smoke-local-tools.mjs";
+import { smokeLocalAccounts } from "./smoke-local-accounts.mjs";
 
 const temp = mkdtempSync(join(tmpdir(), "commons-desktop-smoke-"));
 const port = await new Promise((resolve, reject) => {
@@ -86,6 +87,17 @@ try {
             throw new Error(`Local data providers failed: ${JSON.stringify(provider)}`);
           }
           checksStarted = true;
+          const accountBoundary = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const session = await (await fetch('/api/auth/session')).json();
+            const csrf = await fetch('/api/auth/csrf');
+            let connectionError = '';
+            try { await window.agentCommonsLocal.getConnectedApps(); }
+            catch (error) { connectionError = String(error.message || error); }
+            return { session, csrf: csrf.status, connectionError };
+          })()`);
+          if (accountBoundary.session !== null || accountBoundary.csrf !== 200 || !accountBoundary.connectionError.includes('Sign in to this local workspace')) {
+            throw new Error(`Local account boundary failed: ${JSON.stringify(accountBoundary)}`);
+          }
           const identities = await evaluate(page.webSocketDebuggerUrl, `(async () => {
             const bridge = window.agentCommonsLocal;
             const agent = (await bridge.getState()).agents.find((item) => item.name === "Commons Copilot");
@@ -163,17 +175,38 @@ try {
           }
           if (!sessionVisible) throw new Error(`Saved Local session did not render: ${savedSession.id}`);
           console.log("Desktop smoke: Session view rendered.");
-          const webSearchDialog = await evaluate(page.webSocketDebuggerUrl, `(async () => {
-            const buttons = [...document.querySelectorAll('button[aria-label="Add photos & files"]')];
-            buttons.find(button => !button.disabled)?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' }));
+          const managedSearch = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const button = [...document.querySelectorAll('button[aria-label="Add photos & files"]')].find(node => !node.disabled);
+            button?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' }));
             await new Promise(resolve => setTimeout(resolve, 100));
             const item = [...document.querySelectorAll('[role="menuitemcheckbox"]')].find(node => node.textContent?.includes('Web search'));
-            if (!item || item.getAttribute('aria-disabled') === 'true') return { item: item?.outerHTML ?? null, path: location.pathname, buttons: buttons.map(button => button.outerHTML.slice(0, 450)), menus: [...document.querySelectorAll('[role="menu"]')].map(menu => menu.innerText.slice(0, 450)), body: document.body.innerText.slice(-500) };
-            item.click();
-            await new Promise(resolve => setTimeout(resolve, 100));
-            return { open: !!document.querySelector('[role="dialog"] select option[value="searxng"]'), path: location.pathname, item: item.outerHTML, dialogs: [...document.querySelectorAll('[role="dialog"]')].map(dialog => dialog.innerText.slice(0, 300)) };
+            if (!item || item.getAttribute('aria-disabled') === 'true') return { enabled: false, item: item?.outerHTML };
+            if (item.getAttribute('aria-checked') !== 'true') item.click();
+            else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            let state;
+            for (let attempt = 0; attempt < 20; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              state = await window.agentCommonsLocal.getState();
+              if (state.conversations.find(entry => entry.id === '${savedSession.id}')?.webSearchEnabled === true) break;
+            }
+            return { enabled: state.conversations.find(entry => entry.id === '${savedSession.id}')?.webSearchEnabled, endpoint: state.settings.webSearchUrl, dialog: !!document.querySelector('[role="dialog"]'), path: location.pathname };
           })()`);
-          if (!webSearchDialog?.open || webSearchDialog.path !== `/sessions/${savedSession.id}`) throw new Error(`Web search did not open configuration inside the chat: ${JSON.stringify(webSearchDialog)}`);
+          if (!managedSearch?.enabled || managedSearch.endpoint !== 'https://api.agentcommons.io/v1/desktop-search' || managedSearch.dialog || managedSearch.path !== `/sessions/${savedSession.id}`) throw new Error(`Managed search did not enable without setup: ${JSON.stringify(managedSearch)}`);
+          console.log("Desktop smoke: Managed web search enabled without setup.");
+          const webSearchDialog = await evaluate(page.webSocketDebuggerUrl, `(async () => {
+            const menuButton = [...document.querySelectorAll('button[aria-label="Add photos & files"]')].find(node => !node.disabled && node.getBoundingClientRect().width > 0);
+            if (menuButton?.getAttribute('aria-expanded') !== 'true') { menuButton?.focus(); menuButton?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })); }
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const item = [...document.querySelectorAll('[role="menuitem"]')].find(node => node.textContent?.includes('Configure web search'));
+            if (!item) return { open: false, path: location.pathname, menu: [...document.querySelectorAll('[role^="menuitem"]')].map(node => node.textContent), button: menuButton?.outerHTML };
+            item.click();
+            for (let attempt = 0; attempt < 20; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              if (document.querySelector('[role="dialog"] select option[value="searxng"]')) return { open: true, path: location.pathname };
+            }
+            return { open: false, clicked: item.textContent, path: location.pathname, dialogs: [...document.querySelectorAll('[role="dialog"]')].map(node => node.textContent) };
+          })()`);
+          if (!webSearchDialog?.open || webSearchDialog.path !== `/sessions/${savedSession.id}`) throw new Error(`Web search settings did not open inside the chat: ${JSON.stringify(webSearchDialog)}`);
           console.log("Desktop smoke: Web search dialog opened.");
           const webSearchSubmission = await evaluate(page.webSocketDebuggerUrl, `(async () => {
             const dialog = document.querySelector('[role="dialog"]');
@@ -239,6 +272,7 @@ try {
           if (!restored?.conversations?.some((conversation) => conversation.id === savedSession.id)) {
             throw new Error("Saved Local session disappeared after switching modes");
           }
+          await smokeLocalAccounts(evaluate, cloudPage.webSocketDebuggerUrl, temp);
           console.log(`Unified Commons desktop loaded ${result.path} with Local agent and both mode bridges.`);
           ready = true;
           break;

@@ -23,7 +23,7 @@ export function localChatHistory(history: LocalMessage[]): OllamaMessage[] {
         toolResult(message.toolName, message.content),
       ];
     }
-    return [{ role: message.role, content: message.role === "user" ? message.content : boundedContent(message.content, 8_000) }];
+    return [{ role: message.role, content: message.role === "user" ? `${message.content}${message.canvasContext ? `\n\n${message.canvasContext}` : ""}` : boundedContent(message.content, 8_000) }];
   });
   const retained: OllamaMessage[][] = [];
   let characters = 0;

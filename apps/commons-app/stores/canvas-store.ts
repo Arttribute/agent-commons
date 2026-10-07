@@ -14,10 +14,10 @@ export type CanvasViewerState = {
 };
 
 export type CanvasChatContext = {
-  /** Canvas record id. Missing in Local mode, where notes are not stored. */
+  /** Canvas record id, persisted in the active local or cloud workspace. */
   projectId?: string;
   revisionId?: string;
-  artifact: { itemId: string; name: string; kind: string; mimeType: string };
+  artifact: { itemId: string; name: string; kind: string; mimeType: string; sizeBytes?: number };
   viewer: CanvasViewerState;
 };
 
@@ -33,6 +33,8 @@ export type CanvasPrompt = { id: string; text: string; mode: "send" | "draft" };
 export type KnownArtifact = { name: string; mimeType: string; kind?: string };
 
 type CanvasState = {
+  agentId: string;
+  setAgentId: (agentId: string) => void;
   /** Names and types seen in lists, so a canvas can show its file type at once. */
   known: Record<string, KnownArtifact>;
   remember: (items: Array<KnownArtifact & { itemId: string }>) => void;
@@ -64,6 +66,8 @@ type CanvasState = {
 };
 
 export const useCanvasStore = create<CanvasState>((set) => ({
+  agentId: "",
+  setAgentId: (agentId) => set({ agentId }),
   known: {},
   remember: (items) =>
     set((state) => {
@@ -73,7 +77,8 @@ export const useCanvasStore = create<CanvasState>((set) => ({
     }),
 
   context: null,
-  setContext: (context) => set({ context }),
+  setContext: (context) => set((state) => ({ context: context && state.context?.artifact.itemId === context.artifact.itemId
+    ? { ...context, viewer: { ...state.context.viewer, ...context.viewer } } : context })),
   setViewer: (viewer) =>
     set((state) =>
       state.context

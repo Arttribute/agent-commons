@@ -7,6 +7,7 @@ import {
 import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
 import { UsageService } from '~/modules/usage';
+import { TRANSCRIPTION_MODELS } from './audio-models';
 
 /**
  * Speech-to-text for chat voice input. Accepts a finished recording
@@ -31,6 +32,7 @@ export class AudioService {
       principalId: string;
       durationMs: number;
       idempotencyKey: string;
+      model?: string;
     },
   ): Promise<{ text: string }> {
     if (!this.openai) {
@@ -42,24 +44,28 @@ export class AudioService {
       throw new BadRequestException('No audio received');
     }
 
+    const model = billing.model || this.model;
+    if (!TRANSCRIPTION_MODELS.includes(model)) throw new BadRequestException('Choose a supported transcription model.');
     const mime = file.mimetype || 'audio/webm';
     const name = file.originalname || defaultFileName(mime);
     const durationMinutes = Math.max(1_000, billing.durationMs) / 60_000;
     const costUsd =
       durationMinutes *
-      Number(process.env.OPENAI_TRANSCRIPTION_COST_USD_PER_MINUTE || 0.003);
+      Number(model === this.model && process.env.OPENAI_TRANSCRIPTION_COST_USD_PER_MINUTE
+        ? process.env.OPENAI_TRANSCRIPTION_COST_USD_PER_MINUTE
+        : model === 'gpt-4o-mini-transcribe' ? 0.003 : 0.006);
     const reservation = await this.usage.authorizeCapability({
       principalId: billing.principalId,
       capability: 'transcription',
       estimatedCostUsd: costUsd,
       idempotencyKey: `capability:transcription:${billing.idempotencyKey}`,
-      metadata: { model: this.model, durationMs: billing.durationMs },
+      metadata: { model, durationMs: billing.durationMs },
     });
     try {
       const upload = await toFile(file.buffer, name, { type: mime });
       const result = await this.openai.audio.transcriptions.create({
         file: upload as any,
-        model: this.model as any,
+        model: model as any,
       } as any);
       await this.usage.settleCapability({
         reservationId: reservation?.reservationId,
@@ -68,7 +74,7 @@ export class AudioService {
         idempotencyKey: `capability:transcription:${billing.idempotencyKey}:capture`,
         metadata: {
           provider: 'openai',
-          model: this.model,
+          model,
           durationMs: billing.durationMs,
         },
       });

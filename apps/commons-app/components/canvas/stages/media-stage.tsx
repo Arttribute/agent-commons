@@ -85,12 +85,16 @@ export function MediaStage({
   const [analysisError, setAnalysisError] = useState("");
   const [showTranscript, setShowTranscript] = useState(Boolean(preview.metadata?.mediaAnalysis));
   const lastReport = useRef(0);
+  const analysisRequest = useRef(0);
   const fps = analysis?.fps && analysis.fps > 0 ? analysis.fps : 30;
   const frameMs = 1000 / fps;
   const segments = analysis?.transcript?.segments ?? [];
   const box = isVideo ? fitInStage(size, natural, showTranscript && segments.length ? 150 : 120) : null;
 
   useEffect(() => {
+    ++analysisRequest.current;
+    setAnalyzing(false);
+    setAnalysisError("");
     setAnalysis((preview.metadata?.mediaAnalysis as Analysis | undefined) ?? null);
     setSelection(null);
   }, [preview.itemId, preview.metadata]);
@@ -178,9 +182,31 @@ export function MediaStage({
       .slice(0, 2000) || undefined;
 
   const analyze = async () => {
+    const request = ++analysisRequest.current;
+    const selectedAgentId = useCanvasStore.getState().agentId;
     setAnalyzing(true);
     setAnalysisError("");
     try {
+      if (mode === "private-local") {
+        if (!source || !window.agentCommonsLocal) throw new Error("Open a playable local recording first");
+        const audio = new AudioContext();
+        try {
+          const bytes = await fetch(source).then((response) => response.arrayBuffer());
+          const decoded = await audio.decodeAudioData(bytes);
+          if (!Number.isFinite(decoded.duration) || decoded.duration > 1800) throw new Error("Canvas transcription supports recordings up to 30 minutes long.");
+          const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
+          const track = offline.createBufferSource();
+          track.buffer = decoded;
+          track.connect(offline.destination);
+          track.start();
+          const rendered = await offline.startRendering();
+          const result = await window.agentCommonsLocal.analyzeAudio(new Float32Array(rendered.getChannelData(0)), preview.itemId, selectedAgentId || undefined);
+          if (request !== analysisRequest.current) return;
+          setAnalysis(result);
+          setShowTranscript(true);
+        } finally { await audio.close(); }
+        return;
+      }
       const response = await fetch("/api/canvas/media/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -188,12 +214,14 @@ export function MediaStage({
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiErrorMessage(payload, "The transcript could not be made"));
+      if (request !== analysisRequest.current) return;
       setAnalysis((payload?.data ?? payload) as Analysis);
       setShowTranscript(true);
     } catch (cause) {
+      if (request !== analysisRequest.current) return;
       setAnalysisError(cause instanceof Error ? cause.message : "The transcript could not be made");
     } finally {
-      setAnalyzing(false);
+      if (request === analysisRequest.current) setAnalyzing(false);
     }
   };
 
@@ -375,7 +403,7 @@ export function MediaStage({
                   )}
                 </>
               )}
-              {mode !== "private-local" && (
+              {(
                 <IconControl
                   label={
                     analyzing

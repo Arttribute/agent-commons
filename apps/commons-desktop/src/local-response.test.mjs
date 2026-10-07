@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assistantIdentityAnswer, assistantIdentityRequestKind, assistantNameAnswer, isAssistantIdentityRequest, looksLikeInventedToolCall, looksLikeModelIdentity, parseToolArguments } from "./local-response.ts";
+import { assistantIdentityAnswer, assistantIdentityRequestKind, assistantNameAnswer, isAssistantIdentityRequest, looksLikeInventedToolCall, looksLikeModelIdentity, parseToolArguments, parseTextToolCall } from "./local-response.ts";
 
 test("rejects fabricated function JSON but preserves ordinary conversation", () => {
   assert.equal(looksLikeInventedToolCall('```json\n{"name":"hello","arguments":{}}\n```'), true);
@@ -32,4 +32,10 @@ test("accepts only object arguments from native tool calls", () => {
   assert.deepEqual(parseToolArguments({ path: "README.md" }), { path: "README.md" });
   assert.equal(parseToolArguments("not JSON"), null);
   assert.equal(parseToolArguments("[]"), null);
+});
+
+test("text-only tool fallback requires a complete object and preserves literal arguments", () => {
+  assert.deepEqual(parseTextToolCall('```json\n{"name":"cli_read_file","arguments":{"path":"a folder/file.csv"}}\n```'), { tool: "cli_read_file", args: { path: "a folder/file.csv" } });
+  assert.equal(parseTextToolCall('Example: {"tool":"cli_run_command","args":{}}'), null);
+  assert.equal(parseTextToolCall('{"tool":"cli_read_file","args":[]}'), null);
 });

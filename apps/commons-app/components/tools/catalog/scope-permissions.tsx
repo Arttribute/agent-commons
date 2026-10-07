@@ -11,6 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 
 /** Friendly names for well-known OAuth scopes; falls back to the scope's tail */
 const SCOPE_LABELS: Record<string, { label: string; hint: string }> = {
+  oauth: { label: "Connect account", hint: "Authorize access to your HubSpot account" },
+  "crm.objects.contacts.read": { label: "Read contacts and notes", hint: "Find CRM contacts and their notes" },
+  "crm.objects.contacts.write": { label: "Manage contacts and notes", hint: "Create or update CRM contacts and notes after approval" },
   "tweet.read": {
     label: "Read posts",
     hint: "Read posts visible to the connected X account",
@@ -115,6 +118,7 @@ export function ScopePermissions({
   const [applying, setApplying] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
+  const remotePermissions = item.authProviderKey === "hubspot_mcp";
   const requested = useMemo(() => item.oauthScopes ?? [], [item]);
   const granted = useMemo(() => new Set(item.grantedScopes ?? []), [item]);
   const connected = item.status === "connected";
@@ -136,7 +140,7 @@ export function ScopePermissions({
     );
   }, [item.id, connected, requested, granted]);
 
-  if (requested.length === 0 || !item.authProviderKey) return null;
+  if ((!remotePermissions && requested.length === 0) || !item.authProviderKey) return null;
 
   const toggle = (scope: string) => {
     if (granted.has(scope)) return;
@@ -153,7 +157,7 @@ export function ScopePermissions({
     [...selected].some((scope) => !granted.has(scope));
 
   const apply = () => {
-    if (selected.size === 0) return;
+    if (!remotePermissions && selected.size === 0) return;
     setApplying(true);
     const url = `/oauth/connect?provider=${encodeURIComponent(item.authProviderKey!)}&scopes=${encodeURIComponent([...selected].join(" "))}&label=${encodeURIComponent(item.displayName)}&returnUrl=${encodeURIComponent(returnUrl)}`;
     router.push(url);
@@ -207,6 +211,7 @@ export function ScopePermissions({
         <ShieldCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
       </div>
 
+      {remotePermissions && <p className="text-xs text-muted-foreground">Choose your HubSpot account and permissions on its approval screen. Available tools follow those permissions.</p>}
       <div className="divide-y divide-border/70 rounded-xl border border-border">
         {requested.map((scope) => {
           const { label, hint } = scopeLabel(scope);
@@ -278,15 +283,15 @@ export function ScopePermissions({
               providerUnavailable ||
               applying ||
               disconnecting ||
-              selected.size === 0 ||
-              (connected && !dirty)
+              (!remotePermissions && selected.size === 0) ||
+              (connected && !dirty && !remotePermissions)
             }
           >
             {applying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {providerUnavailable
               ? "Platform setup required"
               : connected
-                ? "Add permissions"
+                ? remotePermissions ? "Review permissions" : "Add permissions"
                 : "Connect"}
           </Button>
         </div>

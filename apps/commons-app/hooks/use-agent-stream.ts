@@ -62,6 +62,7 @@ export function useAgentStream(
       sessionId?: string;
       uiContext?: {
         desktopMode?: "cloud";
+        activeLibraryItemId?: string;
         pathname?: string;
         pageTitle?: string;
         routeName?: string;
@@ -77,6 +78,7 @@ export function useAgentStream(
       };
       /** Knowledge Spaces explicitly referenced for this turn. */
       knowledgeSpaceIds?: string[];
+      knowledgeMode?: "auto" | "selected" | "off";
       /** Per-turn thinking depth chosen in the composer; omit for auto. */
       reasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
       cliContext?: string;
@@ -151,13 +153,16 @@ export function useAgentStream(
               agentId: params.agentId,
               conversationId: params.sessionId || undefined,
               prompt,
+              uiContext: params.uiContext,
               spaceIds: params.knowledgeSpaceIds,
+              knowledgeMode: params.knowledgeMode,
               workspaceRoot: params.localWorkspaceRoot,
-              attachmentIds: params.attachments?.map((attachment) => attachment.fileId),
+              attachmentIds: [...new Set([...(params.attachments?.map((attachment) => attachment.fileId) ?? []), ...(params.uiContext?.activeLibraryItemId ? [params.uiContext.activeLibraryItemId] : [])])],
               projectId: params.projectId,
               webSearchEnabled: params.webSearchEnabled,
               mcpServerIds: params.mcpServerIds,
               interactive: true,
+              reasoningEffort: params.reasoningEffort,
             });
             if (!abortRef.current) optionsRef.current.onFinal?.({
               content: result.response,
@@ -191,6 +196,7 @@ export function useAgentStream(
           }
           if (typeof event.seq === "number" && event.seq > lastSeq)
             lastSeq = event.seq;
+          if (event.type === "final" && event.payload?.sessionId) localStorage.setItem(`commons-chat-context:${event.payload.sessionId}`, JSON.stringify({ workspaceRoot: params.localWorkspaceRoot ?? null, knowledgeMode: params.knowledgeMode ?? "auto", spaceIds: params.knowledgeSpaceIds ?? [] }));
           handleEvent(event, optionsRef.current);
           if (event.type === "cli_tool_request" && event.requestId && !handledLocalRequests.has(event.requestId)) {
             handledLocalRequests.add(event.requestId);
@@ -203,6 +209,7 @@ export function useAgentStream(
                     tool: event.tool ?? event.toolName ?? "",
                     args: event.args ?? {},
                     sessionId: event.sessionId,
+                    workspaceRoot: params.localWorkspaceRoot,
                   });
                 } catch (cause) {
                   result = `Error: ${cause instanceof Error ? cause.message : String(cause)}`;

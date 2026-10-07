@@ -1,12 +1,19 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { LocalDesktopBridge, RuntimeEvent, WorkspacePreferences } from "@agent-commons/desktop-contract";
 
-const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args) as Promise<T>;
+// Captured once per document: queued calls from a replaced account's renderer
+// cannot be executed against the newly selected profile.
+const profileGeneration = ipcRenderer.sendSync('local:profile-generation') as number;
+const invoke = <T>(channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...(channel.startsWith('local:') ? [profileGeneration] : []), ...args) as Promise<T>;
 
 const bridge: LocalDesktopBridge = {
+  getConnectedApps: () => invoke("local:get-connected-apps"),
+  connectApp: (providerKey) => invoke("local:connect-app", providerKey),
+  disconnectApp: (connectionId) => invoke("local:disconnect-app", connectionId),
   getInfo: () => invoke("desktop:get-info", "private-local"),
   getState: () => invoke("local:get-state"),
-  transcribeAudio: (samples) => invoke("local:transcribe-audio", samples),
+  analyzeAudio: (samples, itemId, agentId) => invoke("local:analyze-audio", samples, itemId, agentId),
+  transcribeAudio: (samples, agentId) => invoke("local:transcribe-audio", samples, agentId),
   prepareTranscriptionModel: () => invoke("local:prepare-transcription-model"),
   getImageModelStatus: () => invoke("local:get-image-model-status"),
   prepareImageModel: (modelId) => invoke("local:prepare-image-model", modelId),
@@ -18,6 +25,8 @@ const bridge: LocalDesktopBridge = {
   clearAccount: () => invoke("local:clear-account"),
   getModelStatus: () => invoke("local:get-model-status"),
   getHardwareInfo: () => invoke("local:get-hardware-info"),
+  testMcpServer: (id) => invoke("local:test-mcp", id),
+  preparePython: () => invoke("local:prepare-python"),
   prepareModel: () => invoke("local:prepare-model"),
   getStorageRoot: () => invoke("local:get-storage-root"),
   openComputer: (input) => invoke("local:open-computer", input),

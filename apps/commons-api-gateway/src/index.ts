@@ -120,6 +120,10 @@ export function createGatewayApp() {
     });
   }
 
+  app.get("/v1/desktop-search/search", (c) =>
+    publicProxy(c, "agent-commons", process.env.AGENT_COMMONS_INTERNAL_URL, c.req.path),
+  );
+
   app.get("/v1/oauth/providers", (c) =>
     publicProxy(
       c,

@@ -47,3 +47,13 @@ export function assistantNameAnswer(name: string): string {
 export function assistantIdentityAnswer(name: string, model: string): string {
   return `I'm ${name}, your Agent Commons assistant running in Private Local mode on this computer. ${model ? `I'm powered by the local ${model} model. ` : ""}I can answer questions, use your local Knowledge Spaces and skills, work with files in a selected folder, and run commands with your approval.`;
 }
+/** Accept a complete tool envelope, never a JSON fragment embedded in prose. */
+export function parseTextToolCall(content: string): { tool: string; args: Record<string, unknown> } | null {
+  const text = content.trim().replace(/^```(?:tool|json)?\s*\n([\s\S]*?)\n```$/, "$1");
+  try {
+    const value = JSON.parse(text);
+    const name = value.tool ?? value.name ?? value.function?.name;
+    const args = parseToolArguments(value.args ?? value.arguments ?? value.function?.arguments ?? {});
+    return typeof name === "string" && args ? { tool: name, args } : null;
+  } catch { return null; }
+}

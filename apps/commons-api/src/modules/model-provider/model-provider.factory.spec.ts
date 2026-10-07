@@ -2,6 +2,11 @@ import { ModelProviderFactory } from './model-provider.factory';
 import { MODEL_REGISTRY } from './model-registry';
 describe('per-turn platform model selection', () => {
   const factory = new ModelProviderFactory();
+  it('agent-inherited sessions follow the current agent model while explicit overrides stay fixed', () => {
+    const agent = { provider: 'anthropic' as const, modelId: 'claude-sonnet-4-6', apiKey: 'agent-key' };
+    expect(factory.resolveSessionModel({ source: 'agent', provider: 'openai', modelId: 'old-default' }, agent)).toMatchObject(agent);
+    expect(factory.resolveSessionModel({ source: 'session', provider: 'openai', modelId: 'gpt-5.4-mini' }, agent)).toMatchObject({ provider: 'openai', modelId: 'gpt-5.4-mini', apiKey: undefined, baseUrl: undefined });
+  });
   it('resolves a catalog model without copying supplied credentials or an arbitrary endpoint', () => {
     const model = MODEL_REGISTRY.find((m) => m.tier !== 'local')!;
     const selected = factory.resolveRunModel({

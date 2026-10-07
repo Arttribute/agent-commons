@@ -1,16 +1,16 @@
-import { BRAVE_SEARCH_BASE_URL, type LocalSettings } from "@agent-commons/desktop-contract";
+import { BRAVE_SEARCH_BASE_URL, DEFAULT_LOCAL_WEB_SEARCH_URL, isManagedLocalWebSearchUrl, type LocalSettings } from "@agent-commons/desktop-contract";
 
-export function localWebSearchRequest(settings: Pick<LocalSettings, "webSearchUrl" | "webSearchApiKey">, query: string) {
-  if (!settings.webSearchUrl) throw new Error("Configure a search provider first.");
-  const brave = settings.webSearchUrl === BRAVE_SEARCH_BASE_URL;
+export function localWebSearchRequest(settings: Pick<LocalSettings, "webSearchUrl" | "webSearchApiKey" | "managedWebSearchUrl">, query: string) {
+  const endpoint = settings.webSearchUrl || settings.managedWebSearchUrl || DEFAULT_LOCAL_WEB_SEARCH_URL;
+  const brave = endpoint === BRAVE_SEARCH_BASE_URL;
   if (brave && !settings.webSearchApiKey) throw new Error("Brave Search requires an API key.");
-  const url = new URL("search", `${settings.webSearchUrl.replace(/\/$/, "")}/`);
+  const url = new URL("search", `${endpoint.replace(/\/$/, "")}/`);
   url.searchParams.set("q", query);
   if (brave) url.searchParams.set("count", "5");
   else url.searchParams.set("format", "json");
   const headers = {
     Accept: "application/json",
-    ...(settings.webSearchApiKey ? { [brave ? "X-Subscription-Token" : "X-Agent-Commons-Search-Key"]: settings.webSearchApiKey } : {}),
+    ...(settings.webSearchApiKey && !isManagedLocalWebSearchUrl(endpoint) ? { [brave ? "X-Subscription-Token" : "X-Agent-Commons-Search-Key"]: settings.webSearchApiKey } : {}),
   };
   return { url, headers, brave };
 }

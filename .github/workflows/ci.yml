@@ -90,7 +90,7 @@ jobs:
       # /login must keep identity's messages ("check your email", errors) when
       # it restarts sign-in, and sign people in after they verify their email.
       - name: Test login flow
-        run: node --experimental-strip-types --test apps/commons-app/lib/login-flow.test.mjs
+        run: node --experimental-strip-types --test apps/commons-app/lib/login-flow.test.mjs apps/commons-app/lib/desktop-request-policy.test.mjs apps/commons-app/lib/desktop-session.test.mjs
 
       # A failed token refresh must back off instead of retrying on every
       # request; retry storms exhausted identity's rate limit for everyone.
@@ -116,3 +116,9 @@ jobs:
 
       - name: Test Commons app grants, gateway, data and network guards
         run: pnpm --filter commons-api exec jest --runInBand ui-plugin
+
+      - name: Build API and test session context, model and Python contracts
+        run: |
+          node apps/commons-desktop/scripts/cloud-python-reliability.mjs
+          pnpm --filter commons-api build
+          pnpm --filter commons-api exec jest --runInBand src/modules/model-provider/model-provider.factory.spec.ts src/tool/tools/python-analysis.spec.ts src/agent/model-tool-selection.spec.ts src/audio/audio.service.spec.ts src/oauth/oauth-flow.service.spec.ts src/oauth/oauth-provider.service.spec.ts src/oauth/oauth.controller.spec.ts src/oauth/managed-mcp.service.spec.ts src/tool/connected-apps.controller.spec.ts src/tool/desktop-search.controller.spec.ts src/tool/tool-invocation.service.spec.ts src/media/canvas-context.spec.ts src/media/canvas-viewed-revision.spec.ts

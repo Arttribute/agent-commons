@@ -71,6 +71,11 @@ export class AgentToolsController {
         sessionId?: string;
         ownerId?: string;
         attachmentFileIds?: string[];
+        knowledgeMode?: "auto" | "selected" | "off";
+        knowledgeSpaceIds?: string[];
+        canvasProjectId?: string;
+        canvasRevisionId?: string;
+      canvasContextSnapshot?: string;
         spaceId?: string;
         runId?: string;
         toolCallId?: string;

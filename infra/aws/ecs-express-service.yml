@@ -43,6 +43,16 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: Inject Google OAuth app credentials after both keys exist in the runtime secret.
+  HubSpotMcpEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject HubSpot MCP connector credentials after both keys exist in the runtime secret.
+  HubSpotOAuthEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject HubSpot OAuth app credentials after both keys exist in the runtime secret.
   GitHubOAuthEnabled:
     Type: String
     Default: "false"
@@ -175,6 +185,8 @@ Parameters:
 Conditions:
   IsProduction: !Equals [!Ref Environment, production]
   IsGoogleOAuthEnabled: !Equals [!Ref GoogleOAuthEnabled, "true"]
+  IsHubSpotMcpEnabled: !Equals [!Ref HubSpotMcpEnabled, "true"]
+  IsHubSpotOAuthEnabled: !Equals [!Ref HubSpotOAuthEnabled, "true"]
   IsGitHubOAuthEnabled: !Equals [!Ref GitHubOAuthEnabled, "true"]
   IsSlackOAuthEnabled: !Equals [!Ref SlackOAuthEnabled, "true"]
   IsCanvaOAuthEnabled: !Equals [!Ref CanvaOAuthEnabled, "true"]
@@ -453,6 +465,26 @@ Resources:
             - IsGoogleOAuthEnabled
             - Name: GOOGLE_OAUTH_CLIENT_SECRET
               ValueFrom: !Sub "${RuntimeSecretArn}:GOOGLE_OAUTH_CLIENT_SECRET::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsHubSpotMcpEnabled
+            - Name: HUBSPOT_MCP_CLIENT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:HUBSPOT_MCP_CLIENT_ID::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsHubSpotMcpEnabled
+            - Name: HUBSPOT_MCP_CLIENT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:HUBSPOT_MCP_CLIENT_SECRET::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsHubSpotOAuthEnabled
+            - Name: HUBSPOT_OAUTH_CLIENT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:HUBSPOT_OAUTH_CLIENT_ID::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsHubSpotOAuthEnabled
+            - Name: HUBSPOT_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:HUBSPOT_OAUTH_CLIENT_SECRET::"
             - !Ref AWS::NoValue
           - !If
             - IsGitHubOAuthEnabled

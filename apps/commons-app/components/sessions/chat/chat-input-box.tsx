@@ -25,7 +25,7 @@ import {
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
-import { BRAVE_SEARCH_BASE_URL, hasConfiguredLocalWebSearch, type LocalSettings } from "@agent-commons/desktop-contract";
+import { BRAVE_SEARCH_BASE_URL, DEFAULT_LOCAL_WEB_SEARCH_URL, isManagedLocalWebSearchUrl, hasConfiguredLocalWebSearch, type LocalSettings, type LocalConnectedApp } from "@agent-commons/desktop-contract";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
@@ -115,6 +115,7 @@ export type ComposerLaunch = {
     previewUrl?: string;
   }>;
   knowledgeSpaceIds: string[];
+  knowledgeMode?: "auto" | "selected" | "off";
   reasoningEffort?: "low" | "medium" | "high" | "xhigh";
   webSearchEnabled?: boolean;
   mcpServerIds?: string[];
@@ -220,6 +221,7 @@ export default function ChatInputBox({
     KnowledgeSpaceOption[]
   >([]);
   const [knowledgeSpaceIds, setKnowledgeSpaceIds] = useState<string[]>([]);
+  const [knowledgeMode, setKnowledgeMode] = useState<"auto" | "selected" | "off">("auto");
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("auto");
@@ -314,38 +316,79 @@ export default function ChatInputBox({
   const [webSearchConfigured, setWebSearchConfigured] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [webSearchDialogOpen, setWebSearchDialogOpen] = useState(false);
-  const [webSearchProvider, setWebSearchProvider] = useState<"brave" | "searxng">("brave");
+  const [managedSearchUrl, setManagedSearchUrl] = useState(DEFAULT_LOCAL_WEB_SEARCH_URL);
+  const [webSearchProvider, setWebSearchProvider] = useState<"managed" | "brave" | "searxng">("managed");
   const [webSearchUrl, setWebSearchUrl] = useState("");
   const [webSearchApiKey, setWebSearchApiKey] = useState("");
   const [webSearchSaving, setWebSearchSaving] = useState(false);
   const [webSearchError, setWebSearchError] = useState("");
   const [mcpServers, setMcpServers] = useState<NonNullable<LocalSettings["mcpServers"]>>([]);
+  const [connectedApps, setConnectedApps] = useState<LocalConnectedApp[]>([]);
+  useEffect(() => {
+    if (!local) return;
+    let active = true;
+    const refresh = () => { void window.agentCommonsLocal?.getConnectedApps().then((result) => { if (active) setConnectedApps(result.apps); }).catch(() => undefined); };
+    refresh(); window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("focus", refresh); };
+  }, [local]);
   const [mcpServerIds, setMcpServerIds] = useState<string[]>([]);
   const [workspaceRemoved, setWorkspaceRemoved] = useState(false);
+  const workspaceRevision = useRef(0);
+  const contextRevision = useRef(0);
   useEffect(() => {
     if (!local || !initialLaunch || initialLaunch.workspaceRoot === undefined) return;
     setDesktopWorkspace(initialLaunch.workspaceRoot);
     setWorkspaceRemoved(initialLaunch.workspaceRoot === null);
   }, [initialLaunch, local]);
   useEffect(() => {
+    let cancelled = false;
+    const revision = workspaceRevision.current;
+    const contextVersion = contextRevision.current;
     if (local) {
       const bridge = window.agentCommonsLocal;
       void bridge?.getState().then((state) => {
+        if (cancelled || revision !== workspaceRevision.current) return;
         const conversation = state.conversations.find((item) => item.id === sessionId);
-        if (initialLaunch?.workspaceRoot === undefined) setDesktopWorkspace(conversation?.workspaceRoot ?? null);
+        if (initialLaunch?.workspaceRoot === undefined) {
+          setDesktopWorkspace(conversation?.workspaceRoot ?? null);
+          setWorkspaceRemoved(!conversation?.workspaceRoot);
+        }
+        if (contextVersion === contextRevision.current) {
+          setKnowledgeMode(conversation?.knowledgeMode ?? initialLaunch?.knowledgeMode ?? "auto");
+          setKnowledgeSpaceIds(conversation?.spaceIds ?? initialLaunch?.knowledgeSpaceIds ?? []);
+          setMcpServerIds(conversation?.mcpServerIds ?? initialLaunch?.mcpServerIds ?? []);
+        }
         setWebSearchConfigured(hasConfiguredLocalWebSearch(state.settings));
-        setWebSearchEnabled(Boolean(hasConfiguredLocalWebSearch(state.settings) && (conversation?.webSearchEnabled ?? initialLaunch?.webSearchEnabled)));
+        setWebSearchEnabled(Boolean(hasConfiguredLocalWebSearch(state.settings) && (conversation ? Boolean(conversation.webSearchEnabled) : initialLaunch?.webSearchEnabled ?? state.settings.webSearchDefaultEnabled ?? true)));
         setMcpServers(state.settings.mcpServers ?? []);
       }).catch(() => undefined);
-      return bridge?.onEvent((event) => {
+      const unsubscribe = bridge?.onEvent((event) => {
+        if (cancelled) return;
         if (event.type === "state") {
           setWebSearchConfigured(hasConfiguredLocalWebSearch(event.state.settings));
           if (!hasConfiguredLocalWebSearch(event.state.settings)) setWebSearchEnabled(false);
           setMcpServers(event.state.settings.mcpServers ?? []);
         }
       });
+      return () => { cancelled = true; unsubscribe?.(); };
     } else {
-      void window.agentCommonsDesktop?.getWorkspace().then(setDesktopWorkspace).catch(() => undefined);
+      setKnowledgeMode(initialLaunch?.knowledgeMode ?? "auto");
+      setKnowledgeSpaceIds(initialLaunch?.knowledgeSpaceIds ?? []);
+      const saved = sessionId ? localStorage.getItem(`commons-chat-context:${sessionId}`) : null;
+      if (saved) {
+        try { const context = JSON.parse(saved); setDesktopWorkspace(context.workspaceRoot ?? null); setWorkspaceRemoved(!context.workspaceRoot); setKnowledgeMode(context.knowledgeMode ?? "auto"); setKnowledgeSpaceIds(context.spaceIds ?? []); } catch { /* old context */ }
+      } else {
+        void window.agentCommonsDesktop?.getWorkspace().then((folder) => { if (!cancelled && revision === workspaceRevision.current) { setDesktopWorkspace(folder); setWorkspaceRemoved(!folder); } }).catch(() => undefined);
+      }
+      if (sessionId) void fetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
+        .then((response) => response.ok ? response.json() : null)
+        .then((result) => {
+          if (cancelled || contextVersion !== contextRevision.current || !result?.data?.runContext) return;
+          const context = result.data.runContext;
+          setKnowledgeMode(context.knowledgeMode ?? "auto");
+          setKnowledgeSpaceIds(context.knowledgeSpaceIds ?? []);
+        }).catch(() => undefined);
+      return () => { cancelled = true; };
     }
   }, [local, sessionId, initialLaunch?.webSearchEnabled]);
   const setChatWebSearch = async (enabled: boolean) => {
@@ -370,7 +413,8 @@ export default function ChatInputBox({
     setWebSearchError("");
     setWebSearchDialogOpen(true);
     void window.agentCommonsLocal?.getState().then((state) => {
-      setWebSearchProvider(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL || !state.settings.webSearchUrl ? "brave" : "searxng");
+      setManagedSearchUrl(state.settings.managedWebSearchUrl || DEFAULT_LOCAL_WEB_SEARCH_URL);
+      setWebSearchProvider(!state.settings.webSearchUrl || isManagedLocalWebSearchUrl(state.settings.webSearchUrl) ? "managed" : state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "brave" : "searxng");
       setWebSearchUrl(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "" : state.settings.webSearchUrl ?? "");
       setWebSearchApiKey(state.settings.webSearchApiKey ?? "");
     }).catch((cause) => setWebSearchError(cause instanceof Error ? cause.message : "Could not load web search settings."));
@@ -382,7 +426,7 @@ export default function ChatInputBox({
     setWebSearchError("");
     try {
       if (webSearchProvider === "brave" && !webSearchApiKey.trim()) throw new Error("Enter your Brave Search API key.");
-      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl: webSearchProvider === "brave" ? BRAVE_SEARCH_BASE_URL : webSearchUrl, webSearchApiKey });
+      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl: webSearchProvider === "managed" ? managedSearchUrl : webSearchProvider === "brave" ? BRAVE_SEARCH_BASE_URL : webSearchUrl, webSearchApiKey: webSearchProvider === "managed" ? "" : webSearchApiKey });
       const configured = hasConfiguredLocalWebSearch(state.settings);
       if (configured && state.conversations.some((conversation) => conversation.id === sessionId)) {
         await window.agentCommonsLocal.setConversationWebSearch(sessionId, true);
@@ -645,6 +689,7 @@ export default function ChatInputBox({
 
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const voice = useVoiceRecorder({
+    agentId,
     onTranscribed: (text) => {
       setInputText((current) =>
         current.trim() ? `${current.trimEnd()} ${text}` : text,
@@ -773,6 +818,7 @@ export default function ChatInputBox({
         text: userMessage,
         attachments: sendAttachments,
         knowledgeSpaceIds: [...knowledgeSpaceIds],
+        knowledgeMode,
         reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
         webSearchEnabled,
         mcpServerIds,
@@ -780,7 +826,6 @@ export default function ChatInputBox({
       });
       setInputText("");
       setAttachments([]);
-      setKnowledgeSpaceIds([]);
       onSent?.();
       return;
     }
@@ -805,7 +850,6 @@ export default function ChatInputBox({
     );
     previewUrlsRef.current.clear();
     setAttachments([]);
-    setKnowledgeSpaceIds([]);
     accumulatedRef.current = "";
     runningToolActivitiesRef.current.clear();
     activityArgsRef.current.clear();
@@ -833,10 +877,13 @@ export default function ChatInputBox({
       isStreaming: true,
     }, sessionId);
 
-    const cliContext = !local && desktopWorkspace
-      ? await window.agentCommonsDesktop?.getToolContext().catch(() => null)
-      : null;
+    const runWorkspace = launched?.workspaceRoot !== undefined ? launched.workspaceRoot : workspaceRemoved ? null : desktopWorkspace;
+    const runKnowledgeMode = launched?.knowledgeMode ?? knowledgeMode;
+    if (!local && sessionId) localStorage.setItem(`commons-chat-context:${sessionId}`, JSON.stringify({ workspaceRoot: runWorkspace, knowledgeMode: runKnowledgeMode, spaceIds: selectedKnowledgeSpaceIds }));
     try {
+      const cliContext = !local
+        ? await window.agentCommonsDesktop?.getToolContext(runWorkspace, sessionId)
+        : null;
       await stream({
         agentId,
         sessionId,
@@ -850,12 +897,13 @@ export default function ChatInputBox({
         attachments: messageAttachments.map((attachment) => ({ fileId: attachment.fileId })),
         computerRequest,
         knowledgeSpaceIds: selectedKnowledgeSpaceIds,
+        knowledgeMode: runKnowledgeMode,
         reasoningEffort: effort,
         webSearchEnabled: launched?.webSearchEnabled ?? webSearchEnabled,
         mcpServerIds: launched?.mcpServerIds ?? mcpServerIds,
         provenance,
         cliContext: cliContext ?? undefined,
-        localWorkspaceRoot: local ? (launched?.workspaceRoot !== undefined ? launched.workspaceRoot : workspaceRemoved ? null : desktopWorkspace ?? undefined) : undefined,
+        localWorkspaceRoot: runWorkspace,
         projectId: sessionId ? undefined : projectId,
       });
     } finally {
@@ -1112,7 +1160,8 @@ export default function ChatInputBox({
           <form onSubmit={saveWebSearchSettings} className="space-y-4">
             <label className="block space-y-1.5 text-sm">
               <span>Provider</span>
-              <select value={webSearchProvider} onChange={(event) => { setWebSearchProvider(event.target.value as "brave" | "searxng"); setWebSearchApiKey(""); }} className="w-full rounded-md border border-border bg-background px-3 py-2">
+              <select value={webSearchProvider} onChange={(event) => { setWebSearchProvider(event.target.value as "managed" | "brave" | "searxng"); setWebSearchApiKey(""); }} className="w-full rounded-md border border-border bg-background px-3 py-2">
+                <option value="managed">Agent Commons · ready to use</option>
                 <option value="brave">Brave Search · API key</option>
                 <option value="searxng">SearXNG · your endpoint</option>
               </select>
@@ -1121,10 +1170,11 @@ export default function ChatInputBox({
               <span>Search endpoint</span>
               <input type="url" required placeholder="https://search.example.com" value={webSearchUrl} onChange={(event) => setWebSearchUrl(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
             </label>}
-            <label className="block space-y-1.5 text-sm">
+            {webSearchProvider !== "managed" && <label className="block space-y-1.5 text-sm">
               <span>API key {webSearchProvider === "searxng" && <span className="text-muted-foreground">(if required)</span>}</span>
               <input type="password" required={webSearchProvider === "brave"} autoComplete="off" value={webSearchApiKey} onChange={(event) => setWebSearchApiKey(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
-            </label>
+            </label>}
+            {webSearchProvider === "managed" && <p className="text-xs text-muted-foreground">No API key or account required. Approved queries go to Agent Commons Search.</p>}
             {webSearchError && <p role="alert" className="text-xs text-destructive">{webSearchError}</p>}
             <DialogFooter>
               <button type="button" onClick={() => setWebSearchDialogOpen(false)} className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted">Cancel</button>
@@ -1278,22 +1328,24 @@ export default function ChatInputBox({
                             Knowledge Spaces
                           </span>
                           <span className="block text-[11px] font-normal text-muted-foreground">
-                            Use selected spaces for this message
+                            Choose how this chat uses indexed knowledge
                           </span>
                         </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {(["auto", "selected", "off"] as const).map((mode) => <DropdownMenuCheckboxItem key={mode} checked={knowledgeMode === mode} onCheckedChange={() => { contextRevision.current += 1; setKnowledgeMode(mode); }}>{mode === "auto" ? "Automatic" : mode === "selected" ? "Selected spaces" : "Off"}</DropdownMenuCheckboxItem>)}
                         <DropdownMenuSeparator />
                         {knowledgeSpaces.map((space) => (
                           <DropdownMenuCheckboxItem
                             key={space.spaceId}
                             checked={knowledgeSpaceIds.includes(space.spaceId)}
                             onCheckedChange={(checked) =>
-                              setKnowledgeSpaceIds((current) =>
+                              (contextRevision.current += 1, setKnowledgeMode("selected"), setKnowledgeSpaceIds((current) =>
                                 checked
                                   ? [...new Set([...current, space.spaceId])]
                                   : current.filter(
                                       (id) => id !== space.spaceId,
                                     ),
-                              )
+                              ))
                             }
                           >
                             <span className="min-w-0">
@@ -1323,13 +1375,14 @@ export default function ChatInputBox({
                       <Globe2 className="mr-2 h-4 w-4" />
                       <span>Web search</span>
                     </DropdownMenuCheckboxItem>}
-                    {local && webSearchConfigured && <DropdownMenuItem onSelect={openWebSearchSettings} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
+                    {local && webSearchConfigured && <DropdownMenuItem onSelect={() => { setTimeout(openWebSearchSettings, 0); }} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
                     {local && <DropdownMenuSub>
-                      <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />MCP connectors</DropdownMenuSubTrigger>
+                      <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />Connected tools</DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="min-w-56">
                         <DropdownMenuLabel>Use in this chat</DropdownMenuLabel>
                         {mcpServers.filter((server) => server.enabled).map((server) => <DropdownMenuCheckboxItem key={server.id} checked={mcpServerIds.includes(server.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, server.id])] : current.filter((id) => id !== server.id))}>{server.name} · {server.mode === "read" ? "Read" : "Write"}</DropdownMenuCheckboxItem>)}
-                        {!mcpServers.some((server) => server.enabled) && <p className="px-2 py-2 text-xs text-muted-foreground">Set up a connector in Settings.</p>}
+                        {connectedApps.map((app) => <DropdownMenuCheckboxItem key={app.id} disabled={!app.connected && !mcpServerIds.includes(app.id)} checked={mcpServerIds.includes(app.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, app.id])] : current.filter((id) => id !== app.id))}>{app.name}{!app.connected ? " · Not connected" : ""}</DropdownMenuCheckboxItem>)}
+                        {!connectedApps.length && !mcpServers.some((server) => server.enabled) && <p className="px-2 py-2 text-xs text-muted-foreground">Set up a connector in Settings.</p>}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>}
                     <DropdownMenuSeparator />
@@ -1382,7 +1435,7 @@ export default function ChatInputBox({
                   <div className="flex min-w-0 items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then((folder) => { if (folder) { setDesktopWorkspace(folder); setWorkspaceRemoved(false); } })}
+                      onClick={() => void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then((folder) => { if (folder) { workspaceRevision.current += 1; setDesktopWorkspace(folder); setWorkspaceRemoved(false); } })}
                       disabled={!!isLoading}
                       title={desktopWorkspace ?? "Choose a local workspace for agent file access"}
                       aria-label="Choose local workspace"
@@ -1391,9 +1444,10 @@ export default function ChatInputBox({
                       <FolderOpen className="h-4 w-4 shrink-0" />
                       {desktopWorkspace && <span className="truncate text-xs">{desktopWorkspace.split(/[\\/]/).filter(Boolean).at(-1)}</span>}
                     </button>
-                    {desktopWorkspace && <button type="button" disabled={!!isLoading} onClick={() => { setDesktopWorkspace(null); setWorkspaceRemoved(true); }} title="Remove folder from this chat" aria-label="Remove folder from this chat" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>}
+                    {desktopWorkspace && <button type="button" disabled={!!isLoading} onClick={() => { workspaceRevision.current += 1; setDesktopWorkspace(null); setWorkspaceRemoved(true); }} title="Remove folder from this chat" aria-label="Remove folder from this chat" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>}
                   </div>
                 )}
+                <button type="button" disabled={!!isLoading} onClick={() => { contextRevision.current += 1; setKnowledgeMode((mode) => mode === "off" ? "auto" : "off"); }} title="Automatic lets the agent choose when to search knowledge. Use Reference Knowledge to pick specific spaces." className="flex items-center gap-1 rounded-lg p-1.5 text-xs text-muted-foreground"><Brain className="h-4 w-4" />Knowledge: {knowledgeMode === "off" ? "off" : knowledgeMode === "selected" ? `${knowledgeSpaceIds.length} selected` : "auto"}</button>
                 {footerLeft && <div className="ml-1 min-w-0">{footerLeft}</div>}
               </div>
             )}

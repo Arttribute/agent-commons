@@ -1,5 +1,6 @@
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { auth } from "@/auth";
+import { desktopRequestPolicy } from "@/lib/desktop-request-policy";
 
 /**
  * Keep private application surfaces server-protected, and keep the marketing
@@ -24,17 +25,21 @@ const cloudAuthMiddleware = auth((request) => {
 });
 
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
-  const desktopLocal = process.env.COMMONS_DESKTOP_SERVER === "1" &&
-    request.cookies.get("commons-desktop-mode")?.value === "private-local";
-  if (desktopLocal) {
-    const { pathname, origin } = request.nextUrl;
-    if (pathname === "/api/auth/session") return NextResponse.json(null);
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Cloud APIs are unavailable in Local mode." }, { status: 503 });
-    }
-    if (pathname === "/") return NextResponse.redirect(new URL("/studio/agents", origin));
+  const policy = desktopRequestPolicy({
+    server: process.env.COMMONS_DESKTOP_SERVER === '1',
+    local: request.cookies.get('commons-desktop-mode')?.value === 'private-local',
+    path: request.nextUrl.pathname,
+    mainToken: process.env.COMMONS_DESKTOP_MAIN_TOKEN,
+    suppliedToken: request.headers.get('x-commons-desktop-main'),
+  });
+  if (policy === 'native' || policy === 'auth') return NextResponse.next();
+  if (policy === 'local-session') return NextResponse.json(null);
+  if (policy === 'block-cloud-api') return NextResponse.json({ error: 'Cloud APIs are unavailable in Local mode.' }, { status: 503 });
+  if (policy === 'local-page') {
+    if (request.nextUrl.pathname === '/') return NextResponse.redirect(new URL('/studio/agents', request.nextUrl.origin));
     return NextResponse.next();
   }
+  if (request.nextUrl.pathname === "/api/desktop-search/search") return NextResponse.next();
   // Auth.js and the native sign-in handoff must remain reachable while signed
   // out. Guarding these routes redirects /login back to its own start route.
   if (request.nextUrl.pathname.startsWith("/api/auth/")) return NextResponse.next();

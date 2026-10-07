@@ -15,6 +15,7 @@ test("lists, searches and reads the same indexed Knowledge files, enforcing agen
     const available = accessibleSpaces([space, hidden], "agent");
     assert.deepEqual(available.map((space) => space.id), ["mango"]);
     assert.deepEqual(accessibleSpaces([space, hidden], "agent", ["private"]), []);
+    assert.deepEqual(accessibleSpaces([space, hidden], "agent", []), []);
     assert.match(await knowledgeTool(available, "list_knowledge_spaces", {}), /"documents":1/);
     assert.equal(JSON.parse(await knowledgeTool(available, "list_knowledge_documents", { spaceId: "mango" })).documents[0].path, path);
     assert.match(await knowledgeTool(available, "search_knowledge", { query: "Mango" }), /Amina/);

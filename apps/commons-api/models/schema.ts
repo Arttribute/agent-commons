@@ -87,6 +87,7 @@ export const agent = pgTable('agent', {
   modelId: text('model_id').default('gpt-5.4-mini'),
   modelApiKey: text('model_api_key'), // Encrypted BYOK API key
   modelBaseUrl: text('model_base_url'), // For Ollama / custom endpoints
+  mediaModels: jsonb('media_models').$type<{ imageModel?: string; videoModel?: string; audioModel?: string; musicModel?: string; transcriptionModel?: string }>().default({}),
 
   // A2A Protocol — Agent-to-Agent interoperability
   a2aEnabled: pgBoolean('a2a_enabled').default(false).notNull(),
@@ -761,7 +762,9 @@ export const session = pgTable(
     title: text('title'),
     initiator: text('initiator'), // wallet address of user or agent
 
+    runContext: jsonb('run_context').$type<{ knowledgeMode?: 'auto' | 'selected' | 'off'; knowledgeSpaceIds?: string[] }>().default({}),
     model: jsonb('model').$type<{
+      source?: 'agent' | 'session';
       name?: string; // Legacy field - keep for backward compat
       provider?: string; // 'openai' | 'anthropic' | 'google' | 'mistral' | 'groq' | 'ollama'
       modelId?: string; // e.g. 'claude-sonnet-4-6', 'gpt-4o'
@@ -1807,6 +1810,9 @@ export const tool = pgTable('tool', {
     headers?: Record<string, string>;
     queryParams?: Record<string, string>;
     bodyTemplate?: any;
+    bodyTransform?: string;
+    requiresConfirmation?: boolean;
+    oauthScopes?: string[];
     authType?: 'none' | 'bearer' | 'api-key' | 'basic' | 'oauth2';
     authKeyName?: string; // Name of the key required (e.g., 'OPENAI_API_KEY')
     oauthProviderKey?: string;

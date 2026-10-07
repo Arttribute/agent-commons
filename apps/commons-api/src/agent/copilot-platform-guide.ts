@@ -1,5 +1,6 @@
 export type CopilotUiContext = {
   desktopMode?: 'cloud';
+  activeLibraryItemId?: string;
   pathname?: string;
   pageTitle?: string;
   routeName?: string;
