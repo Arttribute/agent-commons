@@ -115,7 +115,7 @@ phases:
         # Only boolean availability leaves Secrets Manager; API keys stay in the
         # runtime secret and reach containers through ECS secret references.
         MODEL_KEYS_AVAILABLE=$(aws secretsmanager get-secret-value --secret-id "$RUNTIME_SECRET_ARN" --query SecretString --output text --region "$AWS_REGION" \
-          | jq -c '{anthropic: ((.ANTHROPIC_API_KEY // "") != ""), google: ((.GOOGLE_API_KEY // "") != ""), groq: ((.GROQ_API_KEY // "") != ""), mistral: ((.MISTRAL_API_KEY // "") != "")}')
+          | jq -c '{anthropic: ((.ANTHROPIC_API_KEY // "") != ""), google: ((.GOOGLE_API_KEY // "") != ""), groq: ((.GROQ_API_KEY // "") != ""), mistral: ((.MISTRAL_API_KEY // "") != ""), hubspotMcp: ((.HUBSPOT_MCP_CLIENT_ID // "") != "" and (.HUBSPOT_MCP_CLIENT_SECRET // "") != ""), hubspotOAuth: ((.HUBSPOT_CLIENT_ID // "") != "" and (.HUBSPOT_CLIENT_SECRET // "") != "")}')
 
         aws cloudformation deploy \
           --stack-name "$STACK_NAME" \
@@ -131,8 +131,8 @@ phases:
           RuntimeSecretArn="$RUNTIME_SECRET_ARN" \
           AppOrigin="$APP_ORIGIN" \
           GoogleOAuthEnabled="${GOOGLE_OAUTH_ENABLED:-false}" \
-          HubSpotMcpEnabled="${HUBSPOT_MCP_ENABLED:-false}" \
-          HubSpotOAuthEnabled="${HUBSPOT_OAUTH_ENABLED:-false}" \
+          HubSpotMcpEnabled="${HUBSPOT_MCP_ENABLED:-$(jq -r '.hubspotMcp' <<<"$MODEL_KEYS_AVAILABLE")}" \
+          HubSpotOAuthEnabled="${HUBSPOT_OAUTH_ENABLED:-$(jq -r '.hubspotOAuth' <<<"$MODEL_KEYS_AVAILABLE")}" \
           GitHubOAuthEnabled="${GITHUB_OAUTH_ENABLED:-false}" \
           SlackOAuthEnabled="${SLACK_OAUTH_ENABLED:-false}" \
           CanvaOAuthEnabled="${CANVA_OAUTH_ENABLED:-false}" \
