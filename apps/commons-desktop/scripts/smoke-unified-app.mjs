@@ -182,10 +182,11 @@ try {
           if (!managedSearch?.enabled || managedSearch.endpoint !== 'https://api.agentcommons.io/v1/desktop-search' || managedSearch.dialog || managedSearch.path !== `/sessions/${savedSession.id}`) throw new Error(`Managed search did not enable without setup: ${JSON.stringify(managedSearch)}`);
           console.log("Desktop smoke: Managed web search enabled without setup.");
           const webSearchDialog = await evaluate(page.webSocketDebuggerUrl, `(async () => {
-            document.querySelector('button[aria-label="Add photos & files"]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' }));
+            const menuButton = [...document.querySelectorAll('button[aria-label="Add photos & files"]')].find(node => !node.disabled && node.getBoundingClientRect().width > 0);
+            if (menuButton?.getAttribute('aria-expanded') !== 'true') { menuButton?.focus(); menuButton?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })); }
             await new Promise(resolve => setTimeout(resolve, 100));
             const item = [...document.querySelectorAll('[role="menuitem"]')].find(node => node.textContent?.includes('Configure web search'));
-            if (!item) return { open: false, path: location.pathname, menu: [...document.querySelectorAll('[role="menuitem"]')].map(node => node.textContent) };
+            if (!item) return { open: false, path: location.pathname, menu: [...document.querySelectorAll('[role^="menuitem"]')].map(node => node.textContent), button: menuButton?.outerHTML };
             item.click();
             for (let attempt = 0; attempt < 20; attempt++) {
               await new Promise(resolve => setTimeout(resolve, 100));

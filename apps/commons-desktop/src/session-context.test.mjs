@@ -32,6 +32,10 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     const body = JSON.parse(raw); requests.push(body);
     if (body.stream === false) return response.end(JSON.stringify({ message: { role: 'assistant', content: 'A saved conversation' } }));
     const last = body.messages.at(-1);
+    if (body.messages.some((entry) => entry.role === 'user' && entry.content === 'Use run_python to calculate and save the report')) {
+      const message = last.role === 'user' ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'run_python', arguments: { code: '' } } }] } : { role: 'assistant', content: 'I successfully generated and saved the report.' };
+      return response.end(JSON.stringify({ message, done: true }) + '\n');
+    }
     const message = last.role === 'user' && last.content === 'List this folder'
       ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'cli_list_directory', arguments: {} } }] }
       : last.role === 'user' && last.content === 'Read the root-qualified selected path'
@@ -76,6 +80,7 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     assert.equal(removed.conversation.workspaceRoot, undefined);
     assert.ok(!requests.filter((request) => request.stream).at(-1).tools.some((tool) => tool.function.name.startsWith('cli_')));
     runtime.setTarget({ isDestroyed: () => false, send: (_channel, event) => { if (event.type === 'approval') queueMicrotask(() => runtime.resolveApproval(event.approval.id, true)); } });
+    await assert.rejects(runtime.sendMessage({ agentId: inherited, prompt: 'Use run_python to calculate and save the report', workspaceRoot: null, knowledgeMode: 'off' }), /claimed completion without successful code/);
     const zip = new ZipFile(); zip.addBuffer(Buffer.from('Approved workflow input'), 'A kit/START HERE.md'); zip.end();
     const chunks = []; for await (const chunk of zip.outputStream) chunks.push(chunk);
     runtime.importLibraryFiles([{ name: 'workflow.zip', mimeType: 'application/zip', bytes: new Uint8Array(Buffer.concat(chunks)) }]);

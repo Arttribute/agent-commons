@@ -84,7 +84,7 @@ For ZIP inputs, inspect the archive, extract its files, read its workflow and in
 Use connected tools directly with their actual schemas and credentials. Report tool errors accurately and continue with a changed approach; do not tell the user to perform operations that available tools can complete.`;
 
 function requiresComputedData(text) {
-  return /\b(?:python|pandas|matplotlib|seaborn|scikit.learn|machine learning|data (?:analysis|science|visuali[sz]ation)|dataset|regression|histogram|correlation|scatter plot|time.series)\b|\b(?:plot|chart|visuali[sz]e|analy[sz]e)\b.{0,80}\b(?:data|csv|xlsx|spreadsheet|measurements|heart.rate|sales)\b/i.test(text);
+  return /\b(?:python|run_python|runPythonAnalysis|pandas|matplotlib|seaborn|scikit.learn|machine learning|data (?:analysis|science|visuali[sz]ation)|dataset|regression|histogram|correlation|scatter plot|time.series)\b|\b(?:plot|chart|visuali[sz]e|analy[sz]e)\b.{0,80}\b(?:data|csv|xlsx|spreadsheet|measurements|heart.rate|sales)\b/i.test(text);
 }
 
 const PYTHON_DATA_PACKAGES = ["numpy==2.2.6", "pandas==2.2.3", "matplotlib==3.10.3", "scipy==1.15.3", "scikit-learn==1.6.1", "seaborn==0.13.2", "openpyxl==3.1.5", "pillow==11.2.1"];

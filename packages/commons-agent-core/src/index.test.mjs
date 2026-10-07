@@ -36,6 +36,6 @@ test("cloud and local agent prompts use one identity block", () => {
 });
 
 test("computed data tasks cannot select the creative image generator", () => {
-  for (const request of ["Use Python for these measurements", "Visualize the attached dataset", "Plot sales from this CSV", "Fit a regression model"]) assert.equal(requiresComputedData(request), true);
+  for (const request of ["Use Python for these measurements", "Visualize the attached dataset", "Plot sales from this CSV", "Fit a regression model", "Use run_python to create the campaign assets", "Use runPythonAnalysis for this file"]) assert.equal(requiresComputedData(request), true);
   for (const request of ["Create a product ad image", "Illustrate our workflow", "Hello there"]) assert.equal(requiresComputedData(request), false);
 });

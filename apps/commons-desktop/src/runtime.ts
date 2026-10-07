@@ -1660,11 +1660,13 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             messages.push({ role: "system", content: "Your previous response was an invented function call. The user needs a natural language answer. Reply directly, without JSON or code fences." });
             continue;
           }
-          if (toolEvidenceNeeded && (!executedTools || (mustReadFile && !["cli_read_file", "read_library_item", "run_python", "read_knowledge_document"].some((name) => successfulTools.has(name)))) && !executionRepairAttempted) {
+          const computedEvidenceMissing = requiresComputedData(lastUser) && !["run_python", "cli_run_command", "cli_wait_for_process"].some((name) => successfulTools.has(name));
+          if (toolEvidenceNeeded && (!successfulTools.size || computedEvidenceMissing || (mustReadFile && !["cli_read_file", "read_library_item", "run_python", "read_knowledge_document"].some((name) => successfulTools.has(name)))) && !executionRepairAttempted) {
             executionRepairAttempted = true;
-            messages.push({ role: "system", content: "The user requested work that the available tools can perform. You have not executed a tool for this request. Use the appropriate tool now, with the exact current folder, attached file IDs, or connector schema. Do not give the user commands to run or claim you inspected anything without tool evidence. If an essential input is missing, ask for that input clearly." });
+            messages.push({ role: "system", content: "The user requested work that the available tools can perform. This turn does not yet have successful tool evidence for that work. For a requested Python/computed result, execute run_python and fix any reported error. Use the appropriate tool now, with the exact current folder, attached file IDs, or connector schema. Do not give the user commands to run or claim you inspected anything without tool evidence. If an essential input is missing, ask for that input clearly." });
             continue;
           }
+          if (computedEvidenceMissing && /\b(?:successfully|created|generated|saved|completed|finished|done)\b/i.test(message.content ?? "")) throw new Error("The model claimed completion without successful code execution. Its tool results are saved; continue from the reported error.");
           if (!message.content?.trim()) throw new Error("The local model returned no answer. Tool results are saved; send a follow-up to continue or select another local model.");
           return message.content.trim();
         }
