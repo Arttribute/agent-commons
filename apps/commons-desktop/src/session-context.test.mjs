@@ -66,6 +66,8 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     assert.equal(requests.filter((request) => request.stream).at(-1).model, 'default-b');
     await runtime.sendMessage({ agentId: fixed, prompt: 'Hello' });
     assert.equal(requests.filter((request) => request.stream).at(-1).model, 'fixed-agent');
+    assert.ok(requests.every((request) => request.stream === true), 'Background title inference competes with active local turns');
+    assert.ok(runtime.state().conversations.every((conversation) => conversation.title !== 'New chat'));
     for (const name of ['One', 'Two']) { mkdirSync(join(root, name)); writeFileSync(join(root, name, `${name}.txt`), name); }
     const first = await runtime.sendMessage({ agentId: inherited, workspaceRoot: join(root, 'One'), knowledgeMode: 'off', webSearchEnabled: false, prompt: 'List this folder' });
     assert.match(first.response, /Directory: .*One/); assert.match(first.response, /One.txt/);

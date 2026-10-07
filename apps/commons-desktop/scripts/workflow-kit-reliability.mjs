@@ -61,6 +61,8 @@ try {
       conversationId = inspect.conversation.id;
       if (mode === 'zip') assert.ok(inspect.conversation.messages.some((message) => message.toolName === 'extract_library_archive' && !message.content.startsWith('Error:')), 'ZIP was not extracted by the agent');
       assert.ok(inspect.conversation.messages.some((message) => ['cli_read_file', 'read_library_item', 'run_python'].includes(message.toolName) && !message.content.startsWith('Error:')), 'Workflow was not read');
+      }
+      if (!resumed || process.env.COMMONS_WORKFLOW_RESUME_PHASE === 'draft') {
       phase = 'draft';
       await runtime.sendMessage({ agentId, conversationId, prompt: `Now execute the B2B workflow using approved-brand.json as the sole approved facts. The supplied snapshots are sufficient for this offline test. Draft brand-sheet.md, five matched ads in ad-copy.md (IDs headline, offer, how-it-works, advertorial, countdown), ad-prompts.md and personas.md. Read the matching kit sections first. Keep unknown reviews and testimonials explicitly missing; personas are hypotheses. Dates must stay as supplied, without invented deadlines. Use run_python to save real output files in OUTPUT_DIR; a selected kit folder is reference material. I approve these offline drafts for the next layout step.` });
       }

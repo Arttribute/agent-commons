@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { smokeLocalTools } from "./smoke-local-tools.mjs";
+import { smokeLocalAccounts } from "./smoke-local-accounts.mjs";
 
 const temp = mkdtempSync(join(tmpdir(), "commons-desktop-smoke-"));
 const port = await new Promise((resolve, reject) => {
@@ -271,6 +272,7 @@ try {
           if (!restored?.conversations?.some((conversation) => conversation.id === savedSession.id)) {
             throw new Error("Saved Local session disappeared after switching modes");
           }
+          await smokeLocalAccounts(evaluate, cloudPage.webSocketDebuggerUrl, temp);
           console.log(`Unified Commons desktop loaded ${result.path} with Local agent and both mode bridges.`);
           ready = true;
           break;

@@ -1029,15 +1029,10 @@ export class PrivateLocalRuntime {
         const current = draft.conversations.find((candidate) => candidate.id === conversationId)!;
         current.messages.push({ id: randomUUID(), role: "assistant", content: response, createdAt: now() });
         current.updatedAt = now();
+        // Background title inference used a different context size and could
+        // unload the active model while the next turn was already running.
+        if (firstTurn && current.title === "New chat") current.title = input.prompt.replace(/\s+/g, " ").trim().split(" ").slice(0, 8).join(" ").slice(0, 80) || "New Conversation";
       });
-      if (firstTurn) {
-        void this.generateLocalTitle(input.prompt, response, selectedModel, state.settings.ollamaUrl)
-          .then((title) => this.change((draft) => {
-            const current = draft.conversations.find((candidate) => candidate.id === conversationId);
-            if (current?.title === "New chat") current.title = title;
-          }))
-          .catch(() => undefined);
-      }
       this.emit({ type: "activity", label: `${agent.name} finished`, status: "done" });
       if (input.interactive) this.emit({ type: "chat-end", conversationId });
       return {
@@ -1061,28 +1056,6 @@ export class PrivateLocalRuntime {
       this.activeConversations.delete(conversationId);
       this.pendingSteers.delete(conversationId);
     }
-  }
-
-  private async generateLocalTitle(prompt: string, answer: string, model: string, ollamaUrl: string) {
-    try {
-      const response = await fetch(`${ensureLoopback(ollamaUrl)}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model, stream: false, messages: [
-          { role: "system", content: "Write a specific title of at most six words for this conversation. Return only the title, with no quotes or punctuation." },
-          { role: "user", content: `Request: ${prompt.slice(0, 800)}\nAnswer: ${answer.slice(0, 350)}` },
-        ], options: { temperature: 0.2, num_ctx: 2048, num_predict: 32 } }),
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!response.ok) throw new Error("Title model unavailable");
-      const payload = await response.json() as { message?: { content?: string } };
-      const title = String(payload.message?.content ?? "").replace(/^[\s"'`#*-]+|[\s"'`#*.!]+$/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
-      if (title) return title.split(" ").slice(0, 6).join(" ");
-    } catch { /* Keep the conversation usable if title generation fails. */ }
-    if (/\b(?:pdf|document|paper|report|file)\b/i.test(prompt)) return /summari[sz]|key points/i.test(prompt) ? "Document Summary" : "Document Analysis";
-    if (/\b(?:bug|fix|debug|code|function|build|app)\b/i.test(prompt)) return "Development Task";
-    if (/\b(?:project|plan|strategy)\b/i.test(prompt)) return "Project Planning";
-    return "New Conversation";
   }
 
   deleteConversation(id: string) {
