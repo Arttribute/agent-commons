@@ -20,6 +20,37 @@ export function toolResult(name: string, content: string): OllamaMessage {
 
 function boundedContent(content: string, limit: number) {
   if (content.length <= limit) return content;
+  try {
+    const data = JSON.parse(content);
+    const texts: { parent: Record<string, unknown>; key: string }[] = [];
+    const visit = (value: unknown) => {
+      if (!value || typeof value !== 'object') return;
+      for (const [key, item] of Object.entries(value)) {
+        if (typeof item === 'string' && /^(?:content|stdout|stderr|text|instructions|description|preview|summary|body|transcript)$/i.test(key)) texts.push({ parent: value as Record<string, unknown>, key });
+        else if (typeof item === 'object') visit(item);
+      }
+    };
+    visit(data);
+    let encoded = JSON.stringify(data);
+    while (encoded.length > limit) {
+      const largest = texts.sort((a, b) => String(b.parent[b.key]).length - String(a.parent[a.key]).length)[0];
+      if (!largest || String(largest.parent[largest.key]).length <= 100) break;
+      const text = String(largest.parent[largest.key]);
+      const length = Math.max(40, text.length - (encoded.length - limit) - 100);
+      const shortened = `${text.slice(0, length / 2)}\n[Text shortened; use an explicit offset to read omitted source text.]\n${text.slice(-length / 2)}`;
+      if (shortened.length >= text.length) break;
+      largest.parent[largest.key] = shortened;
+      encoded = JSON.stringify(data);
+    }
+    if (encoded.length <= limit) return encoded;
+    let length = Math.max(20, Math.floor(limit / 4));
+    let preview = JSON.stringify({ truncated: true, preview: `${content.slice(0, length)}\n[Structured result shortened]\n${content.slice(-length)}` });
+    while (preview.length > limit && length > 10) {
+      length = Math.floor(length / 2);
+      preview = JSON.stringify({ truncated: true, preview: `${content.slice(0, length)}\n[Structured result shortened]\n${content.slice(-length)}` });
+    }
+    return preview;
+  } catch { /* Ordinary terminal output is not JSON. */ }
   return `${content.slice(0, limit / 2)}\n[Output shortened; read a smaller range if needed.]\n${content.slice(-limit / 2)}`;
 }
 
@@ -70,14 +101,16 @@ export function prepareLocalInference(messages: OllamaMessage[], schemaCharacter
   let lastError: unknown;
   for (const outputTokens of [4096, 3072, 2048]) {
     try {
-      compactToolLoop(messages, localPromptCharacterBudget(outputTokens, schemaCharacters, imageCount));
+      const candidate = structuredClone(messages);
+      compactToolLoop(candidate, localPromptCharacterBudget(outputTokens, schemaCharacters, imageCount), true);
+      messages.splice(0, messages.length, ...candidate);
       return outputTokens;
     } catch (error) { lastError = error; }
   }
   throw lastError;
 }
 
-export function compactToolLoop(messages: OllamaMessage[], maxCharacters = 32_000) {
+export function compactToolLoop(messages: OllamaMessage[], maxCharacters = 32_000, preserveLatestResult = false) {
   // Keep system + current request, retaining recent exchanges atomically. A
   // bounded prompt prevents Ollama silently truncating the task after big logs.
   let lastUser = messages.length - 1;
@@ -90,13 +123,24 @@ export function compactToolLoop(messages: OllamaMessage[], maxCharacters = 32_00
     lastUser -= end - 1;
   }
   while (Buffer.byteLength(JSON.stringify(messages)) > maxCharacters && messages.length > lastUser + 2) {
+    let latestCall = -1;
+    for (let index = messages.length - 1; index > lastUser; index--) {
+      if (messages[index].role === "assistant" && messages[index].tool_calls?.length) { latestCall = index; break; }
+    }
     let end = lastUser + 2;
     while (messages[end]?.role === "tool") end++;
+    // Removing the newest group makes the next inference see the original
+    // request again, causing repeated tools and losing their verified results.
+    if (latestCall >= 0 && end > latestCall) break;
     messages.splice(lastUser + 1, end - lastUser - 1);
   }
   // Keep the newest call/result pair. Large reference excerpts can be read
   // again by their exact IDs and offsets; shorten their content explicitly.
-  for (const message of messages.filter((entry) => entry.role === "tool")) {
+  let latestCall = -1;
+  for (let index = messages.length - 1; index > lastUser; index--) {
+    if (messages[index].role === "assistant" && messages[index].tool_calls?.length) { latestCall = index; break; }
+  }
+  for (const message of messages.filter((entry, index) => entry.role === "tool" && (!preserveLatestResult || index < latestCall))) {
     const excess = Buffer.byteLength(JSON.stringify(messages)) - maxCharacters;
     if (excess <= 0) break;
     message.content = boundedContent(message.content, Math.max(256, message.content.length - excess - 256));

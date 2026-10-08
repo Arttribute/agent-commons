@@ -77,6 +77,7 @@ import { ActivityService } from '~/activity/activity.service';
 import { FilesService } from '~/files';
 import { ComputerService } from '~/computer';
 import { ResourceUpgradeService } from '~/computer/resource-upgrade.service';
+import { toolRequestTimeoutMs } from './tool-request-timeout';
 import { agentRunProgress } from './run-progress';
 import {
   RUNTIME_CAPABILITIES,
@@ -553,6 +554,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       - **startAgentComputer** — idempotently wake or attach this agent's assigned computer.
       - **listAgentComputers** — inspect the assigned computer's current state.
       - **runPythonAnalysis** — execute Python data analysis, statistics, plots and ML in the isolated managed runtime, with numpy, pandas, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow already provided. Start the assigned computer first. Pass uploaded Library file IDs in inputItemIds; INPUT_FILES maps names and IDs to staged readable paths. Save outputs using OUTPUT_DIR / filename to publish verified Library artifacts. Files persist across calls; imports and Python variables do not. Use this tool for Python analysis instead of bare system python3 or installing into the user or system environment. ZIP inputs can be inspected with zipfile.
+      - Terminal commands use the minimal operating-system Python, which does not have the managed data libraries. For Python data science, library import checks and ML, choose runPythonAnalysis directly; it prepares the separate managed environment. Do not install pip or data libraries into system Python, and do not replace requested library-based computation with an approximation.
       - **runComputerCommand** — run terminal work through the selected computer.
       - **readComputerFile** — read files from the computer workspace.
       - **writeComputerFiles** — write complete text files through a structured payload. Use this for all source-code creation and replacement; do not use shell heredocs or squeeze code into commands.
@@ -1764,6 +1766,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                     .post(
                       `http://localhost:${process.env.PORT}/v1/agents/tools`,
                       {
+                        timeout: { connect: 10_000, request: toolRequestTimeoutMs(fn, args as Record<string, unknown>) },
+                        retry: { limit: 0 },
                         json: {
                           args,
                           toolCall: config.toolCall,

@@ -45,7 +45,16 @@ async function main() {
   const nativeDisplay = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
   const nativeCapture = new URLSearchParams(location.search).get("native") === "true";
   Object.defineProperty(navigator.mediaDevices, "getDisplayMedia", { configurable: true, value: async (options: DisplayMediaStreamOptions) => {
-    const stream = nativeCapture ? await nativeDisplay(options) : canvas.captureStream(12);
+    const stream = nativeCapture ? await new Promise<MediaStream>((resolve, reject) => {
+      // Each native acquisition needs its own trusted gesture. The host invokes
+      // this synchronously with executeJavaScript(..., true), including replays
+      // after asynchronous account/mode cleanup.
+      (window as any).__nativeCapturePending = true;
+      (window as any).__acquireRequestedDisplayMedia = () => {
+        (window as any).__nativeCapturePending = false;
+        return nativeDisplay(options).then(resolve, reject);
+      };
+    }) : canvas.captureStream(12);
     stream.addTrack(tone(440).getAudioTracks()[0]); sources.push(stream); return stream;
   } });
   Object.defineProperty(navigator.mediaDevices, "getUserMedia", { configurable: true, value: async () => {

@@ -2085,6 +2085,7 @@ export class ComputerService {
     const url = `${apiUrl}${basePath}${path}`;
     const response = await fetch(url, {
       method,
+      signal: AbortSignal.timeout(60_000),
       headers: {
         Authorization: `Bearer ${apiKey}`,
         ...(agentCommonsId

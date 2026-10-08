@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compactToolLoop, libraryTextResult, localChatHistory, toolResult } from "./local-chat-history.ts";
+import { compactToolLoop, libraryTextResult, localChatHistory, prepareLocalInference, toolResult } from "./local-chat-history.ts";
 
 test('paginated Library reads preserve valid JSON and the exact next unread character', () => {
   const text = 'Quoted "facts", newlines\n and Unicode 👩🏽‍💻. '.repeat(300);
@@ -46,6 +46,37 @@ test("oversized user requests fail explicitly rather than silently losing the ta
   const messages = [{ role: "system", content: "instructions" }, ...localChatHistory([{ role: "user", content: request }])];
   assert.equal(messages.at(-1).content, request);
   assert.throws(() => compactToolLoop(messages), /context budget/);
+});
+
+test('a tight tool budget preserves the latest parallel call/result group', () => {
+  const messages = [{ role: 'system', content: 'Keep verified context' }, { role: 'user', content: 'Inspect this canvas' },
+    { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_canvas', arguments: { projectId: 'owned' } } }, { function: { name: 'read_library_item', arguments: { itemId: 'source' } } }] },
+    { role: 'tool', tool_name: 'read_canvas', content: 'Canvas details '.repeat(400) },
+    { role: 'tool', tool_name: 'read_library_item', content: 'Source data '.repeat(400) }];
+  compactToolLoop(messages, 2000);
+  assert.equal(messages.length, 5);
+  assert.equal(messages[2].tool_calls.length, 2);
+  assert.deepEqual(messages.slice(3).map((message) => message.tool_name), ['read_canvas', 'read_library_item']);
+  assert.ok(Buffer.byteLength(JSON.stringify(messages)) <= 2000);
+});
+
+test('large structured tool output stays parseable with verified IDs and numeric results', () => {
+  const data = { exitCode: 0, stdout: 'source facts '.repeat(900), stderr: '', artifacts: [{ fileId: 'verified-id', name: 'stats.json' }], result: { slope: 2 } };
+  const bounded = JSON.parse(toolResult('run_python', JSON.stringify(data)).content);
+  assert.equal(bounded.exitCode, 0);
+  assert.equal(bounded.result.slope, 2);
+  assert.deepEqual(bounded.artifacts, data.artifacts);
+  assert.match(bounded.stdout, /Text shortened/);
+});
+
+test('reduces output reserve before shortening the newest source result', () => {
+  const content = 'Source facts '.repeat(250);
+  const messages = [{ role: 'system', content: 'x'.repeat(9000) }, { role: 'user', content: 'Read the source' },
+    { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_library_item', arguments: { itemId: 'source' } } }] },
+    { role: 'tool', tool_name: 'read_library_item', content }];
+  const outputTokens = prepareLocalInference(messages, 6000, 4);
+  assert.equal(outputTokens, 2048);
+  assert.equal(messages.at(-1).content, content);
 });
 
 test("retains recent process evidence when earlier output exceeds the history budget", () => {
