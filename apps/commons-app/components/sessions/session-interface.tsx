@@ -170,6 +170,10 @@ export default function SessionInterfaceImproved({
   composerPlaceholder,
 }: SessionInterfaceImprovedProps) {
   const { mode } = useWorkspaceMode();
+  useEffect(() => {
+    if (mode === "private-local" && agentId) void window.agentCommonsLocal?.warmModel?.(agentId).catch(() => undefined);
+  }, [mode, agentId, agent?.modelId]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);

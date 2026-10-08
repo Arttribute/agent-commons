@@ -28,6 +28,7 @@ const bridge: LocalDesktopBridge = {
   testMcpServer: (id) => invoke("local:test-mcp", id),
   preparePython: () => invoke("local:prepare-python"),
   prepareModel: () => invoke("local:prepare-model"),
+  warmModel: (agentId) => invoke("local:warm-model", agentId),
   getStorageRoot: () => invoke("local:get-storage-root"),
   openComputer: (input) => invoke("local:open-computer", input),
   openStorageRoot: () => invoke("local:open-storage-root"),
