@@ -1,3 +1,4 @@
+import { missingComputedArtifacts } from './computed-artifact-completion';
 import * as schema from '#/models/schema';
 import { MEDIA_MODEL_REGISTRY } from "~/media/media-model.registry";
 import { TRANSCRIPTION_MODELS } from "~/audio/audio-models";
@@ -2172,6 +2173,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           const collectedToolCalls = executedCalls;
 
           let consecutiveToolSchemaFailures = 0;
+          let artifactRepairPending = false;
+          let artifactRepairAttempts = 0;
           const callModel = async (s: typeof MessagesAnnotation.State) => {
             consecutiveToolSchemaFailures = nextToolSchemaFailureCount(
               consecutiveToolSchemaFailures,
@@ -2180,10 +2183,22 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             if (consecutiveToolSchemaFailures >= MAX_CONSECUTIVE_TOOL_SCHEMA_FAILURES) {
               throw new Error('The agent repeatedly sent invalid tool input. This run stopped before further model requests.');
             }
-            return { messages: await llmWithTools.invoke(s.messages) };
+            const reply = await llmWithTools.invoke(s.messages);
+            if (!reply.tool_calls?.length) {
+              const missing = missingComputedArtifacts(this.contentToText(latestUserMessage?.content), attachmentContext?.attachments.map(file => file.name) ?? [], executedCalls);
+              if (missing.length) {
+                if (artifactRepairAttempts >= 2) throw new Error(`The agent did not produce the requested Library outputs: ${missing.join(', ')}. Its executed tool results are preserved; this task is incomplete.`);
+                artifactRepairAttempts++;
+                artifactRepairPending = true;
+                emitStatus('outputs', 'running', 'Completing requested files', `Missing verified outputs: ${missing.join(', ')}`);
+                return { messages: [reply, { role: 'system', content: `The current request is not complete. Missing verified Library outputs from this run: ${missing.join(', ')}. Prior workspace files, supplied examples, file reads and an import-only Python call are not new outputs for this task. Execute the requested calculation using the attached input file IDs and save its actual results in OUTPUT_DIR with runPythonAnalysis; use document tools for requested report formats. Return only verified new file IDs or links. Do not reuse outputs from another chat as if you generated them now.` }] as any };
+              }
+            }
+            return { messages: reply };
           };
 
           const shouldCont = (s: typeof MessagesAnnotation.State) => {
+            if (artifactRepairPending) { artifactRepairPending = false; return 'model'; }
             const last = s.messages.at(-1);
             return last &&
               'tool_calls' in last &&
@@ -2197,7 +2212,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             .addNode('model', callModel)
             .addNode('tools', toolNode)
             .addEdge(START, 'model')
-            .addConditionalEdges('model', shouldCont, ['tools', END])
+            .addConditionalEdges('model', shouldCont, ['tools', 'model', END])
             .addEdge('tools', 'model')
             .compile({
               checkpointer: this.getCheckpointer(),
