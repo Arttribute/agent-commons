@@ -4,7 +4,7 @@
   "private": true,
   "author": "Agent Commons",
   "type": "module",
-  "description": "Agent Commons desktop — cloud and private-local workspaces",
+  "description": "Agent Commons desktop \u2014 cloud and private-local workspaces",
   "main": "dist/main.cjs",
   "scripts": {
     "dev": "pnpm build:commons-app && pnpm build:main && electron .",
@@ -97,7 +97,11 @@
         "!**/node_modules/@img/sharp-libvips-{linux,linuxmusl,win32}-*/**",
         "!**/node_modules/@img/sharp-wasm32/**",
         "!**/node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
-      ]
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Record your voice for workflow demonstrations and voice chat when you enable your microphone.",
+        "NSCameraUsageDescription": "Use your camera in Commons calls when you choose to enable video."
+      }
     },
     "win": {
       "target": [
