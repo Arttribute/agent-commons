@@ -49,6 +49,18 @@ describe('Arcade skill assignment HTTP contract', () => {
     },
   );
 
+  it('enables a skill when an assignment request has no body', async () => {
+    await request(app.getHttpServer())
+      .put('/v1/skills/build-common-arcade-games/agents/arcade-agent')
+      .expect(200);
+    expect(skills.assignToAgent).toHaveBeenCalledWith(
+      'build-common-arcade-games',
+      'arcade-agent',
+      true,
+      { principalId: 'arcade-user', workspaceId: 'arcade-workspace' },
+    );
+  });
+
   it('routes the agent skill listing separately from skill lookup', async () => {
     await request(app.getHttpServer())
       .get('/v1/skills/agents/arcade-agent')
