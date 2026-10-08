@@ -86,6 +86,18 @@ describe('ComputerService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('waits for observed runtime readiness before the next agent tool step', async () => {
+    const ready = { computerId: 'computer', status: 'running' };
+    jest.spyOn(service, 'refreshForAgent').mockResolvedValue(ready as any);
+    expect(await service.waitUntilReady('agent_1', 'computer')).toBe(ready);
+    expect(service.refreshForAgent).toHaveBeenCalledWith('agent_1', 'computer');
+  });
+
+  it('reports a failed wake without allowing follow-up tools to proceed', async () => {
+    jest.spyOn(service, 'refreshForAgent').mockResolvedValue({ status: 'failed', errorMessage: 'Capacity unavailable' } as any);
+    await expect(service.waitUntilReady('agent_1', 'computer')).rejects.toThrow(/Capacity unavailable/);
+  });
+
   it('allows the same persistent computer to continue across chat sessions', async () => {
     jest.spyOn(service, 'getInstance').mockResolvedValue({
       computerId: '11111111-1111-4111-8111-111111111111',

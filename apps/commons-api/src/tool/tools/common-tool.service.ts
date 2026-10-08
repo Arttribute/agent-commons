@@ -2544,7 +2544,7 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    return this.computers.startComputer({
+    const computer = await this.computers.startComputer({
       ...props,
       agentId,
       sessionId: props.sessionId ?? metadata?.sessionId,
@@ -2553,6 +2553,7 @@ export class CommonToolService {
       runId: metadata?.runId,
       toolCallId: metadata?.toolCallId,
     });
+    return ['running', 'idle'].includes(computer.status) ? computer : this.computers.waitUntilReady(agentId, computer.computerId, metadata?.runId, metadata?.toolCallId);
   }
 
   async listAgentComputers(
