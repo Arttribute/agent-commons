@@ -2603,7 +2603,13 @@ function normalizeWorkspacePath(path: string) {
   if (!trimmed || trimmed.includes('\0')) {
     throw new BadRequestException('path is required');
   }
-  const parts = trimmed.replace(/\\/g, '/').split('/').filter(Boolean);
+  // CommonOS reads workspace-relative paths; terminal tools use /mnt/shared.
+  // Strip only the exact workspace prefix so both address the same file.
+  const normalized = trimmed.replace(/\\/g, '/');
+  const relative = normalized === '/mnt/shared' ? ''
+    : normalized.startsWith('/mnt/shared/') ? normalized.slice('/mnt/shared/'.length)
+    : normalized;
+  const parts = relative.split('/').filter(Boolean);
   if (parts.some((part) => part === '.' || part === '..')) {
     throw new BadRequestException('path escapes workspace');
   }

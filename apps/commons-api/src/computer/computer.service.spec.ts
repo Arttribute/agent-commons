@@ -74,6 +74,37 @@ describe('ComputerService', () => {
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ instruction: expect.stringMatching(/^Use the CommonOS pod terminal for this computer\./) }));
   });
 
+  it.each(['analysis.py', '/analysis.py', '/mnt/shared/analysis.py'])(
+    'writes %s to the same workspace file used by terminal commands', async (path) => {
+      jest.spyOn(service, 'listInstances').mockResolvedValue([{ computerId: 'computer', agentId: 'agent_1', status: 'running', commonOsAgentId: 'runtime' }] as any);
+      jest.spyOn(service, 'sendInstruction').mockImplementation(async (args) => {
+        const command = args.instruction.split('```sh\n')[1].split('\n```')[0];
+        const payload = JSON.parse(Buffer.from(command.split("' '")[1].slice(0, -1), 'base64').toString());
+        expect(payload.parts.map((part: any) => part.path)).toEqual(['analysis.py']);
+        return { status: 'completed', response: payload.marker } as any;
+      });
+      expect((await service.writeFiles({ agentId: 'agent_1', files: [{ path, content: 'print(1)' }] })).files).toEqual(['analysis.py']);
+    },
+  );
+
+  it.each(['analysis.py', '/analysis.py', '/mnt/shared/analysis.py'])(
+    'reads %s through the same workspace-relative endpoint', async (path) => {
+      jest.spyOn(service, 'listInstances').mockResolvedValue([{ computerId: 'computer', agentId: 'agent_1', status: 'running', commonOsAgentId: 'runtime' }] as any);
+      const request = jest.spyOn(service as any, 'commonOsComputerRequest').mockResolvedValue({ content: 'print(1)' });
+      jest.spyOn(service as any, 'touchComputer').mockResolvedValue(undefined);
+      expect(await service.readFile({ agentId: 'agent_1', path })).toEqual({ path: '/analysis.py', content: 'print(1)' });
+      expect(request.mock.calls[0][1]).toBe('/computers/runtime/workspace/read?path=%2Fanalysis.py');
+    },
+  );
+
+  it.each(['/mnt/shared/../outside.py', '/mnt/shared/sub/../../outside.py', '/mnt/shared/./file.py', '/mnt/shared/invalid\0.py'])(
+    'rejects invalid workspace paths before issuing a write: %s', async (path) => {
+      const send = jest.spyOn(service, 'sendInstruction');
+      await expect(service.writeFiles({ agentId: 'agent_1', files: [{ path, content: 'replacement' }] })).rejects.toBeInstanceOf(BadRequestException);
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
+
   it('returns a clear error when no active computer can be resolved', async () => {
     jest.spyOn(service, 'listInstances').mockResolvedValue([] as any);
 
