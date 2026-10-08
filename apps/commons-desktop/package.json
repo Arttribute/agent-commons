@@ -4,7 +4,7 @@
   "private": true,
   "author": "Agent Commons",
   "type": "module",
-  "description": "Agent Commons desktop \u2014 cloud and private-local workspaces",
+  "description": "Agent Commons desktop — cloud and private-local workspaces",
   "main": "dist/main.cjs",
   "scripts": {
     "dev": "pnpm build:commons-app && pnpm build:main && electron .",
