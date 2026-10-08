@@ -78,9 +78,13 @@ jobs:
           sudo chown root:root "$sandbox_helper"
           sudo chmod 4755 "$sandbox_helper"
       - name: Verify workflow capture, audio mixing and account cleanup (Linux)
+        env:
+          COMMONS_NATIVE_RECORDING_TEST: "true"
         if: runner.os == 'Linux'
         run: xvfb-run -a node apps/commons-desktop/scripts/skill-recording-reliability.mjs
       - name: Verify workflow capture, audio mixing and account cleanup (macOS and Windows)
+        env:
+          COMMONS_NATIVE_RECORDING_TEST: "true"
         if: runner.os != 'Linux'
         run: node apps/commons-desktop/scripts/skill-recording-reliability.mjs
       - name: Execute managed Python data analysis
