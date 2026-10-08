@@ -108,6 +108,8 @@ export class LocalModelManager {
     private readonly onStatus: (status: LocalModelStatus) => void,
   ) {}
 
+  ownsServer() { return Boolean(this.server && !this.server.killed); }
+
   currentStatus() {
     return { ...this.status };
   }
