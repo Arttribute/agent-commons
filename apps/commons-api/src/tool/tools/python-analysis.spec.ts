@@ -61,6 +61,12 @@ describe('computed Python output boundary', () => {
     await expect(service.runPythonAnalysis({ code: 'print(64)' }, { agentId: 'agent' })).rejects.toThrow(/verified result/);
     expect(service.files.createGeneratedFile).not.toHaveBeenCalled();
   });
+  it('never publishes partial files from a failed Python execution', async () => {
+    const service = setup();
+    service.computers.readFile.mockResolvedValue({ content: JSON.stringify({ exitCode: 1, stdout: '', stderr: 'Render failed', files: [{ name: 'partial.md', mimeType: 'text/markdown', base64: Buffer.from('partial').toString('base64') }] }) });
+    await expect(service.runPythonAnalysis({ code: 'raise RuntimeError()' }, { agentId: 'agent' })).rejects.toThrow(/Render failed/);
+    expect(service.files.createGeneratedFile).not.toHaveBeenCalled();
+  });
   it('stages the active chat attachments when the model omits input IDs', async () => {
     const service = setup();
     await service.runPythonAnalysis({ code: 'print(64)' }, { agentId: 'agent', sessionId: 'session', attachmentFileIds: ['input'] });

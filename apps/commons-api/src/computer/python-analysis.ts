@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE } from '@agent-commons/agent-core';
+import { CLOUD_PYTHON_PLATFORM } from './python-platform';
 
 // Bootstrap runs in the agent's isolated CommonOS computer, never in the API
 // process. A managed interpreter is installed without modifying system Python.
@@ -9,13 +10,26 @@ run = Path(__file__).resolve().parent
 config = json.loads((run / 'inputs.json').read_text())
 root = Path('/mnt/shared/.commons-python')
 root.mkdir(parents=True, exist_ok=True)
-uv = root / 'uv-0.12.23'
-triple, digest = ('aarch64-unknown-linux-gnu', '6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f') if platform.machine() in ('aarch64', 'arm64') else ('x86_64-unknown-linux-gnu', '9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6')
-env = {k: v for k, v in os.environ.items() if not k.startswith(('UV_', 'PYTHON', 'PIP_', 'CONDA')) and k != 'VIRTUAL_ENV'}
-env.update(UV_PYTHON_INSTALL_DIR=str(root / 'interpreters'), UV_PYTHON_BIN_DIR=str(root / 'bin'), UV_CACHE_DIR=str(root / 'cache'), UV_NO_CONFIG='1', UV_PYTHON_PREFERENCE='only-managed', PYTHONNOUSERSITE='1', MPLBACKEND='Agg', MPLCONFIGDIR=str(root / 'matplotlib'))
+resources = Path('/tmp/commons-python-runtime')
+resources.mkdir(parents=True, exist_ok=True)
+architecture = 'aarch64' if platform.machine() in ('aarch64', 'arm64') else 'x86_64'
+libc = 'musl' if any(Path('/lib').glob('ld-musl-*.so.1')) else 'gnu'
+python_version = '3.12.11'
+triple = architecture + '-unknown-linux-' + libc
+digests = {
+    'aarch64-unknown-linux-gnu': '6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f',
+    'x86_64-unknown-linux-gnu': '9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6',
+    'aarch64-unknown-linux-musl': 'b536543cc4d50661986b165c76ee8aa9056e4fa332edcd153ff2e98760f9359b',
+    'x86_64-unknown-linux-musl': '1cff8783850e794470aadb73f54b749542a511fc57b0ce6468b64bd3852e0ade',
+}
+digest = digests[triple]
+uv = resources / ('uv-0.12.23-' + triple)
+env = {k: v for k, v in os.environ.items() if not k.startswith(('UV_', 'PYTHON', 'PIP_', 'CONDA')) and k not in ('VIRTUAL_ENV', 'LD_PRELOAD', 'LD_LIBRARY_PATH')}
+env.update(UV_PYTHON_INSTALL_DIR=str(resources / 'interpreters'), UV_PYTHON_BIN_DIR=str(resources / 'bin'), UV_CACHE_DIR=str(resources / 'cache'), UV_NO_CONFIG='1', UV_PYTHON_PREFERENCE='only-managed', PYTHONNOUSERSITE='1', MPLBACKEND='Agg', MPLCONFIGDIR=str(resources / 'matplotlib'), UV_LINK_MODE='copy')
 packages = config.get('packages', [])
 base_packages = ${JSON.stringify(PYTHON_DATA_PACKAGES)}
-with (root / '.prepare.lock').open('w') as lock:
+${CLOUD_PYTHON_PLATFORM}
+with (resources / '.prepare.lock').open('w') as lock:
     fcntl.flock(lock, fcntl.LOCK_EX)
     if not uv.exists():
         with urllib.request.urlopen('https://github.com/astral-sh/uv/releases/download/0.12.23/uv-' + triple + '.tar.gz', timeout=120) as response:
@@ -24,17 +38,20 @@ with (root / '.prepare.lock').open('w') as lock:
         import io
         with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tar:
             member = next(m for m in tar.getmembers() if m.name.endswith('/uv') and m.isfile())
-            uv.write_bytes(tar.extractfile(member).read())
-        uv.chmod(0o700)
+            temporary = uv.with_suffix('.download')
+            temporary.write_bytes(tar.extractfile(member).read())
+        temporary.chmod(0o700)
+        temporary.replace(uv)
+    managed_python = prepare_gnu_python() if libc == 'musl' else python_version
     def prepare(venv, requirements):
         python = venv / 'bin/python'
         if not (venv / 'commons-ready').exists():
-            if not python.exists(): subprocess.run([str(uv), 'venv', '--python', '3.12.11', '--no-config', str(venv)], env=env, check=True, timeout=300)
+            if not python.exists(): subprocess.run([str(uv), 'venv', '--python', str(managed_python), '--no-config', str(venv)], env=env, check=True, timeout=300)
             subprocess.run([str(uv), 'pip', 'install', '--python', str(python), '--no-config'] + requirements, env=env, check=True, timeout=300)
             subprocess.run([str(python), '-I', '-c', 'import numpy, pandas, matplotlib, scipy, sklearn, seaborn, openpyxl, PIL'], env=env, check=True)
             (venv / 'commons-ready').write_text('ready')
         return python
-    python = prepare(root / 'data-3.12.11-v1', base_packages)
+    python = prepare(resources / ('data-' + python_version + '-v1'), base_packages)
     if packages:
         selection = subprocess.run([str(python), '-I', '-c', ${JSON.stringify(PYTHON_PACKAGE_SELECTION_CODE)}, json.dumps(packages)], env=env, check=True, capture_output=True, text=True, timeout=30)
         packages = json.loads(selection.stdout)
@@ -42,12 +59,15 @@ with (root / '.prepare.lock').open('w') as lock:
         import re
         overridden = {re.split(r'[<>=~\[]', name)[0].lower().replace('_', '-') for name in packages}
         requirements = [name for name in base_packages if name.split('==')[0] not in overridden] + packages
-        python = prepare(root / ('extension-' + hashlib.sha256(json.dumps(sorted(packages)).encode()).hexdigest()[:16]), requirements)
+        python = prepare(resources / ('extension-' + hashlib.sha256(json.dumps(sorted(packages)).encode()).hexdigest()[:16]), requirements)
 inputs = {}
 output = root / config['workingDirectory'] if config.get('workingDirectory') else run / 'outputs'
 output.mkdir(parents=True, exist_ok=True)
+execution_lock = (output.parent / (output.name + '.run.lock')).open('w')
+fcntl.flock(execution_lock, fcntl.LOCK_EX)
 input_paths = set()
 input_hashes = {}
+new_inputs = set()
 for item in config['files']:
     target = output / Path(item['name']).name
     if target in input_paths: target = output / (item['itemId'] + '-' + Path(item['name']).name)
@@ -57,7 +77,9 @@ for item in config['files']:
     if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest() != hashlib.sha256(data).hexdigest():
         target = run / 'revised-inputs' / item['itemId'] / Path(item['name']).name
         target.parent.mkdir(parents=True, exist_ok=True)
-    if not target.exists(): target.write_bytes(data)
+    if not target.exists():
+        target.write_bytes(data)
+        new_inputs.add(target)
     input_paths.add(target)
     input_hashes[target] = hashlib.sha256(data).hexdigest()
     inputs[item['name']] = str(target)
@@ -80,7 +102,18 @@ def working_hashes(folder):
                 hashes[path] = hashlib.sha256(path.read_bytes()).hexdigest()
     visit(folder)
     return hashes
-baseline = working_hashes(output)
+publication = output.parent / (output.name + '.published.json')
+if publication.exists():
+    baseline = {output / name: digest for name, digest in json.loads(publication.read_text()).items()}
+else:
+    baseline = working_hashes(output)
+for path in new_inputs:
+    if path.is_relative_to(output): baseline[path] = input_hashes[path]
+def save_publication(hashes):
+    temporary = publication.with_suffix('.json.tmp')
+    temporary.write_text(json.dumps({str(path.relative_to(output)): digest for path, digest in hashes.items()}))
+    temporary.replace(publication)
+save_publication(baseline)
 script = run / 'analysis.py'
 code = script.read_text()
 script.write_text('from pathlib import Path\nINPUT_FILES = ' + repr(inputs) + '\nOUTPUT_DIR = Path(' + repr(str(output)) + ')\nWORKSPACE_ROOT = "/mnt/shared"\n' + code)
@@ -93,6 +126,9 @@ try:
     def export_file(path, name):
         global inline_bytes
         data = path.read_bytes()
+        if path.suffix.lower() == '.json':
+            def invalid_constant(value): raise ValueError('Invalid JSON constant ' + value + '; encode missing values as null and use finite numbers')
+            json.loads(data, parse_constant=invalid_constant)
         file = dict(name=name, mimeType=mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
         # CommonOS workspace previews cap each read at 500 KB. Keep the main
         # manifest small and use bounded payload reads for larger results.
@@ -124,16 +160,19 @@ try:
                 if size > 10 * 1024 * 1024 or total_bytes > 25 * 1024 * 1024: raise RuntimeError('Python outputs exceed the size limit')
                 if len(files) >= 100: raise RuntimeError('Python produced more than 100 output files')
                 files.append(export_file(path, str(path.relative_to(output))))
-    collect(output)
-    for path in input_paths:
+    if result.returncode == 0: collect(output)
+    for path in input_paths if result.returncode == 0 else []:
         if path.is_relative_to(output) or hashlib.sha256(path.read_bytes()).hexdigest() == input_hashes[path]: continue
         size = path.stat().st_size
         total_bytes += size
         if size > 10 * 1024 * 1024 or total_bytes > 25 * 1024 * 1024 or len(files) >= 100: raise RuntimeError('Python outputs exceed the size limit')
         files.append(export_file(path, str(path.relative_to(run))))
+    if result.returncode == 0: save_publication(working_hashes(output))
     manifest = dict(exitCode=result.returncode, stdout=result.stdout[-32000:], stderr=result.stderr[-16000:], files=files, outputDirectory=str(output))
 except subprocess.TimeoutExpired:
     manifest = dict(exitCode=-1, stdout='', stderr='Python execution timed out', files=[])
+except (ValueError, RuntimeError) as error:
+    manifest = dict(exitCode=-1, stdout='', stderr=str(error), files=[])
 (run / 'result.json').write_text(json.dumps(manifest))
 print(json.dumps({k: v for k, v in manifest.items() if k != 'files'}))
 `;
