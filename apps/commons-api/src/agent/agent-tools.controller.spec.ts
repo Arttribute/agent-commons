@@ -56,4 +56,21 @@ describe('AgentToolsController', () => {
       ).not.toThrow();
     });
   });
+
+  it('does not route an ordinary chat tool through another space or a legacy account', async () => {
+    const target = controller as any;
+    jest.spyOn(target, 'assertInternalCaller').mockImplementation(() => {});
+    target.agent = { getAgent: jest.fn().mockResolvedValue({ ownerUserId: 'current-owner', owner: 'old-owner' }) };
+    target.spaceTools = { findToolByName: jest.fn().mockReturnValue({ spaceId: 'foreign-space', tool: { apiSpec: {} } }) };
+    target.mcpToolDiscovery = { getToolsByOwner: jest.fn().mockResolvedValue([]) };
+    target.toolService = { getToolByName: jest.fn().mockResolvedValue(null) };
+    const read = jest.fn().mockResolvedValue({ content: 'current chat source' });
+    target.commonToolService = { readUploadedFile: read };
+    jest.spyOn(target, 'logToolSuccess').mockResolvedValue(undefined);
+    const result = await controller.makeAgentToolCall({ toolCall: { name: 'readUploadedFile', args: { agentId: 'forged', fileId: 'source' } }, metadata: { agentId: 'current-agent', sessionId: 'current-chat' } });
+    expect(result).toEqual({ content: 'current chat source' });
+    expect(target.spaceTools.findToolByName).not.toHaveBeenCalled();
+    expect(target.mcpToolDiscovery.getToolsByOwner).toHaveBeenCalledWith({ ownerId: 'current-owner', ownerType: 'user' });
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'current-agent', sessionId: 'current-chat' }), expect.objectContaining({ agentId: 'current-agent' }));
+  });
 });

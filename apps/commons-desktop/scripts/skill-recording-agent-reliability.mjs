@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const { PrivateLocalRuntime } = require(join(output, 'runtime.cjs'));
 const { recordingSkillPrompt } = require(join(output, 'prompt.cjs'));
 mkdirSync(root, { recursive: true });
-const runtime = new PrivateLocalRuntime(join(root, 'local-profile'));
+const runtime = new PrivateLocalRuntime(join(root, `local-profile-${Date.now()}`));
 const trace = [];
 runtime.setTarget({ isDestroyed: () => false, send: (_channel, event) => {
   if (event.type === 'approval') queueMicrotask(() => runtime.resolveApproval(event.approval.id, true));
@@ -41,6 +41,21 @@ try {
   assert.ok(result.conversation.messages.some((message) => message.toolName === 'local_save_skill' && !message.content.startsWith('Error:')), 'No successful skill save tool evidence');
   writeFileSync(join(root, 'local-skill-result.json'), JSON.stringify({ model, conversationId: result.conversation.id, visualDescription: observed.visualDescription, skill: created, trace }, null, 2));
   console.log(JSON.stringify({ passed: true, model, skill: created.name, slug: created.slug }));
+  if (process.env.COMMONS_RECORDING_REPLAY === 'true') {
+    const source = Buffer.from('id,status,total\nA,completed,15\nB,open,25\nC,completed,40\n');
+    const [report] = runtime.importLibraryFiles([{ name: 'replay-report.csv', mimeType: 'text/csv', bytes: source }]);
+    const replay = await runtime.sendMessage({ agentId, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [report.id],
+      prompt: `Use the saved skill ${created.slug} on the attached replay-report.csv. This offline replay uses the Library CSV as the report source and the managed Python tool for the demonstrated read/filter/export sequence. Filter status=completed, save replay-completed.csv with every original column, and verify that only completed rows are exported. Keep the source unchanged and return the actual Library output. Invoke the saved skill first.` });
+    const artifact = replay.conversation.artifacts?.findLast((entry) => entry.name.endsWith('replay-completed.csv'));
+    assert.ok(artifact, 'Replay did not create its output');
+    const csv = readFileSync(artifact.path, 'utf8');
+    assert.match(csv, /A,completed,15/); assert.match(csv, /C,completed,40/); assert.doesNotMatch(csv, /B,open/);
+    assert.ok(source.equals(readFileSync(report.path)), 'Replay changed the input');
+    assert.ok(replay.conversation.messages.some((message) => message.toolName === 'invoke_skill'), 'Replay did not load the saved skill');
+    writeFileSync(join(root, 'local-skill-replay.json'), JSON.stringify({ passed: true, model, conversationId: replay.conversation.id, artifact: artifact.name, csv, sourceUnchanged: true }));
+    console.log(JSON.stringify({ replayPassed: true, model, sourceUnchanged: true, exportedRows: 2 }));
+  }
+
 } catch (error) {
   writeFileSync(join(root, 'local-skill-failure.json'), JSON.stringify({ error: error.message, trace, conversations: runtime.state().conversations.slice(-1) }, null, 2));
   throw error;

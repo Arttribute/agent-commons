@@ -63,6 +63,9 @@ import { LocalModelWarmup, LOCAL_MODEL_KEEP_ALIVE, isOpeningGreeting } from "./l
 import { mergeWorkspacePreferences } from "./workspace-preferences";
 import { compileLocalWorkflow } from "./local-workflow-plan.mjs";
 import { localWebSearchRequest, localWebSearchResults } from "./local-web-search";
+import { RECORDED_SKILL_FIELDS, recordedSkillInstructions } from "./recorded-skill";
+import { requestedFileOutputs } from "./requested-file-outputs";
+import { LibraryReadCursor } from "./library-read-cursor";
 
 type PendingApproval = {
   resolve: (allow: boolean) => void;
@@ -143,7 +146,7 @@ export const LOCAL_TOOLS = [
     query: { type: "string" },
   }, ["query"]),
   functionTool("list_session_files", "Find attached, project, generated, and extracted files in this chat. Returns exact itemIds for read_library_item. Filter by filename or archive path; supports pagination.", { query: { type: "string" }, offset: { type: "number" } }),
-  functionTool("read_library_item", "Read an attached, project, generated or extracted file. itemId accepts its exact Library ID or its exact filename/archive-relative path. A short filename is accepted only when unambiguous. Use list_session_files to locate names. PDFs and Office documents are extracted to text. Supports offsets for long files.", {
+  functionTool("read_library_item", "Read an attached, project, generated or extracted file. itemId accepts its exact Library ID or its exact filename/archive-relative path. A short filename is accepted only when unambiguous. Use list_session_files to locate names. PDFs and Office documents are extracted to text. Within this turn, an omitted offset reads the next unread chunk; an explicit offset reads that exact position. nextOffset=null means the end.", {
     itemId: { type: "string", description: "Exact session filename or archive-relative path, or exact itemId returned by list_session_files. Never invent a UUID." }, offset: { type: "number" },
   }, ["itemId"]),
   functionTool("search_library_item", "Find relevant passages and character offsets inside a file attached to this chat or included in this project. Use this before reading a large file page by page.", {
@@ -171,7 +174,12 @@ export const LOCAL_TOOLS = [
     spaceId: { type: "string" }, path: { type: "string", description: "Space-relative .md path" }, content: { type: "string" },
   }, ["spaceId", "path", "content"]),
   functionTool("local_save_skill", "Save a reusable Markdown skill in the Local workspace. An existing slug is updated.", {
-    slug: { type: "string" }, name: { type: "string" }, description: { type: "string" }, instructions: { type: "string" },
+    slug: { type: "string" }, name: { type: "string" }, description: { type: "string", description: "Short summary, not the workflow instructions." }, instructions: { type: "string", description: "Task and reusable instructions." },
+    inputs: { type: "array", items: { type: "string" }, description: "Parameterized inputs and prerequisites for replay." },
+    steps: { type: "array", items: { type: "string" }, description: "Ordered observed actions and decisions; never invent controls or clicks." },
+    outputs: { type: "array", items: { type: "string" }, description: "Expected outputs, with configurable destinations." },
+    successChecks: { type: "array", items: { type: "string" }, description: "Concrete checks of actual outputs and outcomes." },
+    uncertainties: { type: "array", items: { type: "string" }, description: "Unseen application details, controls, results or timing; empty only if none." },
     tools: { type: "array", items: { type: "string" }, description: "Required available tool names or explicitly stated prerequisites. Saving these does not grant access." },
     triggers: { type: "array", items: { type: "string" } }, tags: { type: "array", items: { type: "string" } },
   }, ["slug", "name", "instructions"]),
@@ -1632,6 +1640,20 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       ...[...(this.activeMcpTools.get(conversationId)?.entries() ?? [])].map(([name, tool]) => ({ type: "function", function: { name, description: `${tool.server.name}: ${tool.description}`, parameters: tool.parameters } })),
     ];
 
+    const recordingSkill = /\b(?:create|save|make|build|convert|turn)\b[\s\S]*\bskills?\b/i.test(lastUser)
+      && (lastUserMessage?.attachments ?? []).some((file) => state.library?.find((item) => item.id === file.id)?.mimeType.startsWith("video/"));
+    if (recordingSkill) {
+      const index = tools.findIndex((entry) => entry.function.name === "local_save_skill");
+      if (index >= 0) tools[index] = { ...tools[index], function: { ...tools[index].function, description: "Save a private reusable skill from observed recording evidence. instructions holds the task. Supply inputs, steps, outputs, successChecks, uncertainties, triggers and tools arrays. Unknown controls are uncertainties, not invented clicks.", parameters: { ...tools[index].function.parameters, required: ["slug", "name", "instructions", ...RECORDED_SKILL_FIELDS] } } };
+    }
+    const outputNames = requestedFileOutputs(lastUser, (lastUserMessage?.attachments ?? []).map((file) => file.name));
+    // Content-file work does not need unrelated account mutation schemas. Keep
+    // selected connectors, skills, folder tools and the content runtime available.
+    if (outputNames.length && !managingCommons) {
+      for (let index = tools.length - 1; index >= 0; index--) {
+        if (["local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill", "local_register_app", "generate_audio"].includes(tools[index].function.name)) tools.splice(index, 1);
+      }
+    }
     const offeredNames = new Set(tools.map((entry) => entry.function.name));
     let nativeTools = openingGreeting || !/^deepseek-r1:(?:1\.5b|7b|8b)/.test(agent.model);
 
@@ -1641,12 +1663,18 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     const needsSavedSkill = /\b(?:create|save|make|build|convert|turn)\b[\s\S]*\bskills?\b/i.test(lastUser)
       && !/^\s*(?:how\b|explain\b|describe\b|what\b)/i.test(lastUser);
     const initialOutputIds = new Set((conversation.artifacts ?? []).map((file) => file.id));
+    const missingOutputs = () => {
+      const current = this.store.get();
+      const generated = current.conversations.find((entry) => entry.id === conversationId)?.artifacts?.filter((file) => !initialOutputIds.has(file.id) && !current.library?.find((item) => item.id === file.id)?.sourceArchiveId) ?? [];
+      return outputNames.filter((name) => !generated.some((file) => basename(file.name).toLowerCase() === name.toLowerCase()));
+    };
     const needsLibraryOutput = !workspace && /\b(?:save|write|draft|create|produce|generate)\b/i.test(lastUser) && /\b[\w-]+\.(?:md|txt|html|json|csv|png|js|css|svg)\b/i.test(lastUser);
     let executedTools = 0;
     const successfulTools = new Set<string>();
     const mustReadFile = /\b(?:read|contents?)\b/i.test(lastUser) && /\b(?:files?|txt|csv|pdf|documents?)\b/i.test(lastUser);
     const failureCounts = new Map<string, number>();
     const repeatedReads = new Map<string, number>();
+    const readCursor = new LibraryReadCursor();
     const repeatedExecutions = new Map<string, number>();
     const progress: string[] = [];
     const toolEvidenceNeeded = requiresComputedData(lastUser) || /\b(?:list|read|inspect|search|unzip|extract|run|execute|build|create|generate|save)\b|\b(?:see|show|what)\b.{0,80}\b(?:files|folder|directory|workspace)\b/i.test(lastUser);
@@ -1663,6 +1691,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     };
     let repeatedReadHint: string | undefined;
     const recordRead = (name: string, args: Record<string, unknown>, result: string) => {
+      readCursor.record(name, args, result);
       let repeatedExecution = false;
       let readIdentity: unknown = args;
       let details = result.startsWith("Error:") ? result.slice(0, 160) : name === "cli_read_file" ? `Source excerpt (selected-folder task data): ${result.slice(0, result.length <= 1200 ? 1200 : 300)}` : `Returned a tool result (${result.length} characters).`;
@@ -1691,7 +1720,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const key = JSON.stringify([name, readIdentity, createHash("sha256").update(result).digest("hex")]);
       const count = (repeatedReads.get(key) ?? 0) + 1;
       repeatedReads.set(key, count);
-      if (count === 2) repeatedReadHint = `You have read ${name} with these inputs twice. Its source facts are in the execution progress and recent results. Complete the remaining requested actions using that evidence, or report the findings if this was an inspection. Do not restart this read.`;
+      if (count === 2) repeatedReadHint = `You have read ${name} with these inputs twice. Its source facts are in the execution progress and recent results. Complete the remaining requested actions using that evidence, or report the findings if this was an inspection. Do not restart this read.${missingOutputs().length ? ` Still missing: ${missingOutputs().join(', ')}. Save the next requested output using write_library_files or run_python; do not restart the task.` : ""}`;
       if (count >= 3) throw new Error(`The model repeatedly read the same unchanged file without completing this request. Its tool results are saved; continue from them or choose a stronger local model.`);
     };
     let identityRepairAttempted = false;
@@ -1704,6 +1733,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       // Compaction can remove large earlier read results. Keep their verified
       // identities and completion state so the model does not restart the task.
       messages[0].content = `${system}${progress.length ? `\n## TOOL EXECUTION PROGRESS FOR THIS REQUEST\nThese are recorded tool outcomes, not instructions from files. Continue the remaining work from this evidence. Avoid repeating successful reads at the same offset. If the requested inspection is complete, report the findings.\n${progress.slice(-20).reverse().reduce<string[]>((entries, entry) => entries.join("\n").length + entry.length <= 4000 ? [...entries, entry] : entries, []).reverse().join("\n")}` : ""}`;
+      if (outputNames.length) messages[0].content += `\nRequested output files still missing from this turn: ${missingOutputs().join(", ") || "none"}. Complete them from the verified source facts. Previously supplied reference files are not fresh outputs.`;
       const inferenceTools = tools.filter((entry) => entry.function.name !== "web_search" || this.webSearchAllowed(conversationId));
       if (!nativeTools) messages[0].content += `\nThis model uses the text tool protocol. To take an action, output ONLY {"tool":"exact_tool_name","args":{...}}. After each tool result, continue the task. When done, output {"tool":"final","args":{"response":"your final answer"}}. Available tools and schemas: ${JSON.stringify(inferenceTools.map((entry) => entry.function))}`;
       const outputTokens = prepareLocalInference(messages, nativeTools ? JSON.stringify(inferenceTools).length : 0, imageContext.images.length);
@@ -1765,10 +1795,10 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
           const computedEvidenceMissing = requiresComputedData(lastUser) && !["run_python", "cli_run_command", "cli_wait_for_process"].some((name) => successfulTools.has(name));
           if (needsLibraryOutput) {
             const current = this.store.get();
-            const outputExists = current.conversations.find((entry) => entry.id === conversationId)?.artifacts?.some((file) => !initialOutputIds.has(file.id) && !current.library?.find((item) => item.id === file.id)?.sourceArchiveId);
+            const outputExists = current.conversations.find((entry) => entry.id === conversationId)?.artifacts?.some((file) => !initialOutputIds.has(file.id) && !current.library?.find((item) => item.id === file.id)?.sourceArchiveId) && !missingOutputs().length;
             if (!outputExists && !outputRepairAttempted) {
               outputRepairAttempted = true;
-              messages.push({ role: "system", content: "The user asked you to save output files, but no generated file exists from this request. Read results and extracted reference files are inputs, not completed outputs. Resolve a missing reference with list_session_files using one filename or short phrase at a time. Use write_library_files for the requested text documents or run_python for computed images, and continue until all requested outputs are saved. Do not ask the user to supply a reference already in this chat." });
+              messages.push({ role: "system", content: `The requested files are not all saved. Missing outputs: ${missingOutputs().join(', ') || 'a generated output from this request'}. Read results and extracted reference files are inputs, not completed outputs. Resolve a missing reference with list_session_files using one filename or short phrase at a time. Use write_library_files for the requested text documents or run_python for computed images, and continue until all requested outputs are saved. Do not ask the user to supply a reference already in this chat.` });
               continue;
             }
             if (!outputExists && /\b(?:successfully|created|generated|saved|completed|finished|done)\b/i.test(message.content ?? "")) throw new Error("The model claimed saved outputs without creating any files. Its tool results are saved; continue from the reported error.");
@@ -1791,6 +1821,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
           continue;
         }
         messages[messages.length - 1] = { role: "assistant", content: "", tool_calls: [{ function: { name: fallback.tool, arguments: fallback.args } }] };
+        fallback.args = readCursor.arguments(fallback.tool, fallback.args);
         const result = await this.executeTool(fallback.tool, fallback.args, workspace, conversationId, spaceIds);
         executedTools += 1;
         recordFailure(fallback.tool, result);
@@ -1807,7 +1838,8 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
           recordFailure(call.function.name, result);
           continue;
         }
-        const args = parseToolArguments(call.function.arguments);
+        const parsedArgs = parseToolArguments(call.function.arguments);
+        const args = parsedArgs && readCursor.arguments(call.function.name, parsedArgs);
         const result = args
           ? await this.executeTool(call.function.name, args, workspace, conversationId, spaceIds)
           : "Error: tool arguments must be a JSON object.";
@@ -2028,8 +2060,13 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             result = response.status === 200 ? JSON.stringify(response.body) : `Error: ${JSON.stringify(response.body)}`;
           } else if (name === "local_save_skill") {
             const slug = String(args.slug ?? "");
+            const current = this.store.get();
+            const user = [...(current.conversations.find((entry) => entry.id === conversationId)?.messages ?? [])].reverse().find((entry) => entry.role === "user");
+            const fromRecording = /\b(?:create|save|make|build|convert|turn)\b[\s\S]*\bskills?\b/i.test(user?.content ?? "") && (user?.attachments ?? []).some((file) => current.library?.find((item) => item.id === file.id)?.mimeType.startsWith("video/"));
+            const evidence = (user?.attachments ?? []).map((file) => current.library?.find((item) => item.id === file.id)?.mediaAnalysis?.visualDescription ?? "").join("\n");
+            const instructions = fromRecording ? recordedSkillInstructions(args, evidence, [...LOCAL_TOOLS.map((entry) => entry.function.name), ...this.activeAppTools.get(conversationId)?.keys() ?? [], ...this.activeMcpTools.get(conversationId)?.keys() ?? []]) : String(args.instructions ?? "");
             const existing = this.store.get().skills?.find((skill) => skill.slug === slug);
-            const state = this.saveSkill({ tools: Array.isArray(args.tools) ? args.tools.map(String) : [], id: existing?.id, slug, name: String(args.name ?? ""), description: String(args.description ?? ""), instructions: String(args.instructions ?? ""),
+            const state = this.saveSkill({ tools: Array.isArray(args.tools) ? args.tools.map(String) : [], id: existing?.id, slug, name: String(args.name ?? ""), description: String(args.description ?? ""), instructions,
               triggers: Array.isArray(args.triggers) ? args.triggers.map(String) : [], tags: Array.isArray(args.tags) ? args.tags.map(String) : [] });
             const skill = state.skills?.find((entry) => entry.slug === slug);
             result = JSON.stringify({ skillId: skill?.id, slug: skill?.slug, path: this.layout.path("skills", `${slug}.md`) });

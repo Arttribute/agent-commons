@@ -48,6 +48,18 @@ test("oversized user requests fail explicitly rather than silently losing the ta
   assert.throws(() => compactToolLoop(messages), /context budget/);
 });
 
+test('a tight tool budget preserves the latest parallel call/result group', () => {
+  const messages = [{ role: 'system', content: 'Keep verified context' }, { role: 'user', content: 'Inspect this canvas' },
+    { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_canvas', arguments: { projectId: 'owned' } } }, { function: { name: 'read_library_item', arguments: { itemId: 'source' } } }] },
+    { role: 'tool', tool_name: 'read_canvas', content: 'Canvas details '.repeat(400) },
+    { role: 'tool', tool_name: 'read_library_item', content: 'Source data '.repeat(400) }];
+  compactToolLoop(messages, 2000);
+  assert.equal(messages.length, 5);
+  assert.equal(messages[2].tool_calls.length, 2);
+  assert.deepEqual(messages.slice(3).map((message) => message.tool_name), ['read_canvas', 'read_library_item']);
+  assert.ok(Buffer.byteLength(JSON.stringify(messages)) <= 2000);
+});
+
 test("retains recent process evidence when earlier output exceeds the history budget", () => {
   const history = [{ role: "user", content: "Create Mango" }];
   for (let i = 0; i < 10; i++) history.push({ role: "tool", toolName: "cli_wait_for_process", toolArgs: { processId: "p1" }, content: `process-${i}\n` + "x".repeat(9_000) });

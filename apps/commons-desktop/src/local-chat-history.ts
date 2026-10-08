@@ -90,8 +90,15 @@ export function compactToolLoop(messages: OllamaMessage[], maxCharacters = 32_00
     lastUser -= end - 1;
   }
   while (Buffer.byteLength(JSON.stringify(messages)) > maxCharacters && messages.length > lastUser + 2) {
+    let latestCall = -1;
+    for (let index = messages.length - 1; index > lastUser; index--) {
+      if (messages[index].role === "assistant" && messages[index].tool_calls?.length) { latestCall = index; break; }
+    }
     let end = lastUser + 2;
     while (messages[end]?.role === "tool") end++;
+    // Removing the newest group makes the next inference see the original
+    // request again, causing repeated tools and losing their verified results.
+    if (latestCall >= 0 && end > latestCall) break;
     messages.splice(lastUser + 1, end - lastUser - 1);
   }
   // Keep the newest call/result pair. Large reference excerpts can be read

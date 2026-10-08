@@ -113,7 +113,7 @@ export class AgentToolsController {
       // ------------------------------------------------------------------------------------
       const spaceToolMatch = spaceId
         ? this.spaceTools.findToolByName(functionName, spaceId)
-        : this.spaceTools.findToolByName(functionName);
+        : null;
       if (spaceToolMatch) {
         const result = await this.toolInvocation.invokeDynamicTool(
           spaceToolMatch.tool.apiSpec,
@@ -129,8 +129,8 @@ export class AgentToolsController {
       // ------------------------------------------------------------------------------------
       try {
         const mcpTools = await this.mcpToolDiscovery.getToolsByOwner({
-          ownerId: agent.owner || agentId,
-          ownerType: agent.owner ? 'user' : 'agent',
+          ownerId: agent.ownerUserId || agent.owner || agentId,
+          ownerType: agent.ownerUserId || agent.owner ? 'user' : 'agent',
         });
         const mcpTool = mcpTools.find((t) => t.toolName === functionName);
 
