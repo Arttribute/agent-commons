@@ -90,6 +90,10 @@ export class ResourceUpgradeService implements OnModuleInit, OnModuleDestroy {
       input.profile,
       input.minutes,
     );
+    await this.computers.assertTemporaryResourceProfile(
+      input.agentId,
+      requested.profile,
+    );
     if ((config.metadata as any)?.resourceUpgradeLease)
       throw new ConflictException(
         'A temporary resource upgrade is already active. Release it before requesting another.',
@@ -206,6 +210,12 @@ export class ResourceUpgradeService implements OnModuleInit, OnModuleDestroy {
         resourceUpgradePolicy(metadata.resourceUpgradePolicy),
         after.profile,
         after.minutes,
+      );
+      // The plan can change while an owner reviews the request. Recheck before
+      // claiming the proposal or creating a lease; approval grants no plan upgrade.
+      await this.computers.assertTemporaryResourceProfile(
+        agentId,
+        requested.profile,
       );
       if (automatic && !requested.automatic)
         throw new ForbiddenException(
