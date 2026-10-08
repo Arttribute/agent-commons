@@ -261,6 +261,19 @@ export class ComputerService {
     }
   }
 
+  async assertTemporaryResourceProfile(agentId: string, profile: string) {
+    const agent = await this.assertAgent(agentId);
+    await this.assertComputeEntitlement(agent, profile, false);
+  }
+
+  async allowedResourceProfiles(agentId: string): Promise<ComputeProfile[]> {
+    const agent = await this.assertAgent(agentId);
+    const ownerId = agent.ownerUserId ?? agent.owner;
+    if (process.env.BILLING_ENFORCEMENT === 'false' || !ownerId)
+      return ['starter', 'standard', 'performance', 'gpu'];
+    return (await this.entitlements.getEntitlements(ownerId)).allowedProfiles;
+  }
+
   private async countRunningComputersForOwner(
     ownerId: string,
     excludeAgentId?: string,
@@ -1445,6 +1458,7 @@ export class ComputerService {
   async buildComputerPrompt(agentId: string, sessionId?: string) {
     const config = await this.getConfig(agentId).catch(() => null);
     if (!config?.enabled) return '';
+    const allowedProfiles = await this.allowedResourceProfiles(agentId);
 
     const computers = await this.listInstances({
       agentId,
@@ -1466,6 +1480,7 @@ export class ComputerService {
       }; resource profile is ${config.resourceProfile}/${config.resourceMode}.`,
       'Use startAgentComputer to wake or attach the assigned computer before computer work. It is idempotent and never creates an extra computer. Use writeComputerFiles for complete source files, runComputerCommand for finite terminal work, readComputerFile for files, and testComputerBrowser for application verification.',
       `Temporary resource access: ${JSON.stringify(resourceUpgradePolicy((config.metadata as any)?.resourceUpgradePolicy))}. Use requestComputerResources when a task needs larger CPU/RAM or a GPU. A pending owner approval activates nothing. Automatic access only follows the saved policy. Verify actual hardware/CUDA after the computer becomes ready. Use releaseComputerResources when finished.`,
+      `Profiles included in the owner's current plan: ${allowedProfiles.join(', ') || 'none'}. Request only an included profile. A resource approval does not upgrade the subscription or override its limits.`,
       'Never encode source files in shell heredocs or long commands. writeComputerFiles is the reliable structured file-writing path.',
       'Always keep commands scoped to the task, avoid secrets exfiltration, and summarize created files/screenshots/results for the user.',
       'Assigned computer:',

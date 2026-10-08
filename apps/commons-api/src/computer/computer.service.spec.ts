@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, HttpException } from '@nestjs/common';
 import { ComputerService } from './computer.service';
 
 function dbMock() {
@@ -261,6 +261,35 @@ describe('ComputerService', () => {
         maxConcurrentComputers: 1,
       }),
     );
+  });
+
+  it('checks temporary resource plans without counting the already running computer as a new slot', async () => {
+    const previous = process.env.BILLING_ENFORCEMENT;
+    process.env.BILLING_ENFORCEMENT = 'true';
+    try {
+      jest
+        .spyOn(service as any, 'assertAgent')
+        .mockResolvedValue({ agentId: 'agent_1', ownerUserId: 'owner' });
+      (service as any).entitlements.getEntitlements.mockResolvedValue({
+        computerUse: true,
+        allowedProfiles: ['starter', 'standard'],
+        maxConcurrentComputers: 1,
+      });
+      const slots = jest.spyOn(service as any, 'countRunningComputersForOwner');
+      await expect(
+        service.assertTemporaryResourceProfile('agent_1', 'standard'),
+      ).resolves.toBeUndefined();
+      await expect(
+        service.assertTemporaryResourceProfile('agent_1', 'gpu'),
+      ).rejects.toBeInstanceOf(HttpException);
+      expect(slots).not.toHaveBeenCalled();
+      await expect(service.allowedResourceProfiles('agent_1')).resolves.toEqual(
+        ['starter', 'standard'],
+      );
+    } finally {
+      if (previous === undefined) delete process.env.BILLING_ENFORCEMENT;
+      else process.env.BILLING_ENFORCEMENT = previous;
+    }
   });
 
   it('keeps persistent storage when moving to a smaller compute profile', () => {
