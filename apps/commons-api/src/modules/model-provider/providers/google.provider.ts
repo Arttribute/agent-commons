@@ -39,6 +39,39 @@ function thinkingConfigFor(
   return undefined;
 }
 
+/** Keep JSON Schema on Gemini's JSON Schema field. The SDK's legacy OpenAPI
+ * converter leaves $defs/$ref in `parameters`, which the API rejects. */
+export function googleJsonToolDefinitions(
+  tools: Parameters<ChatGoogleGenerativeAI['bindTools']>[0],
+) {
+  return tools.map((tool: any) =>
+    tool?.type === 'function' && tool.function?.name
+      ? {
+          functionDeclarations: [
+            {
+              name: tool.function.name,
+              description:
+                tool.function.description ?? 'A function available to call.',
+              ...(tool.function.parameters
+                ? { parametersJsonSchema: tool.function.parameters }
+                : {}),
+            },
+          ],
+        }
+      : tool,
+  );
+}
+
+export class CommonsGoogleModel extends ChatGoogleGenerativeAI {
+  override bindTools(
+    tools: Parameters<ChatGoogleGenerativeAI['bindTools']>[0],
+    kwargs?: Parameters<ChatGoogleGenerativeAI['bindTools']>[1],
+  ): ReturnType<ChatGoogleGenerativeAI['bindTools']> {
+    const native = googleJsonToolDefinitions(tools);
+    return super.bindTools(native as any, kwargs);
+  }
+}
+
 export function buildGoogleModel(config: ModelConfig): ChatGoogleGenerativeAI {
   const logger = new Logger('GoogleProvider');
 
@@ -48,7 +81,7 @@ export function buildGoogleModel(config: ModelConfig): ChatGoogleGenerativeAI {
     logger.warn('No Google API key found — requests will fail');
   }
 
-  return new ChatGoogleGenerativeAI({
+  return new CommonsGoogleModel({
     model: config.modelId,
     apiKey,
     temperature: config.temperature ?? 0,
