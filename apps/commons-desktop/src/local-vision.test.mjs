@@ -25,6 +25,11 @@ test('local image context follows actual model capability and stays attached to 
     const text = await localImageContext(endpoint, 'text-selected', [item]);
     assert.deepEqual(text.images, []); assert.match(text.note, /cannot inspect image pixels/);
     assert.deepEqual(requests.map((request) => request.model), ['vision-selected', 'text-selected']);
+    const video = { id: 'recording-id', name: 'actual-workflow.webm', mimeType: 'video/webm', mediaAnalysis: { frames: [{ timestampMs: 100, path }, { timestampMs: 900, path }] } };
+    const clip = await localImageContext(endpoint, 'vision-selected', [video]);
+    assert.deepEqual(clip.images, ['AQID', 'AQID']); assert.match(clip.note, /recording-id.*100 ms/); assert.match(clip.note, /900 ms/); assert.match(clip.note, /Do not invent actions/);
+    const unavailable = await localImageContext(endpoint, 'vision-selected', [{ ...video, mediaAnalysis: undefined }]);
+    assert.deepEqual(unavailable.images, []); assert.match(unavailable.note, /No decoded frames/);
     const original = [{ role: 'user', content: 'Inspect this\n\n## Canvas\nversion 1' }, { role: 'tool', content: 'real evidence' }, { role: 'user', content: 'Then verify' }];
     const sent = withLocalImages(original, 'Inspect this', vision.images);
     assert.deepEqual(sent[0].images, ['AQID']); assert.equal(sent[1].images, undefined); assert.equal(sent[2].images, undefined); assert.equal(original[0].images, undefined);

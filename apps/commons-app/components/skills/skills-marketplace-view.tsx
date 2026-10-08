@@ -1,9 +1,12 @@
 "use client";
 import { desktopApiFetch } from "@/lib/desktop-api-fetch";
+import { openCommonsCopilotPrompt } from "@/lib/commons-copilot-events";
+import { recordingEvidence, recordingFilename, recordingSkillPrompt } from "@/lib/skill-recording";
+import { useSkillRecording } from "@/lib/use-skill-recording";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Loader2,
   Zap,
@@ -189,10 +192,20 @@ export function SkillsMarketplaceView({
   const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<CreateMode>("choose");
   const [skillFile, setSkillFile] = useState<File | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const recordingStreamsRef = useRef<MediaStream[]>([]);
+  const { toast } = useToast();
+  const { capturedRecording, setCapturedRecording, recording, startingRecording, startRecording, stopRecording, captureContext } = useSkillRecording(
+    `${userAddress}:${workspaceMode}:${showCreate}`,
+    (error) => toast({ title: "Recording failed", description: error.message, variant: "destructive" }),
+    () => toast({ title: "Recording stopped at the limit", description: "Review this clip or record a shorter workflow before creating your skill." }),
+  );
+  const recordedBlob = capturedRecording?.blob;
+  const [recordingPreview, setRecordingPreview] = useState<string>();
+  useEffect(() => {
+    if (!recordedBlob) { setRecordingPreview(undefined); return; }
+    const url = URL.createObjectURL(recordedBlob);
+    setRecordingPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [recordedBlob]);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [updatingAgentId, setUpdatingAgentId] = useState<string | null>(null);
 
@@ -207,7 +220,6 @@ export function SkillsMarketplaceView({
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<CreateSkillForm>(EMPTY_FORM);
 
-  const { toast } = useToast();
   const { agents, loading: loadingAgents } = useAgents(
     userAddress || undefined
   );
@@ -361,88 +373,9 @@ export function SkillsMarketplaceView({
     }
   };
 
-  const stopRecording = () => {
-    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
-  };
-
-  const startRecording = async () => {
-    if (
-      !navigator.mediaDevices?.getDisplayMedia ||
-      typeof MediaRecorder === "undefined"
-    ) {
-      toast({
-        title: "Screen recording is unavailable",
-        description: "Use a current Chrome, Edge, or Safari browser.",
-        variant: "destructive",
-      });
-      return;
-    }
-    try {
-      const screen = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
-      const microphone = await navigator.mediaDevices
-        .getUserMedia({ audio: true })
-        .catch(() => null);
-      recordingStreamsRef.current = microphone
-        ? [screen, microphone]
-        : [screen];
-      const stream = new MediaStream([
-        ...screen.getVideoTracks(),
-        ...screen.getAudioTracks(),
-        ...(microphone?.getAudioTracks() ?? []),
-      ]);
-      const mimeType = MediaRecorder.isTypeSupported(
-        "video/webm;codecs=vp9,opus"
-      )
-        ? "video/webm;codecs=vp9,opus"
-        : "video/webm";
-      const recorder = new MediaRecorder(stream, { mimeType });
-      const chunks: BlobPart[] = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size) chunks.push(event.data);
-      };
-      recorder.onstop = () => {
-        setRecordedBlob(new Blob(chunks, { type: mimeType }));
-        setRecording(false);
-        recordingStreamsRef.current.forEach((source) =>
-          source.getTracks().forEach((track) => track.stop())
-        );
-        recordingStreamsRef.current = [];
-      };
-      screen.getVideoTracks()[0]?.addEventListener("ended", () => {
-        if (recorder.state === "recording") recorder.stop();
-      });
-      recorderRef.current = recorder;
-      setRecordedBlob(null);
-      recorder.start(1_000);
-      setRecording(true);
-    } catch (error) {
-      recordingStreamsRef.current.forEach((source) =>
-        source.getTracks().forEach((track) => track.stop())
-      );
-      recordingStreamsRef.current = [];
-      if ((error as DOMException)?.name !== "NotAllowedError") {
-        toast({
-          title: "Could not start recording",
-          description:
-            error instanceof Error ? error.message : "Please try again.",
-          variant: "destructive",
-        });
-      }
-    }
-  };
-
-  useEffect(() => () => {
-    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
-    recordingStreamsRef.current.forEach((stream) =>
-      stream.getTracks().forEach((track) => track.stop())
-    );
-  });
-
   const turnRecordingIntoSkill = async () => {
     if (!recordedBlob) return;
+    const ensureCurrent = captureContext();
     setCreating(true);
     try {
       const copilotResponse = await desktopApiFetch("/api/copilot", {
@@ -452,10 +385,11 @@ export function SkillsMarketplaceView({
       if (!copilotResponse.ok || !copilotPayload?.data?.agentId) {
         throw new Error("Commons Copilot is not available for this account");
       }
+      ensureCurrent();
       const body = new FormData();
       body.append(
         "files",
-        new File([recordedBlob], `skill-recording-${Date.now()}.webm`, {
+        new File([recordedBlob], recordingFilename(recordedBlob), {
           type: recordedBlob.type || "video/webm",
         })
       );
@@ -472,19 +406,23 @@ export function SkillsMarketplaceView({
             "Could not save recording"
         );
       }
+      ensureCurrent();
       const artifact = uploadPayload.data[0];
-      window.dispatchEvent(
-        new CustomEvent("commons-copilot-prompt", {
-          detail: {
-            text: `Turn my screen recording into a reusable skill. The recording is the Library item ${artifact.fileId} (${artifact.name}). Read and analyze its indexed video description and transcript, infer the repeatable workflow, ask only for genuinely missing details, then propose a skill with triggers, required tools, step-by-step instructions, safety boundaries, and a validation checklist.`,
-          },
-        })
-      );
+      if (local && window.agentCommonsLocal && capturedRecording) {
+        const evidence = await recordingEvidence(capturedRecording);
+        ensureCurrent();
+        await window.agentCommonsLocal.analyzeRecording({ itemId: artifact.fileId, agentId: copilotPayload.data.agentId, ...evidence });
+        ensureCurrent();
+      }
+      openCommonsCopilotPrompt({
+        text: recordingSkillPrompt(artifact.fileId, artifact.name),
+        attachment: { fileId: artifact.fileId, name: artifact.name, mimeType: artifact.mimeType || recordedBlob.type, sizeBytes: artifact.sizeBytes || recordedBlob.size, kind: "video" },
+      });
       toast({
         title: "Recording ready",
         description: "Commons Copilot is turning it into a skill.",
       });
-      setRecordedBlob(null);
+      setCapturedRecording(null);
       setShowCreate(false);
     } catch (error) {
       toast({
@@ -867,9 +805,9 @@ export function SkillsMarketplaceView({
           {createMode === "record" && (
             <>
               <p className="text-sm text-muted-foreground">
-                Your screen, clicks, typing, system audio, and—with
-                permission—your voice are recorded. Video understanding extracts
-                the repeatable workflow for Commons Copilot.
+                Record a window or screen and explain the steps aloud. Your
+                microphone and available screen audio are included with permission.
+                Recording stops at 10 minutes or 20 MB.
               </p>
               <div className="my-3 flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
                 <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
@@ -892,6 +830,7 @@ export function SkillsMarketplaceView({
                   <>
                     <Video className="mb-3 h-8 w-8 text-emerald-600" />
                     <p className="font-medium">Recording captured</p>
+                    {recordingPreview && <video src={recordingPreview} controls className="mt-3 max-h-56 w-full rounded-lg" aria-label="Review your workflow recording" />}
                     <p className="mt-1 text-xs text-muted-foreground">
                       {(recordedBlob.size / (1024 * 1024)).toFixed(1)} MB ready
                       for analysis
@@ -925,8 +864,7 @@ export function SkillsMarketplaceView({
                   <>
                     <Button
                       variant="outline"
-                      onClick={startRecording}
-                      disabled={creating}
+                      onClick={startRecording} disabled={startingRecording || creating}
                     >
                       Record again
                     </Button>
@@ -941,7 +879,7 @@ export function SkillsMarketplaceView({
                     </Button>
                   </>
                 ) : (
-                  <Button onClick={startRecording}>Start recording</Button>
+                  <Button onClick={startRecording} disabled={startingRecording || creating}>Start recording</Button>
                 )}
               </DialogFooter>
             </>

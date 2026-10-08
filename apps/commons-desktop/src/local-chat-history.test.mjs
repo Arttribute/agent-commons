@@ -74,3 +74,15 @@ test('reserves output and tool schema space while preserving the request and com
   assert.ok(messages.at(-2).tool_calls);
   assert.equal(messages.at(-1).tool_name, 'read_library_item');
 });
+
+test('video and tool context reduces output reserve before rejecting the current task', async () => {
+  const { prepareLocalInference, localPromptCharacterBudget, LOCAL_CONTEXT_SIZE } = await import('./local-chat-history.ts');
+  const messages = [{ role: 'system', content: 's'.repeat(8500) }, { role: 'user', content: 'Analyze my actual recording and save a reusable skill. '+ 'x'.repeat(1300) }];
+  const original = JSON.stringify(messages);
+  const outputTokens = prepareLocalInference(messages, 6000, 4);
+  assert.equal(outputTokens, 3072);
+  assert.equal(JSON.stringify(messages), original);
+  assert.ok(Buffer.byteLength(JSON.stringify(messages)) <= localPromptCharacterBudget(outputTokens, 6000, 4));
+  assert.ok(Math.ceil(Buffer.byteLength(JSON.stringify(messages)) / 2) + 3000 + 4096 + outputTokens + 512 <= LOCAL_CONTEXT_SIZE);
+  assert.equal(prepareLocalInference([{ role: 'system', content: 'short' }, { role: 'user', content: 'hi' }]), 4096);
+});

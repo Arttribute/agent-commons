@@ -65,6 +65,18 @@ export function localPromptCharacterBudget(outputTokens: number, schemaCharacter
   return Math.min(32_000, available * 2);
 }
 
+/** Prefer a full output budget, reducing it before rejecting a valid input. */
+export function prepareLocalInference(messages: OllamaMessage[], schemaCharacters = 0, imageCount = 0) {
+  let lastError: unknown;
+  for (const outputTokens of [4096, 3072, 2048]) {
+    try {
+      compactToolLoop(messages, localPromptCharacterBudget(outputTokens, schemaCharacters, imageCount));
+      return outputTokens;
+    } catch (error) { lastError = error; }
+  }
+  throw lastError;
+}
+
 export function compactToolLoop(messages: OllamaMessage[], maxCharacters = 32_000) {
   // Keep system + current request, retaining recent exchanges atomically. A
   // bounded prompt prevents Ollama silently truncating the task after big logs.
