@@ -69,6 +69,13 @@ jobs:
       - run: pnpm --filter @agent-commons/cli typecheck
       - run: pnpm --filter commons-desktop typecheck
       - run: pnpm --filter commons-desktop test
+      - name: Configure Linux Electron sandbox for recording checks
+        if: runner.os == 'Linux'
+        working-directory: apps/commons-desktop
+        run: |
+          sandbox_helper=$(node -p 'require("node:path").join(require("node:path").dirname(require("electron")), "chrome-sandbox")')
+          sudo chown root:root "$sandbox_helper"
+          sudo chmod 4755 "$sandbox_helper"
       - name: Verify workflow capture, audio mixing and account cleanup (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a node apps/commons-desktop/scripts/skill-recording-reliability.mjs
