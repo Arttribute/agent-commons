@@ -19,6 +19,9 @@ try {
   writeFileSync(join(directory, 'sales.csv'), 'revenue\n10\n20\n30\n');
   const result = await runtime.run(`import json, pandas as pd, matplotlib.pyplot as plt, numpy, scipy, sklearn, seaborn, openpyxl, PIL
 from sklearn.linear_model import LinearRegression
+from PIL import ImageFont
+assert set(FONT_FILES) == {'sans', 'sans_bold', 'serif', 'mono'}
+assert ImageFont.truetype(FONT_FILES['sans_bold'], 28).getbbox('Jessica Colaço — measured data')[2] > 100
 import os
 assert os.environ['OUTPUT_DIR'] == str(OUTPUT_DIR)
 assert os.environ['WORKSPACE_ROOT'] == WORKSPACE_ROOT

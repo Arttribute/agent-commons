@@ -24,6 +24,9 @@ try {
   writeFileSync(join(directory, 'sales.csv'), 'revenue\n10\n20\n30\n');
   writeFileSync(join(directory, 'inputs.json'), JSON.stringify({ files: [{ itemId: 'file-731', name: 'sales.csv', url: pathToFileURL(join(directory, 'sales.csv')).toString() }], packages: ['json', 'os', 'pathlib', 'numpy', 'pandas', 'PIL', 'sklearn'], timeoutSeconds: 120, workingDirectory: 'sessions/acceptance/outputs' }));
   writeFileSync(join(directory, 'analysis.py'), `import json, os, pandas as pd, matplotlib.pyplot as plt
+from PIL import ImageFont
+assert set(FONT_FILES) == {'sans', 'sans_bold', 'serif', 'mono'}
+assert ImageFont.truetype(FONT_FILES['sans_bold'], 28).getbbox('Jessica Colaço — measured data')[2] > 100
 assert os.environ["OUTPUT_DIR"] == str(OUTPUT_DIR)
 assert os.environ["WORKSPACE_ROOT"] == WORKSPACE_ROOT
 assert INPUT_FILES['sales.csv'] == INPUT_FILES['file-731']

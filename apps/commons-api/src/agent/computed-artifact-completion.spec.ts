@@ -97,11 +97,23 @@ describe('computed artifact completion', () => {
       ),
     ).toEqual([]);
   });
+  it('requires every text document explicitly requested in the Library', () => {
+    expect(missingComputedArtifacts('Draft brand-sheet.md and ad-copy.md in the Library.', [], [
+      { name: 'writeComputerFiles', status: 'success', result: { files: ['brand-sheet.md', 'ad-copy.md'] } },
+    ])).toEqual(['brand-sheet.md', 'ad-copy.md']);
+    expect(missingComputedArtifacts('Save poem.txt in the Library.', [], [
+      { name: 'createTextFile', status: 'success', result: { fileId: 'poem', name: 'poem.txt' } },
+    ])).toEqual([]);
+  });
+  it('requires cloud computation outputs without needing the word Library', () => {
+    const prompt = 'Produce headline.png and offer.png with runPythonAnalysis, then save campaign-data.js and landing-page.html.';
+    expect(missingComputedArtifacts(prompt, [], [python([])])).toEqual(['headline.png', 'offer.png', 'campaign-data.js', 'landing-page.html']);
+    expect(missingComputedArtifacts(prompt, [], [], true)).toEqual([]);
+  });
   it.each([
     'Explain regression.',
     'Fit regression and show the slope in chat.',
     'Write a Python code example in chat about Library inputs.',
-    'Save a poem.txt in the Library.',
     'Explain how to save regression.png and use the Library later.',
   ])(
     'does not enforce output creation for informational requests: %s',

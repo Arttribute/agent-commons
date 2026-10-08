@@ -21,7 +21,10 @@ export function toolResult(name: string, content: string): OllamaMessage {
 function boundedContent(content: string, limit: number) {
   if (content.length <= limit) return content;
   try {
-    const data = JSON.parse(content);
+    const start = content.startsWith('Error:') ? content.indexOf('\n{') + 1 : 0;
+    const prefix = content.slice(0, start);
+    const available = limit - prefix.length;
+    const data = JSON.parse(content.slice(start));
     const texts: { parent: Record<string, unknown>; key: string }[] = [];
     const visit = (value: unknown) => {
       if (!value || typeof value !== 'object') return;
@@ -32,24 +35,24 @@ function boundedContent(content: string, limit: number) {
     };
     visit(data);
     let encoded = JSON.stringify(data);
-    while (encoded.length > limit) {
+    while (encoded.length > available) {
       const largest = texts.sort((a, b) => String(b.parent[b.key]).length - String(a.parent[a.key]).length)[0];
       if (!largest || String(largest.parent[largest.key]).length <= 100) break;
       const text = String(largest.parent[largest.key]);
-      const length = Math.max(40, text.length - (encoded.length - limit) - 100);
+      const length = Math.max(40, text.length - (encoded.length - available) - 100);
       const shortened = `${text.slice(0, length / 2)}\n[Text shortened; use an explicit offset to read omitted source text.]\n${text.slice(-length / 2)}`;
       if (shortened.length >= text.length) break;
       largest.parent[largest.key] = shortened;
       encoded = JSON.stringify(data);
     }
-    if (encoded.length <= limit) return encoded;
-    let length = Math.max(20, Math.floor(limit / 4));
+    if (encoded.length <= available) return prefix + encoded;
+    let length = Math.max(20, Math.floor(available / 4));
     let preview = JSON.stringify({ truncated: true, preview: `${content.slice(0, length)}\n[Structured result shortened]\n${content.slice(-length)}` });
-    while (preview.length > limit && length > 10) {
+    while (preview.length > available && length > 10) {
       length = Math.floor(length / 2);
       preview = JSON.stringify({ truncated: true, preview: `${content.slice(0, length)}\n[Structured result shortened]\n${content.slice(-length)}` });
     }
-    return preview;
+    return prefix + preview;
   } catch { /* Ordinary terminal output is not JSON. */ }
   return `${content.slice(0, limit / 2)}\n[Output shortened; read a smaller range if needed.]\n${content.slice(-limit / 2)}`;
 }

@@ -2,6 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { compactToolLoop, libraryTextResult, localChatHistory, prepareLocalInference, toolResult } from "./local-chat-history.ts";
 
+test('long Python failures retain structured stderr and its actual final cause', () => {
+  const cause = 'ValueError: x and y must have the same first dimension';
+  const raw = `Error: Python execution failed.\n${JSON.stringify({ exitCode: 1, stdout: 'source was read', stderr: 'Traceback\n'.repeat(1500) + cause, artifacts: [], workspace: '/outputs' })}`;
+  const result = toolResult('run_python', raw).content;
+  assert.ok(result.length <= 5000);
+  assert.ok(result.startsWith('Error: Python execution failed.\n'));
+  const data = JSON.parse(result.slice(result.indexOf('\n') + 1));
+  assert.equal(data.exitCode, 1);
+  assert.equal(data.stdout, 'source was read');
+  assert.ok(data.stderr.endsWith(cause));
+});
+
 test('paginated Library reads preserve valid JSON and the exact next unread character', () => {
   const text = 'Quoted "facts", newlines\n and Unicode 👩🏽‍💻. '.repeat(300);
   const result = libraryTextResult('source-731', 'long-template.md', 'text/markdown', text, 500, text.length + 500);
