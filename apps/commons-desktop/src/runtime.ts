@@ -1667,6 +1667,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       }
     }
     const offeredNames = new Set(tools.map((entry) => entry.function.name));
+    let recordingSkillArgsRepair = false;
     let nativeTools = openingGreeting || !/^deepseek-r1:(?:1\.5b|7b|8b)/.test(agent.model);
 
     let executionRepairAttempted = false;
@@ -1697,7 +1698,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       if (!result.startsWith("Error:") && !result.startsWith("User denied")) { successfulTools.add(name); return; }
       if (!result.startsWith("Error:")) return;
       if (name === "local_save_skill" && recordingSkill) {
-        nativeTools = false;
+        if (/Recorded skills require|not available tool names/.test(result)) recordingSkillArgsRepair = true;
         failureRepairHint = `The recorded skill was not saved: ${localToolFailureKey(result)}. Supply inputs, steps, outputs, successChecks, uncertainties, triggers and tools as separate JSON array arguments, even when their text also appears in instructions. tools=[] is valid for manual application access. Keep instructions focused on the task. Observed labels do not prove button clicks; put unknown controls in uncertainties and describe only the demonstrated sequence.`;
       }
       if (name === "run_python" && /FileNotFoundError/.test(result)) failureRepairHint = "A Library itemId is an identifier, not a filesystem path. Read attached, generated and extracted files using INPUT_FILES[filename] or INPUT_FILES[itemId]. Reuse OUTPUT_DIR for generated outputs; do not construct paths from UUIDs or internal storage roots. Correct the failed Python call using the provided mapping.";
@@ -1747,6 +1748,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     for (let turn = 0; turn < 64; turn += 1) {
       const beforeStep = this.pendingSteers.get(conversationId)?.splice(0) ?? [];
       if (beforeStep.length) {
+        recordingSkillArgsRepair = false;
         messages.push(...beforeStep.map((content): OllamaMessage => ({ role: "user", content })));
         if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
       }
@@ -1760,14 +1762,14 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         messages[0].content += `\nRequested output files still missing from this turn: ${pending.join(", ") || "none"}. ${pending.length ? `Next requested output: ${pending[0]}. Save substantial text documents with write_library_files one at a time. Use run_python for computations and images; one computation may generate several related outputs.` : ""} Complete them from the verified source facts. Previously supplied reference files are not fresh outputs.`;
       }
       const inferenceTools = tools.filter((entry) => entry.function.name !== "web_search" || this.webSearchAllowed(conversationId));
-      const textToolFormat = recordingSkill ? { oneOf: [
-        ...inferenceTools.map((entry) => ({ type: "object", properties: { tool: { const: entry.function.name }, args: entry.function.name === "local_save_skill" ? entry.function.parameters : { type: "object" } }, required: ["tool", "args"], additionalProperties: false })),
-        { type: "object", properties: { tool: { const: "final" }, args: { type: "object", properties: { response: { type: "string" } }, required: ["response"] } }, required: ["tool", "args"], additionalProperties: false },
-      ] } : { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] };
-      if (!nativeTools) messages[0].content += `\nThis model uses the text tool protocol. To take an action, output ONLY {"tool":"exact_tool_name","args":{...}}. After each tool result, continue the task. When done, output {"tool":"final","args":{"response":"your final answer"}}. Available tools and schemas: ${JSON.stringify(inferenceTools.map((entry) => entry.function))}`;
-      const outputTokens = prepareLocalInference(messages, nativeTools ? JSON.stringify(inferenceTools).length : 0, imageContext.images.length);
+      const repairingSkillArgs = recordingSkillArgsRepair;
+      const recordingSaveSchema = inferenceTools.find((entry) => entry.function.name === "local_save_skill")?.function.parameters;
+      if (repairingSkillArgs) messages[0].content += `\nCorrect the failed local_save_skill arguments. Return ONLY the argument JSON object matching this schema, without a tool wrapper or Markdown. Each required field must be an actual JSON field. Array contents must describe the observed task and its checks. Schema: ${JSON.stringify(recordingSaveSchema)}`;
+      else if (!nativeTools) messages[0].content += `\nThis model uses the text tool protocol. To take an action, output ONLY {"tool":"exact_tool_name","args":{...}}. After each tool result, continue the task. When done, output {"tool":"final","args":{"response":"your final answer"}}. Available tools and schemas: ${JSON.stringify(inferenceTools.map((entry) => entry.function))}`;
+      const requestNativeTools = nativeTools && !repairingSkillArgs;
+      const outputTokens = prepareLocalInference(messages, requestNativeTools ? JSON.stringify(inferenceTools).length : 0, imageContext.images.length);
       const response = await requestLocalModel(`${endpoint}/api/chat`, {
-        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(nativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: nativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(!nativeTools ? { format: textToolFormat } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: reasoningEffort ? ["medium", "high", "xhigh", "max"].includes(reasoningEffort) : (requiresComputedData(lastUser) || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells"))) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
+        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(requestNativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: requestNativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(repairingSkillArgs ? { format: recordingSaveSchema } : !nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: reasoningEffort ? ["medium", "high", "xhigh", "max"].includes(reasoningEffort) : (requiresComputedData(lastUser) || recordingSkill || outputNames.length > 1 || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells"))) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
         signal: AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(10 * 60_000)]),
       });
       if (!response.ok) {
@@ -1783,9 +1785,17 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       } : undefined);
       const afterStep = this.pendingSteers.get(conversationId)?.splice(0) ?? [];
       if (afterStep.length) {
+        recordingSkillArgsRepair = false;
         messages.push(...afterStep.map((content): OllamaMessage => ({ role: "user", content })));
         if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
         continue;
+      }
+      if (repairingSkillArgs) {
+        const args = JSON.parse(message.content ?? "");
+        if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("The model did not return valid recorded-skill arguments.");
+        message.tool_calls = [{ function: { name: "local_save_skill", arguments: args } }];
+        message.content = "";
+        recordingSkillArgsRepair = false;
       }
       // Native tool continuations can use the prior reasoning trace. Bound it
       // so long traces cannot consume the input budget on subsequent calls.
