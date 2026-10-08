@@ -269,6 +269,7 @@ describe('ComputerService', () => {
     jest.spyOn(service, 'getConfig').mockResolvedValue({
       configId: 'cfg_1',
       agentId: 'agent_1',
+      updatedAt: new Date(),
       enabled: false,
       resourceProfile: 'standard',
       resourceMode: 'elastic',
@@ -297,6 +298,16 @@ describe('ComputerService', () => {
     );
     // Enforcement still ran — the paid plan was actually consulted.
     expect(getEntitlements).toHaveBeenCalledWith('user_1');
+  });
+
+  it('keeps the active compute lease server-owned when saving access settings', () => {
+    const lease = { leaseId: 'actual-lease', profile: 'gpu' };
+    const config = { metadata: { resourceUpgradeLease: lease }, resourceProfile: 'gpu' };
+    const next = (service as any).normalizeConfigPatch({ resourceUpgradePolicy: { cpuAccess: 'auto', gpuAccess: 'ask', maxMinutes: 15 }, metadata: { resourceUpgradeLease: { leaseId: 'forged' } } }, config);
+    expect(next.metadata.resourceUpgradeLease).toEqual(lease);
+    expect(next.metadata.resourceUpgradePolicy.gpuAccess).toBe('ask');
+    const empty = (service as any).normalizeConfigPatch({ metadata: { resourceUpgradeLease: { leaseId: 'forged' } } }, { metadata: null });
+    expect(empty.metadata.resourceUpgradeLease).toBeUndefined();
   });
 
   it('persists stop intent and supplies the legacy fleet fallback', async () => {

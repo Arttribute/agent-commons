@@ -1,0 +1,28 @@
+# These scheduling constraints prevent CPU tasks from starting a GPU node.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: commons-staging-performance
+handler: runc
+scheduling:
+  nodeSelector:
+    agentcommons.io/staging-capacity: performance
+  tolerations:
+    - key: agentcommons.io/staging-capacity
+      operator: Equal
+      value: performance
+      effect: NoSchedule
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: commons-staging-gpu
+handler: nvidia
+scheduling:
+  nodeSelector:
+    agentcommons.io/staging-capacity: gpu
+  tolerations:
+    - key: agentcommons.io/staging-capacity
+      operator: Equal
+      value: gpu
+      effect: NoSchedule

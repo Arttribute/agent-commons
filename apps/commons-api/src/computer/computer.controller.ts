@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  ForbiddenException,
   Param,
   Post,
   Put,
@@ -10,14 +11,46 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { OwnerGuard, OwnerOnly, RateLimit } from '~/modules/auth';
+import { OwnerGuard, OwnerOnly, RateLimit, resolveCallerId } from '~/modules/auth';
 import { ComputerService } from './computer.service';
+import { ResourceUpgradeService } from './resource-upgrade.service';
 
 @Controller({ version: '1', path: 'agents/:agentId' })
 @UseGuards(OwnerGuard)
 @OwnerOnly({ table: 'agent', idParam: 'agentId' })
 export class ComputerController {
-  constructor(private readonly computers: ComputerService) {}
+  constructor(private readonly computers: ComputerService, private readonly upgrades: ResourceUpgradeService) {}
+
+  private upgradeOwner(req: Request) {
+    const principal = (req as any).principal;
+    if (principal?.principalType === 'agent') throw new ForbiddenException('Resource approval requires the signed-in owner.');
+    return resolveCallerId(req) ?? '';
+  }
+
+  @Get('computer/upgrades')
+  async pendingUpgrades(@Param('agentId') agentId: string, @Req() req: Request) {
+    return { data: await this.upgrades.pending(agentId, this.upgradeOwner(req)) };
+  }
+
+  @Post('computer/upgrades/:changeId/accept')
+  async approveUpgrade(@Param('agentId') agentId: string, @Param('changeId') changeId: string, @Req() req: Request) {
+    return { data: await this.upgrades.accept(agentId, changeId, this.upgradeOwner(req)) };
+  }
+
+  @Get('computer/upgrades/:changeId')
+  async getUpgrade(@Param('agentId') agentId: string, @Param('changeId') changeId: string, @Req() req: Request) {
+    return { data: await this.upgrades.getRequest(agentId, changeId, this.upgradeOwner(req)) };
+  }
+
+  @Post('computer/upgrades/:changeId/reject')
+  async rejectUpgrade(@Param('agentId') agentId: string, @Param('changeId') changeId: string, @Req() req: Request) {
+    return { data: await this.upgrades.reject(agentId, changeId, this.upgradeOwner(req)) };
+  }
+
+  @Post('computer/upgrades/release')
+  async releaseUpgrade(@Param('agentId') agentId: string, @Req() req: Request) {
+    return { data: await this.upgrades.release(agentId, this.upgradeOwner(req)) };
+  }
 
   @Get('computer/config')
   async getConfig(@Param('agentId') agentId: string) {

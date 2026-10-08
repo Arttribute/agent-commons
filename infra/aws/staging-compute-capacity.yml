@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Bounded scale-to-zero capacity for staging agent computer resource upgrades.
+Parameters:
+  ClusterName:
+    Type: String
+    Default: common-os-agents
+  NodeRoleArn:
+    Type: String
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+Resources:
+  PerformanceNodes:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: agent-commons-staging-performance
+      NodeRole: !Ref NodeRoleArn
+      Subnets: !Ref SubnetIds
+      AmiType: AL2023_x86_64_STANDARD
+      InstanceTypes: [m7i.2xlarge]
+      CapacityType: ON_DEMAND
+      DiskSize: 40
+      ScalingConfig: {MinSize: 0, DesiredSize: 0, MaxSize: 1}
+      Labels:
+        agentcommons.io/staging-capacity: performance
+      Taints:
+        - Key: agentcommons.io/staging-capacity
+          Value: performance
+          Effect: NO_SCHEDULE
+      Tags:
+        Environment: staging
+        k8s.io/cluster-autoscaler/enabled: 'true'
+        k8s.io/cluster-autoscaler/common-os-agents: owned
+  GpuNodes:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodegroupName: agent-commons-staging-gpu
+      NodeRole: !Ref NodeRoleArn
+      Subnets: !Ref SubnetIds
+      AmiType: AL2023_x86_64_NVIDIA
+      InstanceTypes: [g5.4xlarge]
+      CapacityType: ON_DEMAND
+      DiskSize: 60
+      ScalingConfig: {MinSize: 0, DesiredSize: 0, MaxSize: 1}
+      Labels:
+        agentcommons.io/staging-capacity: gpu
+      Taints:
+        - Key: agentcommons.io/staging-capacity
+          Value: gpu
+          Effect: NO_SCHEDULE
+      Tags:
+        Environment: staging
+        k8s.io/cluster-autoscaler/enabled: 'true'
+        k8s.io/cluster-autoscaler/common-os-agents: owned
+Outputs:
+  PerformanceNodegroup:
+    Value: !Ref PerformanceNodes
+  GpuNodegroup:
+    Value: !Ref GpuNodes

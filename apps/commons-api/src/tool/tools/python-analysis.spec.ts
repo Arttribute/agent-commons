@@ -17,6 +17,7 @@ jest.mock('~/media', () => ({ CanvasService: class {}, MediaEditService: class {
 describe('computed Python output boundary', () => {
   const setup = () => {
     const service = Object.create(CommonToolService.prototype) as any;
+    service.resourceUpgrades = { bindRun: jest.fn().mockResolvedValue(undefined) };
     service.capabilityOwner = jest.fn().mockResolvedValue({ principalId: 'owner', workspaceId: null });
     service.computers = { writeFiles: jest.fn().mockResolvedValue({}), runCommand: jest.fn().mockResolvedValue({ status: 'completed' }), readFile: jest.fn().mockResolvedValue({ content: JSON.stringify({ exitCode: 0, stdout: 'mean=64', stderr: '', files: [{ name: 'means.json', mimeType: 'application/json', base64: Buffer.from('{"T1":64}').toString('base64') }] }) }) };
     service.files = { createDownloadUrl: jest.fn().mockResolvedValue({ itemId: 'input', name: 'heart_rate.csv', url: 'https://private.example/signed' }), createGeneratedFile: jest.fn().mockResolvedValue({ fileId: 'computed', name: 'means.json' }) };

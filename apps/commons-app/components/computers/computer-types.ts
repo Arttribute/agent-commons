@@ -24,6 +24,8 @@ export type AgentComputerStatus =
   | "unavailable";
 
 export type AgentComputerConfig = {
+  resourceUpgradePolicy?: { cpuAccess: "ask" | "auto" | "off"; gpuAccess: "ask" | "auto" | "off"; maxAutomaticCpuProfile: "standard" | "performance"; maxMinutes: number };
+  resourceUpgradeLease?: { leaseId: string; profile: string; endsAt: string; state: string } | null;
   configId?: string;
   agentId?: string;
   enabled: boolean;

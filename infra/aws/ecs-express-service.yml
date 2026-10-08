@@ -274,6 +274,10 @@ Resources:
             Value: production
           - Name: APP_ENV
             Value: !Ref Environment
+          - Name: COMMON_OS_GPU_RUNTIME_CLASS
+            Value: !If [IsProduction, '', commons-staging-gpu]
+          - Name: COMMON_OS_PERFORMANCE_RUNTIME_CLASS
+            Value: !If [IsProduction, '', commons-staging-performance]
           - Name: HOST
             Value: 0.0.0.0
           - Name: LOG_LEVEL

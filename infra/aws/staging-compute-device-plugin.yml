@@ -1,0 +1,40 @@
+# NVIDIA's device plugin is scoped to the staging GPU node group only.
+# https://github.com/NVIDIA/k8s-device-plugin/releases/tag/v0.20.1
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: commons-staging-nvidia-device-plugin
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: commons-staging-nvidia-device-plugin
+  template:
+    metadata:
+      labels:
+        app: commons-staging-nvidia-device-plugin
+    spec:
+      runtimeClassName: commons-staging-gpu
+      priorityClassName: system-node-critical
+      containers:
+        - name: device-plugin
+          image: nvcr.io/nvidia/k8s-device-plugin:v0.20.1
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: all
+            - name: FAIL_ON_INIT_ERROR
+              value: 'true'
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - name: kubelet-plugins
+              mountPath: /var/lib/kubelet/device-plugins
+      volumes:
+        - name: kubelet-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+            type: Directory

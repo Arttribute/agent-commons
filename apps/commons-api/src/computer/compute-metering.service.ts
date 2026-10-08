@@ -89,13 +89,36 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
 
     for (const inst of due) {
       try {
-        await this.meterInstance(inst, now);
+        await this.withInstanceLock(inst.computerId, async () => {
+          const current = await this.db.query.agentComputerInstance.findFirst({ where: eq(schema.agentComputerInstance.computerId, inst.computerId) });
+          if (current && ['running', 'idle', 'stopping'].includes(current.status)) await this.meterInstance(current, now);
+        });
       } catch (err: any) {
         this.logger.error(
           `Failed to meter computer ${inst.computerId}: ${err.message}`,
         );
       }
     }
+  }
+
+  private async withInstanceLock<T>(computerId: string, action: () => Promise<T>) {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${computerId}, 0))`);
+      return action();
+    });
+  }
+
+  /** Close the old price interval before a profile change. Partial minutes round up. */
+  async settleForResourceChange(agentId: string) {
+    const instance = await this.computers.getAssignedComputer(agentId);
+    if (!instance) return;
+    await this.withInstanceLock(instance.computerId, async () => {
+      const current = await this.db.query.agentComputerInstance.findFirst({ where: eq(schema.agentComputerInstance.computerId, instance.computerId) });
+      if (!current || !['running', 'idle'].includes(current.status)) return;
+      const now = new Date();
+      await this.meterInstance(current, new Date(now.getTime() + 59_999));
+      await this.advanceCursor(current.computerId, now);
+    });
   }
 
   private async meterInstance(inst: any, now: Date): Promise<void> {

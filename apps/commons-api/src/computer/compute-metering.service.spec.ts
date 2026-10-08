@@ -37,11 +37,31 @@ describe('ComputeMeteringService', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     if (previousMaxCatchUp === undefined) {
       delete process.env.COMPUTE_MAX_CATCH_UP_MINUTES;
     } else {
       process.env.COMPUTE_MAX_CATCH_UP_MINUTES = previousMaxCatchUp;
     }
+  });
+
+  it('closes unbilled time at the old price before changing resource profiles', async () => {
+    jest.useFakeTimers({ now });
+    const current = { computerId: 'computer', agentId: 'agent', ownerUserId: 'owner', resourceProfile: 'standard', status: 'running', startedAt: new Date(now.getTime() - 90_000), meteredThroughAt: new Date(now.getTime() - 90_000) };
+    const db = (service as any).db;
+    const execute = jest.fn().mockResolvedValue([]);
+    db.transaction = jest.fn().mockImplementation((callback) => callback({ execute }));
+    db.query = { agentComputerInstance: { findFirst: jest.fn().mockResolvedValue(current) } };
+    (service as any).computers.getAssignedComputer = jest.fn().mockResolvedValue(current);
+    await service.settleForResourceChange('agent');
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(credits.record).toHaveBeenCalledWith(expect.objectContaining({ amount: 14, description: 'Computer use (standard) 2m' }));
+    expect(updateSet).toHaveBeenLastCalledWith(expect.objectContaining({ meteredThroughAt: now }));
+    current.resourceProfile = 'gpu';
+    current.meteredThroughAt = now;
+    jest.setSystemTime(new Date(now.getTime() + 30_000));
+    await service.settleForResourceChange('agent');
+    expect(credits.record).toHaveBeenLastCalledWith(expect.objectContaining({ amount: 70, description: 'Computer use (gpu) 1m' }));
   });
 
   it('caps a stale cursor instead of charging the entire inactive gap', async () => {
