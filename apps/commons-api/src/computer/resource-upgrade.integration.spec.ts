@@ -11,7 +11,7 @@ const url = process.env.RESOURCE_UPGRADE_TEST_DATABASE_URL;
   const namespace = `compute_approval_${randomUUID().replace(/-/g, '')}`;
   let client: ReturnType<typeof postgres>;
   let service: ResourceUpgradeService;
-  const computers = { getConfig: jest.fn().mockResolvedValue({ enabled: true, allowAgentStart: true, resourceProfile: 'starter', metadata: {} }), updateConfig: jest.fn() };
+  const computers = { assertTemporaryResourceProfile: jest.fn().mockResolvedValue(undefined), getConfig: jest.fn().mockResolvedValue({ enabled: true, allowAgentStart: true, resourceProfile: 'starter', metadata: {} }), updateConfig: jest.fn() };
   beforeAll(async () => {
     if (!url?.includes('127.0.0.1:15432')) throw new Error('Use isolated local PostgreSQL at port 15432');
     client = postgres(url, { max: 1, onnotice: () => {} });

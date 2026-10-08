@@ -22,14 +22,13 @@ describe('temporary computer resource approval and cleanup', () => {
       execute: jest.fn().mockResolvedValue([{ config_id: 'config' }]),
     };
     service.computers = {
-      getConfig: jest
-        .fn()
-        .mockResolvedValue({
-          enabled: true,
-          allowAgentStart: true,
-          resourceProfile: 'standard',
-          metadata: { resourceUpgradePolicy: policy },
-        }),
+      assertTemporaryResourceProfile: jest.fn().mockResolvedValue(undefined),
+      getConfig: jest.fn().mockResolvedValue({
+        enabled: true,
+        allowAgentStart: true,
+        resourceProfile: 'standard',
+        metadata: { resourceUpgradePolicy: policy },
+      }),
       getAssignedComputer: jest
         .fn()
         .mockResolvedValue({ resourceProfile: 'gpu' }),
@@ -76,6 +75,28 @@ describe('temporary computer resource approval and cleanup', () => {
       service.request({ ...gpuRequest, ownerId: 'viewer' }),
     ).rejects.toThrow(/Only the computer owner/);
     expect(values).not.toHaveBeenCalled();
+  });
+  it('rejects an unavailable plan profile before offering approval or activating hardware', async () => {
+    const { service, values } = setup();
+    service.computers.assertTemporaryResourceProfile.mockRejectedValue(
+      new Error('GPU is not included in this plan'),
+    );
+    await expect(service.request(gpuRequest)).rejects.toThrow(/not included/);
+    expect(values).not.toHaveBeenCalled();
+    expect(service.computers.updateConfig).not.toHaveBeenCalled();
+  });
+  it('rechecks a changed plan before claiming an existing approval', async () => {
+    const { service, proposal } = setup();
+    const config = await service.computers.getConfig();
+    Object.assign(proposal, { ownerUserId: 'owner', createdAt: new Date(), before: config, after: { profile: 'gpu', minutes: 5 } });
+    const rows = jest.fn().mockResolvedValueOnce([proposal]).mockResolvedValueOnce([config]);
+    const tx = { select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ for: rows }) }) }), update: jest.fn() };
+    service.db.transaction = jest.fn((fn) => fn(tx));
+    service.computers.assertTemporaryResourceProfile.mockRejectedValue(new Error('Profile is no longer included'));
+    await expect(service.accept('agent', 'proposal', 'owner')).rejects.toThrow(/no longer included/);
+    expect(tx.update).not.toHaveBeenCalled();
+    expect(service.computers.updateConfig).not.toHaveBeenCalled();
+    expect(service.credits.getBalance).not.toHaveBeenCalled();
   });
   it('does not interpret automatic CPU access as permission to activate GPU', async () => {
     const { service } = setup({ cpuAccess: 'auto' });
