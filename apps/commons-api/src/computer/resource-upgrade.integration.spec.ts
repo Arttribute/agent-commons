@@ -27,7 +27,7 @@ const url = process.env.RESOURCE_UPGRADE_TEST_DATABASE_URL;
   });
   it('reproduces the old constraint failure, then persists reviewable CPU and GPU requests', async () => {
     const request = { agentId: 'acceptance-agent', ownerId: 'acceptance-owner', sessionId: '11111111-1111-4111-8111-111111111111', profile: 'performance', minutes: 5, reason: 'Verify temporary resources without activation' };
-    await expect(service.request(request)).rejects.toThrow(/copilot_change_scope_check/);
+    await expect(service.request(request)).rejects.toMatchObject({ cause: expect.objectContaining({ code: '23514', constraint_name: 'copilot_change_scope_check' }) });
     const migration = readFileSync('migrations/versioned/043_computer_approval_scope.sql', 'utf8');
     await client.unsafe(migration);
     await client.unsafe(migration); // Retry-safe migration.
