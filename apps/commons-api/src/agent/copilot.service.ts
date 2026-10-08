@@ -794,14 +794,14 @@ export class CopilotService {
     }
 
     if (resourceType === 'task') {
-      const { TaskExecutionService } = require('~/task/task-execution.service');
+      const { TaskExecutionService } = require('../task/task-execution.service');
       const taskExecution = this.moduleRef.get(TaskExecutionService, {
         strict: false,
       });
       if (action === 'update') {
         if (!resourceId) throw new BadRequestException('Task ID is required');
         await this.getOwnedResourceSummary(ownerUserId, 'task', resourceId);
-        const { TaskService } = require('~/task/task.service');
+        const { TaskService } = require('../task/task.service');
         const taskService = this.moduleRef.get(TaskService, { strict: false });
         if (
           after.title !== undefined ||
@@ -820,7 +820,7 @@ export class CopilotService {
           if (after.scheduledFor === null) {
             const {
               TaskSchedulerService,
-            } = require('~/task/task-scheduler.service');
+            } = require('../task/task-scheduler.service');
             const scheduler = this.moduleRef.get(TaskSchedulerService, {
               strict: false,
             });
@@ -867,7 +867,7 @@ export class CopilotService {
           'The target agent was not found. Choose a user-owned non-Copilot agent.',
         );
       }
-      const { SessionService } = require('~/session/session.service');
+      const { SessionService } = require('../session/session.service');
       const sessions = this.moduleRef.get(SessionService, { strict: false });
       let sessionId = after.sessionId;
       if (sessionId) {
@@ -900,7 +900,7 @@ export class CopilotService {
     }
 
     if (resourceType === 'skill') {
-      const { SkillService } = require('~/skill/skill.service');
+      const { SkillService } = require('../skill/skill.service');
       const skills = this.moduleRef.get(SkillService, { strict: false });
       if (action === 'create') {
         return skills.create({
@@ -916,7 +916,7 @@ export class CopilotService {
     }
 
     if (resourceType === 'tool') {
-      const { ToolService } = require('~/tool/tool.service');
+      const { ToolService } = require('../tool/tool.service');
       const tools = this.moduleRef.get(ToolService, { strict: false });
       if (action === 'create') {
         return tools.createTool({
@@ -951,13 +951,13 @@ export class CopilotService {
       return;
     }
     if (resourceType === 'skill') {
-      const { SkillService } = require('~/skill/skill.service');
+      const { SkillService } = require('../skill/skill.service');
       return this.moduleRef
         .get(SkillService, { strict: false })
         .delete(resourceId);
     }
     if (resourceType === 'tool') {
-      const { ToolService } = require('~/tool/tool.service');
+      const { ToolService } = require('../tool/tool.service');
       return this.moduleRef
         .get(ToolService, { strict: false })
         .deleteToolByName(resourceId);
