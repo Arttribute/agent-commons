@@ -18,7 +18,13 @@ try {
     app.whenReady().then(async () => {
       const window = new BrowserWindow({ show: false, webPreferences: { backgroundThrottling: false, contextIsolation: true, sandbox: true } });
       window.webContents.on("console-message", (_event, level, message) => { if (level >= 2) console.error(message); });
-      await window.loadFile(${JSON.stringify(join(output, 'index.html'))});
+      // Native capture can record only this owned test window, never a screen.
+      window.webContents.session.setDisplayMediaRequestHandler((request, callback) => {
+        callback(request.frame === window.webContents.mainFrame && request.userGesture ? { video: request.frame } : {});
+      });
+      await window.loadFile(${JSON.stringify(join(output, 'index.html'))}, { query: { native: process.env.COMMONS_NATIVE_RECORDING_TEST === 'true' ? 'true' : 'false' } });
+      if (process.env.COMMONS_NATIVE_RECORDING_TEST === 'true') window.showInactive();
+      await window.webContents.executeJavaScript('window.__startRecordingVerification()', true);
       const deadline = Date.now() + 45000;
       while (Date.now() < deadline) {
         const result = await window.webContents.executeJavaScript('window.__recordingResult');

@@ -20,6 +20,7 @@ function render() { flushSync(() => root.render(<Capture />)); }
 async function main() {
   const canvas = document.createElement("canvas");
   canvas.width = 640; canvas.height = 360;
+  document.body.appendChild(canvas);
   const drawing = canvas.getContext("2d")!;
   let frame = 0;
   const draw = () => {
@@ -41,8 +42,10 @@ async function main() {
     oscillator.connect(gain).connect(destination); oscillator.start();
     return destination.stream;
   };
-  Object.defineProperty(navigator.mediaDevices, "getDisplayMedia", { configurable: true, value: async () => {
-    const stream = canvas.captureStream(12);
+  const nativeDisplay = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+  const nativeCapture = new URLSearchParams(location.search).get("native") === "true";
+  Object.defineProperty(navigator.mediaDevices, "getDisplayMedia", { configurable: true, value: async (options: DisplayMediaStreamOptions) => {
+    const stream = nativeCapture ? await nativeDisplay(options) : canvas.captureStream(12);
     stream.addTrack(tone(440).getAudioTracks()[0]); sources.push(stream); return stream;
   } });
   Object.defineProperty(navigator.mediaDevices, "getUserMedia", { configurable: true, value: async () => {
@@ -80,8 +83,8 @@ async function main() {
     check(!errors.length, errors.map((error) => error.message).join("; "));
     const bytes = new Uint8Array(await capture!.blob.arrayBuffer());
     let binary = ""; bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
-    (window as any).__recordingResult = { passed: true, bytes: bytes.length, durationMs: capture!.durationMs, frameTimes: evidence.frames.map((entry) => entry.timestampMs), systemAndMicrophone: true,
+    (window as any).__recordingResult = { passed: true, bytes: bytes.length, durationMs: capture!.durationMs, frameTimes: evidence.frames.map((entry) => entry.timestampMs), systemAndMicrophone: true, nativeWindowCapture: nativeCapture,
       recordingBase64: btoa(binary), frames: evidence.frames, mimeType: capture!.blob.type };
   } finally { clearInterval(animation); root.unmount(); await audio.close(); }
 }
-main().catch((error) => { (window as any).__recordingResult = { passed: false, error: error.stack || error.message }; });
+(window as any).__startRecordingVerification = () => { void main().catch((error) => { (window as any).__recordingResult = { passed: false, error: error.stack || error.message }; }); };
