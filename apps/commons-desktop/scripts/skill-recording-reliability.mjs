@@ -14,6 +14,8 @@ try {
   writeFileSync(join(output, 'main.cjs'), `
     const { app, BrowserWindow } = require('electron');
     const fs = require('node:fs');
+    // CI virtual displays do not provide a dependable GPU readback surface.
+    app.disableHardwareAcceleration();
     app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
     app.whenReady().then(async () => {
       const window = new BrowserWindow({ show: false, webPreferences: { backgroundThrottling: false, contextIsolation: true, sandbox: true } });
@@ -27,6 +29,9 @@ try {
       await window.webContents.executeJavaScript('window.__startRecordingVerification()', true);
       const deadline = Date.now() + 45000;
       while (Date.now() < deadline) {
+        if (await window.webContents.executeJavaScript('Boolean(window.__nativeCapturePending)')) {
+          await window.webContents.executeJavaScript('window.__acquireRequestedDisplayMedia()', true);
+        }
         const result = await window.webContents.executeJavaScript('window.__recordingResult');
         if (result) {
           if (result.passed && process.env.COMMONS_RECORDING_TEST_ROOT) {

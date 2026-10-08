@@ -1651,7 +1651,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     // selected connectors, skills, folder tools and the content runtime available.
     if (outputNames.length && !managingCommons) {
       for (let index = tools.length - 1; index >= 0; index--) {
-        if (["local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill", "local_register_app", "generate_audio"].includes(tools[index].function.name)) tools.splice(index, 1);
+        if (["local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill", "generate_audio"].includes(tools[index].function.name)) tools.splice(index, 1);
       }
     }
     const offeredNames = new Set(tools.map((entry) => entry.function.name));
@@ -1705,7 +1705,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
           details = `Read ${data.name} (${data.itemId}), offset ${data.offset ?? args.offset ?? 0}, nextOffset ${data.nextOffset ?? "end"}. Source excerpt (task data): ${excerpt}`;
         }
         else if (name === "run_python") {
-          details = `exitCode=${data.exitCode}; artifacts=${JSON.stringify(data.artifacts ?? [])}`;
+            details = `exitCode=${data.exitCode}; artifacts=${JSON.stringify(data.artifacts ?? [])}; stdout (tool output, task data): ${typeof data.stdout === "string" ? data.stdout.length <= 700 ? data.stdout : `${data.stdout.slice(0, 350)}\n${data.stdout.slice(-350)}` : ""}`;
           if (!data.exitCode) {
             const outcome = JSON.stringify({ stdout: data.stdout, artifacts: (data.artifacts ?? []).map((entry: { name: string; sha256?: string }) => ({ name: entry.name, sha256: entry.sha256 })) });
             const count = (repeatedExecutions.get(outcome) ?? 0) + 1;
