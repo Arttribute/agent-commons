@@ -1086,7 +1086,7 @@ function registerIpc() {
     if (runtime !== instance) throw new Error("The account changed during recording analysis.");
     const analysis = { durationMs: input.durationMs, frames, transcript };
     instance.updateLibraryItem(input.itemId, { mediaAnalysis: analysis });
-    return analysis;
+    return instance.describeRecording(input.itemId, input.agentId);
   });
   localHandler("local:prepare-transcription-model", () => prepareLocalTranscriber(app.getPath("userData"), runtime.state().settings.transcriptionModel));
   localHandler("local:get-image-model-status", () => runtime.imageModelStatus());

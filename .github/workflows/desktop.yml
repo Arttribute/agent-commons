@@ -73,7 +73,8 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: apps/commons-desktop
         run: |
-          sandbox_helper=$(node -p 'require("node:path").join(require("node:path").dirname(require("electron")), "chrome-sandbox")')
+          node -e 'require("electron")'
+          sandbox_helper=$(node -p 'require("node:path").join(require("node:path").dirname(require.resolve("electron")), "dist", "chrome-sandbox")')
           sudo chown root:root "$sandbox_helper"
           sudo chmod 4755 "$sandbox_helper"
       - name: Verify workflow capture, audio mixing and account cleanup (Linux)

@@ -103,7 +103,7 @@ export type LocalLibraryItem = {
   cloudItemId?: string;
   cloudCopiedAt?: string;
   sourceArchiveId?: string;
-  mediaAnalysis?: { durationMs: number; transcript: { segments: Array<{ startMs: number; endMs: number; text: string }>; note?: string }; frames?: Array<{ timestampMs: number; path: string }> };
+  mediaAnalysis?: { durationMs: number; transcript: { segments: Array<{ startMs: number; endMs: number; text: string }>; note?: string }; frames?: Array<{ timestampMs: number; path: string }>; visualDescription?: string; visualModel?: string };
   createdAt: string;
   updatedAt: string;
 };
@@ -169,6 +169,7 @@ export type KnowledgeSpace = {
 };
 
 export type LocalSkill = {
+  tools?: string[];
   id: string;
   slug: string;
   name: string;
@@ -379,7 +380,7 @@ export type AgentInput = Pick<LocalAgent, "name" | "instructions" | "model"> & {
   mediaModels?: LocalAgent["mediaModels"];
 };
 
-export type SkillInput = Pick<LocalSkill, "slug" | "name" | "description" | "instructions" | "triggers" | "tags"> & {
+export type SkillInput = Pick<LocalSkill, "slug" | "name" | "description" | "instructions" | "triggers" | "tags" | "tools"> & {
   id?: string;
   assignedAgentIds?: string[];
 };

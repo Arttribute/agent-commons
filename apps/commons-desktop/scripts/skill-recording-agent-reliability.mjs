@@ -26,6 +26,10 @@ try {
   const evidence = JSON.parse(readFileSync(join(root, 'recording-evidence.json'), 'utf8'));
   const frames = runtime.saveRecordingFrames(item.id, evidence.frames, evidence.durationMs);
   runtime.updateLibraryItem(item.id, { mediaAnalysis: { frames, durationMs: evidence.durationMs, transcript: { segments: [], note: 'This fixture contains audio tones, not speech. Read the visible screen text; do not invent narration.' } } });
+  const observed = await runtime.describeRecording(item.id, agentId);
+  assert.match(observed.visualDescription ?? '', /report/i);
+  assert.match(observed.visualDescription ?? '', /complet/i);
+  assert.match(observed.visualDescription ?? '', /export|csv/i);
   const result = await runtime.sendMessage({ agentId, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [item.id], prompt: recordingSkillPrompt(item.id, item.name) });
   const skills = runtime.state().skills;
   const created = skills.find((skill) => /report|export|filter/i.test(skill.name + skill.instructions));
@@ -35,7 +39,7 @@ try {
   assert.match(created.instructions, /export|csv/i);
   assert.match(created.instructions, /check|verif|validat/i);
   assert.ok(result.conversation.messages.some((message) => message.toolName === 'local_save_skill' && !message.content.startsWith('Error:')), 'No successful skill save tool evidence');
-  writeFileSync(join(root, 'local-skill-result.json'), JSON.stringify({ model, conversationId: result.conversation.id, skill: created, trace }, null, 2));
+  writeFileSync(join(root, 'local-skill-result.json'), JSON.stringify({ model, conversationId: result.conversation.id, visualDescription: observed.visualDescription, skill: created, trace }, null, 2));
   console.log(JSON.stringify({ passed: true, model, skill: created.name, slug: created.slug }));
 } catch (error) {
   writeFileSync(join(root, 'local-skill-failure.json'), JSON.stringify({ error: error.message, trace, conversations: runtime.state().conversations.slice(-1) }, null, 2));
