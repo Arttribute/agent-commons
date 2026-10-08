@@ -58,6 +58,8 @@ import { LocalStorageLayout } from "./local-storage-layout";
 import { handleLocalKnowledgeApi } from "./local-knowledge-api";
 import { assistantIdentityAnswer, assistantIdentityRequestKind, assistantNameAnswer, looksLikeInventedToolCall, looksLikeModelIdentity, parseToolArguments, parseTextToolCall } from "./local-response";
 import { readOllamaChatResponse, type OllamaMessage } from "./ollama-stream";
+import { localMemoryPressureHigh } from "./local-memory-pressure";
+import { LocalModelWarmup, LOCAL_MODEL_KEEP_ALIVE, isOpeningGreeting } from "./local-model-warmup";
 import { mergeWorkspacePreferences } from "./workspace-preferences";
 import { compileLocalWorkflow } from "./local-workflow-plan.mjs";
 import { localWebSearchRequest, localWebSearchResults } from "./local-web-search";
@@ -293,6 +295,11 @@ export class PrivateLocalRuntime {
   private target?: WebContents;
 
   private readonly lifecycle = new AbortController();
+  private readonly warmup = new LocalModelWarmup(fetch, 350, localMemoryPressureHigh, () => this.modelManager.ownsServer());
+  private warmAgentId?: string;
+  private warmupRequested = false;
+  private warmupAllowed = true;
+  private localWindowActive = true;
 
   constructor(userDataDirectory: string, sharedResourcesDirectory = userDataDirectory) {
     setDocumentExtractor(extractDocumentText);
@@ -382,9 +389,26 @@ export class PrivateLocalRuntime {
   }
 
   prepareLocalModel() {
+    this.warmupAllowed = true;
     if (this.store.get().settings.ollamaUrl !== "http://127.0.0.1:11434") return Promise.resolve();
-    return this.modelManager.prepare(this.store.get().settings.defaultModel);
+    return this.modelManager.prepare(this.store.get().settings.defaultModel).then(() => { if (this.warmupAllowed && !this.lifecycle.signal.aborted) this.warmAgent(this.warmAgentId); });
   }
+
+  warmAgent(agentId?: string) {
+    this.lifecycle.signal.throwIfAborted();
+    const state = this.store.get();
+    const agent = agentId ? state.agents.find((entry) => entry.id === agentId) : undefined;
+    if (agentId && !agent) { this.warmAgentId = undefined; this.warmupRequested = false; this.warmup.forget(); return; }
+    this.warmAgentId = agentId;
+    this.warmupRequested = true;
+    this.warmupAllowed = true;
+    this.warmup.setActive(state.settings.keepLocalModelWarm !== false && this.warmupAllowed && this.localWindowActive);
+    this.warmup.schedule({ endpoint: ensureLoopback(state.settings.ollamaUrl), model: agent?.model?.trim() || state.settings.defaultModel });
+  }
+
+  setModelWarmupActive(active: boolean) { this.localWindowActive = active; this.warmup.setActive(active && this.warmupAllowed && this.store.get().settings.keepLocalModelWarm !== false); }
+
+  cancelModelWarmup() { this.warmupAllowed = false; this.warmupRequested = false; this.warmup.setActive(false); }
 
   preparePython() { return this.python.prepare().then(() => undefined); }
 
@@ -723,6 +747,7 @@ export class PrivateLocalRuntime {
         state.settings.defaultModel = settings.defaultModel.trim();
 
       }
+      if (settings.keepLocalModelWarm !== undefined) state.settings.keepLocalModelWarm = Boolean(settings.keepLocalModelWarm);
       if (settings.permissionMode !== undefined) state.settings.permissionMode = settings.permissionMode;
       if (settings.webSearchDefaultEnabled !== undefined) state.settings.webSearchDefaultEnabled = Boolean(settings.webSearchDefaultEnabled);
       if (settings.webSearchUrl !== undefined) {
@@ -941,6 +966,12 @@ export class PrivateLocalRuntime {
   }
 
   async sendMessage(input: ChatRequest): Promise<ChatResult> {
+    const release = this.warmup.beginForeground();
+    try { return await this.sendMessageOnce(input); }
+    finally { release(); }
+  }
+
+  private async sendMessageOnce(input: ChatRequest): Promise<ChatResult> {
     const state = this.store.get();
     if (input.workspaceRoot) validateWorkspace(input.workspaceRoot);
     const agent = state.agents.find((candidate) => candidate.id === input.agentId);
@@ -1391,6 +1422,7 @@ export class PrivateLocalRuntime {
     this.watcher.close();
     for (const server of this.staticApps.values()) server.close();
     clearInterval(this.scheduler);
+    this.warmup.close();
     this.modelManager.stop();
     this.cancelPendingApprovals();
     stopLocalProcesses();
@@ -1474,7 +1506,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     const imageContext = await localImageContext(ensureLoopback(state.settings.ollamaUrl), agent.model || state.settings.defaultModel,
       (lastUserMessage?.attachments ?? []).flatMap((attachment) => { const item = state.library?.find((entry) => entry.id === attachment.id); return item ? [item] : []; }),
       lastUserMessage?.canvasAnnotations?.length ? (items) => renderCanvasImages(this.python, this.layout.path("artifacts", "canvas-previews"), items, lastUserMessage.canvasAnnotations!) : undefined);
-    const system = [
+    let system = [
       "You are an AI agent on the Agent Commons platform.",
       buildAgentIdentityPrompt(agent),
       agent.name === "Commons Copilot" ? "You are the user's native Commons Copilot and can work with local agents, skills, tasks, workflows, Knowledge Spaces, apps, and files." : "",
@@ -1505,6 +1537,14 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         : "",
       `Current runtime: Private Local. Inference model: ${agent.model || state.settings.defaultModel}. Say this explicitly if the user asks about the current mode or model.`,
     ].filter(Boolean).join("\n\n");
+    const openingGreeting = isOpeningGreeting(lastUser) && conversation.messages.length === 1
+      && !project && !lastUserMessage?.attachments?.length && !lastUserMessage?.canvasProjectId
+      && !conversation.mcpServerIds?.length && !spaces.length;
+    if (openingGreeting) system = [
+      buildAgentIdentityPrompt(agent),
+      "Greet the user naturally and concisely. No task has been requested yet. Do not claim to have inspected files or used tools.",
+      `Current runtime: Private Local. Inference model: ${agent.model || state.settings.defaultModel}.`,
+    ].join("\n\n");
     const messages: OllamaMessage[] = [
       { role: "system", content: system },
       ...localChatHistory(conversation.messages).map((message) => ({
@@ -1517,7 +1557,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     const endpoint = ensureLoopback(state.settings.ollamaUrl);
     const describingImage = imageContext.images.length > 0 && /\b(?:describe|colou?r|appearance)\b/i.test(lastUser)
       && !/\b(?:create|edit|change|crop|save|extract|run|compute|calculate|search|compare|chart|count|dimensions|hex|rgb|export|hubspot|crm|connected|web|online|browse)\b|python/i.test(lastUser);
-    const tools = [
+    const tools = openingGreeting ? [] : [
       ...(workspace ? LOCAL_TOOLS : LOCAL_TOOLS.filter((entry) => ["read_canvas", "add_canvas_version", "update_canvas_notes", "write_library_files", "run_python", "extract_library_archive", "list_session_files", "list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge", "web_search", "read_library_item", "search_library_item", "generate_image", "generate_audio", "invoke_skill", "local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill"].includes(entry.function.name)))
         .filter((entry) => !describingImage || ["read_canvas", "read_library_item", "list_session_files"].includes(entry.function.name))
         .filter((entry) => !entry.function.name.startsWith("local_") || entry.function.name === "local_register_app" || managingCommons)
@@ -1532,7 +1572,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     ];
 
     const offeredNames = new Set(tools.map((entry) => entry.function.name));
-    let nativeTools = !/^deepseek-r1:(?:1\.5b|7b|8b)/.test(agent.model);
+    let nativeTools = openingGreeting || !/^deepseek-r1:(?:1\.5b|7b|8b)/.test(agent.model);
 
     let executionRepairAttempted = false;
     let outputRepairAttempted = false;
@@ -1605,7 +1645,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       if (!nativeTools) messages[0].content += `\nThis model uses the text tool protocol. To take an action, output ONLY {"tool":"exact_tool_name","args":{...}}. After each tool result, continue the task. When done, output {"tool":"final","args":{"response":"your final answer"}}. Available tools and schemas: ${JSON.stringify(inferenceTools.map((entry) => entry.function))}`;
       compactToolLoop(messages, localPromptCharacterBudget(outputTokens, nativeTools ? JSON.stringify(inferenceTools).length : 0, imageContext.images.length));
       const response = await requestLocalModel(`${endpoint}/api/chat`, {
-        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(nativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: nativeTools ? inferenceTools : undefined, stream: true, ...(!nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: reasoningEffort ? ["medium", "high", "xhigh", "max"].includes(reasoningEffort) : (requiresComputedData(lastUser) || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells"))) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
+        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(nativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: nativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(!nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: reasoningEffort ? ["medium", "high", "xhigh", "max"].includes(reasoningEffort) : (requiresComputedData(lastUser) || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells"))) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
         signal: AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(10 * 60_000)]),
       });
       if (!response.ok) {
@@ -2145,7 +2185,13 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
 
   private change(mutator: (state: LocalState) => void) {
     this.lifecycle.signal.throwIfAborted();
+    const previous = this.store.get();
+    const previousModel = previous.agents.find((entry) => entry.id === this.warmAgentId)?.model?.trim() || previous.settings.defaultModel;
+    const previousEndpoint = previous.settings.ollamaUrl;
+    const previousWarmSetting = previous.settings.keepLocalModelWarm;
     const state = this.store.update(mutator);
+    const selectedModel = state.agents.find((entry) => entry.id === this.warmAgentId)?.model?.trim() || state.settings.defaultModel;
+    if (this.warmupRequested && this.warmupAllowed && (previousModel !== selectedModel || previousEndpoint !== state.settings.ollamaUrl || previousWarmSetting !== state.settings.keepLocalModelWarm)) this.warmAgent(this.warmAgentId);
     this.layout.sync(state);
     this.emit({ type: "state", state });
     return state;

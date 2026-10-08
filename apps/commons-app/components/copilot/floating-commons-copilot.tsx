@@ -236,6 +236,10 @@ function FloatingCommonsCopilotInner() {
   }, [copilot?.agentId, isLocal]);
 
   useEffect(() => {
+    if (isLocal && open && copilot?.agentId) void window.agentCommonsLocal?.warmModel?.(copilot.agentId).catch(() => undefined);
+  }, [isLocal, open, copilot?.agentId]);
+
+  useEffect(() => {
     loadCopilot();
   }, [loadCopilot, authState.userId]);
 

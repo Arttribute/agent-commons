@@ -7,6 +7,7 @@ import { ComputerMigrationService } from './computer-migration.service';
 import { ComputerService } from './computer.service';
 import { ComputeMeteringService } from './compute-metering.service';
 import { CapabilityProviderModule } from '~/provider';
+import { ResourceUpgradeService } from './resource-upgrade.service';
 
 @Module({
   imports: [CreditModule, BillingModule, CapabilityProviderModule],
@@ -15,8 +16,9 @@ import { CapabilityProviderModule } from '~/provider';
     ComputerMigrationService,
     ComputerService,
     ComputeMeteringService,
+    ResourceUpgradeService,
     OwnerGuard,
   ],
-  exports: [ComputerService],
+  exports: [ComputerService, ResourceUpgradeService],
 })
 export class ComputerModule {}

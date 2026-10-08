@@ -10,6 +10,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  powerMonitor,
   session,
   shell,
   WebContentsView,
@@ -457,6 +458,7 @@ async function switchToCloud(path?: string) {
   try {
     runtime.cancelPendingApprovals();
     activeMode = "cloud";
+    runtime.cancelModelWarmup();
     await session.fromPartition("persist:commons-unified").cookies.set({
       url: commonsServer!.origin,
       name: "commons-desktop-mode",
@@ -492,7 +494,10 @@ function ensureDesktopWindow() {
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
   });
   desktopWindow.on("resize", sizeViews);
+  desktopWindow.on("focus", () => runtime.setModelWarmupActive(activeMode === "private-local"));
+  desktopWindow.on("blur", () => runtime.setModelWarmupActive(false));
   desktopWindow.on("closed", () => {
+    runtime.setModelWarmupActive(false);
     runtime.setTarget(undefined);
     unifiedView?.webContents.close();
     unifiedView = null;
@@ -672,6 +677,7 @@ async function selectLocalAccount(account?: DesktopAccount) {
         await unifiedView?.webContents.executeJavaScript('sessionStorage.clear()').catch(() => undefined);
       }
       bindLocalRuntime();
+      runtime.setModelWarmupActive(activeMode === "private-local" && Boolean(desktopWindow?.isFocused()));
       unifiedView?.webContents.send('desktop:preferences-changed', activeMode === 'cloud' ? cloudVisiblePreferences(runtime.preferences()) : runtime.preferences());
       // Recreate renderer caches, including canvas notes, selected folders and chats.
       if (commonsServer) {
@@ -1079,6 +1085,7 @@ function registerIpc() {
   localHandler<[string]>("local:test-mcp", (id) => runtime.testMcpServer(id));
   localHandler("local:prepare-python", () => runtime.preparePython());
   localHandler("local:prepare-model", () => runtime.prepareLocalModel());
+  localHandler<[string?]>("local:warm-model", (agentId) => runtime.warmAgent(agentId));
   localHandler("local:get-preferences", () => runtime.preferences());
   localHandler<[WorkspacePreferences]>("local:sync-preferences", (incoming) => syncPreferences(incoming, "private-local"));
   localHandler("local:choose-workspace", async () => {
@@ -1184,6 +1191,8 @@ app.whenReady().then(async () => {
   bindLocalRuntime();
   loadCloudAccess();
   registerIpc();
+  powerMonitor.on("suspend", () => runtime.setModelWarmupActive(false));
+  powerMonitor.on("resume", () => runtime.setModelWarmupActive(activeMode === "private-local" && Boolean(desktopWindow?.isFocused())));
   installApplicationMenu();
   activeMode = await selectStartupMode();
   showView(await createUnifiedView());

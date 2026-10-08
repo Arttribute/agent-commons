@@ -170,6 +170,10 @@ export default function SessionInterfaceImproved({
   composerPlaceholder,
 }: SessionInterfaceImprovedProps) {
   const { mode } = useWorkspaceMode();
+  useEffect(() => {
+    if (mode === "private-local" && agentId) void window.agentCommonsLocal?.warmModel?.(agentId).catch(() => undefined);
+  }, [mode, agentId, agent?.modelId]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -659,6 +663,7 @@ export default function SessionInterfaceImproved({
                               }}
                               sessionId={sessionId}
                               onAppRespond={sendAppResponse}
+                              onResourcesApproved={() => setComposerPrompt({ id: `resource-approval:${Date.now()}`, text: "I approved the temporary computer resources. Continue the task, wait for the computer to be ready and verify available hardware before using it. Release the temporary resources when finished.", mode: "send" })}
                             />
                           );
                         }

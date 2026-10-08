@@ -247,7 +247,7 @@ function CloudComputerSurface({
       const response = await fetch(`/api/agents/${agentId}/computer/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(computerConfigPatch(draft)),
+        body: JSON.stringify(config?.resourceUpgradeLease ? Object.fromEntries(Object.entries(computerConfigPatch(draft)).filter(([key]) => !["resourceProfile", "resourceMode", "cpuRequest", "cpuLimit", "memoryRequest", "memoryLimit", "storageLimit", "gpuType", "gpuCount"].includes(key))) : computerConfigPatch(draft)),
       });
       const payload = await response.json();
       const upgrade = upgradePromptFrom(response.status, payload);
@@ -368,6 +368,17 @@ function CloudComputerSurface({
             onSetCodeTheme={setCodeTheme}
             onChange={setDraft}
             onSave={saveConfig}
+            onReleaseResources={async () => {
+              setSaving(true);
+              try {
+                const response = await fetch(`/api/agents/${agentId}/computer/upgrades/release`, { method: "POST" });
+                const payload = await response.json();
+                if (!response.ok) throw new Error(errorMessage(payload, "Could not release temporary resources"));
+                setDraft(null);
+                await load();
+              } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not release temporary resources"); }
+              finally { setSaving(false); }
+            }}
           />
         ) : (
           <DesktopStage
@@ -1640,6 +1651,7 @@ function ConfigView({
   onSetCodeTheme,
   onChange,
   onSave,
+  onReleaseResources,
 }: {
   draft: AgentComputerConfig | null;
   saving: boolean;
@@ -1650,6 +1662,7 @@ function ConfigView({
   onSetCodeTheme: (theme: CodeTheme) => void;
   onChange: (config: AgentComputerConfig) => void;
   onSave: () => void;
+  onReleaseResources: () => void;
 }) {
   const [tab, setTab] = useState<ConfigTab>("Appearance");
   return (
@@ -1754,6 +1767,19 @@ function ConfigView({
 
           {draft && tab === "Performance" && (
             <>
+              <div className="space-y-3">
+                <p className={cn("text-sm font-medium", tokens.text)}>Temporary agent resources</p>
+                {([ ["cpuAccess", "CPU and RAM"], ["gpuAccess", "GPU"] ] as const).map(([key, label]) => <div key={key} className="space-y-2">
+                  <ConfigLabel>{label}</ConfigLabel>
+                  <SegmentedOptions value={draft.resourceUpgradePolicy?.[key] ?? "ask"} options={[{ value: "ask", label: "Ask first" }, { value: "auto", label: "Automatic" }, { value: "off", label: "Off" }]} tokens={tokens} onChange={(value) => onChange({ ...draft, resourceUpgradePolicy: { cpuAccess: "ask", gpuAccess: "ask", maxAutomaticCpuProfile: "performance", maxMinutes: 30, ...draft.resourceUpgradePolicy, [key]: value } })} />
+                </div>)}
+                {draft.resourceUpgradePolicy?.cpuAccess === "auto" && <div className="space-y-2">
+                  <ConfigLabel>Automatic CPU and RAM limit</ConfigLabel>
+                  <SegmentedOptions value={draft.resourceUpgradePolicy.maxAutomaticCpuProfile} options={[{ value: "standard", label: "Standard" }, { value: "performance", label: "Performance" }]} tokens={tokens} onChange={(value) => onChange({ ...draft, resourceUpgradePolicy: { ...draft.resourceUpgradePolicy!, maxAutomaticCpuProfile: value as "standard" | "performance" } })} />
+                </div>}
+                <NumberField label="Maximum temporary duration (5–120 minutes)" value={draft.resourceUpgradePolicy?.maxMinutes ?? 30} onChange={(maxMinutes) => onChange({ ...draft, resourceUpgradePolicy: { cpuAccess: "ask", gpuAccess: "ask", maxAutomaticCpuProfile: "performance", ...draft.resourceUpgradePolicy, maxMinutes } })} />
+                {draft.resourceUpgradeLease && <div className="space-y-2"><p className={cn("text-xs", tokens.textDim)}>Temporary {draft.resourceUpgradeLease.profile} access until {new Date(draft.resourceUpgradeLease.endsAt).toLocaleTimeString()}.</p><Button size="sm" variant="outline" disabled={saving} onClick={onReleaseResources}>Release temporary resources</Button></div>}
+              </div>
               <div className="space-y-2">
                 <div>
                   <p className={cn("text-sm font-medium", tokens.text)}>Performance profile</p>
@@ -1764,6 +1790,7 @@ function ConfigView({
                     <button
                       key={profile.id}
                       type="button"
+                      disabled={Boolean(draft.resourceUpgradeLease)}
                       onClick={() => onChange({ ...draft, resourceProfile: profile.id })}
                       className={cn(
                         "rounded-xl border p-3 text-left transition-colors",
@@ -2086,6 +2113,7 @@ function computerConfigPatch(config: AgentComputerConfig) {
     gpuCount: config.gpuCount,
     idleTtlMinutes: config.idleTtlMinutes,
     region: config.region,
+    resourceUpgradePolicy: config.resourceUpgradePolicy,
   };
 }
 

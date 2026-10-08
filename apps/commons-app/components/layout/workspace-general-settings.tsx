@@ -315,6 +315,10 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
         {modelStatus.state === "error" && <button type="button" className="rounded-md border px-2 py-1 hover:bg-muted" onClick={() => void window.agentCommonsLocal?.prepareModel().catch((cause) => setError(cause instanceof Error ? cause.message : "Local AI setup failed"))}>Retry local AI setup</button>}
       </div>}
       {modelServerUnavailable && modelStatus?.state !== "downloading-runtime" && modelStatus?.state !== "downloading-model" && modelStatus?.state !== "starting" && <p className="text-xs text-muted-foreground">The Local model server is unavailable. Check its address below.</p>}
+      <label className="flex max-w-xl items-start justify-between gap-4">
+        <span><span className="block">Keep local AI ready</span><span className="text-xs text-muted-foreground">Faster replies while using Local mode. Frees memory when idle or needed by other apps.</span></span>
+        <input type="checkbox" className="mt-1" checked={localState?.settings.keepLocalModelWarm !== false} onChange={(event) => void saveLocalSettings({ keepLocalModelWarm: event.target.checked })} />
+      </label>
       <label className="flex max-w-xl items-center justify-between gap-4">
         <span>Agent command permission</span>
         <select className="rounded-md border border-border bg-background px-3 py-2" value={localState?.settings.permissionMode ?? "ask"} onChange={(event) => void saveLocalSettings({ permissionMode: event.target.value as "ask" | "read-only" })}>

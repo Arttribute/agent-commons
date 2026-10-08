@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 
 export type CopilotChange = {
   changeId: string;
+  agentId?: string;
   /** Copilot session the proposal came from, when recorded. */
   sessionId?: string | null;
   resourceId?: string | null;
@@ -65,7 +66,7 @@ export function CopilotChangeList({
     setError(null);
     try {
       const response = await fetch(
-        `/api/copilot/changes/${change.changeId}/${action}`,
+        change.resourceType === "computer" ? `/api/agents/${encodeURIComponent(change.agentId ?? change.resourceId ?? "")}/computer/upgrades/${encodeURIComponent(change.changeId)}/${action}` : `/api/copilot/changes/${change.changeId}/${action}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -84,7 +85,7 @@ export function CopilotChangeList({
       setRejecting(null);
       setReason("");
       setReviewing(null);
-      await onChanged?.(payload.data, action, reason.trim() || undefined);
+      await onChanged?.(payload.data?.changes?.[0] ?? payload.data, action, reason.trim() || undefined);
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Could not update change",
@@ -193,7 +194,7 @@ export function CopilotChangeList({
                 </Button>
               </>
             )}
-            {change.status === "applied" && (
+            {change.status === "applied" && change.resourceType !== "computer" && (
               <Button
                 variant="outline"
                 size="sm"

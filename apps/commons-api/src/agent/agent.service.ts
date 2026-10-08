@@ -75,6 +75,7 @@ import { WalletService } from '~/wallet/wallet.service';
 import { ActivityService } from '~/activity/activity.service';
 import { FilesService } from '~/files';
 import { ComputerService } from '~/computer';
+import { ResourceUpgradeService } from '~/computer/resource-upgrade.service';
 import { agentRunProgress } from './run-progress';
 import {
   RUNTIME_CAPABILITIES,
@@ -233,6 +234,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     private activityService: ActivityService,
     private filesService: FilesService,
     private computerService: ComputerService,
+    private resourceUpgrades: ResourceUpgradeService,
     private skillService: SkillService,
     private provenanceService: ProvenanceService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
@@ -2994,6 +2996,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           await this.usageService.finalizeAgentRun(creditReservationId);
           creditReservationId = undefined;
 
+          await this.resourceUpgrades.finishRun(agentId, traceId).catch((error) => this.logger.error(`Computer resource cleanup failed: ${error.message}`));
+
           clearInterval(keepalive);
           unsubscribeProgress();
           subscriber.complete();
@@ -3031,6 +3035,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             }
           }
         } catch (err) {
+          await this.resourceUpgrades.finishRun(agentId, traceId).catch((error) => this.logger.error(`Computer resource cleanup failed: ${error.message}`));
           await this.usageService
             .finalizeAgentRun(creditReservationId)
             .catch((finalizeError) =>

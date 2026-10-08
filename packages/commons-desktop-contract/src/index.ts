@@ -243,6 +243,7 @@ export type LocalApp = {
 export type LocalSettings = {
   ollamaUrl: string;
   defaultModel: string;
+  keepLocalModelWarm?: boolean;
   permissionMode: PermissionMode;
   /** Build-selected managed endpoint; cannot be changed through updateSettings. */
   managedWebSearchUrl?: string;
@@ -444,6 +445,7 @@ export interface LocalDesktopBridge {
   getModelStatus(): Promise<LocalModelStatus>;
   getHardwareInfo(): Promise<{ ramGiB: number; freeDiskGiB: number; platform: string; arch: string }>;
   prepareModel(): Promise<void>;
+  warmModel(agentId?: string): Promise<void>;
   preparePython(): Promise<void>;
   testMcpServer(id: string): Promise<{ toolCount: number; readTools: number; writeTools: number }>;
   getStorageRoot(): Promise<string>;
