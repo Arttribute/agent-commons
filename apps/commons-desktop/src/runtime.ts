@@ -1625,8 +1625,9 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
         continue;
       }
-      // Hidden reasoning is an output trace, not additional task context.
-      delete message.thinking;
+      // Native tool continuations can use the prior reasoning trace. Bound it
+      // so long traces cannot consume the input budget on subsequent calls.
+      if (message.thinking && message.thinking.length > 1200) message.thinking = `${message.thinking.slice(0, 600)}\n[Earlier reasoning shortened.]\n${message.thinking.slice(-600)}`;
       messages.push(message);
       const calls = message.tool_calls ?? [];
       if (calls.length && interactive) this.emit({ type: "chat-token", conversationId, content: "" });
