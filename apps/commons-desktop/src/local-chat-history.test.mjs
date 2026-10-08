@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compactToolLoop, localChatHistory, toolResult } from "./local-chat-history.ts";
+import { compactToolLoop, libraryTextResult, localChatHistory, toolResult } from "./local-chat-history.ts";
+
+test('paginated Library reads preserve valid JSON and the exact next unread character', () => {
+  const text = 'Quoted "facts", newlines\n and Unicode 👩🏽‍💻. '.repeat(300);
+  const result = libraryTextResult('source-731', 'long-template.md', 'text/markdown', text, 500, text.length + 500);
+  assert.ok(Buffer.byteLength(result) <= 4800);
+  const parsed = JSON.parse(toolResult('read_library_item', result).content);
+  assert.equal(parsed.content, text.slice(0, parsed.content.length));
+  assert.equal(parsed.nextOffset, 500 + parsed.content.length);
+  assert.equal(parsed.offset, 500);
+});
 
 test("replays saved commands as named call/result pairs before a follow-up", () => {
   const history = localChatHistory([
@@ -46,4 +56,21 @@ test("retains recent process evidence when earlier output exceeds the history bu
   assert.equal(messages[0].content, "Create Mango");
   assert.ok(messages.some((message) => message.role === "tool" && message.content.includes("process-9")));
   assert.equal(messages.at(-1).content, "Finish it");
+});
+
+test('reserves output and tool schema space while preserving the request and complete tool pairs', async () => {
+  const { localPromptCharacterBudget, LOCAL_CONTEXT_SIZE } = await import('./local-chat-history.ts');
+  const schemaCharacters = 6000, outputTokens = 4096;
+  const limit = localPromptCharacterBudget(outputTokens, schemaCharacters, 2);
+  const messages = [{ role: 'system', content: 'Exact root /selected/project; source item original-731.' }, { role: 'user', content: 'Save a computed chart from the viewed original.' }];
+  for (let i = 0; i < 8; i++) {
+    messages.push({ role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_library_item', arguments: { itemId: 'original-731' } } }] }, toolResult('read_library_item', 'verified reference ' + 'x'.repeat(9000)));
+  }
+  compactToolLoop(messages, limit);
+  assert.ok(Buffer.byteLength(JSON.stringify(messages)) <= limit);
+  assert.ok(Math.ceil(Buffer.byteLength(JSON.stringify(messages)) / 2) + Math.ceil(schemaCharacters / 2) + 2 * 1024 + outputTokens + 512 <= LOCAL_CONTEXT_SIZE);
+  assert.match(messages[0].content, /original-731/);
+  assert.match(messages[1].content, /viewed original/);
+  assert.ok(messages.at(-2).tool_calls);
+  assert.equal(messages.at(-1).tool_name, 'read_library_item');
 });

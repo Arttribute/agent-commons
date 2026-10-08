@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE } from "@agent-commons/agent-core";
+import { readOutputPublicationState, saveOutputPublicationState } from "./output-publication-state.ts";
 
 const exec = promisify(execFile);
 const UV_VERSION = "0.12.23";
@@ -125,6 +126,9 @@ export class PythonRuntime {
       collect(folder); return paths;
     };
     mkdirSync(output, { recursive: true, mode: 0o700 });
+    if (lstatSync(output).isSymbolicLink()) throw new Error("Python output folder contains a symbolic link.");
+    const baseline = readOutputPublicationState(output) ?? scan(output);
+    saveOutputPublicationState(output, baseline);
     const stagedInputs: Record<string, string> = {};
     const copied = new Map<string, string>();
     const inputPaths = new Set<string>();
@@ -150,14 +154,17 @@ export class PythonRuntime {
           revisedInputs.set(target, revisedName);
         }
         mkdirSync(dirname(target), { recursive: true });
-        if (!existsSync(target)) copyFileSync(source, target);
+        if (!existsSync(target)) {
+          copyFileSync(source, target);
+          if (!revisedInputs.has(target)) baseline.set(target, hash(target));
+        }
         copied.set(source, target);
         inputPaths.add(target);
         inputHashes.set(target, createHash("sha256").update(readFileSync(target)).digest("hex"));
       }
       stagedInputs[name] = target;
     }
-    const baseline = scan(output);
+    saveOutputPublicationState(output, baseline);
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const script = join(directory, `analysis-${randomUUID()}.py`);
     const prelude = `from pathlib import Path\nINPUT_FILES = ${JSON.stringify(stagedInputs)}\nOUTPUT_DIR = Path(${JSON.stringify(output)})\nWORKSPACE_ROOT = ${JSON.stringify(workspace ?? "")}\n`;
@@ -168,6 +175,12 @@ export class PythonRuntime {
       const current = scan(output);
       const changed = [...current].filter(([path, digest]) => baseline.get(path) !== digest);
       const changedInputs = [...revisedInputs].filter(([path]) => hash(path) !== inputHashes.get(path));
+      for (const [path] of [...changed, ...changedInputs]) {
+        if (path.toLowerCase().endsWith('.json')) {
+          try { JSON.parse(readFileSync(path, 'utf8')); }
+          catch { throw new Error(`Invalid JSON in ${relative(output, path)}. Encode missing values as null and use finite numbers; NaN and Infinity are not JSON.`); }
+        }
+      }
       if (changed.length + changedInputs.length > 100) throw new Error("Python produced more than 100 output files. Save only the files needed for this request.");
       const files: string[] = [];
       // Snapshot the whole working tree so relative HTML/image/script links keep
@@ -183,6 +196,7 @@ export class PythonRuntime {
           mkdirSync(dirname(target), { recursive: true }); copyFileSync(path, target); files.push(target);
         }
       }
+      saveOutputPublicationState(output, current);
       return { exitCode: 0, stdout, stderr, python, files, outputDirectory: output, snapshotDirectory };
     } catch (error) {
       const failure = error as Error & { code?: number | string; stdout?: string; stderr?: string; killed?: boolean };

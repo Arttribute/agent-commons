@@ -67,6 +67,18 @@ assert Path(INPUT_FILES['draft.md']).read_text() == 'Supplied example'
   const third = await runtime.run("assert Path.cwd().samefile(OUTPUT_DIR)\nassert (OUTPUT_DIR / 'draft.md').read_text() == 'Approved draft v2'\nprint('Persistent working files verified')", join(directory, 'step-3'), {}, undefined, 120, [], undefined, workingOutput);
   assert.equal(third.exitCode, 0, third.stderr);
   assert.equal(third.files.length, 0);
+  const failed = await runtime.run("(OUTPUT_DIR / 'pending.md').write_text('Recover this draft')\nraise RuntimeError('Later step failed')", join(directory, 'step-failed'), {}, undefined, 120, [], undefined, workingOutput);
+  assert.notEqual(failed.exitCode, 0);
+  assert.equal(failed.files.length, 0);
+  const invalid = await runtime.run("(OUTPUT_DIR / 'means.json').write_text('{\"mean\":NaN}')", join(directory, 'step-invalid-json'), {}, undefined, 120, [], undefined, workingOutput);
+  assert.notEqual(invalid.exitCode, 0);
+  assert.match(invalid.stderr, /Invalid JSON/);
+  const recovered = await runtime.run("(OUTPUT_DIR / 'means.json').write_text('{\"mean\":60}')", join(directory, 'step-recovered'), {}, undefined, 120, [], undefined, workingOutput);
+  assert.equal(recovered.exitCode, 0, recovered.stderr);
+  assert.equal(recovered.files.length, 2, 'Files created before a failed step disappeared from later successful publication');
+  assert.equal(readFileSync(recovered.files.find((path) => path.endsWith('pending.md')), 'utf8'), 'Recover this draft');
+  assert.equal(JSON.parse(readFileSync(recovered.files.find((path) => path.endsWith('means.json')), 'utf8')).mean, 60);
+  assert.equal(readFileSync(originalDraft, 'utf8'), 'Approved draft v1');
   const cancelled = new AbortController(); cancelled.abort(new Error('Account switched'));
   await assert.rejects(runtime.run("raise Exception('Must not run after logout')", join(directory, 'cancelled'), {}, undefined, 120, [], cancelled.signal), /Account switched/);
   assert.ok(result.python.startsWith(managed));
