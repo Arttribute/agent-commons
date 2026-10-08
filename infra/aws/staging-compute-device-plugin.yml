@@ -14,6 +14,15 @@ spec:
       labels:
         app: commons-staging-nvidia-device-plugin
     spec:
+      # DaemonSet eligibility is evaluated before RuntimeClass admission.
+      # Declare the scope here too so CPU nodes do not receive pending pods.
+      nodeSelector:
+        agentcommons.io/staging-capacity: gpu
+      tolerations:
+        - key: agentcommons.io/staging-capacity
+          operator: Equal
+          value: gpu
+          effect: NoSchedule
       runtimeClassName: commons-staging-gpu
       priorityClassName: system-node-critical
       containers:
