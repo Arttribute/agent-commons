@@ -18,6 +18,7 @@ import {
   type AppChatResponse,
 } from "@/components/plugins/app-chat-card";
 import { MiniComputer } from "@/components/computers/mini-computer";
+import { collectResourceApprovals, ResourceApprovalCard } from "@/components/computers/resource-approval-card";
 import type { AgentComputer } from "@/components/computers/computer-types";
 import { ArtifactCard } from "@/components/artifacts/artifact-card";
 import { collectEntityRefs, EntityCard } from "./entity-cards";
@@ -97,6 +98,7 @@ interface AgentOutputProps {
   sessionId?: string;
   /** Receives a response from a Commons app an agent showed in this turn. */
   onAppRespond?: (response: AppChatResponse) => void;
+  onResourcesApproved?: () => void;
 }
 
 export default function AgentOutput({
@@ -112,6 +114,7 @@ export default function AgentOutput({
   artifacts,
   sessionId,
   onAppRespond,
+  onResourcesApproved,
 }: AgentOutputProps) {
   const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
   const activities = normalizeActivities(
@@ -136,6 +139,10 @@ export default function AgentOutput({
 
   const router = useRouter();
   const { mode } = useWorkspaceMode();
+  const resourceApprovals = collectResourceApprovals([
+    ...(metadata?.toolCalls ?? []).map((call) => call.result),
+    ...(metadata?.activity ?? []).map((activity) => (activity as any).result),
+  ]);
   const entities = useMemo(
     () =>
       collectEntityRefs([
@@ -180,6 +187,7 @@ export default function AgentOutput({
     activities.length === 0 &&
     generatedArtifacts.length === 0 &&
     entities.length === 0
+    && resourceApprovals.length === 0
   ) {
     return (
       <div
@@ -209,6 +217,7 @@ export default function AgentOutput({
             isStreaming={Boolean(isStreaming)}
             hasContent={Boolean(content)}
           />
+          {mode !== "private-local" && !isStreaming && resourceApprovals.map((change) => <ResourceApprovalCard key={change.changeId} change={change} onApproved={onResourcesApproved} />)}
           {hasComputerUse && (
             <MiniComputer
               activities={computerActivities}

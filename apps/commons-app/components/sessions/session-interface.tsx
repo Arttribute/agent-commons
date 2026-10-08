@@ -659,6 +659,7 @@ export default function SessionInterfaceImproved({
                               }}
                               sessionId={sessionId}
                               onAppRespond={sendAppResponse}
+                              onResourcesApproved={() => setComposerPrompt({ id: `resource-approval:${Date.now()}`, text: "I approved the temporary computer resources. Continue the task, wait for the computer to be ready and verify available hardware before using it. Release the temporary resources when finished.", mode: "send" })}
                             />
                           );
                         }

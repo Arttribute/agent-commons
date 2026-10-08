@@ -21,6 +21,7 @@ import {
   type AgentRunProgressEvent,
 } from '~/agent/run-progress';
 import { computerFileWriteCommands } from './computer-file-writes';
+import { resourceUpgradePolicy } from './resource-upgrade-policy';
 import { CapabilityProviderService } from '~/provider';
 
 /** @deprecated Input compatibility only. All assigned computers are persistent. */
@@ -157,7 +158,7 @@ const COMPUTER_RESOURCE_PROFILES: Record<
     memoryRequest: '8Gi',
     memoryLimit: '32Gi',
     storageLimit: '100Gi',
-    gpuType: 'nvidia-l4',
+    gpuType: 'nvidia',
     gpuCount: 1,
   },
 };
@@ -307,6 +308,8 @@ export class ComputerService {
       autoWake: config.autoStart,
       allowAgentUse: config.allowAgentStart,
       resources: this.publicResources(config),
+      resourceUpgradePolicy: resourceUpgradePolicy((config.metadata as any)?.resourceUpgradePolicy),
+      resourceUpgradeLease: (config.metadata as any)?.resourceUpgradeLease ?? null,
     };
   }
 
@@ -333,11 +336,22 @@ export class ComputerService {
   async updateConfig(
     agentId: string,
     patch: Partial<typeof schema.agentComputerConfig.$inferInsert>,
+    resourceLeaseId?: string,
   ) {
     const agent = await this.assertAgent(agentId);
     const current = await this.getConfig(agentId);
     const next = this.normalizeConfigPatch(patch, current);
-    if (next.enabled) {
+    if (resourceLeaseId) {
+      for (const key of ['cpuRequest', 'cpuLimit', 'memoryRequest', 'memoryLimit', 'gpuType', 'gpuCount']) {
+        if ((patch as any)[key] !== undefined) next[key] = (patch as any)[key];
+      }
+    }
+    const lease = (current.metadata as any)?.resourceUpgradeLease;
+    const resourceFields = ['resourceProfile', 'resourceMode', 'cpuRequest', 'cpuLimit', 'memoryRequest', 'memoryLimit', 'storageLimit', 'gpuType', 'gpuCount'];
+    if (lease && lease.leaseId !== resourceLeaseId && resourceFields.some((key) => next[key] !== undefined && next[key] !== (current as any)[key])) {
+      throw new BadRequestException('Release temporary resources before changing the computer profile.');
+    }
+    if ((next.enabled ?? current.enabled) && (next.enabled !== undefined || resourceFields.some((key) => next[key] !== undefined && next[key] !== (current as any)[key]))) {
       // A plain enable toggle (`{ enabled: true }`) carries no resourceProfile,
       // so validate against the effective profile — the one the computer will
       // actually run with — not the (possibly absent) patched value. Otherwise
@@ -357,8 +371,10 @@ export class ComputerService {
         ...next,
         updatedAt: new Date(),
       })
-      .where(eq(schema.agentComputerConfig.configId, current.configId))
+      .where(and(eq(schema.agentComputerConfig.configId, current.configId), sql`date_trunc('milliseconds', ${schema.agentComputerConfig.updatedAt}) = ${current.updatedAt.toISOString()}::timestamptz`, sql`coalesce(${schema.agentComputerConfig.metadata}->'resourceUpgradeLease'->>'leaseId', '') = ${lease?.leaseId ?? ''}`))
       .returning();
+
+    if (!updated) throw new BadRequestException('Computer settings changed while saving. Reload and try again.');
 
     const computer = await this.getAssignedComputer(agentId);
     if (computer) {
@@ -897,6 +913,9 @@ export class ComputerService {
           !Number.isNaN(new Date(commonOs.startedAt).getTime())
             ? new Date(commonOs.startedAt)
             : computer.startedAt,
+        ...(['running', 'idle'].includes(status) && Number.isFinite(runtimeStartedAt) && runtimeStartedAt > (computer.startedAt?.getTime() ?? 0)
+          ? { meteredThroughAt: new Date(Math.max(runtimeStartedAt, computer.meteredThroughAt?.getTime() ?? 0)) }
+          : {}),
         errorMessage: activeRuntimeIsStale
           ? 'The agent computer stopped responding and will be recovered when it is next started.'
           : commonOs.pod?.lastError ?? null,
@@ -1446,6 +1465,7 @@ export class ComputerService {
         config.allowAgentStart ? 'agent-wakeable' : 'user-wake only'
       }; resource profile is ${config.resourceProfile}/${config.resourceMode}.`,
       'Use startAgentComputer to wake or attach the assigned computer before computer work. It is idempotent and never creates an extra computer. Use writeComputerFiles for complete source files, runComputerCommand for finite terminal work, readComputerFile for files, and testComputerBrowser for application verification.',
+      `Temporary resource access: ${JSON.stringify(resourceUpgradePolicy((config.metadata as any)?.resourceUpgradePolicy))}. Use requestComputerResources when a task needs larger CPU/RAM or a GPU. A pending owner approval activates nothing. Automatic access only follows the saved policy. Verify actual hardware/CUDA after the computer becomes ready. Use releaseComputerResources when finished.`,
       'Never encode source files in shell heredocs or long commands. writeComputerFiles is the reliable structured file-writing path.',
       'Always keep commands scoped to the task, avoid secrets exfiltration, and summarize created files/screenshots/results for the user.',
       'Assigned computer:',
@@ -2182,6 +2202,15 @@ export class ComputerService {
       if (source[key] !== undefined) normalized[key] = source[key];
     }
 
+    if (source.metadata !== undefined || source.resourceUpgradePolicy !== undefined) {
+      const metadata = { ...(current?.metadata as any ?? {}), ...(source.metadata ?? {}) };
+      // A browser config save cannot forge or clear the server-owned resource lease.
+      if ((current?.metadata as any)?.resourceUpgradeLease) metadata.resourceUpgradeLease = (current?.metadata as any).resourceUpgradeLease;
+      else delete metadata.resourceUpgradeLease;
+      metadata.resourceUpgradePolicy = resourceUpgradePolicy(source.resourceUpgradePolicy ?? metadata.resourceUpgradePolicy);
+      normalized.metadata = metadata;
+    }
+
     normalized.defaultMode = 'persistent';
     normalized.maxPersistentComputers = 1;
     normalized.maxEphemeralComputers = 0;
@@ -2246,7 +2275,7 @@ export class ComputerService {
         }
         normalized.gpuCount = count;
         normalized.gpuType =
-          count > 0 ? resources.gpu?.type ?? 'nvidia-l4' : null;
+          count > 0 ? resources.gpu?.type ?? 'nvidia' : null;
       }
     }
 
@@ -2301,7 +2330,11 @@ export class ComputerService {
   }
 
   private commonOsResources(config: ComputerConfig) {
+    const lease = (config.metadata as any)?.resourceUpgradeLease;
+    const temporaryCpu = lease && lease.profile === config.resourceProfile && ['applying', 'active'].includes(lease.state);
+    const runtimeClassName = Number(config.gpuCount ?? 0) > 0 ? process.env.COMMON_OS_GPU_RUNTIME_CLASS : (temporaryCpu || config.resourceProfile === 'performance') ? process.env.COMMON_OS_PERFORMANCE_RUNTIME_CLASS : undefined;
     return {
+      runtimeClassName: runtimeClassName || null,
       vcpu: this.cpuCores(config.cpuLimit),
       memoryGiB: this.gibibytes(config.memoryLimit),
       storageGiB: this.gibibytes(config.storageLimit),
@@ -2391,6 +2424,7 @@ export class ComputerService {
       .set({
         resourceProfile: config.resourceProfile,
         resourceMode: config.resourceMode,
+        ...(commonOs?.status ? { status: this.mapStatus(commonOs.status) } : {}),
         cpuRequest: config.cpuRequest,
         cpuLimit: config.cpuLimit,
         memoryRequest: config.memoryRequest,

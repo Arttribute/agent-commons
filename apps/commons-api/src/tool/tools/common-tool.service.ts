@@ -27,6 +27,7 @@ import { WorkflowExecutorService } from '~/tool/workflow-executor.service';
 import { FilesService, LibraryService } from '~/files';
 import { cloudPythonFiles } from "~/computer/python-analysis";
 import { ComputerService } from '~/computer';
+import { ResourceUpgradeService } from '~/computer/resource-upgrade.service';
 import {
   CodeProjectService,
   type BrowserCheckAction,
@@ -851,6 +852,11 @@ export interface CommonTool {
     includeTerminated?: boolean;
   }): Promise<any>;
 
+  /** Request temporary CPU/RAM or GPU for this task. Default policy requires an owner approval card; never claim GPU availability from a pending request. Owners can enable automatic access in Computer settings. Persistent files are retained; hardware may restart. Start the computer and verify nvidia-smi/CUDA after approval. */
+  requestComputerResources(props: { agentId?: string; profile: 'standard' | 'performance' | 'gpu'; minutes?: number; reason: string }): Promise<any>;
+  /** Restore the computer's previous CPU/RAM/GPU when the accelerated task finishes. This chat cannot release another chat's resource lease. */
+  releaseComputerResources(props: { agentId?: string }): Promise<any>;
+
   /** Execute Python analysis, computed plots or ML in the agent's isolated computer with managed pandas, numpy, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow. Start the agent computer first. INPUT_FILES maps input Library names and IDs to readable paths. OUTPUT_DIR is a stable pathlib.Path scoped to this chat and owner; working files persist across calls, while Python variables do not. Save charts and reports there to return immutable Library artifacts. ZIP inputs can be inspected and extracted with Python zipfile. */
   runPythonAnalysis(props: { agentId?: string; sessionId?: string; code: string; inputItemIds?: string[]; timeoutSeconds?: number; packages?: string[] }): Promise<any>;
 
@@ -1322,6 +1328,7 @@ export class CommonToolService {
     private files: FilesService,
     private library: LibraryService,
     private computers: ComputerService,
+    private resourceUpgrades: ResourceUpgradeService,
     private codeProjects: CodeProjectService,
     @Inject(forwardRef(() => SpaceService))
     private space: SpaceService,
@@ -2544,6 +2551,7 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
+    await this.resourceUpgrades.bindRun(agentId, metadata?.ownerId, metadata?.sessionId, metadata?.runId);
     const computer = await this.computers.startComputer({
       ...props,
       agentId,
@@ -2574,6 +2582,7 @@ export class CommonToolService {
 
   async runPythonAnalysis(props: { agentId?: string; sessionId?: string; code: string; inputItemIds?: string[]; timeoutSeconds?: number; packages?: string[] }, metadata?: ToolExecutionMetadata) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
+    await this.resourceUpgrades.bindRun(agentId, metadata?.ownerId, metadata?.sessionId, metadata?.runId);
     const sessionId = metadata?.sessionId ?? props.sessionId;
     const owner = await this.resourceOwner(agentId, metadata);
     const inputIds = [...new Set(props.inputItemIds ?? metadata?.attachmentFileIds ?? [])];
@@ -2617,6 +2626,18 @@ export class CommonToolService {
     return { exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, artifacts, workspace: output.outputDirectory ?? `/mnt/shared/${execution.directory}/outputs` };
   }
 
+  async requestComputerResources(props: { agentId?: string; profile: 'standard' | 'performance' | 'gpu'; minutes?: number; reason: string }, metadata?: ToolExecutionMetadata) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    if (!metadata?.ownerId) throw new BadRequestException('Temporary compute requires an authenticated owner session.');
+    return this.resourceUpgrades.request({ ...props, agentId, ownerId: metadata.ownerId, sessionId: metadata.sessionId, runId: metadata.runId });
+  }
+
+  async releaseComputerResources(props: { agentId?: string }, metadata?: ToolExecutionMetadata) {
+    const agentId = this.requireToolAgentId(props.agentId, metadata);
+    if (!metadata?.ownerId || !metadata.sessionId) throw new BadRequestException('Temporary compute requires an authenticated chat.');
+    return this.resourceUpgrades.release(agentId, metadata.ownerId, metadata.sessionId);
+  }
+
   async runComputerCommand(
     props: {
       agentId?: string;
@@ -2629,6 +2650,7 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
+    await this.resourceUpgrades.bindRun(agentId, metadata?.ownerId, metadata?.sessionId, metadata?.runId);
     return this.computers.runCommand({
       ...props,
       agentId,
