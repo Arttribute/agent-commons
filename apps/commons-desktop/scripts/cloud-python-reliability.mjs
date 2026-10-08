@@ -37,7 +37,8 @@ plt.savefig(out / 'sales.png')
 Path(INPUT_FILES['sales.csv']).write_text('revenue\\n40\\n50\\n')
 (OUTPUT_DIR / 'large-report.bin').write_bytes(b'a' * 650000)
 print('Verified cloud bootstrap')`);
-  const bootstrap = CLOUD_PYTHON_BOOTSTRAP.replace("Path('/mnt/shared/.commons-python')", `Path(${JSON.stringify(cloud)})`);
+  // Reuse this host's verified uv executable while exercising the cloud code.
+  const bootstrap = CLOUD_PYTHON_BOOTSTRAP.replace("Path('/mnt/shared/.commons-python')", `Path(${JSON.stringify(cloud)})`).replace("Path('/tmp/commons-python-runtime')", `Path(${JSON.stringify(cloud)})`).replace("uv = resources / ('uv-0.12.23-' + triple)", "uv = resources / 'uv-0.12.23'");
   writeFileSync(join(directory, 'bootstrap.py'), bootstrap);
   await promisify(execFile)(python, ['-I', join(directory, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
   const result = JSON.parse(readFileSync(join(directory, 'result.json'), 'utf8'));
@@ -68,5 +69,23 @@ print('Cloud working files persisted')`);
   assert.equal(next.files.length, 1, 'Unchanged files were exported again');
   assert.equal(JSON.parse(Buffer.from(next.files[0].base64, 'base64').toString()).sum, 90);
   assert.equal(JSON.parse(file('reports/totals.json').toString()).sum, 60, 'The previous cloud artifact changed');
+  const step = async (name, code) => {
+    const folder = join(directory, name); mkdirSync(folder);
+    copyFileSync(join(directory, 'inputs.json'), join(folder, 'inputs.json'));
+    writeFileSync(join(folder, 'analysis.py'), code);
+    writeFileSync(join(folder, 'bootstrap.py'), bootstrap);
+    await promisify(execFile)(python, ['-I', join(folder, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
+    return JSON.parse(readFileSync(join(folder, 'result.json'), 'utf8'));
+  };
+  const failed = await step('failed-step', "(OUTPUT_DIR / 'pending.md').write_text('Preserved draft')\nraise RuntimeError('Render failed')");
+  assert.notEqual(failed.exitCode, 0);
+  assert.equal(failed.files.length, 0);
+  const invalid = await step('invalid-json', "(OUTPUT_DIR / 'means.json').write_text('{\"mean\":NaN}')");
+  assert.notEqual(invalid.exitCode, 0);
+  assert.match(invalid.stderr, /Invalid JSON/);
+  const recovered = await step('recovered-step', "(OUTPUT_DIR / 'means.json').write_text('{\"mean\":60}')");
+  assert.equal(recovered.exitCode, 0, recovered.stderr);
+  assert.equal(recovered.files.length, 2, 'Failed-run files were lost from the successful result');
+  assert.equal(Buffer.from(recovered.files.find((item) => item.name === 'pending.md').base64, 'base64').toString(), 'Preserved draft');
   console.log('Cloud bootstrap executed real Python with staged inputs, nested artifacts and no stdlib installation.');
 } finally { rmSync(directory, { recursive: true, force: true }); }

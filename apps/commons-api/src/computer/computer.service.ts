@@ -765,6 +765,25 @@ export class ComputerService {
     });
   }
 
+  /** Model tool steps must wait for a usable runtime after an asynchronous wake. */
+  async waitUntilReady(agentId: string, computerId: string, runId?: string, toolCallId?: string) {
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      const computer = await this.refreshForAgent(agentId, computerId);
+      if (['running', 'idle'].includes(computer.status)) return computer;
+      if (!['provisioning', 'starting', 'restarting', 'resizing'].includes(computer.status)) {
+        throw new ServiceUnavailableException(`Agent computer is ${computer.status}: ${computer.errorMessage ?? 'The runtime could not become ready.'}`);
+      }
+      this.emitComputerToolProgress(runId, {
+        toolName: 'startAgentComputer', stage: 'computer', status: 'running',
+        message: 'Waiting for the agent computer to become ready',
+        payload: { computerId, toolCallId },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    throw new ServiceUnavailableException('The agent computer is still starting. Retry after it becomes ready.');
+  }
+
   async runtimeChannelAction(args: {
     agentId: string;
     channel: 'telegram' | 'whatsapp' | 'slack' | 'discord';

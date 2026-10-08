@@ -2544,7 +2544,7 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    return this.computers.startComputer({
+    const computer = await this.computers.startComputer({
       ...props,
       agentId,
       sessionId: props.sessionId ?? metadata?.sessionId,
@@ -2553,6 +2553,7 @@ export class CommonToolService {
       runId: metadata?.runId,
       toolCallId: metadata?.toolCallId,
     });
+    return ['running', 'idle'].includes(computer.status) ? computer : this.computers.waitUntilReady(agentId, computer.computerId, metadata?.runId, metadata?.toolCallId);
   }
 
   async listAgentComputers(
@@ -2587,6 +2588,7 @@ export class CommonToolService {
       output = JSON.parse(result.content);
       if (!Number.isInteger(output.exitCode) || !Array.isArray(output.files)) throw new Error('Incomplete result');
     } catch { throw new BadRequestException(`Python did not produce a verified result. Runtime response: ${JSON.stringify(command).slice(0, 3000)}`); }
+    if (output.exitCode !== 0) throw new BadRequestException(`Python failed (${output.exitCode}): ${output.stderr.slice(0, 16000)}\n${output.stdout.slice(0, 16000)}`);
     const artifacts = [];
     if (output.files.length > 100) throw new BadRequestException('Python produced too many outputs.');
     for (const file of output.files) {
@@ -2612,7 +2614,6 @@ export class CommonToolService {
       const created = await this.files.createGeneratedFile({ buffer, fileName: file.name, mimeType: file.mimeType, agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId, metadata: { source: 'computed-python', toolCallId: metadata?.toolCallId } });
       artifacts.push({ fileId: created.fileId, name: created.name });
     }
-    if (output.exitCode !== 0) throw new BadRequestException(`Python failed (${output.exitCode}): ${output.stderr.slice(0, 16000)}\n${output.stdout.slice(0, 16000)}`);
     return { exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, artifacts, workspace: output.outputDirectory ?? `/mnt/shared/${execution.directory}/outputs` };
   }
 
