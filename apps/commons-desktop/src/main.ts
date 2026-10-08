@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { spawn } from "node:child_process";
+import { installDisplayCapture } from "./display-capture";
 import { computerWorkspace, terminalCommand } from "./local-computer";
 import { initializeCommandPath } from "./local-command";
 import { prepareLocalTranscriber, transcribeLocalAudio, transcribeLocalMedia } from "./local-transcription";
@@ -526,9 +527,21 @@ async function createUnifiedView(path?: string) {
     value: activeMode,
     sameSite: "strict",
   });
-  unifiedSession.setPermissionRequestHandler((_contents, permission, callback) => {
-    callback(permission === "media" || (activeMode === "cloud" && ["clipboard-sanitized-write", "notifications"].includes(permission)));
+  const trustedMedia = (contents: Electron.WebContents | null, url: string, isMainFrame: boolean) => {
+    try { return !profileChanging && contents === unifiedView?.webContents && isMainFrame && new URL(url).origin === commonsServer?.origin; }
+    catch { return false; }
+  };
+  unifiedSession.setPermissionCheckHandler((contents, permission, origin, details) => {
+    if (permission === "media" || permission === "display-capture") return trustedMedia(contents, origin, details.isMainFrame);
+    return activeMode === "cloud" && contents === unifiedView?.webContents && ["clipboard-sanitized-write", "notifications"].includes(permission);
   });
+  unifiedSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback((permission === "media" || permission === "display-capture")
+      ? trustedMedia(contents, details.requestingUrl, details.isMainFrame)
+      : activeMode === "cloud" && contents === unifiedView?.webContents && ["clipboard-sanitized-write", "notifications"].includes(permission));
+  });
+  installDisplayCapture(unifiedSession, () => ({ contents: unifiedView?.webContents ?? null, window: desktopWindow,
+    origin: commonsServer!.origin, generation: localProfileGeneration, mode: activeMode, changing: profileChanging || cloudTransition }));
   unifiedSession.webRequest.onBeforeRequest((details, callback) => {
     if (activeMode !== "private-local" || !/^(?:https?|wss?):/i.test(details.url)) {
       callback({ cancel: false });
@@ -1052,6 +1065,27 @@ function registerIpc() {
     const analysis = await transcribeLocalMedia(samples, app.getPath("userData"), agent?.mediaModels?.transcriptionModel || state.settings.transcriptionModel);
     if (runtime !== instance) throw new Error("The account changed during transcription.");
     instance.updateLibraryItem(itemId, { mediaAnalysis: analysis });
+    return analysis;
+  });
+  localHandler<[Parameters<import("@agent-commons/desktop-contract").LocalDesktopBridge["analyzeRecording"]>[0]]>("local:analyze-recording", async (input) => {
+    const instance = runtime;
+    const state = instance.state();
+    const agent = input.agentId ? state.agents.find((entry) => entry.id === input.agentId) : undefined;
+    if (input.agentId && !agent) throw new Error("Local agent not found");
+    // Validate all frame sizes/types before starting a model or saving anything.
+    const frames = instance.saveRecordingFrames(input.itemId, input.frames, input.durationMs);
+    let transcript: { segments: Array<{ startMs: number; endMs: number; text: string }>; note?: string } = { segments: [], note: input.audioNote?.slice(0, 500) };
+    if (input.samples) {
+      try {
+        const analysis = await transcribeLocalMedia(input.samples, app.getPath("userData"), agent?.mediaModels?.transcriptionModel || state.settings.transcriptionModel);
+        transcript = analysis.transcript;
+      } catch {
+        transcript = { segments: [], note: "Local transcription was unavailable. Inspect the sampled video frames and ask about unclear steps; do not invent narration." };
+      }
+    }
+    if (runtime !== instance) throw new Error("The account changed during recording analysis.");
+    const analysis = { durationMs: input.durationMs, frames, transcript };
+    instance.updateLibraryItem(input.itemId, { mediaAnalysis: analysis });
     return analysis;
   });
   localHandler("local:prepare-transcription-model", () => prepareLocalTranscriber(app.getPath("userData"), runtime.state().settings.transcriptionModel));

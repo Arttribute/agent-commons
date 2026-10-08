@@ -103,7 +103,7 @@ export type LocalLibraryItem = {
   cloudItemId?: string;
   cloudCopiedAt?: string;
   sourceArchiveId?: string;
-  mediaAnalysis?: { durationMs: number; transcript: { segments: Array<{ startMs: number; endMs: number; text: string }>; note?: string } };
+  mediaAnalysis?: { durationMs: number; transcript: { segments: Array<{ startMs: number; endMs: number; text: string }>; note?: string }; frames?: Array<{ timestampMs: number; path: string }> };
   createdAt: string;
   updatedAt: string;
 };
@@ -461,6 +461,7 @@ export interface LocalDesktopBridge {
   clearAccount(): Promise<void>;
   transcribeAudio(samples: Float32Array, agentId?: string): Promise<string>;
   analyzeAudio(samples: Float32Array, itemId: string, agentId?: string): Promise<NonNullable<LocalLibraryItem["mediaAnalysis"]>>;
+  analyzeRecording(input: { itemId: string; agentId?: string; durationMs: number; samples: Float32Array | null; frames: Array<{ timestampMs: number; jpegBase64: string }>; audioNote?: string }): Promise<NonNullable<LocalLibraryItem["mediaAnalysis"]>>;
   prepareTranscriptionModel(): Promise<void>;
   getImageModelStatus(): Promise<ImageModelStatus>;
   prepareImageModel(modelId?: string): Promise<void>;

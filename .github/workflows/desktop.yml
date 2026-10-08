@@ -69,6 +69,12 @@ jobs:
       - run: pnpm --filter @agent-commons/cli typecheck
       - run: pnpm --filter commons-desktop typecheck
       - run: pnpm --filter commons-desktop test
+      - name: Verify workflow capture, audio mixing and account cleanup (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node apps/commons-desktop/scripts/skill-recording-reliability.mjs
+      - name: Verify workflow capture, audio mixing and account cleanup (macOS and Windows)
+        if: runner.os != 'Linux'
+        run: node apps/commons-desktop/scripts/skill-recording-reliability.mjs
       - name: Execute managed Python data analysis
         timeout-minutes: 12
         run: node apps/commons-desktop/scripts/python-reliability.mjs
