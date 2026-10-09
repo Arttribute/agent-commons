@@ -2084,7 +2084,8 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             const item = state.library?.find((entry) => entry.id === itemId);
             if (!item) throw new Error("The file is no longer in the Local Library.");
             const text = await readLibraryText(item);
-            result = JSON.stringify({ itemId, ...searchTextPassages(text, item.name, String(args.query ?? ""), "Use read_library_item with this itemId and a matching offset for more context.") });
+            const search = searchTextPassages(text, item.name, String(args.query ?? ""), "Use read_library_item with this itemId and a matching offset for more context.");
+            result = JSON.stringify({ itemId, ...search, ...(!search.matches.length ? { hint: "No matching passages were found in this file. Choose a different query or another relevant source document; do not repeat this empty search. list_session_files(query) locates filenames and archive paths; search_library_item searches only the chosen file's contents." } : {}) });
           } else {
             const read = await this.readLibraryItem(itemId, Number(args.offset) || 0);
             result = libraryTextResult(itemId, read.item.name, read.item.mimeType, read.content, Math.max(0, Math.trunc(Number(args.offset) || 0)), read.totalChars);
