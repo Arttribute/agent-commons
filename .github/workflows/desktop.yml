@@ -77,6 +77,14 @@ jobs:
           sandbox_helper=$(node -p 'require("node:path").join(require("node:path").dirname(require.resolve("electron")), "dist", "chrome-sandbox")')
           sudo chown root:root "$sandbox_helper"
           sudo chmod 4755 "$sandbox_helper"
+      - name: Verify Local recovery from malformed model tool arguments (Linux)
+        if: runner.os == 'Linux'
+        timeout-minutes: 3
+        run: xvfb-run -a node apps/commons-desktop/scripts/tool-repair-reliability.mjs
+      - name: Verify Local recovery from malformed model tool arguments (macOS and Windows)
+        if: runner.os != 'Linux'
+        timeout-minutes: 3
+        run: node apps/commons-desktop/scripts/tool-repair-reliability.mjs
       - name: Verify workflow capture, audio mixing and account cleanup (Linux)
         env:
           COMMONS_NATIVE_RECORDING_TEST: "true"

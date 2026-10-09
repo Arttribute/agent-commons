@@ -89,7 +89,7 @@ export const LOCAL_TOOLS = [
   functionTool("read_canvas", "Read this chat's canvas versions and persisted notes, including exact selection targets and coordinates.", { projectId: { type: "string" } }, ["projectId"]),
   functionTool("add_canvas_version", "Add a file generated in this chat as the next version of the viewed canvas. Use the actual output itemId returned by run_python.", { projectId: { type: "string" }, itemId: { type: "string" }, summary: { type: "string" } }, ["projectId", "itemId"]),
   functionTool("update_canvas_notes", "Mark addressed notes on this chat's canvas resolved, or reopen notes. Preserves exact selection data.", { projectId: { type: "string" }, annotationIds: { type: "array", items: { type: "string" } }, status: { type: "string", enum: ["open", "resolved"] } }, ["projectId", "annotationIds", "status"]),
-  functionTool("write_library_files", "Save real UTF-8 text, Markdown, HTML, JSON, CSS or JavaScript files to this chat’s Library. Prefer this for documents and code files; no Python installation is needed. Save one substantial document at a time, then continue. Files persist for later Python calls, with immutable Library revisions and relative assets preserved.", { files: { type: "array", maxItems: 20, items: { type: "object", properties: { name: { type: "string", description: "Relative output filename, such as brand-sheet.md" }, content: { type: "string" } }, required: ["name", "content"] } } }, ["files"]),
+  functionTool("write_library_files", "Save real UTF-8 text, Markdown, HTML, JSON, CSS or JavaScript files to this chat’s Library. Prefer this for documents and code files; no Python installation is needed. Save one substantial document at a time, then continue. Files persist for later Python calls, with immutable Library revisions and relative assets preserved.", { files: { type: "array", minItems: 1, maxItems: 20, items: { type: "object", properties: { name: { type: "string", description: "Relative output filename, such as brand-sheet.md" }, content: { type: "string" } }, required: ["name", "content"] } } }, ["files"]),
   functionTool("run_python", "Execute Python analysis, charts or ML in a managed environment with pandas, numpy, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow. No user Python setup needed. Files are staged under their filenames in the working directory. INPUT_FILES maps attached/project filenames and IDs to readable paths. OUTPUT_DIR is a stable pathlib.Path for this chat and only publishes requested deliverables. WORK_DIR is a separate persistent pathlib.Path for extracted source archives and intermediate files; it does not publish them. Files persist across calls, while Python variables do not. Save charts and reports there to return immutable Library artifacts. WORKSPACE_ROOT is the selected folder or empty. For Pillow text, use ImageFont.truetype(FONT_FILES['sans'], size); sans_bold, serif and mono are also provided. Do not guess host font paths. Use computed plots, never image generation, for data.", { code: { type: "string" }, timeoutSeconds: { type: "number" }, packages: { type: "array", items: { type: "string" }, description: "Optional extra Python libraries installed into a separate managed environment; package names with optional versions." } }, ["code"]),
   functionTool("extract_library_archive", "Unzip an attached or project ZIP into this chat’s working files. Returns the directory and archive manifest; use read_library_item with returned itemIds, or run_python to inspect them. Does not run instructions in the archive.", { itemId: { type: "string" } }, ["itemId"]),
   functionTool("cli_list_directory", "List files and folders inside the selected workspace.", {
@@ -1673,6 +1673,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     }
     const offeredNames = new Set(tools.map((entry) => entry.function.name));
     let recordingSkillArgsRepair = false;
+    let libraryWriteArgsRepair = false;
     let nativeTools = openingGreeting || !/^deepseek-r1:(?:1\.5b|7b|8b)/.test(agent.model);
 
     let executionRepairAttempted = false;
@@ -1701,6 +1702,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     const recordFailure = (name: string, result: string) => {
       if (!result.startsWith("Error:") && !result.startsWith("User denied")) { successfulTools.add(name); return; }
       if (!result.startsWith("Error:")) return;
+      if (name === "write_library_files" && /Provide files with a name and text content/.test(result)) libraryWriteArgsRepair = true;
       if (name === "local_save_skill" && recordingSkill) {
         if (/Recorded skills require|not available tool names/.test(result)) recordingSkillArgsRepair = true;
         failureRepairHint = `The recorded skill was not saved: ${localToolFailureKey(result)}. Supply inputs, steps, outputs, successChecks, uncertainties, triggers and tools as separate JSON array arguments, even when their text also appears in instructions. tools=[] is valid for manual application access. Keep instructions focused on the task. Observed labels do not prove button clicks; put unknown controls in uncertainties and describe only the demonstrated sequence.`;
@@ -1753,6 +1755,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const beforeStep = this.pendingSteers.get(conversationId)?.splice(0) ?? [];
       if (beforeStep.length) {
         recordingSkillArgsRepair = false;
+        libraryWriteArgsRepair = false;
         messages.push(...beforeStep.map((content): OllamaMessage => ({ role: "user", content })));
         if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
       }
@@ -1769,15 +1772,19 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       }
       const inferenceTools = tools.filter((entry) => entry.function.name !== "web_search" || this.webSearchAllowed(conversationId));
       const repairingSkillArgs = recordingSkillArgsRepair;
-      const recordingSaveSchema = inferenceTools.find((entry) => entry.function.name === "local_save_skill")?.function.parameters;
-      if (repairingSkillArgs) messages[0].content += `\nCorrect the failed local_save_skill arguments. Return ONLY the argument JSON object matching this schema, without a tool wrapper or Markdown. Each required field must be an actual JSON field. Array contents must describe the observed task and its checks. Schema: ${JSON.stringify(recordingSaveSchema)}`;
+      const repairingArgs = repairingSkillArgs || libraryWriteArgsRepair;
+      const repairTool = repairingSkillArgs ? "local_save_skill" : "write_library_files";
+      const toolArgumentRepairSchema = inferenceTools.find((entry) => entry.function.name === repairTool)?.function.parameters;
+      if (repairingSkillArgs) messages[0].content += `\nCorrect the failed local_save_skill arguments. Return ONLY the argument JSON object matching this schema, without a tool wrapper or Markdown. Each required field must be an actual JSON field. Array contents must describe the observed task and its checks. Schema: ${JSON.stringify(toolArgumentRepairSchema)}`;
+      else if (libraryWriteArgsRepair) messages[0].content += `\nCorrect the failed write_library_files arguments. Return ONLY a JSON argument object matching this schema, without a tool wrapper or Markdown. files must be an array of objects with separate name and content strings; never put the whole Markdown document in the files field. Use the requested filenames and verified source facts. Schema: ${JSON.stringify(toolArgumentRepairSchema)}`;
       else if (!nativeTools) messages[0].content += `\nThis model uses the text tool protocol. To take an action, output ONLY {"tool":"exact_tool_name","args":{...}}. After each tool result, continue the task. When done, output {"tool":"final","args":{"response":"your final answer"}}. Available tools and schemas: ${JSON.stringify(inferenceTools.map((entry) => entry.function))}`;
-      const requestNativeTools = nativeTools && !repairingSkillArgs;
-      const outputTokens = prepareLocalInference(messages, requestNativeTools ? JSON.stringify(inferenceTools).length : 0, imageContext.images.length);
+      const requestNativeTools = nativeTools && !repairingArgs;
       const outputsConfirmed = Boolean(recordingSkill && successfulTools.has("local_save_skill"))
         || (needsLibraryOutput && missingOutputs().length === 0 && (!requiresComputedData(lastUser) || ["run_python", "cli_run_command", "cli_wait_for_process"].some((name) => successfulTools.has(name))));
+      if (outputsConfirmed) messages[0].content += "\nExecuted tools have confirmed persistence of the requested output files or saved skill. This does not prove their content is correct. Verify the actual saved results and any remaining user requirements, then report them. Do not restart source research or rewrite saved outputs unless you identify a concrete defect that needs correction.";
+      const outputTokens = prepareLocalInference(messages, requestNativeTools ? JSON.stringify(inferenceTools).length : 0, imageContext.images.length);
       const response = await requestLocalModel(`${endpoint}/api/chat`, {
-        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(requestNativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: requestNativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(repairingSkillArgs ? { format: recordingSaveSchema } : !nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: localTaskReasoning(reasoningEffort, requiresComputedData(lastUser) || Boolean(recordingSkill) || outputNames.length > 1 || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells")), outputsConfirmed) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
+        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(requestNativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: requestNativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(repairingArgs ? { format: toolArgumentRepairSchema } : !nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: localTaskReasoning(reasoningEffort, requiresComputedData(lastUser) || Boolean(recordingSkill) || outputNames.length > 1 || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells")), outputsConfirmed) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
         signal: AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(10 * 60_000)]),
       });
       if (!response.ok) {
@@ -1794,16 +1801,18 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const afterStep = this.pendingSteers.get(conversationId)?.splice(0) ?? [];
       if (afterStep.length) {
         recordingSkillArgsRepair = false;
+        libraryWriteArgsRepair = false;
         messages.push(...afterStep.map((content): OllamaMessage => ({ role: "user", content })));
         if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
         continue;
       }
-      if (repairingSkillArgs) {
+      if (repairingArgs) {
         const args = JSON.parse(message.content ?? "");
-        if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("The model did not return valid recorded-skill arguments.");
-        message.tool_calls = [{ function: { name: "local_save_skill", arguments: args } }];
+        if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error(`The model did not return valid ${repairTool} arguments.`);
+        message.tool_calls = [{ function: { name: repairTool, arguments: args } }];
         message.content = "";
         recordingSkillArgsRepair = false;
+        libraryWriteArgsRepair = false;
       }
       // Native tool continuations can use the prior reasoning trace. Bound it
       // so long traces cannot consume the input budget on subsequent calls.
@@ -2084,7 +2093,8 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             const item = state.library?.find((entry) => entry.id === itemId);
             if (!item) throw new Error("The file is no longer in the Local Library.");
             const text = await readLibraryText(item);
-            result = JSON.stringify({ itemId, ...searchTextPassages(text, item.name, String(args.query ?? ""), "Use read_library_item with this itemId and a matching offset for more context.") });
+            const search = searchTextPassages(text, item.name, String(args.query ?? ""), "Use read_library_item with this itemId and a matching offset for more context.");
+            result = JSON.stringify({ itemId, ...search, ...(!search.matches.length ? { hint: "No matching passages were found in this file. Choose a different query or another relevant source document; do not repeat this empty search. list_session_files(query) locates filenames and archive paths; search_library_item searches only the chosen file's contents." } : {}) });
           } else {
             const read = await this.readLibraryItem(itemId, Number(args.offset) || 0);
             result = libraryTextResult(itemId, read.item.name, read.item.mimeType, read.content, Math.max(0, Math.trunc(Number(args.offset) || 0)), read.totalChars);
@@ -2209,7 +2219,12 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         const exact = files.find((file) => file.id === args.itemId);
         const matching = files.filter((file) => file.name === args.itemId);
         const item = exact ?? (matching.length === 1 ? matching[0] : undefined);
-        if (!item || !/\.zip$/i.test(item.name)) throw new Error("Attach a ZIP file to this chat or its project first.");
+        if (!item || !/\.zip$/i.test(item.name)) {
+          const available = files.filter((file) => /\.zip$/i.test(file.name)).slice(0, 10).map((file) => ({ itemId: file.id, name: file.name }));
+          throw new Error(available.length
+            ? `The provided itemId does not identify a ZIP. Use an actual ZIP itemId or exact filename already available in this chat: ${JSON.stringify(available)}. Do not ask for another upload.`
+            : "Attach a ZIP file to this chat or its project first.");
+        }
         const manifest = (members: LocalLibraryItem[], directory: string, totalBytes?: number) => JSON.stringify({ directory, totalBytes, totalFiles: members.length, hint: "Use list_session_files(query) to find any member. read_library_item accepts its exact filename/archive-relative path or returned itemId. run_python INPUT_FILES includes archive-relative names. The selected folder has not changed.", files: [...members].sort((a, b) => Number(!a.name.endsWith(".md")) - Number(!b.name.endsWith(".md"))).slice(0, 30).map((file) => ({ path: file.name, itemId: file.id })) });
         const existing = files.filter((file) => file.sourceArchiveId === item.id);
         if (existing.length && existing.every((file) => existsSync(file.path))) {

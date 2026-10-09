@@ -131,11 +131,39 @@ export function prepareLocalInference(messages: OllamaMessage[], schemaCharacter
   try {
     const candidate = structuredClone(messages);
     compactSavedWriteCalls(candidate);
+    compactFailedWriteCalls(candidate);
     compactToolLoop(candidate, localPromptCharacterBudget(2048, schemaCharacters, imageCount));
     messages.splice(0, messages.length, ...candidate);
     return 2048;
   } catch (error) { lastError = error; }
   throw lastError;
+}
+
+/** Last-resort inference compaction; the stored failed call stays untouched. */
+function compactFailedWriteCalls(messages: OllamaMessage[]) {
+  for (let index = 0; index < messages.length; index++) {
+    const calls = messages[index].tool_calls;
+    if (!calls?.length) continue;
+    const results: OllamaMessage[] = [];
+    for (let next = index + 1; messages[next]?.role === "tool"; next++) results.push(messages[next]);
+    for (const call of calls) {
+      if (call.function.name !== "write_library_files") continue;
+      const result = results.find(message => message.tool_name === "write_library_files");
+      if (!result?.content.startsWith("Error:")) continue;
+      const args = call.function.arguments;
+      if (!args || typeof args !== "object" || Array.isArray(args)) continue;
+      const shorten = (text: string) => text.length > 1200
+        ? `${text.slice(0, 200)}\n[Failed-call text shortened for inference. This call did not save a file. Full arguments remain in conversation history; regenerate from verified sources or read an earlier saved revision.]\n${text.slice(-200)}`
+        : text;
+      const fields = args as Record<string, unknown>;
+      if (typeof fields.files === "string") fields.files = shorten(fields.files);
+      else if (Array.isArray(fields.files)) {
+        for (const file of fields.files) {
+          if (file && typeof file === "object" && typeof file.content === "string") file.content = shorten(file.content);
+        }
+      }
+    }
+  }
 }
 
 function compactSavedWriteCalls(messages: OllamaMessage[]) {
