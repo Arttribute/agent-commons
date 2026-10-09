@@ -3,6 +3,8 @@ import { canvasContextRequest } from "@agent-commons/agent-core";
 import { renderCanvasImages } from "./local-canvas-images";
 import { localImageContext, withLocalImages } from "./local-vision";
 import { localToolFailureKey } from "./local-tool-failure";
+import { localTaskReasoning } from "./local-task-reasoning";
+import { requestsSkillCreation, requestsSkillReplay } from "./local-skill-intent";
 import { writeLibraryFiles } from "./library-file-writer";
 import { PythonRuntime } from "./python-runtime";
 import { readArchive } from "./archive";
@@ -182,7 +184,7 @@ export const LOCAL_TOOLS = [
     successChecks: { type: "array", items: { type: "string" }, description: "Concrete checks of actual outputs and outcomes." },
     uncertainties: { type: "array", items: { type: "string" }, description: "Unseen application details, controls, results or timing; empty only if none." },
     tools: { type: "array", items: { type: "string" }, description: "Required exact available tool names. Use an empty array for manual replay; put unsupported application access in inputs/prerequisites. Saving these does not grant access." },
-    triggers: { type: "array", items: { type: "string" } }, tags: { type: "array", items: { type: "string" } },
+    triggers: { type: "array", items: { type: "string" }, description: "Short literal phrases a user would say to request this task, such as 'export completed reports'. Do not write conditions like 'User mentions exporting reports'." }, tags: { type: "array", items: { type: "string" } },
   }, ["slug", "name", "instructions"]),
   functionTool("local_register_app", "Register an app built in the selected workspace so it appears in Commons Apps. For a folder with a built index.html, omit command and previewUrl; Commons serves it. For a dev server, give the command and its localhost preview URL.", {
     name: { type: "string" }, description: { type: "string" }, directory: { type: "string", description: "Selected workspace-relative app folder" },
@@ -1659,9 +1661,10 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       }
     }
     const outputNames = requestedFileOutputs(lastUser, (lastUserMessage?.attachments ?? []).map((file) => file.name));
+    const needsSavedSkill = requestsSkillCreation(lastUser);
     // Content-file work does not need unrelated account mutation schemas. Keep
     // selected connectors, skills, folder tools and the content runtime available.
-    if (outputNames.length && !managingCommons) {
+    if (outputNames.length && (!managingCommons || requestsSkillReplay(lastUser)) && !needsSavedSkill) {
       for (let index = tools.length - 1; index >= 0; index--) {
         if (["local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill", "generate_audio"].includes(tools[index].function.name)) tools.splice(index, 1);
       }
@@ -1673,8 +1676,6 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     let executionRepairAttempted = false;
     let outputRepairAttempted = false;
     let skillRepairAttempted = false;
-    const needsSavedSkill = /\b(?:create|save|make|build|convert|turn)\b[\s\S]*\bskills?\b/i.test(lastUser)
-      && !/^\s*(?:how\b|explain\b|describe\b|what\b)/i.test(lastUser);
     const initialOutputIds = new Set((conversation.artifacts ?? []).map((file) => file.id));
     const missingOutputs = () => {
       const current = this.store.get();
@@ -1768,8 +1769,10 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       else if (!nativeTools) messages[0].content += `\nThis model uses the text tool protocol. To take an action, output ONLY {"tool":"exact_tool_name","args":{...}}. After each tool result, continue the task. When done, output {"tool":"final","args":{"response":"your final answer"}}. Available tools and schemas: ${JSON.stringify(inferenceTools.map((entry) => entry.function))}`;
       const requestNativeTools = nativeTools && !repairingSkillArgs;
       const outputTokens = prepareLocalInference(messages, requestNativeTools ? JSON.stringify(inferenceTools).length : 0, imageContext.images.length);
+      const outputsConfirmed = Boolean(recordingSkill && successfulTools.has("local_save_skill"))
+        || (needsLibraryOutput && missingOutputs().length === 0 && (!requiresComputedData(lastUser) || ["run_python", "cli_run_command", "cli_wait_for_process"].some((name) => successfulTools.has(name))));
       const response = await requestLocalModel(`${endpoint}/api/chat`, {
-        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(requestNativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: requestNativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(repairingSkillArgs ? { format: recordingSaveSchema } : !nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: reasoningEffort ? ["medium", "high", "xhigh", "max"].includes(reasoningEffort) : (requiresComputedData(lastUser) || recordingSkill || outputNames.length > 1 || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells"))) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
+        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(requestNativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: requestNativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(repairingSkillArgs ? { format: recordingSaveSchema } : !nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: localTaskReasoning(reasoningEffort, requiresComputedData(lastUser) || Boolean(recordingSkill) || outputNames.length > 1 || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells")), outputsConfirmed) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
         signal: AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(10 * 60_000)]),
       });
       if (!response.ok) {
