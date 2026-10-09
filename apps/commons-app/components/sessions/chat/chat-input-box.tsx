@@ -1316,11 +1316,9 @@ export default function ChatInputBox({
                       <DropdownMenuSubTrigger>
                         <Brain className="mr-2 h-4 w-4" />
                         Reference Knowledge
-                        {knowledgeSpaceIds.length > 0 && (
-                          <span className="ml-auto mr-1 text-xs text-teal-700">
-                            {knowledgeSpaceIds.length}
-                          </span>
-                        )}
+                        <span className="ml-auto mr-1 text-xs text-muted-foreground">
+                          {knowledgeMode === "off" ? "Off" : knowledgeMode === "selected" ? `${knowledgeSpaceIds.length} selected` : "Auto"}
+                        </span>
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="w-64">
                         <DropdownMenuLabel>
@@ -1447,7 +1445,6 @@ export default function ChatInputBox({
                     {desktopWorkspace && <button type="button" disabled={!!isLoading} onClick={() => { workspaceRevision.current += 1; setDesktopWorkspace(null); setWorkspaceRemoved(true); }} title="Remove folder from this chat" aria-label="Remove folder from this chat" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>}
                   </div>
                 )}
-                <button type="button" disabled={!!isLoading} onClick={() => { contextRevision.current += 1; setKnowledgeMode((mode) => mode === "off" ? "auto" : "off"); }} title="Automatic lets the agent choose when to search knowledge. Use Reference Knowledge to pick specific spaces." className="flex items-center gap-1 rounded-lg p-1.5 text-xs text-muted-foreground"><Brain className="h-4 w-4" />Knowledge: {knowledgeMode === "off" ? "off" : knowledgeMode === "selected" ? `${knowledgeSpaceIds.length} selected` : "auto"}</button>
                 {footerLeft && <div className="ml-1 min-w-0">{footerLeft}</div>}
               </div>
             )}
