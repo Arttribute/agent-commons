@@ -18,6 +18,7 @@ describe('computed Python output boundary', () => {
   const setup = () => {
     const service = Object.create(CommonToolService.prototype) as any;
     service.resourceUpgrades = { bindRun: jest.fn().mockResolvedValue(undefined) };
+    service.library = { generatedSessionFileIds: jest.fn().mockResolvedValue([]) };
     service.capabilityOwner = jest.fn().mockResolvedValue({ principalId: 'owner', workspaceId: null });
     service.computers = { writeFiles: jest.fn().mockResolvedValue({}), runCommand: jest.fn().mockResolvedValue({ status: 'completed' }), readFile: jest.fn().mockResolvedValue({ content: JSON.stringify({ exitCode: 0, stdout: 'mean=64', stderr: '', files: [{ name: 'means.json', mimeType: 'application/json', base64: Buffer.from('{"T1":64}').toString('base64') }] }) }) };
     service.files = { createDownloadUrl: jest.fn().mockResolvedValue({ itemId: 'input', name: 'heart_rate.csv', url: 'https://private.example/signed' }), createGeneratedFile: jest.fn().mockResolvedValue({ fileId: 'computed', name: 'means.json' }) };
@@ -97,6 +98,35 @@ describe('computed Python output boundary', () => {
     await service.runPythonAnalysis({ code: 'print(64)' }, { agentId: 'agent', sessionId: 'session', attachmentFileIds: ['input'] });
     expect(service.files.createDownloadUrl).toHaveBeenCalledWith('input', expect.objectContaining({ sessionId: 'session' }));
   });
+  it('automatically stages current-chat generated media without displacing attachments', async () => {
+    const service = setup();
+    service.library.generatedSessionFileIds.mockResolvedValue(['image', 'input']);
+    await service.runPythonAnalysis({ sessionId: 'invented', code: 'print(64)' }, { agentId: 'agent', sessionId: 'actual', ownerId: 'viewer', attachmentFileIds: ['input'] });
+    expect(service.library.generatedSessionFileIds).toHaveBeenCalledWith({ ownerId: 'viewer', agentId: 'agent', sessionId: 'actual', limit: 20 });
+    expect(service.files.createDownloadUrl.mock.calls.map((call: unknown[]) => call[0])).toEqual(['input', 'image']);
+    expect(service.files.createDownloadUrl).toHaveBeenCalledWith('image', expect.objectContaining({ sessionId: 'actual', ownerId: 'viewer' }));
+  });
+  it('respects explicit input selection and bounds automatic staging to twenty files', async () => {
+    const service = setup();
+    await service.runPythonAnalysis({ code: 'print(64)', inputItemIds: [] }, { agentId: 'agent', sessionId: 'session', attachmentFileIds: ['input'] });
+    expect(service.library.generatedSessionFileIds).not.toHaveBeenCalled();
+    expect(service.files.createDownloadUrl).not.toHaveBeenCalled();
+    service.library.generatedSessionFileIds.mockResolvedValue(Array.from({ length: 20 }, (_, i) => 'generated-' + i));
+    await service.runPythonAnalysis({ code: 'print(64)' }, { agentId: 'agent', sessionId: 'session', attachmentFileIds: ['input'] });
+    expect(service.files.createDownloadUrl).toHaveBeenCalledTimes(20);
+    expect(service.files.createDownloadUrl.mock.calls[0][0]).toBe('input');
+  });
+  it.each(['createTextFile', 'createDocumentFile', 'createPresentationFile', 'createPdfFile', 'createSpreadsheetFile'])('binds %s to the captured chat', async (name) => {
+    const service = setup();
+    service.files[name] = jest.fn().mockResolvedValue({ fileId: 'saved' });
+    await service[name]({ agentId: 'agent', sessionId: 'invented', fileName: 'report', content: 'content', sections: [], slides: [], sheets: [] }, { agentId: 'agent', sessionId: 'actual', ownerId: 'viewer' });
+    expect(service.files[name]).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent', sessionId: 'actual', ownerId: 'viewer' }));
+  });
+  it('binds computer reads to the authenticated chat despite model-supplied context', async () => {
+    const service = setup();
+    await service.readComputerFile({ sessionId: 'invented', path: 'report.md' }, { agentId: 'agent', sessionId: 'actual' });
+    expect(service.computers.readFile).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent', sessionId: 'actual', path: 'report.md' }));
+  });
   it('uses the authenticated chat owner for inputs and generated outputs when an agent is shared', async () => {
     const service = setup();
     await service.runPythonAnalysis({ code: 'print(64)', inputItemIds: ['input'] }, { agentId: 'shared-agent', sessionId: 'session', ownerId: 'viewer' });
@@ -172,5 +202,33 @@ describe('Python working folder isolation', () => {
     expect(config('owner-A:agent:chat-A').workingDirectory).not.toBe(config('owner-B:agent:chat-A').workingDirectory);
     expect(config('owner-A:agent:chat-A').workingDirectory).not.toBe(config('owner-A:agent:chat-B').workingDirectory);
     expect(config('owner-A:agent:chat-A').workingDirectory).not.toContain('owner-A');
+  });
+});
+
+
+describe('generated images stay in the authenticated chat', () => {
+  const setup = () => {
+    const service = Object.create(CommonToolService.prototype) as any;
+    service.agent = { getAgent: jest.fn().mockResolvedValue({}) };
+    service.capabilityOwner = jest.fn().mockResolvedValue({ principalId: 'agent-owner', workspaceId: 'agent-workspace' });
+    service.usage = { authorizeCapability: jest.fn().mockResolvedValue({ reservationId: 'reservation' }), settleCapability: jest.fn() };
+    service.openAI = { images: { generate: jest.fn().mockResolvedValue({ data: [{ b64_json: Buffer.from('actual-image').toString('base64') }] }) } };
+    service.files = { createGeneratedFile: jest.fn().mockResolvedValue({ fileId: 'image', name: 'generated.png' }), readFileForAgent: jest.fn().mockResolvedValue({ artifacts: [] }) };
+    return service;
+  };
+  it('uses captured session and viewer for image persistence, reads and usage', async () => {
+    const service = setup();
+    await service.generateImage({ prompt: 'Offline background', agentId: 'agent', sessionId: 'invented' }, { agentId: 'agent', sessionId: 'actual', ownerId: 'viewer' });
+    expect(service.files.createGeneratedFile).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent', sessionId: 'actual', ownerId: 'viewer', workspaceId: null, buffer: Buffer.from('actual-image') }));
+    expect(service.files.readFileForAgent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'actual', ownerId: 'viewer' }));
+    expect(service.usage.authorizeCapability).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'actual', principalId: 'viewer' }));
+    expect(service.usage.settleCapability).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'actual' }));
+  });
+  it('passes captured session to an explicitly saved image model', async () => {
+    const service = setup();
+    service.agent.getAgent.mockResolvedValue({ mediaModels: { imageModel: 'saved-image-model' } });
+    service.generateMedia = jest.fn().mockResolvedValue({ artifact: { itemId: 'image', name: 'generated.png' } });
+    await service.generateImage({ prompt: 'Offline background', agentId: 'agent', sessionId: 'invented' }, { agentId: 'agent', sessionId: 'actual' });
+    expect(service.generateMedia).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'actual', modelKey: 'saved-image-model' }), expect.anything());
   });
 });
