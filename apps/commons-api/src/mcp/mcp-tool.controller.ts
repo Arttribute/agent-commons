@@ -1,11 +1,13 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
 import { McpToolDiscoveryService } from './mcp-tool-discovery.service';
+import { McpOwnerGuard, type McpRequest } from './mcp-owner.guard';
 import {
   McpToolResponseDto,
   McpToolListResponseDto,
 } from './dto/mcp.dto';
 
 @Controller({ version: '1', path: 'mcp/tools' })
+@UseGuards(McpOwnerGuard)
 export class McpToolController {
   constructor(private readonly toolDiscovery: McpToolDiscoveryService) {}
 
@@ -14,12 +16,10 @@ export class McpToolController {
    */
   @Get()
   async getToolsByOwner(
-    @Query('ownerId') ownerId: string,
-    @Query('ownerType') ownerType: 'user' | 'agent' = 'user',
+    @Req() req: McpRequest,
   ): Promise<McpToolListResponseDto> {
     const tools = await this.toolDiscovery.getToolsByOwner({
-      ownerId,
-      ownerType,
+      ...req.mcpOwner!,
     });
 
     return {
