@@ -103,7 +103,7 @@ describe('computed Python output boundary', () => {
     service.library.generatedSessionFileIds.mockResolvedValue(['image', 'input']);
     await service.runPythonAnalysis({ sessionId: 'invented', code: 'print(64)' }, { agentId: 'agent', sessionId: 'actual', ownerId: 'viewer', attachmentFileIds: ['input'] });
     expect(service.library.generatedSessionFileIds).toHaveBeenCalledWith({ ownerId: 'viewer', agentId: 'agent', sessionId: 'actual', limit: 20 });
-    expect(service.files.createDownloadUrl.mock.calls.map(([id]) => id)).toEqual(['input', 'image']);
+    expect(service.files.createDownloadUrl.mock.calls.map((call: unknown[]) => call[0])).toEqual(['input', 'image']);
     expect(service.files.createDownloadUrl).toHaveBeenCalledWith('image', expect.objectContaining({ sessionId: 'actual', ownerId: 'viewer' }));
   });
   it('respects explicit input selection and bounds automatic staging to twenty files', async () => {
