@@ -92,26 +92,34 @@ export async function smokeLocalTools(evaluate, wsUrl, root) {
         if (last.role === "user") answer = call("cli_run_command", { command: "git", args: ["--version"] });
         else { assert.match(last.content, /git version/i); answer.content = "Git works in the desktop app."; }
       } else if (prompt === "Publish the smoke repository") {
-        const commandResults = messages.filter((message) => message.role === "tool" && message.tool_name === "cli_run_command");
-        switch (commandResults.length) {
-          case 0:
+        // Older tool results may be compacted as the context budget changes.
+        // Advance from the actual immediately preceding command, not a count
+        // of all the historical results still present in the model request.
+        const previousCommand = last.role === "tool"
+          ? messages.at(-2).tool_calls[0].function.arguments.args[0]
+          : undefined;
+        switch (previousCommand) {
+          case undefined:
             answer = call("cli_run_command", { command: "git", args: ["status", "--short", "--", "launch.md"] });
             break;
-          case 1:
+          case "status":
             assert.match(last.content, /\?\? launch\.md/);
             answer = call("cli_run_command", { command: "git", args: ["add", "--", "launch.md"] });
             break;
-          case 2:
+          case "add":
             assert.equal(last.content, "(no output)");
             answer = call("cli_run_command", { command: "git", args: ["commit", "-m", "Add launch note"] });
             break;
-          case 3:
+          case "commit":
             assert.match(last.content, /Add launch note/);
             answer = call("cli_run_command", { command: "git", args: ["push", "origin", "HEAD:refs/heads/main"] });
             break;
-          default:
+          case "push":
             assert.match(last.content, /HEAD -> main/);
             answer.content = "The launch note was committed and pushed.";
+            break;
+          default:
+            assert.fail(`Unexpected smoke git command: ${previousCommand}`);
         }
       } else if (prompt === "Find the report recommendation") {
         if (last.role === "user") {
