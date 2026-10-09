@@ -1495,6 +1495,7 @@ export class PrivateLocalRuntime {
     for (const server of this.staticApps.values()) server.close();
     clearInterval(this.scheduler);
     this.warmup.close();
+    this.imageManager.close();
     this.modelManager.stop();
     this.cancelPendingApprovals();
     stopLocalProcesses();
