@@ -129,3 +129,17 @@ test('video and tool context reduces output reserve before rejecting the current
   assert.ok(Math.ceil(Buffer.byteLength(JSON.stringify(messages)) / 2) + 3000 + 4096 + outputTokens + 512 <= LOCAL_CONTEXT_SIZE);
   assert.equal(prepareLocalInference([{ role: 'system', content: 'short' }, { role: 'user', content: 'hi' }]), 4096);
 });
+
+test('an oversized newest source result is shortened with its identity and cursor intact', () => {
+  const result = { itemId: 'source-731', offset: 4000, nextOffset: 12000, totalChars: 20000, content: 'verified source text '.repeat(600) };
+  const messages = [{ role: 'system', content: 's'.repeat(9000) }, { role: 'user', content: 'Continue the workflow' },
+    { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_library_item', arguments: { itemId: result.itemId, offset: 4000 } } }] },
+    { role: 'tool', tool_name: 'read_library_item', content: JSON.stringify(result) }];
+  assert.equal(prepareLocalInference(messages, 6000, 4), 2048);
+  assert.equal(messages.at(-2).tool_calls[0].function.arguments.itemId, result.itemId);
+  assert.equal(messages.at(-1).tool_name, 'read_library_item');
+  const shortened = JSON.parse(messages.at(-1).content);
+  assert.equal(shortened.itemId, result.itemId);
+  assert.equal(shortened.nextOffset, result.nextOffset);
+  assert.match(shortened.content, /Text shortened/);
+});

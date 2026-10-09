@@ -91,7 +91,14 @@ function requiresComputedData(text) {
 const PYTHON_DATA_PACKAGES = ["numpy==2.2.6", "pandas==2.2.3", "matplotlib==3.10.3", "scipy==1.15.3", "scikit-learn==1.6.1", "seaborn==0.13.2", "openpyxl==3.1.5", "pillow==11.2.1"];
 
 // Filenames described as inputs are separate from requested saved outputs.
+function affirmativeOutputRequest(prompt) {
+  // Only omit negated output clauses from intent detection. The agent still
+  // receives the complete original request, including these prohibitions.
+  return prompt.replace(/\b(?:do\s+not|don['’]t|never|avoid|skip|without)\s+(?:save|write|draft|create|produce|generate|export|saving|writing|drafting|creating|producing|generating|exporting)\b[\s\S]*?(?=[;!?\n]|\.(?:\s|$)|\b(?:but|instead|then)\b|$)/gi, ' ');
+}
+
 function requestedFileOutputs(prompt, inputNames = []) {
+  prompt = affirmativeOutputRequest(prompt);
   const inputs = new Set(inputNames.map(name => name.split(/[\\/]/).at(-1)?.toLowerCase()));
   const names = new Set();
   for (const match of prompt.matchAll(/\b([\w-][\w.-]*\.(?:md|txt|html|json|csv|png|jpg|jpeg|js|css|svg|pdf|docx|pptx|xlsx|pkl|pt|onnx))\b/gi)) {
@@ -131,7 +138,7 @@ for raw in json.loads(sys.argv[1]):
 print(json.dumps(missing))
 `;
 
-module.exports = { requestedFileOutputs, PYTHON_FONT_PRELUDE, PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE, DATA_EXECUTION_CONTRACT, requiresComputedData, findMatchingSkills, buildSkillPromptIndex, AUTONOMOUS_EXECUTION_CONTRACT, buildWorkspaceModeContext, buildAgentIdentityPrompt };
+module.exports = { affirmativeOutputRequest, requestedFileOutputs, PYTHON_FONT_PRELUDE, PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE, DATA_EXECUTION_CONTRACT, requiresComputedData, findMatchingSkills, buildSkillPromptIndex, AUTONOMOUS_EXECUTION_CONTRACT, buildWorkspaceModeContext, buildAgentIdentityPrompt };
 
 const canvasContext = require("./canvas-context.cjs");
 module.exports.canvasContextRequest = canvasContext.canvasContextRequest;

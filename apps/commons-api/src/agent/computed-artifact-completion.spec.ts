@@ -111,6 +111,8 @@ describe('computed artifact completion', () => {
     expect(missingComputedArtifacts(prompt, [], [], true)).toEqual([]);
   });
   it.each([
+    'Extract the ZIP with Python. Read START HERE.md and report the workflow order. Do not create campaign outputs yet.',
+    "Inspect the Library CSV with Python; don't generate charts or export files yet.",
     'Explain regression.',
     'Fit regression and show the slope in chat.',
     'Write a Python code example in chat about Library inputs.',

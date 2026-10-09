@@ -110,6 +110,15 @@ export function prepareLocalInference(messages: OllamaMessage[], schemaCharacter
       return outputTokens;
     } catch (error) { lastError = error; }
   }
+  // A large newest source excerpt may itself exceed the remaining budget.
+  // Keep its exact call/result group and JSON metadata, but shorten its text
+  // explicitly so the model can request a smaller range using the same ID.
+  try {
+    const candidate = structuredClone(messages);
+    compactToolLoop(candidate, localPromptCharacterBudget(2048, schemaCharacters, imageCount));
+    messages.splice(0, messages.length, ...candidate);
+    return 2048;
+  } catch (error) { lastError = error; }
   throw lastError;
 }
 
