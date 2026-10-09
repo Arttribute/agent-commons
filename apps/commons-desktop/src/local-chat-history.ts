@@ -3,8 +3,8 @@ import type { OllamaMessage } from "./ollama-stream";
 
 export const LOCAL_CONTEXT_SIZE = 16_384;
 
-export function libraryTextResult(itemId: string, name: string, mimeType: string, text: string, offset: number, totalChars: number) {
-  const encode = (length: number) => JSON.stringify({ itemId, name, mimeType, pythonInput: `INPUT_FILES[${JSON.stringify(itemId)}]`, offset, content: text.slice(0, length), nextOffset: offset + length < totalChars ? offset + length : null, totalChars });
+export function libraryTextResult(itemId: string, name: string, mimeType: string, text: string, offset: number, totalChars: number, sourceContext: Record<string, unknown> = {}) {
+  const encode = (length: number) => JSON.stringify({ itemId, name, mimeType, pythonInput: `INPUT_FILES[${JSON.stringify(itemId)}]`, offset, content: text.slice(0, length), nextOffset: offset + length < totalChars ? offset + length : null, totalChars, ...sourceContext });
   let low = 0, high = text.length;
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);

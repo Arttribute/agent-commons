@@ -2112,7 +2112,12 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             result = JSON.stringify({ itemId, ...search, ...(!search.matches.length ? { hint: "No matching passages were found in this file. Choose a different query or another relevant source document; do not repeat this empty search. list_session_files(query) locates filenames and archive paths; search_library_item searches only the chosen file's contents." } : {}) });
           } else {
             const read = await this.readLibraryItem(itemId, Number(args.offset) || 0);
-            result = libraryTextResult(itemId, read.item.name, read.item.mimeType, read.content, Math.max(0, Math.trunc(Number(args.offset) || 0)), read.totalChars);
+            const markdownName = read.item.name.replace(/\.html?$/i, ".md");
+            const markdown = read.item.sourceArchiveId && /\.html?$/i.test(read.item.name)
+              ? (state.library ?? []).find((file) => scopedIds.has(file.id) && file.sourceArchiveId === read.item.sourceArchiveId && file.name.toLowerCase() === markdownName.toLowerCase())
+              : undefined;
+            result = libraryTextResult(itemId, read.item.name, read.item.mimeType, read.content, Math.max(0, Math.trunc(Number(args.offset) || 0)), read.totalChars,
+              markdown ? { availableMarkdownSource: { itemId: markdown.id, name: markdown.name }, hint: "This HTML read returns source markup. For document instructions, inspect the available Markdown source to avoid presentation markup. It is a separate source; verify its contents. Use copy_library_file to preserve an unchanged HTML template." } : {});
           }
         } catch (error) { result = `Error: ${error instanceof Error ? error.message : String(error)}`; }
       }
