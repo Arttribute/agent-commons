@@ -22,7 +22,7 @@ jobs:
 
     services:
       payment-postgres:
-        image: postgres:16-alpine
+        image: public.ecr.aws/docker/library/postgres:16-alpine
         env:
           POSTGRES_PASSWORD: local-payment-test
           POSTGRES_DB: arcade_payments

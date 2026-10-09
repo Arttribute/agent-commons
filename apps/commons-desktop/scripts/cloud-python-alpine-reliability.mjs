@@ -43,7 +43,7 @@ assert hashlib.sha256(system.read_bytes()).hexdigest() == before
 assert subprocess.check_output(['/bin/sh', '-c', 'printf system-shell-unchanged']).decode() == 'system-shell-unchanged'
 Path('/acceptance/verified.json').write_text(json.dumps({'regression': regression, 'coldFiles': sorted(files), 'warmFiles': [f['name'] for f in second['files']], 'systemPythonUnchanged': True}))
 `);
-  const { stdout, stderr } = await promisify(execFile)('docker', ['run', '--rm', '--memory=2g', '--cpus=1', '-v', `${directory}:/acceptance`, 'alpine:3.24.2', '/bin/sh', '-ec', 'apk add --no-cache python3 ca-certificates; python3 /acceptance/verify.py'], { timeout: 660_000, maxBuffer: 4_000_000 });
+  const { stdout, stderr } = await promisify(execFile)('docker', ['run', '--rm', '--memory=2g', '--cpus=1', '-v', `${directory}:/acceptance`, 'public.ecr.aws/docker/library/alpine:3.24.2', '/bin/sh', '-ec', 'apk add --no-cache python3 ca-certificates; python3 /acceptance/verify.py'], { timeout: 660_000, maxBuffer: 4_000_000 });
   const result = JSON.parse(readFileSync(join(directory, 'verified.json'), 'utf8'));
   assert.equal(result.systemPythonUnchanged, true);
   console.log(stdout, stderr, result);
