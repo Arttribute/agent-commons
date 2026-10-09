@@ -1,3 +1,4 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { LibraryService, resolveArtifactShareBaseUrl } from './library.service';
 
 describe('artifact share URL configuration', () => {
@@ -396,5 +397,24 @@ describe('LibraryService artifact provenance', () => {
     expect(db.query.provenanceEvent.findMany).not.toHaveBeenCalled();
     expect(record.actions).toEqual([]);
     expect(record.disclosure.eventsIncluded).toBe(false);
+  });
+});
+
+
+describe('generated runtime inputs are scoped to one owner and chat', () => {
+  it('requires owner, agent, session, ready generated source and a bounded query', async () => {
+    const findMany = jest.fn().mockResolvedValue([{ itemId: 'image', name: 'background.png' }, { itemId: 'old-image', name: 'background.png' }]);
+    const service = new LibraryService({ query: { libraryItem: { findMany } } } as any, {} as any, {} as any, {} as any);
+    expect(await service.generatedSessionFileIds({ ownerId: 'viewer', agentId: 'shared-agent', sessionId: 'actual', limit: 1000 })).toEqual(['image']);
+    const query = findMany.mock.calls[0][0];
+    expect(query.columns).toEqual({ itemId: true, name: true });
+    expect(query.limit).toBe(100);
+    const compiled = new PgDialect().sqlToQuery(query.where);
+    expect(compiled.params).toEqual(['viewer', 'shared-agent', 'actual', 'agent_generated', 'ready', 'partial']);
+    expect(compiled.sql).toContain('"owner_user_id"');
+    expect(compiled.sql).toContain('"source_agent_id"');
+    expect(compiled.sql).toContain('"source_session_id"');
+    expect(compiled.sql).toContain('"deleted_at" is null');
+    expect(compiled.sql).not.toContain('library_grant');
   });
 });

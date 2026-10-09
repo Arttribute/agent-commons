@@ -858,7 +858,7 @@ export interface CommonTool {
   /** Restore the computer's previous CPU/RAM/GPU when the accelerated task finishes. This chat cannot release another chat's resource lease. */
   releaseComputerResources(props: { agentId?: string }): Promise<any>;
 
-  /** Execute Python analysis, computed plots or ML in the agent's isolated computer with managed pandas, numpy, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow. Start the agent computer first. INPUT_FILES maps input Library names and IDs to readable paths. OUTPUT_DIR is a stable pathlib.Path scoped to this chat and owner for requested deliverables. WORK_DIR is a separate persistent pathlib.Path for extracted sources and intermediate files; its contents are not published. Files persist across calls, while Python variables do not. Save charts and reports there to return immutable Library artifacts. ZIP inputs can be inspected and extracted with Python zipfile. */
+  /** Execute Python analysis, computed plots or ML in the agent's isolated computer with managed pandas, numpy, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow. Start the agent computer first. INPUT_FILES maps input Library names and IDs to readable paths. When inputItemIds is omitted, active attachments and recent owner-scoped generated outputs from this exact chat are staged, up to 20 total; pass explicit IDs to select other or older files. OUTPUT_DIR is a stable pathlib.Path scoped to this chat and owner for requested deliverables. WORK_DIR is a separate persistent pathlib.Path for extracted sources and intermediate files; its contents are not published. Files persist across calls, while Python variables do not. Save charts and reports there to return immutable Library artifacts. ZIP inputs can be inspected and extracted with Python zipfile. */
   runPythonAnalysis(props: { agentId?: string; sessionId?: string; code: string; inputItemIds?: string[]; timeoutSeconds?: number; packages?: string[] }): Promise<any>;
 
   /**
@@ -1848,12 +1848,13 @@ export class CommonToolService {
     }[]
   > {
     if (props.n !== undefined && (!Number.isInteger(props.n) || props.n < 1 || props.n > 4)) throw new BadRequestException("Image count must be between 1 and 4.");
+    const sessionId = metadata?.sessionId ?? props.sessionId;
     const configuredAgentId = this.requireToolAgentId(props.agentId, metadata);
     const configuredAgent = await this.agent.getAgent({ agentId: configuredAgentId });
     if (configuredAgent.mediaModels?.imageModel) {
       const results = [];
       for (let i = 0; i < (props.n ?? 1); i++) {
-        const result = await this.generateMedia({ agentId: configuredAgentId, sessionId: props.sessionId, modelKey: configuredAgent.mediaModels.imageModel, prompt: props.prompt, settings: { quality: props.quality, aspectRatio: props.size === "1536x1024" ? "3:2" : props.size === "1024x1536" ? "2:3" : "1:1" } }, metadata);
+        const result = await this.generateMedia({ agentId: configuredAgentId, sessionId, modelKey: configuredAgent.mediaModels.imageModel, prompt: props.prompt, settings: { quality: props.quality, aspectRatio: props.size === "1536x1024" ? "3:2" : props.size === "1024x1536" ? "2:3" : "1:1" } }, metadata);
         results.push({ fileId: result.artifact.itemId, name: result.artifact.name, url: result.artifact.url, prompt: props.prompt, model: configuredAgent.mediaModels.imageModel });
       }
       return results;
@@ -1874,7 +1875,7 @@ export class CommonToolService {
       );
     }
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    const owner = await this.capabilityOwner(agentId);
+    const owner = await this.resourceOwner(agentId, metadata);
     const operationId = metadata?.toolCallId || randomUUID();
     const outputCostUsd = imageOutputCostUsd(size, quality) * n;
     const promptCostUsd = (Math.ceil(prompt.length / 4) / 1_000_000) * 5;
@@ -1885,7 +1886,7 @@ export class CommonToolService {
       estimatedCostUsd: costUsd,
       idempotencyKey: `capability:image:${operationId}`,
       agentId,
-      sessionId: props.sessionId,
+      sessionId,
       metadata: {
         model,
         size,
@@ -1919,7 +1920,7 @@ export class CommonToolService {
       actualCostUsd: costUsd,
       idempotencyKey: `capability:image:${operationId}:capture`,
       agentId,
-      sessionId: props.sessionId,
+      sessionId,
       metadata: { provider: 'openai', model, size, quality, count: n },
     });
 
@@ -1939,8 +1940,10 @@ export class CommonToolService {
         buffer: Buffer.from(base64String, 'base64'),
         fileName: `generated-image-${Date.now()}-${i + 1}.png`,
         mimeType: 'image/png',
-        agentId: props.agentId,
-        sessionId: props.sessionId,
+        agentId,
+        sessionId,
+        ownerId: owner.principalId,
+        workspaceId: owner.workspaceId,
         metadata: {
           provider: 'openai',
           model,
@@ -1951,8 +1954,10 @@ export class CommonToolService {
       });
       const readable = await this.files.readFileForAgent({
         fileId: created.fileId,
-        agentId: props.agentId,
-        sessionId: props.sessionId,
+        agentId,
+        sessionId,
+        ownerId: owner.principalId,
+        workspaceId: owner.workspaceId ?? undefined,
         includeImageUrls: true,
         maxChars: 1,
       });
@@ -2150,7 +2155,7 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    const owner = await this.capabilityOwner(agentId);
+    const owner = await this.resourceOwner(agentId, metadata);
     const agent = await this.agent.getAgent({ agentId });
     const kind = props.kind ?? MEDIA_MODEL_REGISTRY.find((model) => model.modelKey === props.modelKey)?.kind ?? "image";
     const configured = agent.mediaModels?.[`${kind}Model`];
@@ -2230,7 +2235,7 @@ export class CommonToolService {
     return this.files.readFileForAgent({
       fileId: props.fileId,
       agentId: this.requireToolAgentId(props.agentId, metadata),
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
       ownerId: metadata?.ownerId,
       offset: props.offset,
       maxChars: props.maxChars,
@@ -2249,7 +2254,7 @@ export class CommonToolService {
       query: props.query,
       maxResults: props.maxResults,
       agentId: this.requireToolAgentId(props.agentId, metadata),
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
       ownerId: metadata?.ownerId,
     });
   }
@@ -2312,7 +2317,7 @@ export class CommonToolService {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
     return this.library.searchForAgent({
       agentId,
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
       ownerId: metadata?.ownerId,
       query: props.query,
       limit: props.limit,
@@ -2426,8 +2431,8 @@ export class CommonToolService {
     return this.files.createSpreadsheetFile({
       fileName: props.fileName,
       sheets: props.sheets,
-      agentId: props.agentId,
-      sessionId: props.sessionId,
+      agentId: this.requireToolAgentId(props.agentId, metadata),
+      sessionId: metadata?.sessionId ?? props.sessionId,
       traceId: metadata?.runId,
       ownerId: metadata?.ownerId,
       ownerType: metadata?.ownerId ? 'user' : 'agent',
@@ -2447,6 +2452,8 @@ export class CommonToolService {
   ) {
     return this.files.createTextFile({
       ...props,
+      agentId: this.requireToolAgentId(props.agentId, metadata),
+      sessionId: metadata?.sessionId ?? props.sessionId,
       traceId: metadata?.runId,
       ownerId: metadata?.ownerId,
     });
@@ -2469,6 +2476,8 @@ export class CommonToolService {
   ) {
     return this.files.createDocumentFile({
       ...props,
+      agentId: this.requireToolAgentId(props.agentId, metadata),
+      sessionId: metadata?.sessionId ?? props.sessionId,
       traceId: metadata?.runId,
       ownerId: metadata?.ownerId,
     });
@@ -2513,6 +2522,8 @@ export class CommonToolService {
   ) {
     return this.files.createPresentationFile({
       ...props,
+      agentId: this.requireToolAgentId(props.agentId, metadata),
+      sessionId: metadata?.sessionId ?? props.sessionId,
       traceId: metadata?.runId,
       ownerId: metadata?.ownerId,
       requiredImageFileIds: metadata?.attachmentFileIds,
@@ -2537,6 +2548,8 @@ export class CommonToolService {
   ) {
     return this.files.createPdfFile({
       ...props,
+      agentId: this.requireToolAgentId(props.agentId, metadata),
+      sessionId: metadata?.sessionId ?? props.sessionId,
       traceId: metadata?.runId,
       ownerId: metadata?.ownerId,
     });
@@ -2556,7 +2569,7 @@ export class CommonToolService {
     const computer = await this.computers.startComputer({
       ...props,
       agentId,
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
       actorId: agentId,
       actorType: 'agent',
       runId: metadata?.runId,
@@ -2577,7 +2590,7 @@ export class CommonToolService {
     return this.computers.listInstances({
       ...props,
       agentId,
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
     });
   }
 
@@ -2588,6 +2601,15 @@ export class CommonToolService {
     const owner = await this.resourceOwner(agentId, metadata);
     const inputIds = [...new Set(props.inputItemIds ?? metadata?.attachmentFileIds ?? [])];
     if (inputIds.length > 20) throw new BadRequestException('Python accepts up to 20 input files.');
+    // Explicit input selection is authoritative. Otherwise include bounded,
+    // owner-scoped outputs from this exact chat, including generated media.
+    if (props.inputItemIds === undefined && sessionId && inputIds.length < 20) {
+      const generated = await this.library.generatedSessionFileIds({ ownerId: owner.principalId, agentId, sessionId, limit: 20 });
+      for (const id of generated) {
+        if (!inputIds.includes(id)) inputIds.push(id);
+        if (inputIds.length === 20) break;
+      }
+    }
     const inputs = await Promise.all(inputIds.map((id) => this.files.createDownloadUrl(id, { agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId ?? undefined })));
     const execution = cloudPythonFiles(props.code, inputs, props.timeoutSeconds, props.packages, `${owner.principalId}:${agentId}:${sessionId ?? "agent"}`);
     await this.computers.writeFiles({ agentId, sessionId, files: execution.files, runId: metadata?.runId, toolCallId: metadata?.toolCallId });
@@ -2659,7 +2681,7 @@ export class CommonToolService {
     return this.computers.runCommand({
       ...props,
       agentId,
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
       actorId: agentId,
       actorType: 'agent',
       runId: metadata?.runId,
@@ -2680,7 +2702,7 @@ export class CommonToolService {
     return this.computers.readFile({
       ...props,
       agentId,
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
     });
   }
 
@@ -2697,7 +2719,7 @@ export class CommonToolService {
     return this.computers.writeFiles({
       ...props,
       agentId,
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
       actorId: agentId,
       actorType: 'agent',
       runId: metadata?.runId,
@@ -2718,7 +2740,7 @@ export class CommonToolService {
     return this.computers.openBrowser({
       ...props,
       agentId,
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
       actorId: agentId,
       actorType: 'agent',
       runId: metadata?.runId,
@@ -2746,7 +2768,7 @@ export class CommonToolService {
     return this.computers.testBrowser({
       ...props,
       agentId,
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
       actorId: agentId,
       actorType: 'agent',
       runId: metadata?.runId,
@@ -2768,7 +2790,7 @@ export class CommonToolService {
     return this.codeProjects.create({
       ...props,
       agentId,
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
       runId: metadata?.runId,
       toolCallId: metadata?.toolCallId,
     });
@@ -3044,7 +3066,7 @@ export class CommonToolService {
     return this.codeProjects.exportToComputer({
       ...props,
       agentId,
-      sessionId: props.sessionId ?? metadata?.sessionId,
+      sessionId: metadata?.sessionId ?? props.sessionId,
       runId: metadata?.runId,
       toolCallId: metadata?.toolCallId,
     });
