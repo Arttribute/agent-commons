@@ -31,7 +31,7 @@ const fixtures = [
   { name: 'Jessica Colaço', offer: 'AI Quick Wins for Leaders', price: 'KES 12,000', colleaguePrice: 'KES 10,000', dates: 'TBC', sessions: 4, primaryColor: '#C9A84C', background: '#0A0A0A', textColor: '#F0EDE6', website: 'https://jessicacolaco.com', quotes: [], source: 'Kit example brand-sheet.md, snapshot 3 October 2026; dates unconfirmed. Offline acceptance only.' },
   { name: 'CommonTest Desk', offer: 'Shared support inbox', price: 'USD 49/month', dates: 'No deadline', primaryColor: '#166534', background: '#F0FDF4', textColor: '#052E16', website: 'https://commontest.example.invalid', quotes: [], source: 'Fictional test inputs, supplied by the test harness. No customer results, ratings or testimonials.' },
 ];
-const model = process.env.COMMONS_SESSION_MODELS?.split(',')[0] || 'qwen3.5:2b';
+const model = process.env.COMMONS_SESSION_MODELS?.split(',')[0] || runtime.state().settings.defaultModel;
 const resumed = process.env.COMMONS_WORKFLOW_RESUME_CHAT ? runtime.state().conversations.find((entry) => entry.id === process.env.COMMONS_WORKFLOW_RESUME_CHAT) : undefined;
 if (process.env.COMMONS_WORKFLOW_RESUME_CHAT && !resumed) throw new Error('The acceptance chat to resume was not found.');
 if (resumed && ((process.env.COMMONS_WORKFLOW_MODES?.split(',').length ?? 2) !== 1 || Number(process.env.COMMONS_WORKFLOW_FIXTURE_COUNT) !== 1)) throw new Error('Resume one existing case at a time.');
