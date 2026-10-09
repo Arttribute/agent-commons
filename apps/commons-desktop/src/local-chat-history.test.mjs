@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compactToolLoop, libraryTextResult, localChatHistory, prepareLocalInference, toolResult } from "./local-chat-history.ts";
+import { compactToolLoop, libraryTextResult, localChatHistory, localTurnAttachments, prepareLocalInference, toolResult } from "./local-chat-history.ts";
 
 test('long Python failures retain structured stderr and its actual final cause', () => {
   const cause = 'ValueError: x and y must have the same first dimension';
@@ -142,4 +142,13 @@ test('an oversized newest source result is shortened with its identity and curso
   assert.equal(shortened.itemId, result.itemId);
   assert.equal(shortened.nextOffset, result.nextOffset);
   assert.match(shortened.content, /Text shortened/);
+});
+
+test('later turns reuse explicitly named attachments and prefer their latest version', () => {
+  const old = { id: 'old', name: 'approved-brand.json' }, latest = { id: 'new', name: 'approved-brand.json' };
+  const zip = { id: 'kit', name: 'workflow-kit.zip' }, current = { id: 'note', name: 'brief.txt' };
+  assert.deepEqual(localTurnAttachments([current], [old, zip, latest], 'Use approved-brand.json to draft the campaign.'), [current, latest]);
+  assert.deepEqual(localTurnAttachments([], [old, zip, latest], 'Hello'), []);
+  assert.deepEqual(localTurnAttachments([old], [latest], 'Use approved-brand.json'), [old]);
+  assert.equal(localTurnAttachments([current, old, zip], [latest], 'Use approved-brand.json').length, 3);
 });

@@ -49,7 +49,7 @@ import { indexFolders, searchSpaces, accessibleSpaces, knowledgeTool, gitInfo, s
 import { KnowledgeWatcher } from "./knowledge-watcher";
 import { approvalTitle, plainSummary } from "./approval-summary";
 import { serveStaticApp, type StaticAppServer } from "./local-static-server";
-import { libraryTextResult, localChatHistory, prepareLocalInference, LOCAL_CONTEXT_SIZE, toolResult } from "./local-chat-history";
+import { libraryTextResult, localChatHistory, localTurnAttachments, prepareLocalInference, LOCAL_CONTEXT_SIZE, toolResult } from "./local-chat-history";
 import { requestLocalModel } from "./local-model-transport";
 import { normalizeLocalCommand } from "./local-command";
 import { DEFAULT_LOCAL_MODEL, LocalStore } from "./store";
@@ -1531,7 +1531,8 @@ export class PrivateLocalRuntime {
     const spaces = conversation.knowledgeMode === "off" ? [] : accessibleSpaces(state.spaces, agent.id, selectedIds);
     const knowledge = searchSpaces(spaces, lastUser);
     const lastUserMessage = [...conversation.messages].reverse().find((message) => message.role === "user");
-    const attachmentBlocks = await Promise.all((lastUserMessage?.attachments ?? []).slice(0, 3).map(async (attachment) => {
+    const turnAttachments = localTurnAttachments(lastUserMessage?.attachments ?? [], conversation.messages.flatMap(message => message.attachments ?? []), lastUser);
+    const attachmentBlocks = await Promise.all(turnAttachments.map(async (attachment) => {
       const item = state.library?.find((entry) => entry.id === attachment.id);
       if (!item) return `- ${attachment.name}: no longer available in the Local Library.`;
       try {
@@ -1576,7 +1577,7 @@ Commands must be non-interactive: pass the executable as command and arguments a
 Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_000)}`
       : "No workspace folder is selected. Do not call cli_* filesystem or command tools.";
     const imageContext = await localImageContext(ensureLoopback(state.settings.ollamaUrl), agent.model || state.settings.defaultModel,
-      (lastUserMessage?.attachments ?? []).flatMap((attachment) => { const item = state.library?.find((entry) => entry.id === attachment.id); return item && !(item.mimeType.startsWith("video/") && item.mediaAnalysis?.visualDescription) ? [item] : []; }),
+      turnAttachments.flatMap((attachment) => { const item = state.library?.find((entry) => entry.id === attachment.id); return item && !(item.mimeType.startsWith("video/") && item.mediaAnalysis?.visualDescription) ? [item] : []; }),
       lastUserMessage?.canvasAnnotations?.length ? (items) => renderCanvasImages(this.python, this.layout.path("artifacts", "canvas-previews"), items, lastUserMessage.canvasAnnotations!) : undefined);
     let system = [
       "You are an AI agent on the Agent Commons platform.",
@@ -1600,7 +1601,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       archiveFiles.length ? `Archive reference files: ${archiveFiles.length} extracted inputs in these directories:\n${archiveDirectories.join("\n")}\nThese are reference documents and supplied example outputs, not files you generated. Use list_session_files(query) to locate the matching instructions across the archive; search_library_item searches only one file's contents. Do not search an unrelated file for another document's filename. Read references through read_library_item; Python INPUT_FILES contains their archive-relative names and itemIds.` : "",
       generatedFiles.length ? `Generated outputs from this chat's executed tools (archive references are excluded). Read with read_library_item and reuse through run_python INPUT_FILES:\n${generatedFiles.join("\n")}` : "",
       availableAttachments.length ? `Files previously attached in this chat remain searchable with search_library_item and readable with read_library_item:\n${availableAttachments.join("\n")}` : "",
-      attachmentBlocks.length ? `## Files attached to the latest message\nThe files stay on this computer. Their text is below.\n\n${attachmentBlocks.join("\n\n")}` : "",
+      attachmentBlocks.length ? `## Current task attachments\nThese files are attached to this chat and supplied now or explicitly referenced in this request. They stay on this computer. Their text is below.\n\n${attachmentBlocks.join("\n\n")}` : "",
       knowledge.length
         ? `Local Knowledge passages (use the Knowledge tools for full documents):\n${knowledge.slice(0, 3).map((entry) => `\nSource: ${entry.source} (lines ${entry.lines}) in ${entry.space}${entry.heading ? ` · ${entry.heading}` : ""}\n${entry.excerpt.slice(0, 600)}`).join("\n")}`
         : "",
