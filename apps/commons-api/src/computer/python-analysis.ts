@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE } from '@agent-commons/agent-core';
+import { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE, PYTHON_FONT_PRELUDE } from '@agent-commons/agent-core';
 import { CLOUD_PYTHON_PLATFORM } from './python-platform';
 
 // Bootstrap runs in the agent's isolated CommonOS computer, never in the API
@@ -116,7 +116,7 @@ def save_publication(hashes):
 save_publication(baseline)
 script = run / 'analysis.py'
 code = script.read_text()
-script.write_text('from pathlib import Path\nINPUT_FILES = ' + repr(inputs) + '\nOUTPUT_DIR = Path(' + repr(str(output)) + ')\nWORKSPACE_ROOT = "/mnt/shared"\n' + code)
+script.write_text('from pathlib import Path\nINPUT_FILES = ' + repr(inputs) + '\nOUTPUT_DIR = Path(' + repr(str(output)) + ')\nWORKSPACE_ROOT = "/mnt/shared"\n' + ${JSON.stringify(PYTHON_FONT_PRELUDE)} + code)
 try:
     result = subprocess.run([str(python), '-I', str(script)], cwd=str(output), env={**env, "OUTPUT_DIR": str(output), "WORKSPACE_ROOT": "/mnt/shared"}, capture_output=True, text=True, timeout=config['timeoutSeconds'])
     files = []

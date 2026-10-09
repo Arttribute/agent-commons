@@ -12,3 +12,7 @@ test('does not count attachments or guidance-only references as generated output
   assert.deepEqual(requestedFileOutputs('Read report.csv and explain how to save report.csv.', ['report.csv']), []);
   assert.deepEqual(requestedFileOutputs('Inspect example.html and explain it.'), []);
 });
+
+test('a named source and later validation reads are excluded from a multi-file request', () => {
+  assert.deepEqual(requestedFileOutputs('Read the file named source.csv. Save summary.v2.json and plot.png, then read baseline.json for validation.'), ['summary.v2.json', 'plot.png']);
+});

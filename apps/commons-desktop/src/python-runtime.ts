@@ -3,7 +3,7 @@ import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync,
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE } from "@agent-commons/agent-core";
+import { PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE, PYTHON_FONT_PRELUDE } from "@agent-commons/agent-core";
 import { readOutputPublicationState, saveOutputPublicationState } from "./output-publication-state.ts";
 
 const exec = promisify(execFile);
@@ -168,7 +168,7 @@ export class PythonRuntime {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const script = join(directory, `analysis-${randomUUID()}.py`);
     const prelude = `from pathlib import Path\nINPUT_FILES = ${JSON.stringify(stagedInputs)}\nOUTPUT_DIR = Path(${JSON.stringify(output)})\nWORKSPACE_ROOT = ${JSON.stringify(workspace ?? "")}\n`;
-    writeFileSync(script, prelude + code, { mode: 0o600 });
+    writeFileSync(script, prelude + PYTHON_FONT_PRELUDE + code, { mode: 0o600 });
     try {
       const { stdout, stderr } = await exec(python, ["-I", script], { cwd: output, env: { ...this.environment(), OUTPUT_DIR: output, WORKSPACE_ROOT: workspace ?? "" }, signal, timeout: Math.max(1, Math.min(timeoutSeconds, 300)) * 1000, maxBuffer: 2_000_000, windowsHide: true });
       signal?.throwIfAborted();

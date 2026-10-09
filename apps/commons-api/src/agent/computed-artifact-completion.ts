@@ -1,4 +1,4 @@
-import { requiresComputedData } from '@agent-commons/agent-core';
+import { requiresComputedData, requestedFileOutputs } from '@agent-commons/agent-core';
 
 type ExecutedCall = { name: string; status: string; result: unknown };
 function unwrap(value: any): any {
@@ -17,12 +17,13 @@ function unwrap(value: any): any {
   return value ?? {};
 }
 
-/** Only enforce computed files explicitly requested as durable Library outputs.
+/** Enforce requested Library files and cloud computation outputs.
  * Read/list results and files from earlier runs are input evidence, not creation. */
 export function missingComputedArtifacts(
   request: string,
   inputNames: string[],
   calls: ExecutedCall[],
+  hasSelectedFolder = false,
 ): string[] {
   if (
     /^(?:explain|describe|how\b|tell me how|show me how)/i.test(
@@ -34,25 +35,14 @@ export function missingComputedArtifacts(
   )
     return [];
   if (
-    !requiresComputedData(request) ||
-    !/\b(?:library|artifacts?|downloads?|downloadable)\b/i.test(request)
+    !/\b(?:library|artifacts?|downloads?|downloadable)\b/i.test(request) &&
+    (hasSelectedFolder || !requiresComputedData(request))
   )
     return [];
-  const outputVerb = /\b(?:save|export|create|generate|write)\b/i.exec(request);
+  const outputVerb = /\b(?:save|export|create|generate|write|produce|draft)\b/i.exec(request);
   if (!outputVerb) return [];
   const outputText = request.slice(outputVerb.index);
-  const inputs = new Set(
-    inputNames.map((name) => name.split(/[\\/]/).at(-1)?.toLowerCase()),
-  );
-  const expected = [
-    ...new Set(
-      [
-        ...outputText.matchAll(
-          /\b[\w-][\w.-]*\.(?:json|csv|png|jpg|jpeg|svg|pdf|xlsx|html|md|txt|pkl|pt|onnx)\b/gi,
-        ),
-      ].map((match) => match[0].toLowerCase()),
-    ),
-  ].filter((name) => !inputs.has(name));
+  const expected = requestedFileOutputs(request, inputNames).map(name => name.toLowerCase());
   if (
     !expected.length &&
     !/\b(?:save|export)\b|\b(?:create|generate|write)\b.{0,100}\b(?:files?|outputs?|charts?|plots?|reports?)\b/i.test(

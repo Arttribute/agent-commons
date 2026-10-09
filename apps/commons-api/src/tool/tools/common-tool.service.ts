@@ -2623,7 +2623,10 @@ export class CommonToolService {
       const created = await this.files.createGeneratedFile({ buffer, fileName: file.name, mimeType: file.mimeType, agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId, metadata: { source: 'computed-python', toolCallId: metadata?.toolCallId } });
       artifacts.push({ fileId: created.fileId, name: created.name });
     }
-    return { exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, artifacts, workspace: output.outputDirectory ?? `/mnt/shared/${execution.directory}/outputs` };
+    const workspace = output.outputDirectory ?? `/mnt/shared/${execution.directory}/outputs`;
+    return { exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, artifacts, workspace,
+      ...(!artifacts.length ? { outputHint: `No newly generated Library files were found in this chat's managed output directory (${workspace}). Save requested files using the existing OUTPUT_DIR variable; do not replace it with a guessed path or a folder from another chat. Files saved elsewhere are working files and were not published.` } : {}),
+    };
   }
 
   async requestComputerResources(props: { agentId?: string; profile: 'standard' | 'performance' | 'gpu'; minutes?: number; reason: string }, metadata?: ToolExecutionMetadata) {
