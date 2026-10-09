@@ -61,9 +61,14 @@ async function verifyRuntime(runtimePath) {
     runtime.setTarget({ isDestroyed: () => false, send: (_channel, event) => {
       if (event.type === 'approval') queueMicrotask(() => runtime.resolveApproval(event.approval.id, true));
     } });
+    const templateText = '<!doctype html><title>Source template</title>\n' + '<p>Exact source template bytes.</p>\n'.repeat(1500);
+    const [template, foreign] = runtime.importLibraryFiles([
+      { name: 'source-template.html', mimeType: 'text/html', bytes: new TextEncoder().encode(templateText) },
+      { name: 'not-in-this-chat.txt', mimeType: 'text/plain', bytes: new TextEncoder().encode('Other Library file') },
+    ]);
     for (const model of models) {
       const agent = runtime.saveAgent({ name: 'Controlled tool recovery', model, instructions: 'Save requested files using the available Library tool.' }).agents.at(-1);
-      const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, prompt: 'Save report.md containing Schema repair verified. Return its actual saved Library output.' });
+      const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [template.id], prompt: 'Save report.md containing Schema repair verified. Return its actual saved Library output.' });
       if (serverError) throw serverError;
       const artifact = result.conversation.artifacts.find(a => a.name === 'report.md');
       assert.ok(artifact);
@@ -74,8 +79,21 @@ async function verifyRuntime(runtimePath) {
       assert.equal(writes[0].toolArgs.files, malformed, 'Stored failed arguments changed');
       assert.ok(!writes[1].content.startsWith('Error:'));
       assert.equal(requests.get(model).length, 3);
+      const copied = JSON.parse(await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'templates/copied.html' }, result.conversation.id));
+      assert.equal(copied.copiedFrom.itemId, template.id);
+      const copy = runtime.state().library.find(item => item.id === copied.artifacts[0].itemId);
+      assert.equal(readFileSync(copy.path, 'utf8'), templateText);
+      assert.equal(readFileSync(template.path, 'utf8'), templateText);
+      const forbidden = await runtime.executeDataTool('copy_library_file', { itemId: foreign.id, name: 'foreign.txt' }, result.conversation.id);
+      assert.match(forbidden, /^Error: Source file is not available/);
+      const escaped = await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: '../outside.html' }, result.conversation.id);
+      assert.match(escaped, /^Error: Use relative filenames/);
+      runtime.updateSettings({ permissionMode: 'read-only' });
+      const readOnly = await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'readonly.html' }, result.conversation.id);
+      assert.match(readOnly, /^Error: This chat is read only/);
+      runtime.updateSettings({ permissionMode: 'ask' });
     }
-    console.log(`Local malformed-write recovery passed on ${process.platform}-${process.arch}; original diagnostics and actual saved bytes verified.`);
+    console.log(`Local malformed-write recovery passed on ${process.platform}-${process.arch}; original diagnostics, saved bytes and scoped template copies verified.`);
   } finally {
     runtime?.close();
     server.closeAllConnections();
