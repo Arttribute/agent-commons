@@ -1538,6 +1538,7 @@ export class PrivateLocalRuntime {
       const item = state.library?.find((entry) => entry.id === attachment.id);
       if (!item) return `- ${attachment.name}: no longer available in the Local Library.`;
       try {
+        if (/\.zip$/i.test(item.name)) return `### ${item.name} (itemId: ${item.id})\nZIP container, not document text. Use extract_library_archive with this itemId, then read the actual member's returned itemId or exact archive-relative path. read_library_item on this ZIP returns only a filename inventory. Python INPUT_FILES also stages the original ZIP for zipfile inspection; keep extracted sources in WORK_DIR.`;
         const text = await readLibraryText(item);
         return `### ${item.name} (itemId: ${item.id})\n${text.slice(0, 2_000)}${text.length > 2_000 ? `\n[Showing 2,000 of ${text.length.toLocaleString()} characters. Use search_library_item to locate relevant passages, then read_library_item with a matching offset for context. Do not read a large document sequentially.]` : ""}`;
       } catch (error) {
