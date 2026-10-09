@@ -16,10 +16,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { KeyValueEditor } from "@/components/tools/key-value-editor";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TagsInput } from "@/components/ui/tags-input";
-import { Plus, Terminal, Wifi, Loader2 } from "lucide-react";
+import { Plus, Wifi, Loader2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface CreateMcpServerDialogProps {
@@ -33,12 +32,14 @@ export function CreateMcpServerDialog({
 }: CreateMcpServerDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [connectionType, setConnectionType] = useState<"stdio" | "sse">("stdio");
+  const [connectionType, setConnectionType] = useState<
+    "streamable-http" | "sse"
+  >("streamable-http");
 
   const [formData, setFormData] = useState<CreateMcpServerRequest>({
     name: "",
     description: "",
-    connectionType: "stdio",
+    connectionType: "streamable-http",
     connectionConfig: {},
     isPublic: false,
     tags: [],
@@ -63,12 +64,12 @@ export function CreateMcpServerDialog({
     setFormData({
       name: "",
       description: "",
-      connectionType: "stdio",
+      connectionType: "streamable-http",
       connectionConfig: {},
       isPublic: false,
       tags: [],
     });
-    setConnectionType("stdio");
+    setConnectionType("streamable-http");
   };
 
   const updateConfig = (updates: Record<string, any>) => {
@@ -95,7 +96,8 @@ export function CreateMcpServerDialog({
             <div className="bg-teal-200 w-48 h-6 -mb-6 rounded-lg"></div>
             <DialogTitle>Connect MCP Server</DialogTitle>
             <DialogDescription>
-              Configure a Model Context Protocol server to integrate external tools
+              Connect a remote MCP endpoint for Cloud tools. For a server on
+              this computer, use Local connection settings.
             </DialogDescription>
           </DialogHeader>
 
@@ -135,91 +137,70 @@ export function CreateMcpServerDialog({
                 <Label>Connection Type</Label>
                 <Tabs
                   value={connectionType}
-                  onValueChange={(v) => setConnectionType(v as "stdio" | "sse")}
+                  onValueChange={(value) => {
+                    setConnectionType(value as "streamable-http" | "sse");
+                    setFormData((current) => ({
+                      ...current,
+                      connectionConfig: {
+                        url: current.connectionConfig.url || "",
+                        apiKey: current.connectionConfig.apiKey || "",
+                      },
+                    }));
+                  }}
                   className="mt-2"
                 >
                   <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="stdio" className="gap-2">
-                      <Terminal className="h-4 w-4" />
-                      stdio
+                    <TabsTrigger value="streamable-http" className="gap-2">
+                      <Wifi className="h-4 w-4" />
+                      HTTP
                     </TabsTrigger>
                     <TabsTrigger value="sse" className="gap-2">
                       <Wifi className="h-4 w-4" />
                       SSE
                     </TabsTrigger>
                   </TabsList>
-
-                  <TabsContent value="stdio" className="space-y-4 mt-4">
-                    <div>
-                      <Label htmlFor="command">
-                        Command <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="command"
-                        value={formData.connectionConfig.command || ""}
-                        onChange={(e) =>
-                          updateConfig({ command: e.target.value })
-                        }
-                        placeholder="npx"
-                        required={connectionType === "stdio"}
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        The command to execute (e.g., &quot;npx&quot;, &quot;node&quot;, &quot;python&quot;)
-                      </p>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="args">Arguments</Label>
-                      <Textarea
-                        id="args"
-                        value={
-                          formData.connectionConfig.args?.join("\n") || ""
-                        }
-                        onChange={(e) =>
-                          updateConfig({
-                            args: e.target.value
-                              .split("\n")
-                              .filter((a) => a.trim()),
-                          })
-                        }
-                        placeholder={`-y\n@modelcontextprotocol/server-github`}
-                        className="h-[80px] font-mono text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        One argument per line
-                      </p>
-                    </div>
-
-                    <div>
-                      <Label>Environment Variables</Label>
-                      <KeyValueEditor
-                        value={formData.connectionConfig.env || {}}
-                        onChange={(env) => updateConfig({ env })}
-                        keyPlaceholder="VAR_NAME"
-                        valuePlaceholder="value"
-                      />
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="sse" className="space-y-4 mt-4">
-                    <div>
-                      <Label htmlFor="url">
-                        Server URL <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="url"
-                        type="url"
-                        value={formData.connectionConfig.url || ""}
-                        onChange={(e) => updateConfig({ url: e.target.value })}
-                        placeholder="http://localhost:3000/sse"
-                        required={connectionType === "sse"}
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        The SSE endpoint URL for the MCP server
-                      </p>
-                    </div>
-                  </TabsContent>
                 </Tabs>
+                <div className="space-y-4 mt-4">
+                  <div>
+                    <Label htmlFor="url">
+                      Server URL <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="url"
+                      type="url"
+                      required
+                      value={formData.connectionConfig.url || ""}
+                      onChange={(event) =>
+                        updateConfig({ url: event.target.value })
+                      }
+                      placeholder={
+                        connectionType === "sse"
+                          ? "https://your-server.example/sse"
+                          : "https://mcp.deepwiki.com/mcp"
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Use the endpoint supplied by your MCP provider. Cloud
+                      connections cannot start programs on your computer.
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="mcp-token">Access token (optional)</Label>
+                    <Input
+                      id="mcp-token"
+                      type="password"
+                      autoComplete="off"
+                      value={formData.connectionConfig.apiKey || ""}
+                      onChange={(event) =>
+                        updateConfig({ apiKey: event.target.value })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      For providers that supply a bearer token. Use the
+                      provider's Connect option when it supports sign-in.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Tags */}
