@@ -13,6 +13,7 @@ import {
   UpdateMcpServerDto,
   McpServerResponseDto,
 } from './dto/mcp.dto';
+import { requireCloudMcpTransport } from './mcp-cloud-transport';
 
 @Injectable()
 export class McpServerService {
@@ -285,17 +286,14 @@ export class McpServerService {
     connectionType: 'stdio' | 'sse' | 'http' | 'streamable-http',
     config: any,
   ): void {
-    if (connectionType === 'stdio') {
-      if (!config.command) {
-        throw new BadRequestException('stdio connection requires a "command" field');
-      }
-    } else if (connectionType === 'sse' || connectionType === 'http' || connectionType === 'streamable-http') {
+    requireCloudMcpTransport(connectionType);
+    if (connectionType === 'sse' || connectionType === 'http' || connectionType === 'streamable-http') {
       if (!config.url) {
         throw new BadRequestException(`${connectionType} connection requires a "url" field`);
       }
     } else {
       throw new BadRequestException(
-        `Unsupported connection type "${connectionType}". Use: stdio | sse | http | streamable-http`,
+        `Unsupported connection type "${connectionType}". Use: sse | http | streamable-http`,
       );
     }
   }
