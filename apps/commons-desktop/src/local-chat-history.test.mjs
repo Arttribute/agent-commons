@@ -168,3 +168,19 @@ test('published document bodies do not consume the next file generation budget',
   prepareLocalInference(failed);
   assert.equal(failed.at(-2).tool_calls[0].function.arguments.files[0].content, original.files[0].content);
 });
+
+test('a malformed failed write can recover under context pressure without claiming publication', () => {
+  const original = { files: '# Ad copy\n' + 'unsaved draft text '.repeat(400) };
+  const error = 'Error: Provide files with a name and text content.';
+  const messages = [{ role: 'system', content: 's'.repeat(9000) }, { role: 'user', content: 'Fix the draft from verified sources' },
+    { role: 'assistant', content: '', tool_calls: [{ function: { name: 'write_library_files', arguments: original } }] },
+    { role: 'tool', tool_name: 'write_library_files', content: error }];
+  assert.equal(prepareLocalInference(messages, 6000, 4), 2048);
+  assert.equal(messages[1].content, 'Fix the draft from verified sources');
+  assert.equal(messages.at(-1).content, error);
+  assert.equal(messages.at(-2).tool_calls[0].function.name, 'write_library_files');
+  const retained = messages.at(-2).tool_calls[0].function.arguments.files;
+  assert.match(retained, /This call did not save a file/);
+  assert.ok(original.files.length > 7000, 'Persistent diagnostic arguments were altered');
+  assert.ok(Buffer.byteLength(JSON.stringify(messages)) < 13456);
+});
