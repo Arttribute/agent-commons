@@ -152,3 +152,19 @@ test('later turns reuse explicitly named attachments and prefer their latest ver
   assert.deepEqual(localTurnAttachments([old], [latest], 'Use approved-brand.json'), [old]);
   assert.equal(localTurnAttachments([current, old, zip], [latest], 'Use approved-brand.json').length, 3);
 });
+
+test('published document bodies do not consume the next file generation budget', () => {
+  const original = { files: [{ name: 'ad-copy.md', content: 'real saved content '.repeat(1000) }] };
+  const messages = [{ role: 'system', content: 's'.repeat(5000) }, { role: 'user', content: 'Finish personas.md' },
+    { role: 'assistant', content: '', tool_calls: [{ function: { name: 'write_library_files', arguments: original } }] },
+    { role: 'tool', tool_name: 'write_library_files', content: JSON.stringify({ artifacts: [{ itemId: 'saved-731', name: 'ad-copy.md' }] }) }];
+  assert.equal(prepareLocalInference(messages, 6000), 4096);
+  assert.ok(original.files[0].content.length > 10000, 'Stored tool arguments must remain intact');
+  assert.match(messages.at(-2).tool_calls[0].function.arguments.files[0].content, /Saved file content omitted/);
+  assert.equal(JSON.parse(messages.at(-1).content).artifacts[0].itemId, 'saved-731');
+  const failed = [{ role: 'system', content: 'short' }, { role: 'user', content: 'Fix the file' },
+    { role: 'assistant', content: '', tool_calls: [{ function: { name: 'write_library_files', arguments: original } }] },
+    { role: 'tool', tool_name: 'write_library_files', content: 'Error: publication failed' }];
+  prepareLocalInference(failed);
+  assert.equal(failed.at(-2).tool_calls[0].function.arguments.files[0].content, original.files[0].content);
+});

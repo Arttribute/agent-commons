@@ -52,22 +52,21 @@ export function missingComputedArtifacts(
   )
     return [];
   const produced = new Set<string>();
+  const computed = requiresComputedData(request);
   for (const call of calls) {
     const data = unwrap(call.result);
     // Approval requests legitimately end a turn without activating resources.
     if (data.requiresConfirmation === true || data.requiresApproval === true)
       return [];
-    if (
-      call.status !== 'success' ||
-      !/^(?:runPythonAnalysis|create(?:Text|Document|Presentation|Pdf|Spreadsheet)File)$/.test(
-        call.name,
-      )
-    )
+    const dataFileCreation = /^(?:runPythonAnalysis|create(?:Text|Document|Presentation|Pdf|Spreadsheet)File)$/.test(call.name);
+    const mediaCreation = !computed && /^(?:generateImage|generateMedia)$/.test(call.name);
+    if (call.status !== 'success' || (!dataFileCreation && !mediaCreation))
       continue;
     if (call.name === 'runPythonAnalysis' && data.exitCode !== 0) continue;
-    for (const file of [
+    for (const file of Array.isArray(data) ? data : [
       ...(Array.isArray(data.artifacts) ? data.artifacts : []),
       ...(data.fileId ? [data] : []),
+      ...(data.artifact?.itemId ? [{ fileId: data.artifact.itemId, name: data.artifact.name }] : []),
     ]) {
       if (file.fileId && typeof file.name === 'string')
         produced.add(file.name.split(/[\\/]/).at(-1)!.toLowerCase());
