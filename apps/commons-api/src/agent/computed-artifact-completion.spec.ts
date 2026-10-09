@@ -1,4 +1,4 @@
-import { missingComputedArtifacts } from './computed-artifact-completion';
+import { missingComputedArtifacts, preferManagedArtifactTools } from './computed-artifact-completion';
 const request =
   'Fit regression using input.csv. Save regression.json and regression.png and return their Library links.';
 const python = (artifacts: unknown[]) => ({
@@ -11,6 +11,12 @@ const files = [
   { name: 'regression.png', fileId: 'new-plot' },
 ];
 describe('computed artifact completion', () => {
+  it('routes durable Library requests through publishing tools while preserving explicit terminal and selected-folder tasks', () => {
+    expect(preferManagedArtifactTools('Save campaign-tracker.html and campaign-data.js in the Library.')).toBe(true);
+    expect(preferManagedArtifactTools(request)).toBe(true);
+    for (const prompt of ['Explain regression.', 'Inspect the Library CSV with Python; do not export files yet.', 'Save report.md in the selected folder.', 'Build a Next.js app and save report.md in the Library.', 'Use runComputerCommand to save report.md in the Library.', 'Use the terminal to generate regression.png and return Library links.']) expect(preferManagedArtifactTools(prompt)).toBe(false);
+    expect(preferManagedArtifactTools('Save report.md in the Library.', true)).toBe(false);
+  });
   it('treats reused documents as inputs and accepts only real creative media publication', () => {
     const prompt = 'Save headline.png in the Library. Reload ad-copy.md and preserve brand-sheet.md.';
     const image = { name: 'generateImage', status: 'success', result: { toolData: [{ name: 'headline.png', fileId: 'fresh-image' }] } };

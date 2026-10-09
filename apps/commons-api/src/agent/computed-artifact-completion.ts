@@ -1,6 +1,15 @@
 import { affirmativeOutputRequest, requiresComputedData, requestedFileOutputs } from '@agent-commons/agent-core';
 
 type ExecutedCall = { name: string; status: string; result: unknown };
+
+/** Library-only work should use publishing tools, rather than silently leaving
+ * requested artifacts in a computer folder. Explicit terminal and folder work
+ * retains the user's command tools. */
+export function preferManagedArtifactTools(request: string, hasSelectedFolder = false): boolean {
+  if (hasSelectedFolder || /\b(?:shell|terminal|runComputerCommand|writeComputerFiles|npm|npx|pnpm|yarn|node(?:\.js)?|docker|git|ffmpeg|bash|zsh|next(?:\.js|js)|react)\b/i.test(request)) return false;
+  return missingComputedArtifacts(request, [], []).length > 0;
+}
+
 function unwrap(value: any): any {
   for (let depth = 0; depth < 5; depth++) {
     if (typeof value === 'string') {

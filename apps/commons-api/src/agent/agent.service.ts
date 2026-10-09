@@ -1,4 +1,4 @@
-import { missingComputedArtifacts } from './computed-artifact-completion';
+import { missingComputedArtifacts, preferManagedArtifactTools } from './computed-artifact-completion';
 import * as schema from '#/models/schema';
 import { MEDIA_MODEL_REGISTRY } from "~/media/media-model.registry";
 import { TRANSCRIPTION_MODELS } from "~/audio/audio-models";
@@ -1719,8 +1719,12 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           const requestText = typeof latestUserMessage?.content === 'string'
             ? latestUserMessage.content.slice(0, 4_000)
             : '';
+          const managedArtifactTask = toolDefs.some((entry) => entry.function.name === 'runPythonAnalysis')
+            && preferManagedArtifactTools(requestText, Boolean(props.cliContext));
           const selectedTools = selectModelTools(
-            toolDefs.filter((entry) => (knowledgeMode !== "off" || !/Knowledge/.test(entry.function.name)) && (!requiresComputedData(requestText) || !["generateImage", "generateMedia"].includes(entry.function.name))),
+            toolDefs.filter((entry) => (knowledgeMode !== "off" || !/Knowledge/.test(entry.function.name))
+              && (!requiresComputedData(requestText) || !["generateImage", "generateMedia"].includes(entry.function.name))
+              && (!managedArtifactTask || !['runComputerCommand', 'writeComputerFiles'].includes(entry.function.name))),
             cliToolSchemas,
             requestText,
             effectiveModel.provider === 'hosted-free' ? HOSTED_FREE_MAX_TOOLS : undefined,
@@ -2195,7 +2199,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 artifactRepairAttempts++;
                 artifactRepairPending = true;
                 emitStatus('outputs', 'running', 'Completing requested files', `Missing verified outputs: ${missing.join(', ')}`);
-                return { messages: [reply, { role: 'system', content: `The current request is not complete. Missing verified Library outputs from this run: ${missing.join(', ')}. Prior workspace files, supplied examples, file reads and an import-only Python call are not new outputs for this task. Execute the requested calculation using the attached input file IDs and save its actual results in OUTPUT_DIR with runPythonAnalysis; use document tools for requested report formats. Return only verified new file IDs or links. Do not reuse outputs from another chat as if you generated them now.` }] as any };
+                return { messages: [reply, { role: 'system', content: `The current request is not complete. Missing verified Library outputs from this run: ${missing.join(', ')}. Files written only on the computer have not been published to the Library. Use runPythonAnalysis to create or assemble the requested files in OUTPUT_DIR; it automatically publishes its generated outputs. Working drafts from this session may be reused as source inputs. ${requiresComputedData(this.contentToText(latestUserMessage?.content)) ? 'Execute the requested calculation against the real attached input file IDs and save its actual results.' : 'For document or template work, read the actual source and save the assembled documents; no unrelated calculation is needed.'} Document tools are also available for their supported report formats. Return verified new file IDs or links. Supplied examples and files from another chat are reference inputs, not outputs you created for this request.` }] as any };
               }
             }
             return { messages: reply };
