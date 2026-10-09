@@ -105,9 +105,9 @@ function requestedFileOutputs(prompt, inputNames = []) {
   for (const match of prompt.matchAll(/\b([\w-][\w.-]*\.(?:md|txt|html|json|csv|png|jpg|jpeg|js|css|svg|pdf|docx|pptx|xlsx|pkl|pt|onnx))\b/gi)) {
     const filename = match[1];
     const prefix = prompt.slice(0, match.index);
-    const actions = [...prefix.matchAll(/\b(save|write|draft|create|produce|generate|export|read|inspect|use|open|load)\b/gi)];
+    const actions = [...prefix.matchAll(/\b(save|write|draft|create|produce|generate|export|read|inspect|use|using|open|load|reload|reuse|retain|preserve)\b/gi)];
     const action = actions.at(-1)?.[1].toLowerCase();
-    if (action && !['read', 'inspect', 'use', 'open', 'load'].includes(action) && !inputs.has(filename.toLowerCase())) names.add(filename);
+    if (action && !['read', 'inspect', 'use', 'using', 'open', 'load', 'reload', 'reuse', 'retain', 'preserve'].includes(action) && !inputs.has(filename.toLowerCase())) names.add(filename);
   }
   return [...names];
 }

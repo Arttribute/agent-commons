@@ -1676,6 +1676,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
 
     let executionRepairAttempted = false;
     let outputRepairAttempted = false;
+    let emptyResponseRepairAttempted = false;
     let skillRepairAttempted = false;
     const initialOutputIds = new Set((conversation.artifacts ?? []).map((file) => file.id));
     const missingOutputs = () => {
@@ -1852,7 +1853,15 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             continue;
           }
           if (computedEvidenceMissing && /\b(?:successfully|created|generated|saved|completed|finished|done)\b/i.test(message.content ?? "")) throw new Error("The model claimed completion without successful code execution. Its tool results are saved; continue from the reported error.");
-          if (!message.content?.trim()) throw new Error("The local model returned no answer. Tool results are saved; send a follow-up to continue or select another local model.");
+          if (!message.content?.trim()) {
+            if (needsLibraryOutput && !missingOutputs().length && !computedEvidenceMissing) return `Saved to the Local Library: ${outputNames.join(", ")}.`;
+            if (!emptyResponseRepairAttempted) {
+              emptyResponseRepairAttempted = true;
+              messages.push({ role: "system", content: `Your response was empty. Continue the request from the saved tool evidence. ${missingOutputs().length ? `Next missing output: ${missingOutputs()[0]}. Use the appropriate tool to create it, then finish the remaining outputs.` : "Return a brief answer grounded in the actual tool results; do not invent completion."}` });
+              continue;
+            }
+            throw new Error("The local model returned no answer. Tool results are saved; send a follow-up to continue or select another local model.");
+          }
           return message.content.trim();
         }
         if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });

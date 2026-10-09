@@ -11,6 +11,14 @@ const files = [
   { name: 'regression.png', fileId: 'new-plot' },
 ];
 describe('computed artifact completion', () => {
+  it('treats reused documents as inputs and accepts only real creative media publication', () => {
+    const prompt = 'Save headline.png in the Library. Reload ad-copy.md and preserve brand-sheet.md.';
+    const image = { name: 'generateImage', status: 'success', result: { toolData: [{ name: 'headline.png', fileId: 'fresh-image' }] } };
+    expect(missingComputedArtifacts(prompt, [], [image])).toEqual([]);
+    expect(missingComputedArtifacts(prompt, [], [{ ...image, status: 'error' }])).toEqual(['headline.png']);
+    expect(missingComputedArtifacts(prompt, [], [{ name: 'generateMedia', status: 'success', result: { artifact: { itemId: 'fresh-image', name: 'headline.png' } } }])).toEqual([]);
+    expect(missingComputedArtifacts(request, ['input.csv'], [{ ...image, result: { toolData: files } }])).toEqual(['regression.json', 'regression.png']);
+  });
   it('rejects import-only execution and reading matching files from another chat as output creation', () => {
     expect(
       missingComputedArtifacts(

@@ -119,6 +119,7 @@ export function prepareLocalInference(messages: OllamaMessage[], schemaCharacter
   for (const outputTokens of [4096, 3072, 2048]) {
     try {
       const candidate = structuredClone(messages);
+      compactSavedWriteCalls(candidate);
       compactToolLoop(candidate, localPromptCharacterBudget(outputTokens, schemaCharacters, imageCount), true);
       messages.splice(0, messages.length, ...candidate);
       return outputTokens;
@@ -129,11 +130,39 @@ export function prepareLocalInference(messages: OllamaMessage[], schemaCharacter
   // explicitly so the model can request a smaller range using the same ID.
   try {
     const candidate = structuredClone(messages);
+    compactSavedWriteCalls(candidate);
     compactToolLoop(candidate, localPromptCharacterBudget(2048, schemaCharacters, imageCount));
     messages.splice(0, messages.length, ...candidate);
     return 2048;
   } catch (error) { lastError = error; }
   throw lastError;
+}
+
+function compactSavedWriteCalls(messages: OllamaMessage[]) {
+  for (let index = 0; index < messages.length; index++) {
+    const calls = messages[index].tool_calls;
+    if (!calls?.length) continue;
+    const results = [];
+    for (let next = index + 1; messages[next]?.role === "tool"; next++) results.push(messages[next]);
+    for (const call of calls) {
+      if (call.function.name !== "write_library_files") continue;
+      const result = results.find(message => message.tool_name === "write_library_files");
+      if (!result || result.content.startsWith("Error:")) continue;
+      try {
+        const data = JSON.parse(result.content);
+        if (!data.artifacts?.length || !data.artifacts.every((file: { itemId?: string }) => file.itemId)) continue;
+        const args = call.function.arguments;
+        if (!args || typeof args !== "object" || Array.isArray(args)) continue;
+        const files = (args as Record<string, unknown>).files;
+        if (!Array.isArray(files)) continue;
+        for (const file of files) {
+          if (typeof file.content === "string" && file.content.length > 600) {
+            file.content = `${file.content.slice(0, 200)}\n[Saved file content omitted from history. Read the actual file with read_library_item using its itemId from the tool result.]\n${file.content.slice(-200)}`;
+          }
+        }
+      } catch { /* Failed or incomplete publication is retained unchanged. */ }
+    }
+  }
 }
 
 export function compactToolLoop(messages: OllamaMessage[], maxCharacters = 32_000, preserveLatestResult = false) {

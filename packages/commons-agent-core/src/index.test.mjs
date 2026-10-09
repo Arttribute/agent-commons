@@ -48,4 +48,5 @@ test('output intent honors negated clauses without losing affirmative work', () 
   assert.deepEqual(requestedFileOutputs("Don't create first.png, but generate second.png."), ['second.png']);
   assert.deepEqual(requestedFileOutputs('Generate chart.png without exporting raw.csv.'), ['chart.png']);
   assert.deepEqual(requestedFileOutputs('Never create report.pdf or export source.csv.'), []);
+  assert.deepEqual(requestedFileOutputs('Save headline.png. Reload ad-copy.md, preserve brand-sheet.md, then write campaign-data.js.'), ['headline.png', 'campaign-data.js']);
 });
