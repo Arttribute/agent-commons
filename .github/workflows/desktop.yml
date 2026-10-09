@@ -69,6 +69,9 @@ jobs:
       - run: pnpm --filter @agent-commons/cli typecheck
       - run: pnpm --filter commons-desktop typecheck
       - run: pnpm --filter commons-desktop test
+      - name: Verify Local recovery from malformed model tool arguments
+        timeout-minutes: 3
+        run: node apps/commons-desktop/scripts/tool-repair-reliability.mjs
       - name: Configure Linux Electron sandbox for recording checks
         if: runner.os == 'Linux'
         working-directory: apps/commons-desktop
