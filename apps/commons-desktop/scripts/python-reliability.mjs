@@ -70,6 +70,24 @@ assert Path(INPUT_FILES['draft.md']).read_text() == 'Supplied example'
   const third = await runtime.run("assert Path.cwd().samefile(OUTPUT_DIR)\nassert (OUTPUT_DIR / 'draft.md').read_text() == 'Approved draft v2'\nprint('Persistent working files verified')", join(directory, 'step-3'), {}, undefined, 120, [], undefined, workingOutput);
   assert.equal(third.exitCode, 0, third.stderr);
   assert.equal(third.files.length, 0);
+  const archive = await runtime.run(`import zipfile, os
+assert not WORK_DIR.is_relative_to(OUTPUT_DIR)
+assert os.environ['WORK_DIR'] == str(WORK_DIR)
+with zipfile.ZipFile(WORK_DIR / 'sources.zip', 'w') as z:
+    for n in range(147): z.writestr('sources/ref-' + str(n) + '.txt', 'source ' + str(n))
+with zipfile.ZipFile(WORK_DIR / 'sources.zip') as z: z.extractall(WORK_DIR)
+assert len(list((WORK_DIR / 'sources').iterdir())) == 147
+(OUTPUT_DIR / 'archive-report.txt').write_text((WORK_DIR / 'sources/ref-146.txt').read_text())`, join(directory, 'step-archive'), {}, undefined, 120, [], undefined, workingOutput);
+  assert.equal(archive.exitCode, 0, archive.stderr);
+  assert.equal(archive.files.length, 1, 'Source archive members leaked into publishable outputs');
+  assert.equal(readFileSync(archive.files[0], 'utf8'), 'source 146');
+  const archiveNext = await runtime.run(`assert (WORK_DIR / 'sources/ref-146.txt').read_text() == 'source 146'
+(OUTPUT_DIR / 'archive-report-2.txt').write_text('Sources persist across calls')`, join(directory, 'step-archive-next'), {}, undefined, 120, [], undefined, workingOutput);
+  assert.equal(archiveNext.exitCode, 0, archiveNext.stderr);
+  assert.equal(archiveNext.files.length, 1);
+  const separateChat = await runtime.run("assert not (WORK_DIR / 'sources.zip').exists()", join(directory, 'separate-chat'), {});
+  assert.equal(separateChat.exitCode, 0, separateChat.stderr);
+  assert.equal(separateChat.files.length, 0);
   const failed = await runtime.run("(OUTPUT_DIR / 'pending.md').write_text('Recover this draft')\nraise RuntimeError('Later step failed')", join(directory, 'step-failed'), {}, undefined, 120, [], undefined, workingOutput);
   assert.notEqual(failed.exitCode, 0);
   assert.equal(failed.files.length, 0);
