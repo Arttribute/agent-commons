@@ -90,6 +90,20 @@ export function localChatHistory(history: LocalMessage[]): OllamaMessage[] {
   return retained.flat();
 }
 
+/** Carry explicitly referenced earlier attachments into a later task turn. */
+export function localTurnAttachments<T extends { id: string; name: string }>(current: T[], earlier: T[], request: string): T[] {
+  const selected = current.slice(0, 3);
+  const ids = new Set(selected.map(file => file.id));
+  const names = new Set(selected.map(file => file.name.toLowerCase()));
+  const text = request.toLowerCase();
+  for (const file of [...earlier].reverse()) {
+    if (selected.length >= 3) break;
+    if (ids.has(file.id) || names.has(file.name.toLowerCase()) || !text.includes(file.name.toLowerCase())) continue;
+    selected.push(file); ids.add(file.id); names.add(file.name.toLowerCase());
+  }
+  return selected;
+}
+
 export function localPromptCharacterBudget(outputTokens: number, schemaCharacters = 0, imageCount = 0) {
   // Include schemas and image embeddings in addition to chat text, and reserve
   // the requested output. JSON/UUID/code text commonly uses fewer than three
@@ -110,6 +124,15 @@ export function prepareLocalInference(messages: OllamaMessage[], schemaCharacter
       return outputTokens;
     } catch (error) { lastError = error; }
   }
+  // A large newest source excerpt may itself exceed the remaining budget.
+  // Keep its exact call/result group and JSON metadata, but shorten its text
+  // explicitly so the model can request a smaller range using the same ID.
+  try {
+    const candidate = structuredClone(messages);
+    compactToolLoop(candidate, localPromptCharacterBudget(2048, schemaCharacters, imageCount));
+    messages.splice(0, messages.length, ...candidate);
+    return 2048;
+  } catch (error) { lastError = error; }
   throw lastError;
 }
 

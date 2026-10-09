@@ -14,6 +14,7 @@ export declare function buildAgentIdentityPrompt(agent: { id: string; name?: str
 export declare const DATA_EXECUTION_CONTRACT: string;
 export declare function requiresComputedData(text: string): boolean;
 export declare function requestedFileOutputs(prompt: string, inputNames?: string[]): string[];
+export declare function affirmativeOutputRequest(prompt: string): string;
 export declare const PYTHON_DATA_PACKAGES: string[];
 export declare const PYTHON_FONT_PRELUDE: string;
 export declare const PYTHON_PACKAGE_SELECTION_CODE: string;

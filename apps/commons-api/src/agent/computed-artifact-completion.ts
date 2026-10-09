@@ -1,4 +1,4 @@
-import { requiresComputedData, requestedFileOutputs } from '@agent-commons/agent-core';
+import { affirmativeOutputRequest, requiresComputedData, requestedFileOutputs } from '@agent-commons/agent-core';
 
 type ExecutedCall = { name: string; status: string; result: unknown };
 function unwrap(value: any): any {
@@ -25,6 +25,7 @@ export function missingComputedArtifacts(
   calls: ExecutedCall[],
   hasSelectedFolder = false,
 ): string[] {
+  request = affirmativeOutputRequest(request);
   if (
     /^(?:explain|describe|how\b|tell me how|show me how)/i.test(
       request.trim(),
