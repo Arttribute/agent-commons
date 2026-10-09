@@ -63,6 +63,9 @@ with (resources / '.prepare.lock').open('w') as lock:
 inputs = {}
 output = root / config['workingDirectory'] if config.get('workingDirectory') else run / 'outputs'
 output.mkdir(parents=True, exist_ok=True)
+work = output.parent / (output.name + '.work')
+work.mkdir(parents=True, exist_ok=True)
+if work.is_symlink(): raise RuntimeError('Python working folder contains a symbolic link')
 execution_lock = (output.parent / (output.name + '.run.lock')).open('w')
 fcntl.flock(execution_lock, fcntl.LOCK_EX)
 input_paths = set()
@@ -116,9 +119,9 @@ def save_publication(hashes):
 save_publication(baseline)
 script = run / 'analysis.py'
 code = script.read_text()
-script.write_text('from pathlib import Path\nINPUT_FILES = ' + repr(inputs) + '\nOUTPUT_DIR = Path(' + repr(str(output)) + ')\nWORKSPACE_ROOT = "/mnt/shared"\n' + ${JSON.stringify(PYTHON_FONT_PRELUDE)} + code)
+script.write_text('from pathlib import Path\nINPUT_FILES = ' + repr(inputs) + '\nOUTPUT_DIR = Path(' + repr(str(output)) + ')\nWORK_DIR = Path(' + repr(str(work)) + ')\nWORKSPACE_ROOT = "/mnt/shared"\n' + ${JSON.stringify(PYTHON_FONT_PRELUDE)} + code)
 try:
-    result = subprocess.run([str(python), '-I', str(script)], cwd=str(output), env={**env, "OUTPUT_DIR": str(output), "WORKSPACE_ROOT": "/mnt/shared"}, capture_output=True, text=True, timeout=config['timeoutSeconds'])
+    result = subprocess.run([str(python), '-I', str(script)], cwd=str(output), env={**env, "OUTPUT_DIR": str(output), "WORK_DIR": str(work), "WORKSPACE_ROOT": "/mnt/shared"}, capture_output=True, text=True, timeout=config['timeoutSeconds'])
     files = []
     visited = 0
     total_bytes = 0
@@ -158,7 +161,7 @@ try:
                 size = path.stat().st_size
                 total_bytes += size
                 if size > 10 * 1024 * 1024 or total_bytes > 25 * 1024 * 1024: raise RuntimeError('Python outputs exceed the size limit')
-                if len(files) >= 100: raise RuntimeError('Python produced more than 100 output files')
+                if len(files) >= 100: raise RuntimeError('Python produced more than 100 output files. Keep extracted sources and intermediate files in WORK_DIR; save only requested deliverables in OUTPUT_DIR.')
                 files.append(export_file(path, str(path.relative_to(output))))
     if result.returncode == 0: collect(output)
     for path in input_paths if result.returncode == 0 else []:

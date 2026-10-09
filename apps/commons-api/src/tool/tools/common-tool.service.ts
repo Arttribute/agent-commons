@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { posix } from 'node:path';
 import {
   BadRequestException,
   forwardRef,
@@ -857,7 +858,7 @@ export interface CommonTool {
   /** Restore the computer's previous CPU/RAM/GPU when the accelerated task finishes. This chat cannot release another chat's resource lease. */
   releaseComputerResources(props: { agentId?: string }): Promise<any>;
 
-  /** Execute Python analysis, computed plots or ML in the agent's isolated computer with managed pandas, numpy, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow. Start the agent computer first. INPUT_FILES maps input Library names and IDs to readable paths. OUTPUT_DIR is a stable pathlib.Path scoped to this chat and owner; working files persist across calls, while Python variables do not. Save charts and reports there to return immutable Library artifacts. ZIP inputs can be inspected and extracted with Python zipfile. */
+  /** Execute Python analysis, computed plots or ML in the agent's isolated computer with managed pandas, numpy, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow. Start the agent computer first. INPUT_FILES maps input Library names and IDs to readable paths. OUTPUT_DIR is a stable pathlib.Path scoped to this chat and owner for requested deliverables. WORK_DIR is a separate persistent pathlib.Path for extracted sources and intermediate files; its contents are not published. Files persist across calls, while Python variables do not. Save charts and reports there to return immutable Library artifacts. ZIP inputs can be inspected and extracted with Python zipfile. */
   runPythonAnalysis(props: { agentId?: string; sessionId?: string; code: string; inputItemIds?: string[]; timeoutSeconds?: number; packages?: string[] }): Promise<any>;
 
   /**
@@ -2600,6 +2601,7 @@ export class CommonToolService {
     if (output.exitCode !== 0) throw new BadRequestException(`Python failed (${output.exitCode}): ${output.stderr.slice(0, 16000)}\n${output.stdout.slice(0, 16000)}`);
     const artifacts = [];
     if (output.files.length > 100) throw new BadRequestException('Python produced too many outputs.');
+    if (output.files.some((file) => typeof file.name !== 'string' || /[\\\0]/.test(file.name) || /^[a-z]:/i.test(file.name) || posix.isAbsolute(file.name) || file.name.split('/').some((part) => !part || part === '.' || part === '..'))) throw new BadRequestException('Invalid Python output filename. Use portable relative paths within OUTPUT_DIR.');
     for (const file of output.files) {
       let buffer: Buffer;
       if (file.chunks) {
@@ -2620,8 +2622,8 @@ export class CommonToolService {
         buffer = Buffer.from(file.base64, 'base64');
       }
       if (buffer.length > 10 * 1024 * 1024) throw new BadRequestException('Python output exceeds 10 MB.');
-      const created = await this.files.createGeneratedFile({ buffer, fileName: file.name, mimeType: file.mimeType, agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId, metadata: { source: 'computed-python', toolCallId: metadata?.toolCallId } });
-      artifacts.push({ fileId: created.fileId, name: created.name });
+      const created = await this.files.createGeneratedFile({ buffer, fileName: posix.basename(file.name), mimeType: file.mimeType, agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId, metadata: { source: 'computed-python', toolCallId: metadata?.toolCallId, relativePath: file.name } });
+      artifacts.push({ fileId: created.fileId, name: created.name, relativePath: file.name });
     }
     const workspace = output.outputDirectory ?? `/mnt/shared/${execution.directory}/outputs`;
     return { exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, artifacts, workspace,

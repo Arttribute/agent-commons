@@ -40,7 +40,23 @@ describe('computed Python output boundary', () => {
     expect(service.files.createDownloadUrl).toHaveBeenCalledWith('input', expect.objectContaining({ agentId: 'agent', sessionId: 'session', ownerId: 'owner' }));
     expect(service.computers.runCommand).toHaveBeenCalledWith(expect.objectContaining({ command: expect.stringMatching(/^python3 \/mnt\/shared\/\.commons-python\/runs\//) }));
     expect(service.files.createGeneratedFile).toHaveBeenCalledWith(expect.objectContaining({ buffer: Buffer.from('{"T1":64}'), agentId: 'agent', sessionId: 'session' }));
-    expect(result.artifacts).toEqual([{ fileId: 'computed', name: 'means.json' }]);
+    expect(result.artifacts).toEqual([{ fileId: 'computed', name: 'means.json', relativePath: 'means.json' }]);
+  });
+  it('keeps nested output paths with their bytes and gives Library files readable basenames', async () => {
+    const service = setup();
+    service.computers.readFile.mockResolvedValueOnce({ content: JSON.stringify({ exitCode: 0, stdout: '', stderr: '', files: [{ name: 'ads/headline.png', mimeType: 'image/png', base64: Buffer.from('image bytes').toString('base64') }] }) });
+    service.files.createGeneratedFile.mockResolvedValue({ fileId: 'nested-image', name: 'headline.png' });
+    const result = await service.runPythonAnalysis({ code: 'print(1)' }, { agentId: 'agent', sessionId: 'session' });
+    expect(service.files.createGeneratedFile).toHaveBeenCalledWith(expect.objectContaining({ buffer: Buffer.from('image bytes'), fileName: 'headline.png', metadata: expect.objectContaining({ relativePath: 'ads/headline.png' }) }));
+    expect(result.artifacts).toEqual([{ fileId: 'nested-image', name: 'headline.png', relativePath: 'ads/headline.png' }]);
+  });
+  it('rejects unsafe relative metadata paths before publishing any file', async () => {
+    for (const name of ['../escape.txt', '/escape.txt', 'folder/../escape.txt', 'folder\\escape.txt', 'C:/escape.txt']) {
+      const service = setup();
+      service.computers.readFile.mockResolvedValueOnce({ content: JSON.stringify({ exitCode: 0, stdout: '', stderr: '', files: [{ name: 'valid.txt', base64: 'dmFsaWQ=' }, { name, base64: 'ZXNjYXBl' }] }) });
+      await expect(service.runPythonAnalysis({ code: 'print(1)' }, { agentId: 'agent', sessionId: 'session' })).rejects.toThrow('Invalid Python output filename');
+      expect(service.files.createGeneratedFile).not.toHaveBeenCalled();
+    }
   });
   it('retrieves bounded output payloads and checks the complete file hash before publication', async () => {
     const service = setup();
