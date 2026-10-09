@@ -150,10 +150,10 @@ export const LOCAL_TOOLS = [
     query: { type: "string" },
   }, ["query"]),
   functionTool("list_session_files", "Find attached, project, generated, and extracted files in this chat. Returns exact itemIds for read_library_item. Filter by filename or archive path; supports pagination.", { query: { type: "string" }, offset: { type: "number" } }),
-  functionTool("read_library_item", "Read an attached, project, generated or extracted file. itemId accepts its exact Library ID or its exact filename/archive-relative path. A short filename is accepted only when unambiguous. Use list_session_files to locate names. PDFs and Office documents are extracted to text. Within this turn, an omitted offset reads the next unread chunk; an explicit offset reads that exact position. nextOffset=null means the end.", {
+  functionTool("read_library_item", "Read an attached, project, generated or extracted file. itemId accepts its exact Library ID or its exact filename/archive-relative path. A short filename is accepted only when unambiguous. Use list_session_files to locate names. ZIP reads return a filename inventory, never member contents; extract the ZIP and read a returned member itemId. PDFs and Office documents are extracted to text. Within this turn, an omitted offset reads the next unread chunk; an explicit offset reads that exact position. nextOffset=null means the end.", {
     itemId: { type: "string", description: "Exact session filename or archive-relative path, or exact itemId returned by list_session_files. Never invent a UUID." }, offset: { type: "number" },
   }, ["itemId"]),
-  functionTool("search_library_item", "Find relevant passages and character offsets inside a file attached to this chat or included in this project. Use this before reading a large file page by page.", {
+  functionTool("search_library_item", "Find relevant passages and character offsets inside a file attached to this chat or included in this project. Use this before reading a large file page by page. On a ZIP, this searches member filenames only and returns member IDs after extraction, not passage offsets.", {
     itemId: { type: "string" }, query: { type: "string", description: "Words or phrase to find in the file" },
   }, ["itemId", "query"]),
   functionTool("generate_image", "Generate a 512×512 image on this computer. The image model downloads automatically on first use and the result appears in this chat's artifacts and Local Library.", {
@@ -2090,9 +2090,23 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         : `Error: that file is not attached to this chat or included in its project. ${workspace ? `This chat also has a selected folder: ${workspace}. For documents in that folder, use cli_read_file with the file path relative to this root; use cli_list_directory if you need the exact path. ` : ""}For Library attachments, use list_session_files(query) to find the exact filename or itemId.`;
       else {
         try {
-          if (name === "search_library_item") {
-            const item = state.library?.find((entry) => entry.id === itemId);
-            if (!item) throw new Error("The file is no longer in the Local Library.");
+          const item = state.library?.find((entry) => entry.id === itemId);
+          if (!item) throw new Error("The file is no longer in the Local Library.");
+          if (/\.zip$/i.test(item.name)) {
+            const extracted = (state.library ?? []).filter((file) => file.sourceArchiveId === itemId && scopedIds.has(file.id));
+            const entries = extracted.length
+              ? extracted.map((file) => ({ path: file.name, itemId: file.id }))
+              : (await readArchive(item.path)).files.filter((file) => !file.path.endsWith("/")).map((file) => ({ path: file.path }));
+            const normalize = (value: string) => value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ");
+            const query = name === "search_library_item" ? normalize(String(args.query ?? "")).trim().split(/\s+/).filter(Boolean) : [];
+            const matches = entries.filter((file) => query.every((word) => normalize(file.path).includes(word)));
+            result = JSON.stringify({ itemId, name: item.name, mimeType: item.mimeType, readMode: "archive_inventory", memberContentsReturned: false, extracted: extracted.length > 0, totalMembers: entries.length, matchingMembers: matches.length,
+              files: [...matches].sort((a, b) => a.path.split("/").length - b.path.split("/").length || a.path.localeCompare(b.path)).slice(0, 10),
+              hint: extracted.length
+                ? "These are filenames and source itemIds only, not the contents of the documents inside this ZIP. Read the requested member with read_library_item using its returned itemId or exact archive-relative path. Search a member's actual contents using its itemId. list_session_files locates additional extracted members. Archive entries are reference inputs, not generated outputs."
+                : "This ZIP inventory lists filenames only; it does not contain the documents' contents. Use extract_library_archive with this archive itemId first, then read the requested member's returned itemId or exact archive-relative path. Do not read the ZIP inventory at character offsets as if it were a member document.",
+            });
+          } else if (name === "search_library_item") {
             const text = await readLibraryText(item);
             const search = searchTextPassages(text, item.name, String(args.query ?? ""), "Use read_library_item with this itemId and a matching offset for more context.");
             result = JSON.stringify({ itemId, ...search, ...(!search.matches.length ? { hint: "No matching passages were found in this file. Choose a different query or another relevant source document; do not repeat this empty search. list_session_files(query) locates filenames and archive paths; search_library_item searches only the chosen file's contents." } : {}) });

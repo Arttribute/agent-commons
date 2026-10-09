@@ -66,9 +66,10 @@ async function verifyRuntime(runtimePath) {
       { name: 'source-template.html', mimeType: 'text/html', bytes: new TextEncoder().encode(templateText) },
       { name: 'not-in-this-chat.txt', mimeType: 'text/plain', bytes: new TextEncoder().encode('Other Library file') },
     ]);
+    const [archive] = runtime.importLibraryFiles([{ name: 'sources.zip', mimeType: 'application/zip', bytes: new Uint8Array(Buffer.from('UEsDBBQAAAAIAAi3SV3Vvl/PMQAAAC8AAAARAAAAa2l0L1NUQVJUIEhFUkUubWRzy8xJVUjKT8lMLVbIySxLVchILUrVUwhKTUxRKMnILFZITC4pTcxRKM4vLUpO1QMAUEsDBBQAAAAIAAi3SV1fcMvZLQAAAC8AAAAWAAAAa2l0L3RlbXBsYXRlL3ZpZXcuaHRtbLNRTMlPLqksSFXIKMnNsbMpySzJSbULLi0oyMlMTVEoSc0tyEksSbXRh0gAAFBLAQIUAxQAAAAIAAi3SV3Vvl/PMQAAAC8AAAARAAAAAAAAAAAAAACAAQAAAABraXQvU1RBUlQgSEVSRS5tZFBLAQIUAxQAAAAIAAi3SV1fcMvZLQAAAC8AAAAWAAAAAAAAAAAAAACAAWAAAABraXQvdGVtcGxhdGUvdmlldy5odG1sUEsFBgAAAAACAAIAgwAAAMEAAAAAAA==', 'base64')) }]);
     for (const model of models) {
       const agent = runtime.saveAgent({ name: 'Controlled tool recovery', model, instructions: 'Save requested files using the available Library tool.' }).agents.at(-1);
-      const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [template.id], prompt: 'Save report.md containing Schema repair verified. Return its actual saved Library output.' });
+      const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [template.id, archive.id], prompt: 'Save report.md containing Schema repair verified. Return its actual saved Library output.' });
       if (serverError) throw serverError;
       const artifact = result.conversation.artifacts.find(a => a.name === 'report.md');
       assert.ok(artifact);
@@ -88,12 +89,25 @@ async function verifyRuntime(runtimePath) {
       assert.match(forbidden, /^Error: Source file is not available/);
       const escaped = await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: '../outside.html' }, result.conversation.id);
       assert.match(escaped, /^Error: Use relative filenames/);
+      const inventory = JSON.parse(await runtime.executeTool('read_library_item', { itemId: archive.id, offset: 9994 }, undefined, result.conversation.id));
+      assert.equal(inventory.readMode, 'archive_inventory');
+      assert.equal(inventory.memberContentsReturned, false);
+      assert.equal(inventory.content, undefined);
+      assert.equal(inventory.nextOffset, undefined);
+      assert.ok(!JSON.stringify(inventory).includes('File bodies live here.'));
+      await runtime.executeDataTool('extract_library_archive', { itemId: archive.id }, result.conversation.id);
+      const sourceLookup = JSON.parse(await runtime.executeTool('search_library_item', { itemId: archive.id, query: 'START HERE' }, undefined, result.conversation.id));
+      assert.equal(sourceLookup.extracted, true);
+      const member = sourceLookup.files.find(file => file.path === 'kit/START HERE.md');
+      assert.ok(member?.itemId);
+      const actualSource = JSON.parse(await runtime.executeTool('read_library_item', { itemId: member.itemId }, undefined, result.conversation.id));
+      assert.ok(actualSource.content.includes('File bodies live here.'));
       runtime.updateSettings({ permissionMode: 'read-only' });
       const readOnly = await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'readonly.html' }, result.conversation.id);
       assert.match(readOnly, /^Error: This chat is read only/);
       runtime.updateSettings({ permissionMode: 'ask' });
     }
-    console.log(`Local malformed-write recovery passed on ${process.platform}-${process.arch}; original diagnostics, saved bytes and scoped template copies verified.`);
+    console.log(`Local malformed-write recovery passed on ${process.platform}-${process.arch}; original diagnostics, saved bytes, archive/member distinction and scoped template copies verified.`);
   } finally {
     runtime?.close();
     server.closeAllConnections();
