@@ -108,5 +108,14 @@ print('Cloud working files persisted')`);
   assert.equal(recovered.exitCode, 0, recovered.stderr);
   assert.equal(recovered.files.length, 2, 'Failed-run files were lost from the successful result');
   assert.equal(Buffer.from(recovered.files.find((item) => item.name === 'pending.md').base64, 'base64').toString(), 'Preserved draft');
+  const missingInput = join(directory, 'missing-input-run'); mkdirSync(missingInput);
+  writeFileSync(join(missingInput, 'bootstrap.py'), bootstrap);
+  writeFileSync(join(missingInput, 'analysis.py'), "raise AssertionError('Analysis must not run without its source')");
+  writeFileSync(join(missingInput, 'inputs.json'), JSON.stringify({ files: [{ itemId: 'missing', name: 'missing.csv', url: pathToFileURL(join(directory, 'does-not-exist.csv')).toString() }], packages: [], workingDirectory: 'sessions/acceptance/outputs' }));
+  await promisify(execFile)(python, ['-I', join(missingInput, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
+  const missing = JSON.parse(readFileSync(join(missingInput, 'result.json'), 'utf8'));
+  assert.equal(missing.exitCode, -1);
+  assert.match(missing.stderr, /Python bootstrap failed.*URLError/);
+  assert.deepEqual(missing.files, [], 'Preparation failure claimed generated outputs');
   console.log('Cloud bootstrap executed real Python with staged inputs, nested artifacts and no stdlib installation.');
 } finally { rmSync(directory, { recursive: true, force: true }); }

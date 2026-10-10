@@ -4,7 +4,7 @@ import { CLOUD_PYTHON_PLATFORM } from './python-platform';
 
 // Bootstrap runs in the agent's isolated CommonOS computer, never in the API
 // process. A managed interpreter is installed without modifying system Python.
-export const CLOUD_PYTHON_BOOTSTRAP = String.raw`import base64, fcntl, hashlib, json, mimetypes, os, platform, subprocess, sys, tarfile, urllib.request
+const CLOUD_PYTHON_PROGRAM = String.raw`import base64, fcntl, hashlib, json, mimetypes, os, platform, subprocess, sys, tarfile, urllib.request
 from pathlib import Path
 run = Path(__file__).resolve().parent
 attempt_lock = (run / '.execute.lock').open('w')
@@ -223,6 +223,24 @@ temporary_manifest.write_text(json.dumps(manifest))
 temporary_manifest.replace(run / 'result.json')
 print(json.dumps({k: v for k, v in manifest.items() if k != 'files'}))
 `;
+
+// Preparation and input-download failures happen before analysis starts. Keep
+// their actionable errors in the same verified protocol as analysis failures;
+// the redirected terminal log must not be the only place to find the reason.
+export const CLOUD_PYTHON_BOOTSTRAP = [
+  'import json, re, traceback',
+  'from pathlib import Path',
+  'try:',
+  ...CLOUD_PYTHON_PROGRAM.split('\n').map((line) => `    ${line}`),
+  'except Exception as error:',
+  '    traceback.print_exc()',
+  "    message = re.sub(r'https?://\\S+', '[redacted URL]', str(error))[:16000]",
+  "    failure = dict(exitCode=-1, stdout='', stderr='Python bootstrap failed (' + type(error).__name__ + '): ' + message, files=[])",
+  '    run = Path(__file__).resolve().parent',
+  "    temporary = run / 'result.json.tmp'",
+  '    temporary.write_text(json.dumps(failure))',
+  "    temporary.replace(run / 'result.json')",
+].join('\n');
 
 export function cloudPythonFiles(code: string, files: Array<{ itemId: string; name: string; url: string }>, timeoutSeconds = 120, packages: string[] = [], workspaceKey?: string) {
   if (!code.trim() || code.length > 100_000) throw new Error('Provide Python code between 1 and 100,000 characters.');
