@@ -223,11 +223,18 @@ describe('Python working folder isolation', () => {
 
 
 describe('generated images stay in the authenticated chat', () => {
+  const originalImageModel = process.env.OPENAI_IMAGE_MODEL;
+  beforeEach(() => { delete process.env.OPENAI_IMAGE_MODEL; });
+  afterEach(() => {
+    if (originalImageModel === undefined) delete process.env.OPENAI_IMAGE_MODEL;
+    else process.env.OPENAI_IMAGE_MODEL = originalImageModel;
+  });
   const setup = () => {
     const service = Object.create(CommonToolService.prototype) as any;
     service.agent = { getAgent: jest.fn().mockResolvedValue({}) };
     service.capabilityOwner = jest.fn().mockResolvedValue({ principalId: 'agent-owner', workspaceId: 'agent-workspace' });
     service.usage = { authorizeCapability: jest.fn().mockResolvedValue({ reservationId: 'reservation' }), settleCapability: jest.fn() };
+    service.media = { generateAndWait: jest.fn().mockResolvedValue({ artifact: { itemId: 'image', name: 'generated.png' } }) };
     service.openAI = { images: { generate: jest.fn().mockResolvedValue({ data: [{ b64_json: Buffer.from('actual-image').toString('base64') }] }) } };
     service.files = { createGeneratedFile: jest.fn().mockResolvedValue({ fileId: 'image', name: 'generated.png' }), readFileForAgent: jest.fn().mockResolvedValue({ artifacts: [] }) };
     return service;
@@ -235,16 +242,45 @@ describe('generated images stay in the authenticated chat', () => {
   it('uses captured session and viewer for image persistence, reads and usage', async () => {
     const service = setup();
     await service.generateImage({ prompt: 'Offline background', agentId: 'agent', sessionId: 'invented' }, { agentId: 'agent', sessionId: 'actual', ownerId: 'viewer' });
-    expect(service.files.createGeneratedFile).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'agent', sessionId: 'actual', ownerId: 'viewer', workspaceId: null, buffer: Buffer.from('actual-image') }));
-    expect(service.files.readFileForAgent).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'actual', ownerId: 'viewer' }));
-    expect(service.usage.authorizeCapability).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'actual', principalId: 'viewer' }));
-    expect(service.usage.settleCapability).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'actual' }));
+    expect(service.media.generateAndWait).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: 'agent', sessionId: 'actual', modelKey: 'openai:image:gpt-image-2.5-flare', settings: { quality: undefined, aspectRatio: '1:1' } }),
+      expect.objectContaining({ principalId: 'viewer', workspaceId: null }),
+    );
+    expect(service.openAI.images.generate).not.toHaveBeenCalled();
   });
   it('passes captured session to an explicitly saved image model', async () => {
     const service = setup();
+    process.env.OPENAI_IMAGE_MODEL = 'gpt-image-2.5-flare';
     service.agent.getAgent.mockResolvedValue({ mediaModels: { imageModel: 'saved-image-model' } });
     service.generateMedia = jest.fn().mockResolvedValue({ artifact: { itemId: 'image', name: 'generated.png' } });
     await service.generateImage({ prompt: 'Offline background', agentId: 'agent', sessionId: 'invented' }, { agentId: 'agent', sessionId: 'actual' });
     expect(service.generateMedia).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'actual', modelKey: 'saved-image-model' }), expect.anything());
   });
+  it('preserves an explicitly configured environment model and requested quality, count and ratio', async () => {
+    const service = setup();
+    process.env.OPENAI_IMAGE_MODEL = 'gpt-image-2';
+    const result = await service.generateImage({ prompt: 'Offline background', agentId: 'agent', n: 2, size: '1024x1536', quality: 'high' }, { agentId: 'agent', sessionId: 'actual' });
+    expect(service.media.generateAndWait).toHaveBeenCalledTimes(2);
+    expect(service.media.generateAndWait).toHaveBeenCalledWith(expect.objectContaining({ modelKey: 'openai:image:gpt-image-2', settings: { quality: 'high', aspectRatio: '2:3' } }), expect.anything());
+    expect(result).toHaveLength(2);
+    expect(result.every((image: { model: string }) => image.model === 'openai:image:gpt-image-2')).toBe(true);
+  });
+  it('uses the platform image default for the generic media tool only when no preference is supplied', async () => {
+    const service = setup();
+    await service.generateMedia({ prompt: 'Offline background', agentId: 'agent' }, { agentId: 'agent', sessionId: 'actual' });
+    expect(service.media.generateAndWait).toHaveBeenCalledWith(expect.objectContaining({ modelKey: 'openai:image:gpt-image-2.5-flare', sessionId: 'actual' }), expect.anything());
+    await service.generateMedia({ prompt: 'Offline background', agentId: 'agent', modelKey: 'google:image:gemini-3.1-flash-image' }, { agentId: 'agent' });
+    expect(service.media.generateAndWait).toHaveBeenLastCalledWith(expect.objectContaining({ modelKey: 'google:image:gemini-3.1-flash-image' }), expect.anything());
+  });
+  it('keeps automatic sizing and the established automatic-quality behavior', async () => {
+    const service = setup();
+    await service.generateImage({ prompt: 'Offline background', agentId: 'agent', size: 'auto', quality: 'auto' }, { agentId: 'agent' });
+    expect(service.media.generateAndWait).toHaveBeenCalledWith(expect.objectContaining({ settings: { quality: 'medium', aspectRatio: 'auto' } }), expect.anything());
+  });
+  it('rejects invalid image counts before running any provider', async () => {
+    const service = setup();
+    await expect(service.generateImage({ prompt: 'Offline background', agentId: 'agent', n: 5 }, { agentId: 'agent' })).rejects.toThrow('between 1 and 4');
+    expect(service.media.generateAndWait).not.toHaveBeenCalled();
+  });
+
 });

@@ -1,5 +1,6 @@
 import {
   actualMediaCostFromUsage,
+  DEFAULT_OPENAI_IMAGE_MODEL,
   estimateMediaCost,
   getMediaModel,
   isMediaModelPriceConfigured,
@@ -47,6 +48,19 @@ describe('media model registry', () => {
       ),
     ).toBe(0.33);
     expect(model.pricing.settlement).toBe('provider_usage');
+  });
+
+  it('offers both current Image 2.5 models without changing saved Image 2 keys', () => {
+    expect(DEFAULT_OPENAI_IMAGE_MODEL).toBe('gpt-image-2.5-flare');
+    for (const id of ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
+      const model = getMediaModel('openai', `openai:image:${id}`);
+      expect(model.operations).toEqual(['generate', 'transform']);
+      expect(model.pricing.settlement).toBe('provider_usage');
+      expect(isMediaModelPriceConfigured(model)).toBe(true);
+      expect(estimateMediaCost(model, 'Campaign background', { quality: 'high', aspectRatio: '3:2' })).toBe(0.33);
+      expect(estimateMediaCost(model, 'Campaign background', { quality: 'high', aspectRatio: 'auto' })).toBe(0.33);
+    }
+    expect(getMediaModel('openai', 'openai:image:gpt-image-2').modelId).toBe('gpt-image-2');
   });
 
   it('keeps legacy Sora models visibly time-bounded and priced per second', () => {
