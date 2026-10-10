@@ -426,6 +426,9 @@ export function commonsAuthOptions(database: unknown) {
           "email",
           "offline_access",
           ...PLATFORM_SCOPES,
+          // Grant only to clients explicitly registered with this scope.
+          // Ordinary user JWTs keep PLATFORM_SCOPES and cannot mint it.
+          "credits:write",
         ],
         validAudiences: ["commons-platform"],
         accessTokenExpiresIn: 15 * 60,
