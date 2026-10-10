@@ -108,7 +108,15 @@ export class LocalModelManager {
     private readonly onStatus: (status: LocalModelStatus) => void,
   ) {}
 
-  ownsServer() { return Boolean(this.server && !this.server.killed); }
+  ownsServer(endpoint = "http://127.0.0.1:11434") {
+    try {
+      const url = new URL(endpoint);
+      return Boolean(this.server && !this.server.killed && this.server.exitCode === null)
+        && url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname)
+        && url.port === "11434" && url.pathname === "/" && !url.search
+        && !url.username && !url.password;
+    } catch { return false; }
+  }
 
   currentStatus() {
     return { ...this.status };

@@ -8,7 +8,7 @@ const output = resolve(
   "../node_modules/.cache/warmup-test",
 );
 await build({
-  entry: { warmup: join(import.meta.dirname, "local-model-warmup.ts") },
+  entry: { warmup: join(import.meta.dirname, "local-model-warmup.ts"), model: join(import.meta.dirname, "local-model.ts") },
   outDir: output,
   format: ["cjs"],
   outExtension: () => ({ js: ".cjs" }),
@@ -203,4 +203,56 @@ test("another app’s resident model is neither replaced nor unloaded by backgro
     false,
   );
   warmup.close();
+});
+
+test("media handoff releases only the active chat model on an owned server", async () => {
+  const calls = [];
+  const warmup = new LocalModelWarmup(async (url, options) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ models: [{ name: target.model }] }));
+  }, 1, async () => false, () => true);
+  const finish = warmup.beginForeground();
+  try {
+    await warmup.releaseForMedia(target);
+    assert.equal(calls.length, 2);
+    assert.deepEqual(JSON.parse(calls[1].options.body), { model: target.model, keep_alive: 0 });
+    finish();
+    warmup.schedule(target);
+    await sleep(20);
+    assert.equal(calls.length, 2, "Media cooldown immediately reloaded chat weights");
+  } finally { finish(); warmup.close(); }
+});
+
+test("media handoff preserves external servers and concurrent foreground work", async () => {
+  for (const [owned, foregroundCount] of [[false, 1], [true, 0], [true, 2]]) {
+    const calls = [];
+    const warmup = new LocalModelWarmup(async (url) => { calls.push(url); return new Response('{}'); }, 1, async () => false, () => owned);
+    const releases = Array.from({ length: foregroundCount }, () => warmup.beginForeground());
+    try { await warmup.releaseForMedia(target); assert.equal(calls.length, 0); }
+    finally { releases.forEach(release => release()); warmup.close(); }
+  }
+});
+
+test("another foreground turn arriving during residency lookup cancels media unloading", async () => {
+  let second;
+  const calls = [];
+  const warmup = new LocalModelWarmup(async (url) => {
+    calls.push(url);
+    second = warmup.beginForeground();
+    return new Response(JSON.stringify({ models: [{ name: target.model }] }));
+  }, 1, async () => false, () => true);
+  const finish = warmup.beginForeground();
+  try { await warmup.releaseForMedia(target); assert.equal(calls.length, 1); }
+  finally { second?.(); finish(); warmup.close(); }
+});
+
+test("a managed process never grants ownership of another configured endpoint", () => {
+  const { LocalModelManager } = createRequire(import.meta.url)(join(output, 'model.cjs'));
+  const manager = new LocalModelManager('/unused-fixture', 'selected:latest', () => {});
+  manager.server = { killed: false, exitCode: null };
+  assert.equal(manager.ownsServer('http://127.0.0.1:11434'), true);
+  assert.equal(manager.ownsServer('http://localhost:11434'), true);
+  for (const endpoint of ['http://127.0.0.1:11435', 'https://remote.example', 'http://127.0.0.1:11434/api', 'invalid']) assert.equal(manager.ownsServer(endpoint), false);
+  manager.server.exitCode = 0;
+  assert.equal(manager.ownsServer(), false);
 });

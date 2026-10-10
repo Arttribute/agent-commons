@@ -285,6 +285,7 @@ type CloudAgentSnapshot = {
 
 export class PrivateLocalRuntime {
   private readonly activeConversations = new Set<string>();
+  private readonly activeInferenceTargets = new Map<string, { endpoint: string; model: string }>();
   private readonly pendingSteers = new Map<string, string[]>();
   private connectedAppsTransport?: { catalog(): Promise<{ apps: LocalConnectedApp[] }>; invoke(name: string, args: Record<string, unknown>): Promise<unknown> };
   private readonly activeAppTools = new Map<string, Map<string, { name: string; app: LocalConnectedApp; readOnly: boolean; schema: LocalConnectedApp['tools'][number]['schema'] }>>();
@@ -310,7 +311,7 @@ export class PrivateLocalRuntime {
   private target?: WebContents;
 
   private readonly lifecycle = new AbortController();
-  private readonly warmup = new LocalModelWarmup(fetch, 350, localMemoryPressureHigh, () => this.modelManager.ownsServer());
+  private readonly warmup = new LocalModelWarmup(fetch, 350, localMemoryPressureHigh, () => this.modelManager.ownsServer(this.store.get().settings.ollamaUrl));
   private warmAgentId?: string;
   private warmupRequested = false;
   private warmupAllowed = true;
@@ -1164,6 +1165,7 @@ export class PrivateLocalRuntime {
       if (mcpTools) for (const client of new Set([...mcpTools.values()].map((tool) => tool.client))) void client.close().catch(() => undefined);
       this.activeConversations.delete(conversationId);
       this.pendingSteers.delete(conversationId);
+      this.activeInferenceTargets.delete(conversationId);
     }
   }
 
@@ -1632,6 +1634,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       })),
     ];
     const endpoint = ensureLoopback(state.settings.ollamaUrl);
+    this.activeInferenceTargets.set(conversationId, { endpoint, model: agent.model || state.settings.defaultModel });
     const describingImage = imageContext.images.length > 0 && /\b(?:describe|colou?r|appearance)\b/i.test(lastUser)
       && !/\b(?:create|edit|change|crop|save|extract|run|compute|calculate|search|compare|chart|count|dimensions|hex|rgb|export|hubspot|crm|connected|web|online|browse)\b|python/i.test(lastUser);
     const tools = openingGreeting ? [] : [
@@ -2050,6 +2053,13 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       if (this.store.get().settings.permissionMode === "read-only") result = "Error: Local workspace is read only. Enable changes in General settings to generate an image.";
       else {
         try {
+          const inference = this.activeInferenceTargets.get(conversationId);
+          if (inference && this.modelManager.ownsServer(inference.endpoint)
+            && (totalmem() < 16 * 1024 ** 3 || await localMemoryPressureHigh())) {
+            // Image generation runs between model calls. On constrained devices,
+            // release our own idle chat weights; the next call reloads naturally.
+            await this.warmup.releaseForMedia(inference);
+          }
           const mediaState = this.store.get();
           const agent = mediaState.agents.find((entry) => entry.id === mediaState.conversations.find((entry) => entry.id === conversationId)?.agentId);
           const image = await this.imageManager.generate(String(args.prompt ?? ""), [...mediaState.conversations.find((entry) => entry.id === conversationId)!.messages].reverse().find((entry) => entry.role === "user")?.canvasMediaModels?.imageModel || agent?.mediaModels?.imageModel || mediaState.settings.imageModel, { negativePrompt: args.negativePrompt as string | undefined });
