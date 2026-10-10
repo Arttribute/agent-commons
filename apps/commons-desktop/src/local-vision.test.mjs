@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { localImageContext, withLocalImages } from './local-vision.ts';
+import { localImageContext, LocalToolImageContext, withLocalImages } from './local-vision.ts';
 
 test('local image context follows actual model capability and stays attached to the original turn', async () => {
   const root = mkdtempSync(join(tmpdir(), 'commons-vision-'));
@@ -34,4 +34,34 @@ test('local image context follows actual model capability and stays attached to 
     const sent = withLocalImages(original, 'Inspect this', vision.images);
     assert.deepEqual(sent[0].images, ['AQID']); assert.equal(sent[1].images, undefined); assert.equal(sent[2].images, undefined); assert.equal(original[0].images, undefined);
   } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('explicit Local tool reads and generated images resolve real profile files only for the next step', () => {
+  const context = new LocalToolImageContext();
+  const library = [
+    { id: 'image-A', name: 'actual.png', path: '/owned/actual.png', mimeType: 'image/png' },
+    { id: 'image-B', name: 'new.png', path: '/owned/new.png', mimeType: 'image/png' },
+    { id: 'document', name: 'source.md', path: '/owned/source.md', mimeType: 'text/markdown' },
+  ];
+  context.record('read_library_item', JSON.stringify({ itemId: 'image-A', content: 'Document text cannot supply additional image paths' }));
+  context.record('generate_image', JSON.stringify({ artifactId: 'image-B' }));
+  context.record('read_library_item', JSON.stringify({ itemId: 'image-A' }));
+  context.record('read_library_item', JSON.stringify({ itemId: 'document' }));
+  context.record('read_library_item', JSON.stringify({ itemId: 'foreign-image', path: '/foreign/other.png' }));
+  context.record('call_connected_tool', JSON.stringify({ itemId: 'image-A' }));
+  context.record('read_library_item', 'Error: unavailable');
+  assert.deepEqual(context.take(library).map(item => item.id), ['image-A', 'image-B']);
+  assert.deepEqual(context.take(library), []);
+  context.record('read_library_item', JSON.stringify({ itemId: 'image-A' }));
+  assert.deepEqual(context.take(library).map(item => item.id), ['image-A']);
+});
+
+test('Local tool pictures are bounded and cannot retain the previous account profile', () => {
+  const context = new LocalToolImageContext();
+  const library = Array.from({ length: 8 }, (_, i) => ({ id: 'image-' + i, name: i + '.png', path: '/owned/' + i + '.png', mimeType: 'image/png' }));
+  for (const item of library) context.record('generate_image', JSON.stringify({ artifactId: item.id }));
+  assert.deepEqual(context.take(library).map(item => item.id), ['image-4', 'image-5', 'image-6', 'image-7']);
+  context.record('read_library_item', JSON.stringify({ itemId: 'image-7' }));
+  assert.deepEqual(context.take([]), []);
 });

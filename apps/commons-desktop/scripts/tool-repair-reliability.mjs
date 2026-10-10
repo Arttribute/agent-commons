@@ -20,6 +20,9 @@ async function verifyRuntime(runtimePath) {
   const requests = new Map(models.map(model => [model, []]));
   const archiveRequests = new Map(models.map(model => [model, []]));
   const sourceRequests = new Map(models.map(model => [model, []]));
+  const visualRequests = new Map(models.map(model => [model, []]));
+  const visualBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
+  let visualArtifactId;
   let archiveId;
   let serverError;
   const server = createServer(async (request, response) => {
@@ -29,9 +32,35 @@ async function verifyRuntime(runtimePath) {
       const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
       response.setHeader('Content-Type', 'application/x-ndjson');
       if (request.url === '/api/tags') return response.end(JSON.stringify({ models: models.map(model => ({ name: model, model, details: { family: model.startsWith('qwen') ? 'qwen35' : 'deepseek', parameter_size: '2B', quantization_level: 'Q8_0' } })) }));
-      if (request.url === '/api/show') return response.end(JSON.stringify({ capabilities: ['completion', 'tools', 'thinking'], details: { family: 'qwen35' } }));
+      if (request.url === '/api/show') return response.end(JSON.stringify({ capabilities: ['completion', 'tools', 'thinking', ...(body.model.startsWith('qwen') ? ['vision'] : [])], details: { family: 'qwen35' } }));
       if (request.url !== '/api/chat') return response.end(JSON.stringify({ done: true }));
       const model = body.model;
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Visual tool boundary'))) {
+        const calls = visualRequests.get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        const pictures = body.messages.flatMap(m => m.images ?? []);
+        const system = body.messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
+        if (calls.length === 2 || calls.length === 3) {
+          if (model.startsWith('qwen')) {
+            assert.deepEqual(pictures, [visualBytes.toString('base64')], 'Actual tool-generated/read pixels were not supplied');
+            assert.ok(system.includes(visualArtifactId), 'Visual evidence lost its actual Library identity');
+          } else {
+            assert.deepEqual(pictures, [], 'Text-only model received unsupported image inputs');
+            assert.ok(system.includes('cannot inspect image pixels'), 'Text-only model was told it had inspected pixels');
+          }
+        } else {
+          assert.deepEqual(pictures, [], 'Old tool images leaked into another step');
+          assert.ok(!system.includes('Images supplied to the vision model'), 'Old visual identity leaked into another step');
+        }
+        const message = calls.length === 1 ? action('generate_image', { prompt: 'Controlled fixture background', negativePrompt: 'text, logos' })
+          : calls.length === 2 ? action('read_library_item', { itemId: visualArtifactId })
+          : calls.length === 3 ? action('write_library_files', { files: [{ name: 'visual-check.md', content: 'Controlled image context verified.' }] })
+          : { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved visual-check.md.' } }) : 'Saved visual-check.md.' };
+        assert.ok(calls.length <= 4);
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
       if (body.messages.some(m => m.role === 'user' && m.content.includes('Source mapping boundary'))) {
         const calls = sourceRequests.get(model); calls.push(body);
         const action = (name, args) => model.startsWith('deepseek')
@@ -221,8 +250,35 @@ async function verifyRuntime(runtimePath) {
         assert.equal(sourceRequests.get(model).length, 4);
         assert.equal(readFileSync(repaired.conversation.artifacts.find(file => file.name === 'source-repair.md').path, 'utf8'), 'Input lookup repaired.');
       } finally { runtime.executeDataTool = originalDataTool; }
+      // Stub image computation only; the actual scoped generation tool, Library
+      // persistence, read tool and native/JSON model requests run unchanged.
+      const originalGenerate = runtime.imageManager.generate.bind(runtime.imageManager);
+      const originalTool = runtime.executeTool.bind(runtime);
+      const fixturePath = join(directory, 'controlled-image.png');
+      writeFileSync(fixturePath, visualBytes);
+      runtime.imageManager.generate = async (prompt, modelId, options) => {
+        assert.equal(prompt, 'Controlled fixture background');
+        assert.equal(options.negativePrompt, 'text, logos');
+        return { path: fixturePath, modelId: 'fixture.gguf' };
+      };
+      runtime.executeTool = async (name, ...args) => {
+        const result = await originalTool(name, ...args);
+        if (name === 'generate_image') visualArtifactId = JSON.parse(result).artifactId;
+        return result;
+      };
+      try {
+        const visual = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, prompt: 'Visual tool boundary: generate a fixture image, read that exact saved image, then save visual-check.md containing Controlled image context verified.' });
+        if (serverError) throw serverError;
+        assert.equal(visualRequests.get(model).length, 4);
+        assert.equal(readFileSync(visual.conversation.artifacts.find(file => file.name === 'visual-check.md').path, 'utf8'), 'Controlled image context verified.');
+        assert.ok(!JSON.stringify(visual.conversation).includes(visualBytes.toString('base64')), 'Image bytes persisted in the conversation');
+      } finally {
+        runtime.imageManager.generate = originalGenerate;
+        runtime.executeTool = originalTool;
+      }
+
     }
-    console.log(`Local malformed-write recovery passed on ${process.platform}-${process.arch}; original diagnostics, saved bytes, archive/member distinction and scoped template copies verified.`);
+    console.log(`Local malformed-write recovery passed on ${process.platform}-${process.arch}; original diagnostics, saved bytes, archive/member distinction and scoped template copies and transient vision/text-only tool image context verified.`);
   } finally {
     runtime?.close();
     server.closeAllConnections();
