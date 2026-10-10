@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { build } from 'tsup';
@@ -12,15 +13,28 @@ const app = resolve(import.meta.dirname, '..');
 const bundle = join(app, 'node_modules/.cache/cloud-python-reliability');
 await build({ entry: { python: join(app, 'src/python-runtime.ts'), cloud: join(app, '../commons-api/src/computer/python-analysis.ts') }, outDir: bundle, format: ['cjs'], outExtension: () => ({ js: '.cjs' }), platform: 'node', target: 'node22', silent: true });
 const require = createRequire(import.meta.url);
-const { PythonRuntime } = require(join(bundle, 'python.cjs'));
+const { PYTHON_DATA_PACKAGES } = require('@agent-commons/agent-core');
+  const { PythonRuntime } = require(join(bundle, 'python.cjs'));
 const { CLOUD_PYTHON_BOOTSTRAP } = require(join(bundle, 'cloud.cjs'));
 const directory = mkdtempSync(join(tmpdir(), 'commons-cloud-python-'));
+function acknowledge(run, result) {
+  if (result.exitCode !== 0 || !result.files.length) return;
+  const hashes = Object.fromEntries(result.files.map(file => {
+    const bytes = file.chunks ? Buffer.concat(file.chunks.map(part => Buffer.from(readFileSync(join(run, part), 'utf8'), 'base64'))) : Buffer.from(file.base64, 'base64');
+    return [file.name, createHash('sha256').update(bytes).digest('hex')];
+  }));
+  const receipts = result.outputDirectory + '.acks';
+  mkdirSync(receipts, { recursive: true });
+  writeFileSync(join(receipts, basename(run) + '.json'), JSON.stringify(hashes));
+}
 try {
   const managed = process.env.COMMONS_PYTHON_TEST_ROOT || join(directory, 'managed');
   const python = await new PythonRuntime(managed).prepare();
   const cloud = join(directory, 'cloud'); mkdirSync(cloud);
   copyFileSync(join(managed, 'uv-0.12.23/uv'), join(cloud, 'uv-0.12.23')); chmodSync(join(cloud, 'uv-0.12.23'), 0o700);
-  symlinkSync(join(managed, 'data-3.12.11-v1'), join(cloud, 'data-3.12.11-v1'));
+  // Match Python json.dumps' default separator spacing for the pinned cache key.
+  const baseKey = createHash('sha256').update(JSON.stringify(['3.12.11', [...PYTHON_DATA_PACKAGES].sort()]).replaceAll(',', ', ')).digest('hex').slice(0, 16);
+  symlinkSync(join(managed, 'data-3.12.11-v1'), join(cloud, `data-3.12.11-${baseKey}`));
   writeFileSync(join(directory, 'sales.csv'), 'revenue\n10\n20\n30\n');
   writeFileSync(join(directory, 'inputs.json'), JSON.stringify({ files: [{ itemId: 'file-731', name: 'sales.csv', url: pathToFileURL(join(directory, 'sales.csv')).toString() }], packages: ['json', 'os', 'pathlib', 'numpy', 'pandas', 'PIL', 'sklearn'], timeoutSeconds: 120, workingDirectory: 'sessions/acceptance/outputs' }));
   writeFileSync(join(directory, 'analysis.py'), `import json, os, pandas as pd, matplotlib.pyplot as plt
@@ -41,10 +55,11 @@ Path(INPUT_FILES['sales.csv']).write_text('revenue\\n40\\n50\\n')
 (OUTPUT_DIR / 'large-report.bin').write_bytes(b'a' * 650000)
 print('Verified cloud bootstrap')`);
   // Reuse this host's verified uv executable while exercising the cloud code.
-  const bootstrap = CLOUD_PYTHON_BOOTSTRAP.replace("Path('/mnt/shared/.commons-python')", `Path(${JSON.stringify(cloud)})`).replace("Path('/tmp/commons-python-runtime')", `Path(${JSON.stringify(cloud)})`).replace("uv = resources / ('uv-0.12.23-' + triple)", "uv = resources / 'uv-0.12.23'");
+  const bootstrap = CLOUD_PYTHON_BOOTSTRAP.replace("Path('/mnt/shared/.commons-python')", `Path(${JSON.stringify(cloud)})`).replace("resources = root / 'runtime' / triple", `resources = Path(${JSON.stringify(cloud)})`).replace("uv = resources / ('uv-0.12.23-' + triple)", "uv = resources / 'uv-0.12.23'");
   writeFileSync(join(directory, 'bootstrap.py'), bootstrap);
   await promisify(execFile)(python, ['-I', join(directory, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
   const result = JSON.parse(readFileSync(join(directory, 'result.json'), 'utf8'));
+  acknowledge(directory, result);
   assert.equal(result.exitCode, 0, result.stderr);
   assert.equal(result.files.length, 4, 'Only actual generated files belong in the result manifest');
   const file = (name) => {
@@ -67,6 +82,7 @@ print('Cloud working files persisted')`);
   writeFileSync(join(nextRun, 'bootstrap.py'), bootstrap);
   await promisify(execFile)(python, ['-I', join(nextRun, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
   const next = JSON.parse(readFileSync(join(nextRun, 'result.json'), 'utf8'));
+  acknowledge(nextRun, next);
   assert.equal(next.exitCode, 0, next.stderr);
   assert.equal(next.outputDirectory, result.outputDirectory);
   assert.equal(next.files.length, 1, 'Unchanged files were exported again');
@@ -78,7 +94,9 @@ print('Cloud working files persisted')`);
     writeFileSync(join(folder, 'analysis.py'), code);
     writeFileSync(join(folder, 'bootstrap.py'), bootstrap);
     await promisify(execFile)(python, ['-I', join(folder, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
-    return JSON.parse(readFileSync(join(folder, 'result.json'), 'utf8'));
+    const result = JSON.parse(readFileSync(join(folder, 'result.json'), 'utf8'));
+    acknowledge(folder, result);
+    return result;
   };
   const failed = await step('failed-step', "(OUTPUT_DIR / 'pending.md').write_text('Preserved draft')\nraise RuntimeError('Render failed')");
   assert.notEqual(failed.exitCode, 0);
