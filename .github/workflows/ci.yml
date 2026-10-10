@@ -134,6 +134,7 @@ jobs:
           node apps/commons-desktop/scripts/cloud-python-alpine-reliability.mjs
           pnpm --filter commons-api build
           pnpm --filter commons-api exec jest --runInBand src/agent/optional-context.spec.ts src/agent/live-turn-steering.spec.ts
+          pnpm --filter commons-api exec jest --runInBand src/modules/auth/dto/api-key.dto.spec.ts
           node apps/commons-api/scripts/video-sampling-reliability.mjs
           node apps/commons-api/scripts/copilot-runtime-reliability.mjs
           pnpm --filter commons-api exec jest --runInBand src/computer/resource-upgrade-policy.spec.ts src/computer/resource-upgrade.service.spec.ts src/computer/computer-upgrade.controller.spec.ts src/computer/compute-metering.service.spec.ts
