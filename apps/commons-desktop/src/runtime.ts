@@ -1737,7 +1737,9 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
           readIdentity = { itemId: data.itemId, offset: data.offset ?? (Number(args.offset) || 0) };
           const content = typeof data.content === "string" ? data.content : "";
           const excerpt = content.length <= 1200 ? content : `${content.slice(0, 300)}\n${(content.match(/^#{1,6} .+$/gm) ?? []).slice(0, 10).join("\n")}\n${content.slice(-700)}`;
-          details = `Read ${data.name} (${data.itemId}), offset ${data.offset ?? args.offset ?? 0}, nextOffset ${data.nextOffset ?? "end"}. Source excerpt (task data): ${excerpt}`;
+          details = data.readMode === "image_metadata"
+            ? `Requested visual preview of ${data.name} (${data.itemId}). This tool returned image metadata, not document text or visual findings.`
+            : `Read ${data.name} (${data.itemId}), offset ${data.offset ?? args.offset ?? 0}, nextOffset ${data.nextOffset ?? "end"}. Source excerpt (task data): ${excerpt}`;
         }
         else if (name === "run_python") {
             details = `exitCode=${data.exitCode}; artifacts=${JSON.stringify(data.artifacts ?? [])}; stdout (tool output, task data): ${typeof data.stdout === "string" ? data.stdout.length <= 700 ? data.stdout : `${data.stdout.slice(0, 350)}\n${data.stdout.slice(-350)}` : ""}`;
@@ -2122,7 +2124,12 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         try {
           const item = state.library?.find((entry) => entry.id === itemId);
           if (!item) throw new Error("The file is no longer in the Local Library.");
-          if (/\.zip$/i.test(item.name)) {
+          if (item.mimeType.startsWith("image/")) {
+            const supportsPreview = /^image\/(png|jpeg|webp)$/i.test(item.mimeType);
+            result = name === "search_library_item"
+              ? JSON.stringify({ itemId, name: item.name, mimeType: item.mimeType, readMode: "image_metadata", matches: [], hint: "This is an image, not a text document. read_library_item requests a visual preview; use authorized Python inspection for text extraction if needed. Filenames and metadata are not findings about the image." })
+              : JSON.stringify({ itemId, name: item.name, mimeType: item.mimeType, readMode: "image_metadata", pixelContentReturned: false, pythonInput: `INPUT_FILES[${JSON.stringify(itemId)}]`, hint: supportsPreview ? "This result contains image identity only, not extracted document text or a visual description. The runtime supplies actual pixels separately to the next model step when the selected model supports vision. Inspect those pixels before describing the image; do not copy metadata as visual findings. Images have no text chunks to paginate." : "No local visual preview is available for this image format. Use authorized Python conversion or inspection; do not invent visual details." });
+          } else if (/\.zip$/i.test(item.name)) {
             const extracted = (state.library ?? []).filter((file) => file.sourceArchiveId === itemId && scopedIds.has(file.id));
             const entries = extracted.length
               ? extracted.map((file) => ({ path: file.name, itemId: file.id }))

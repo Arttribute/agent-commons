@@ -270,6 +270,15 @@ async function verifyRuntime(runtimePath) {
         const visual = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, prompt: 'Visual tool boundary: generate a fixture image, read that exact saved image, then save visual-check.md containing Controlled image context verified.' });
         if (serverError) throw serverError;
         assert.equal(visualRequests.get(model).length, 4);
+        const imageRead = JSON.parse(await runtime.executeTool('read_library_item', { itemId: visualArtifactId, offset: 5000 }, undefined, visual.conversation.id));
+        assert.equal(imageRead.readMode, 'image_metadata');
+        assert.equal(imageRead.pixelContentReturned, false);
+        assert.equal(imageRead.content, undefined, 'Image placeholder must not be presented as document text');
+        assert.equal(imageRead.nextOffset, undefined);
+        const imageSearch = JSON.parse(await runtime.executeTool('search_library_item', { itemId: visualArtifactId, query: 'logo' }, undefined, visual.conversation.id));
+        assert.deepEqual(imageSearch.matches, []);
+        assert.match(imageSearch.hint, /not a text document/);
+
         assert.equal(readFileSync(visual.conversation.artifacts.find(file => file.name === 'visual-check.md').path, 'utf8'), 'Controlled image context verified.');
         assert.ok(!JSON.stringify(visual.conversation).includes(visualBytes.toString('base64')), 'Image bytes persisted in the conversation');
       } finally {
