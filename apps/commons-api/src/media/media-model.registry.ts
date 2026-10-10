@@ -4,6 +4,8 @@ import type { MediaModelDescriptor, MediaSettingField } from './media.types';
 const GOOGLE_PRICING = 'https://ai.google.dev/gemini-api/docs/pricing';
 const KLING_PRICING = 'https://kling.ai/document-api/productBilling/billingMethod';
 const BYTEPLUS_PRICING = 'https://docs.byteplus.com/docs/ModelArk/1099320';
+export const DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-2.5-flare';
+
 const OPENAI_PRICING = 'https://developers.openai.com/api/docs/pricing';
 const OPENAI_SORA_DOCS = 'https://developers.openai.com/api/reference/typescript/resources/videos/methods/create';
 
@@ -31,13 +33,17 @@ const fixedPrice = (unit: MediaModelDescriptor['pricing']['unit'], usd: number, 
 const usagePrice = (unit: MediaModelDescriptor['pricing']['unit'], usd: number, note: string, sourceUrl: string, extra: Partial<MediaModelDescriptor['pricing']> = {}): MediaModelDescriptor['pricing'] => ({ unit, usd, note, sourceUrl, settlement: 'provider_usage', ...extra });
 
 const openaiModels: MediaModelDescriptor[] = [
-  {
-    modelKey: 'openai:image:gpt-image-2', provider: 'openai', modelId: 'gpt-image-2', displayName: 'GPT Image 2',
-    description: 'OpenAI’s current state-of-the-art image generation and reference-based editing model.', kind: 'image', operations: ['generate', 'transform'], inputKinds: ['image'], maxInputs: 16, tier: 'frontier', async: false,
+  ...[
+    ['gpt-image-2.5-flare', 'GPT Image 2.5 Flare', 'Fast, high-quality everyday image generation and editing.', ['OpenAI', 'current', 'default', 'edits', 'transparent PNG']],
+    ['gpt-image-2.5-sunburst', 'GPT Image 2.5 Sunburst', 'Precise image editing and high-quality generation.', ['OpenAI', 'current', 'precise edits', 'transparent PNG']],
+    ['gpt-image-2', 'GPT Image 2', 'Previous-generation OpenAI image generation and reference-based editing.', ['OpenAI', 'edits', 'transparent PNG']],
+  ].map(([modelId, displayName, description, badges]) => ({
+    modelKey: `openai:image:${modelId}`, provider: 'openai', modelId: String(modelId), displayName: String(displayName),
+    description: String(description), kind: 'image' as const, operations: ['generate', 'transform'] as MediaModelDescriptor['operations'], inputKinds: ['image'] as MediaModelDescriptor['inputKinds'], maxInputs: 16, tier: 'frontier' as const, async: false,
     settings: [
-      aspect(options(['1:1', '3:2', '2:3'])),
-      { key: 'quality', label: 'Quality', type: 'select', default: 'medium', options: options(['low', 'medium', 'high']) },
-      { key: 'background', label: 'Background', type: 'select', default: 'auto', options: options(['auto', 'opaque', 'transparent']) },
+      aspect(options(['1:1', '3:2', '2:3', 'auto'])),
+      { key: 'quality', label: 'Quality', type: 'select' as const, default: 'medium', options: options(['low', 'medium', 'high']) },
+      { key: 'background', label: 'Background', type: 'select' as const, default: 'auto', options: options(['auto', 'opaque', 'transparent']) },
     ],
     pricing: usagePrice('request', 0.06, 'authorization estimate; final charge reconciles text/image input and image output tokens', OPENAI_PRICING, {
       variants: {
@@ -46,8 +52,8 @@ const openaiModels: MediaModelDescriptor[] = [
         'high:1024x1024': 0.22, 'high:1536x1024': 0.33, 'high:1024x1536': 0.33,
       },
     }),
-    badges: ['OpenAI', 'current', 'edits', 'transparent PNG'],
-  },
+    badges: badges as string[],
+  })),
   {
     modelKey: 'openai:audio:gpt-4o-mini-tts', provider: 'openai', modelId: 'gpt-4o-mini-tts', displayName: 'GPT-4o mini TTS',
     description: 'Natural, instruction-guided text-to-speech.', kind: 'audio', operations: ['generate'], inputKinds: [], maxInputs: 0, tier: 'fast', async: false,
@@ -211,6 +217,10 @@ export function estimateMediaCost(model: MediaModelDescriptor, prompt: string, s
       const ratio = String(settings.aspectRatio ?? '1:1');
       const size = ratio === '3:2' ? '1536x1024' : ratio === '2:3' ? '1024x1536' : '1024x1024';
       const quality = String(settings.quality ?? 'medium');
+      if (ratio === 'auto' && !override) {
+        const estimates = Object.entries(model.pricing.variants ?? {}).filter(([key]) => key.startsWith(`${quality}:`)).map(([, price]) => price);
+        return estimates.length ? Math.max(...estimates) : unitPrice;
+      }
       return override ?? model.pricing.variants?.[`${quality}:${size}`] ?? unitPrice;
     }
     const size = String(settings.imageSize ?? settings.resolution ?? '1K').toLowerCase();

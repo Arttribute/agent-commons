@@ -60,7 +60,7 @@ import {
 import { BrainService } from '~/brain';
 import { CanvasService, MediaEditService, MediaService } from '~/media';
 import { ManagedMcpService } from '~/oauth/managed-mcp.service';
-import { MEDIA_MODEL_REGISTRY } from '~/media/media-model.registry';
+import { DEFAULT_OPENAI_IMAGE_MODEL, MEDIA_MODEL_REGISTRY } from '~/media/media-model.registry';
 
 type ToolExecutionMetadata = {
   agentId?: string;
@@ -1851,11 +1851,17 @@ export class CommonToolService {
     const sessionId = metadata?.sessionId ?? props.sessionId;
     const configuredAgentId = this.requireToolAgentId(props.agentId, metadata);
     const configuredAgent = await this.agent.getAgent({ agentId: configuredAgentId });
-    if (configuredAgent.mediaModels?.imageModel) {
+    // Saved agent preferences take precedence over the environment and platform fallback.
+    // Reviewed OpenAI defaults use the same provider-usage billing and durable
+    // Library publication as explicitly selected Canvas media models.
+    const fallbackModel = process.env.OPENAI_IMAGE_MODEL || DEFAULT_OPENAI_IMAGE_MODEL;
+    const catalogModel = MEDIA_MODEL_REGISTRY.find((model) => model.provider === 'openai' && model.kind === 'image' && model.modelId === fallbackModel);
+    const modelKey = configuredAgent.mediaModels?.imageModel || catalogModel?.modelKey;
+    if (modelKey) {
       const results = [];
       for (let i = 0; i < (props.n ?? 1); i++) {
-        const result = await this.generateMedia({ agentId: configuredAgentId, sessionId, modelKey: configuredAgent.mediaModels.imageModel, prompt: props.prompt, settings: { quality: props.quality, aspectRatio: props.size === "1536x1024" ? "3:2" : props.size === "1024x1536" ? "2:3" : "1:1" } }, metadata);
-        results.push({ fileId: result.artifact.itemId, name: result.artifact.name, url: result.artifact.url, prompt: props.prompt, model: configuredAgent.mediaModels.imageModel });
+        const result = await this.generateMedia({ agentId: configuredAgentId, sessionId, modelKey, prompt: props.prompt, settings: { quality: props.quality === "auto" ? "medium" : props.quality, aspectRatio: props.size === "auto" ? "auto" : props.size === "1536x1024" ? "3:2" : props.size === "1024x1536" ? "2:3" : "1:1" } }, metadata);
+        results.push({ fileId: result.artifact.itemId, name: result.artifact.name, url: result.artifact.url, prompt: props.prompt, model: modelKey });
       }
       return results;
     }
@@ -1865,7 +1871,7 @@ export class CommonToolService {
     }
     const quality =
       props.quality === 'auto' || !props.quality ? 'medium' : props.quality;
-    const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2';
+    const model = fallbackModel;
     if (
       model !== 'gpt-image-2' &&
       !process.env.OPENAI_IMAGE_OUTPUT_PRICE_USD_JSON
@@ -2159,7 +2165,8 @@ export class CommonToolService {
     const agent = await this.agent.getAgent({ agentId });
     const kind = props.kind ?? MEDIA_MODEL_REGISTRY.find((model) => model.modelKey === props.modelKey)?.kind ?? "image";
     const configured = agent.mediaModels?.[`${kind}Model`];
-    const modelKey = props.overrideAgentDefault ? props.modelKey || configured : configured || props.modelKey;
+    const platformDefault = kind === 'image' ? `openai:image:${process.env.OPENAI_IMAGE_MODEL || DEFAULT_OPENAI_IMAGE_MODEL}` : undefined;
+    const modelKey = (props.overrideAgentDefault ? props.modelKey || configured : configured || props.modelKey) || platformDefault;
     if (!modelKey) throw new BadRequestException("Choose a model with listMediaModels or save an agent media default.");
     const definition = MEDIA_MODEL_REGISTRY.find((model) => model.modelKey === modelKey);
     const voice = definition?.settings.find((field) => field.key === 'voice');
