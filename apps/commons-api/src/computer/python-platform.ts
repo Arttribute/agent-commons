@@ -50,14 +50,25 @@ def prepare_gnu_python():
                     if target.name != name and not target.exists(): target.symlink_to(name)
         marker.write_text(json.dumps(selected))
     env['UV_LIBC'] = 'gnu'
+    loader = libraries / ('ld-linux-x86-64.so.2' if architecture == 'x86_64' else 'ld-linux-aarch64.so.1')
+    rpath = str(libraries) + ':$ORIGIN/../lib:/usr/local/nvidia/lib64:/usr/local/nvidia/lib'
+    prepared = resources / 'gnu-python-3.12.11-ready.json'
+    interpreters = list((resources / 'interpreters').glob('cpython-3.12.11-linux-' + architecture + '-gnu/bin/python3.12'))
+    if len(interpreters) == 1:
+        executable = interpreters[0].resolve()
+        expected = dict(executable=str(executable), loader=str(loader), rpath=rpath)
+        if prepared.exists() and json.loads(prepared.read_text()) == expected:
+            # A replacement pod needs only the retained interpreter/loader,
+            # not another installer call or the host libraries for patchelf.
+            subprocess.run([str(executable), '-I', '-c', 'import ctypes, ssl, socket'], env=env, check=True, timeout=30)
+            return executable
     subprocess.run([str(uv), 'python', 'install', '--no-config', '3.12.11'], env=env, check=True, timeout=300)
     interpreters = list((resources / 'interpreters').glob('cpython-3.12.11-linux-' + architecture + '-gnu/bin/python3.12'))
     if len(interpreters) != 1: raise RuntimeError('Managed GNU Python was not installed')
     executable = interpreters[0].resolve()
-    loader = libraries / ('ld-linux-x86-64.so.2' if architecture == 'x86_64' else 'ld-linux-aarch64.so.1')
     if not loader.is_file(): raise RuntimeError('Managed GNU loader is missing')
-    rpath = str(libraries) + ':$ORIGIN/../lib:/usr/local/nvidia/lib64:/usr/local/nvidia/lib'
     subprocess.run([str(patcher), '--set-interpreter', str(loader), '--force-rpath', '--set-rpath', rpath, str(executable)], env=env, check=True, timeout=30)
     subprocess.run([str(executable), '-I', '-c', 'import ctypes, ssl, socket; print("Managed GNU Python verified")'], env=env, check=True, timeout=30)
+    prepared.write_text(json.dumps(dict(executable=str(executable), loader=str(loader), rpath=rpath)))
     return executable
 `;
