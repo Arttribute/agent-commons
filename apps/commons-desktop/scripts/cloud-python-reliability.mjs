@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -31,14 +31,20 @@ try {
   const managed = process.env.COMMONS_PYTHON_TEST_ROOT || join(directory, 'managed');
   const python = await new PythonRuntime(managed).prepare();
   const cloud = join(directory, 'cloud'); mkdirSync(cloud);
-  copyFileSync(join(managed, 'uv-0.12.23/uv'), join(cloud, 'uv-0.12.23')); chmodSync(join(cloud, 'uv-0.12.23'), 0o700);
+  const resources = join(cloud, '.cache', 'host-runtime'); mkdirSync(resources, { recursive: true });
+  copyFileSync(join(managed, 'uv-0.12.23/uv'), join(resources, 'uv-0.12.23')); chmodSync(join(resources, 'uv-0.12.23'), 0o700);
+  const legacyNames = ['runtime', 'cache', 'interpreters', 'data-3.12.11-v1'];
+  for (const name of legacyNames) {
+    mkdirSync(join(cloud, name));
+    writeFileSync(join(cloud, name, 'retained-marker'), `Original ${name} cache bytes`);
+  }
   // Match Python json.dumps' default separator spacing for the pinned cache key.
   const baseKey = createHash('sha256').update(JSON.stringify(['3.12.11', [...PYTHON_DATA_PACKAGES].sort()]).replaceAll(',', ', ')).digest('hex').slice(0, 16);
   // This host fixture borrows the already verified managed environment. The
   // real cold/unready-environment path is exercised in the Alpine container.
   await promisify(execFile)(python, ['-I', '-c', 'import numpy, pandas, matplotlib, scipy, sklearn, seaborn, openpyxl, PIL'], { timeout: 60_000 });
   writeFileSync(join(managed, 'data-3.12.11-v1/commons-ready'), 'ready');
-  symlinkSync(join(managed, 'data-3.12.11-v1'), join(cloud, `data-3.12.11-${baseKey}`));
+  symlinkSync(join(managed, 'data-3.12.11-v1'), join(resources, `data-3.12.11-${baseKey}`));
   writeFileSync(join(directory, 'sales.csv'), 'revenue\n10\n20\n30\n');
   writeFileSync(join(directory, 'inputs.json'), JSON.stringify({ files: [{ itemId: 'file-731', name: 'sales.csv', url: pathToFileURL(join(directory, 'sales.csv')).toString() }], packages: ['json', 'os', 'pathlib', 'numpy', 'pandas', 'PIL', 'sklearn'], timeoutSeconds: 120, workingDirectory: 'sessions/acceptance/outputs' }));
   writeFileSync(join(directory, 'analysis.py'), `import json, os, pandas as pd, matplotlib.pyplot as plt
@@ -59,12 +65,18 @@ Path(INPUT_FILES['sales.csv']).write_text('revenue\\n40\\n50\\n')
 (OUTPUT_DIR / 'large-report.bin').write_bytes(b'a' * 650000)
 print('Verified cloud bootstrap')`);
   // Reuse this host's verified uv executable while exercising the cloud code.
-  const bootstrap = CLOUD_PYTHON_BOOTSTRAP.replace("Path('/mnt/shared/.commons-python')", `Path(${JSON.stringify(cloud)})`).replace("resources = root / '.cache' / 'runtime' / triple", `resources = Path(${JSON.stringify(cloud)})`).replace("uv = resources / ('uv-0.12.23-' + triple)", "uv = resources / 'uv-0.12.23'");
+  const bootstrap = CLOUD_PYTHON_BOOTSTRAP.replace("Path('/mnt/shared/.commons-python')", `Path(${JSON.stringify(cloud)})`).replace("resources = root / '.cache' / 'runtime' / triple", `resources = Path(${JSON.stringify(resources)})`).replace("uv = resources / ('uv-0.12.23-' + triple)", "uv = resources / 'uv-0.12.23'");
   writeFileSync(join(directory, 'bootstrap.py'), bootstrap);
   await promisify(execFile)(python, ['-I', join(directory, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
   const result = JSON.parse(readFileSync(join(directory, 'result.json'), 'utf8'));
   acknowledge(directory, result);
   assert.equal(result.exitCode, 0, result.stderr);
+  for (const name of legacyNames) {
+    assert.equal(existsSync(join(cloud, name)), false, `Legacy ${name} remains exposed to workspace watching`);
+    const retained = readdirSync(join(cloud, '.cache')).filter(entry => entry.startsWith(`legacy-${name}-`));
+    assert.equal(retained.length, 1);
+    assert.equal(readFileSync(join(cloud, '.cache', retained[0], 'retained-marker'), 'utf8'), `Original ${name} cache bytes`);
+  }
   assert.equal(result.files.length, 4, 'Only actual generated files belong in the result manifest');
   const file = (name) => {
     const item = result.files.find((entry) => entry.name === name);
@@ -121,5 +133,10 @@ print('Cloud working files persisted')`);
   assert.equal(missing.exitCode, -1);
   assert.match(missing.stderr, /Python bootstrap failed.*URLError/);
   assert.deepEqual(missing.files, [], 'Preparation failure claimed generated outputs');
+  symlinkSync(join(directory, 'sales.csv'), join(cloud, 'cache'));
+  const unsafe = await step('symlink-cache-run', "raise AssertionError('Unsafe cache must fail before analysis')");
+  assert.equal(unsafe.exitCode, -1);
+  assert.match(unsafe.stderr, /symbolic link/);
+  assert.equal(readFileSync(join(directory, 'sales.csv'), 'utf8'), 'revenue\n10\n20\n30\n');
   console.log('Cloud bootstrap executed real Python with staged inputs, nested artifacts and no stdlib installation.');
 } finally { rmSync(directory, { recursive: true, force: true }); }
