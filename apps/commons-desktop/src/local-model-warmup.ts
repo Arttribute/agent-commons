@@ -49,9 +49,17 @@ export class LocalModelWarmup {
       this.schedule(this.selected);
   }
 
-  private async releaseOwnedModel() {
-    const target = this.warmed;
-    if (!target || this.foreground || !this.ownsServer()) return;
+  async releaseForMedia(target: WarmupTarget) {
+    if (this.closed || this.foreground !== 1 || !this.ownsServer()) return;
+    this.cancel();
+    this.pausedUntil = Date.now() + 120_000;
+    await this.releaseOwnedModel(target, true);
+  }
+
+  private async releaseOwnedModel(target = this.warmed, betweenTools = false) {
+    const permitted = () => !this.closed && this.ownsServer()
+      && (betweenTools ? this.foreground === 1 : this.foreground === 0);
+    if (!target || !permitted()) return;
     const controller = new AbortController();
     this.controller = controller;
     try {
@@ -76,6 +84,7 @@ export class LocalModelWarmup {
       )
         return;
       signal.throwIfAborted();
+      if (!permitted()) return;
       await this.request(`${target.endpoint}/api/generate`, {
         method: "POST",
         signal,
@@ -83,7 +92,7 @@ export class LocalModelWarmup {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: target.model, keep_alive: 0 }),
       }).then((r) => r.body?.cancel());
-      this.warmed = undefined;
+      if (this.warmed?.model === target.model && this.warmed.endpoint === target.endpoint) this.warmed = undefined;
     } catch {
       /* Active inference or account changes take precedence. */
     } finally {
