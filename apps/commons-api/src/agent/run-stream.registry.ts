@@ -3,6 +3,7 @@ import { Observable, ReplaySubject, Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { sql } from 'drizzle-orm';
 import { DatabaseService } from '~/modules/database/database.service';
+import { optionalContext } from './optional-context';
 
 export interface RunStreamEvent {
   type: string;
@@ -48,6 +49,7 @@ interface RunStreamEntry {
   meta?: RunMeta & { state: RunState; activity?: string; startedAt: number; updatedAt: number };
   steering: string[];
   steeringClosed: boolean;
+  registration?: Promise<void>;
   persistQueue?: Promise<void>;
   completedPersist?: Promise<void>;
   pendingEvents: RunStreamEvent[];
@@ -130,6 +132,7 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
         VALUES (${runId}::uuid, ${entry.meta.initiator}, ${entry.meta.agentId}, ${entry.meta.sessionId ?? null}, ${!entry.steeringClosed})
       `).then(() => undefined).catch((error) => this.logger.error(`Could not persist run ${runId}: ${error.message}`));
     }
+    entry.registration = entry.persistQueue;
     this.scheduleCleanup(runId, entry, MAX_RUN_LIFETIME_MS);
 
     this.emit(entry, runId, { type: 'run_started', ...(meta?.prompt ? { prompt: meta.prompt } : {}) });
@@ -309,10 +312,7 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
 
   async closeSteeringShared(runId: string) {
     this.closeSteering(runId);
-    const entry = this.runs.get(runId);
-    if (this.db && entry?.persistQueue) await entry.persistQueue.then(() => this.db!.execute(sql`
-      UPDATE agent_run_stream SET steering_ready = false WHERE run_id = ${runId}::uuid
-    `)).catch((error) => this.logger.warn(`Could not close shared steering for ${runId}: ${error.message}`));
+    await this.writeSteeringReady(runId, false);
   }
 
   openSteering(runId: string) {
@@ -321,11 +321,27 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
   }
 
   async openSteeringShared(runId: string) {
-    this.openSteering(runId);
     const entry = this.runs.get(runId);
-    if (this.db && entry?.persistQueue) await entry.persistQueue.then(() => this.db!.execute(sql`
-      UPDATE agent_run_stream SET steering_ready = true WHERE run_id = ${runId}::uuid AND done = false
-    `)).catch((error) => this.logger.warn(`Could not open shared steering for ${runId}: ${error.message}`));
+    if (!entry || entry.done || entry.terminal) return;
+    this.openSteering(runId);
+    await this.writeSteeringReady(runId, true);
+  }
+
+  private async writeSteeringReady(runId: string, ready: boolean) {
+    const entry = this.runs.get(runId);
+    if (!this.db || !entry?.registration) return;
+    // The initial row must exist, but a delayed token batch must not hold
+    // model execution or terminal delivery open. Future batches use the live
+    // steeringClosed flag, so they cannot restore a stale readiness value.
+    await optionalContext(
+      entry.registration.then(() => this.db!.execute(sql`
+        UPDATE agent_run_stream SET steering_ready = ${ready}
+        WHERE run_id = ${runId}::uuid AND (${!ready} OR done = false)
+      `)).then(() => undefined),
+      undefined,
+      (reason) => this.logger.warn(`Could not ${ready ? 'open' : 'close'} shared steering for ${runId}: ${reason}`),
+      3_000,
+    );
   }
 
   /**
