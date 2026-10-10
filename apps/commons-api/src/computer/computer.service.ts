@@ -1460,14 +1460,12 @@ export class ComputerService {
     if (!config?.enabled) return '';
     const allowedProfiles = await this.allowedResourceProfiles(agentId);
 
-    const computers = await this.listInstances({
-      agentId,
-      sessionId,
-      includeTerminated: false,
-    }).catch(() => []);
-    const computer = computers[0];
+    // Prompt enrichment must not poll the remote runtime. Wake/execute tools
+    // verify live state; this summary is explicitly the last recorded state.
+    const assigned = await this.getAssignedComputer(agentId).catch(() => null);
+    const computer = assigned?.status === 'terminated' ? null : assigned;
     const line = computer
-      ? `- ${computer.name} (${computer.computerId}) persistent/${
+      ? `- ${computer.name} (${computer.computerId}) persistent/last-recorded-${
           computer.status
         }${computer.browser?.url ? ` browser=${computer.browser.url}` : ''}`
       : '- The persistent computer has not been provisioned yet.';

@@ -67,6 +67,18 @@ describe('ComputerService', () => {
     );
   });
 
+  it('builds a last-recorded computer summary even when remote polling never responds', async () => {
+    jest.spyOn(service, 'getConfig').mockResolvedValue({ enabled: true, allowAgentStart: true, resourceProfile: 'starter', resourceMode: 'fixed', metadata: {} } as any);
+    jest.spyOn(service, 'allowedResourceProfiles').mockResolvedValue(['starter']);
+    jest.spyOn(service, 'getAssignedComputer').mockResolvedValue({ computerId: 'owned-computer', name: 'Saved computer', status: 'running' } as any);
+    const remote = jest.spyOn(service as any, 'commonOsComputerRequest').mockImplementation(() => new Promise(() => {}));
+    const prompt = await service.buildComputerPrompt('agent_1', 'captured-session');
+    expect(prompt).toContain('owned-computer');
+    expect(prompt).toContain('last-recorded-running');
+    expect(prompt).toContain('startAgentComputer');
+    expect(remote).not.toHaveBeenCalled();
+  });
+
   it('rejects a narrative file-write acknowledgement without execution evidence', async () => {
     jest.spyOn(service, 'listInstances').mockResolvedValue([{ computerId: 'computer', agentId: 'agent_1', status: 'running', commonOsAgentId: 'runtime' }] as any);
     const send = jest.spyOn(service, 'sendInstruction').mockResolvedValue({ status: 'responded', response: 'I wrote all requested files.' } as any);
