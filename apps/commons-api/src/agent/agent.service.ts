@@ -62,7 +62,7 @@ import { ToolService } from '~/tool/tool.service';
 import { optionalContext } from './optional-context';
 import { CommonTool } from '../tool/tools/common-tool.service';
 import { WalletTool } from '../tool/tools/ethereum-tool.service';
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
+import { blockingModelCallbacks } from './blocking-model-callbacks';
 import { IChatGptSchema } from '@samchon/openapi';
 import { getPosthog } from '~/helpers/posthog';
 import { LogService } from '~/log/log.service';
@@ -1304,7 +1304,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             costUsd: 0,
           };
 
-          const callbackHandler = BaseCallbackHandler.fromMethods({
+          const callbackHandler = blockingModelCallbacks({
             handleLLMStart: async (
               _llm: any,
               _prompts: string[],
