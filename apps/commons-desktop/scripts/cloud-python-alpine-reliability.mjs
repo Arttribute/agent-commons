@@ -46,7 +46,7 @@ plt.plot([1, 2, 3, 4], [3, 5, 7, 9]); plt.savefig(OUTPUT_DIR / 'regression.png')
 print('large output ' * 20000)
 print('analysis completed')''', acknowledge=False)
 assert first['exitCode'] == 0, first
-assert first['stdout'].endswith('analysis completed\\n') and len(first['stdout']) <= 32000
+assert first['stdout'].endswith('analysis completed' + chr(10)) and len(first['stdout']) <= 32000
 assert not legacy.exists(), 'Legacy runtime remains in the watched workspace'
 retained = list(Path('/mnt/shared/.commons-python/.cache').glob('legacy-runtime-*/old-environment/retained-marker'))
 assert len(retained) == 1 and retained[0].read_text() == 'Preserve old cache without importing relocated binaries'
