@@ -114,28 +114,45 @@ export function localPromptCharacterBudget(outputTokens: number, schemaCharacter
 }
 
 /** Prefer a full output budget, reducing it before rejecting a valid input. */
-export function prepareLocalInference(messages: OllamaMessage[], schemaCharacters = 0, imageCount = 0) {
+export function prepareLocalInference(messages: OllamaMessage[], schemaCharacters = 0, imageCount = 0, optionalSystemContext: string[] = []) {
   let lastError: unknown;
-  for (const outputTokens of [4096, 3072, 2048]) {
-    try {
-      const candidate = structuredClone(messages);
-      compactSavedWriteCalls(candidate);
-      compactToolLoop(candidate, localPromptCharacterBudget(outputTokens, schemaCharacters, imageCount), true);
-      messages.splice(0, messages.length, ...candidate);
-      return outputTokens;
-    } catch (error) { lastError = error; }
+  const candidateWithContext = (count: number) => {
+    const candidate = structuredClone(messages);
+    candidate[0].content += optionalSystemContext.slice(0, count).join('');
+    if (count < optionalSystemContext.length) candidate[0].content += '\nEarlier execution summaries were shortened for this inference. Actual tool results remain in conversation history. Read a source again by its verified ID if a necessary fact is missing; do not infer it.';
+    return candidate;
+  };
+  // These summaries duplicate stored tool evidence. Drop lower-priority
+  // summaries before shortening the latest source or rejecting a valid task.
+  for (let count = optionalSystemContext.length; count >= 0; count--) {
+    for (const outputTokens of [4096, 3072, 2048]) {
+      try {
+        const candidate = candidateWithContext(count);
+        compactSavedWriteCalls(candidate);
+        compactToolLoop(candidate, localPromptCharacterBudget(outputTokens, schemaCharacters, imageCount), true);
+        messages.splice(0, messages.length, ...candidate);
+        return outputTokens;
+      } catch (error) { lastError = error; }
+    }
   }
   // A large newest source excerpt may itself exceed the remaining budget.
   // Keep its exact call/result group and JSON metadata, but shorten its text
   // explicitly so the model can request a smaller range using the same ID.
-  try {
-    const candidate = structuredClone(messages);
-    compactSavedWriteCalls(candidate);
-    compactFailedWriteCalls(candidate);
-    compactToolLoop(candidate, localPromptCharacterBudget(2048, schemaCharacters, imageCount));
-    messages.splice(0, messages.length, ...candidate);
-    return 2048;
-  } catch (error) { lastError = error; }
+  for (let count = optionalSystemContext.length; count >= 0; count--) {
+    try {
+      const candidate = candidateWithContext(count);
+      compactSavedWriteCalls(candidate);
+      compactFailedWriteCalls(candidate);
+      for (const message of candidate) {
+        if (message.role !== 'assistant' || !message.tool_calls?.length) continue;
+        message.content = boundedContent(message.content, 600);
+        if (message.thinking) message.thinking = boundedContent(message.thinking, 600);
+      }
+      compactToolLoop(candidate, localPromptCharacterBudget(2048, schemaCharacters, imageCount));
+      messages.splice(0, messages.length, ...candidate);
+      return 2048;
+    } catch (error) { lastError = error; }
+  }
   throw lastError;
 }
 
