@@ -22,29 +22,42 @@ try {
 from pathlib import Path
 system = Path(sys.executable).resolve()
 before = hashlib.sha256(system.read_bytes()).hexdigest()
-def step(name, code):
+def step(name, code, acknowledge=True):
     run = Path('/tmp') / name
     run.mkdir()
     (run / 'bootstrap.py').write_text(Path('/acceptance/bootstrap.py').read_text())
     (run / 'analysis.py').write_text(code)
     (run / 'inputs.json').write_text(json.dumps({'files': [], 'packages': [], 'timeoutSeconds': 120, 'workingDirectory': 'sessions/acceptance/outputs'}))
     subprocess.run([sys.executable, str(run / 'bootstrap.py')], check=True, timeout=540)
-    return json.loads((run / 'result.json').read_text())
+    result = json.loads((run / 'result.json').read_text())
+    if acknowledge and result['exitCode'] == 0:
+        receipts = Path(result['outputDirectory'] + '.acks')
+        receipts.mkdir(exist_ok=True)
+        (receipts / (name + '.json')).write_text(json.dumps({file['name']: hashlib.sha256((Path(result['outputDirectory']) / file['name']).read_bytes()).hexdigest() for file in result['files']}))
+    return result
 first = step('platform-first', '''import json, numpy as np, pandas, matplotlib.pyplot as plt, scipy, sklearn, seaborn, openpyxl, PIL
 from sklearn.linear_model import LinearRegression
 model = LinearRegression().fit(np.array([1, 2, 3, 4]).reshape(-1, 1), [3, 5, 7, 9])
 (OUTPUT_DIR / 'regression.json').write_text(json.dumps({'slope': float(model.coef_[0]), 'intercept': float(model.intercept_), 'prediction': float(model.predict([[5]])[0])}, allow_nan=False))
-plt.plot([1, 2, 3, 4], [3, 5, 7, 9]); plt.savefig(OUTPUT_DIR / 'regression.png')''')
+plt.plot([1, 2, 3, 4], [3, 5, 7, 9]); plt.savefig(OUTPUT_DIR / 'regression.png')''', acknowledge=False)
 assert first['exitCode'] == 0, first
 files = {f['name']: base64.b64decode(f['base64']) for f in first['files']}
 regression = json.loads(files['regression.json'])
 assert abs(regression['slope'] - 2) < 1e-8 and abs(regression['intercept'] - 1) < 1e-8 and abs(regression['prediction'] - 11) < 1e-8
 assert files['regression.png'][:8] == b'\x89PNG\r\n\x1a\n'
+original_manifest = Path('/tmp/platform-first/result.json').read_bytes()
+original_script = Path('/tmp/platform-first/analysis.py').read_bytes()
+subprocess.run([sys.executable, '/tmp/platform-first/bootstrap.py'], check=True, timeout=30)
+assert Path('/tmp/platform-first/result.json').read_bytes() == original_manifest, 'Terminal retry replaced the original output manifest'
+assert Path('/tmp/platform-first/analysis.py').read_bytes() == original_script, 'Terminal retry ran or rewrote the source code again'
+recovered = step('platform-recover-publication', "print('Recover outputs whose Library upload was interrupted')")
+assert recovered['exitCode'] == 0 and {file['name'] for file in recovered['files']} == set(files), recovered
+assert all(base64.b64decode(file['base64']) == files[file['name']] for file in recovered['files'])
 second = step('platform-second', "assert (OUTPUT_DIR / 'regression.png').exists()\n(OUTPUT_DIR / 'next.md').write_text('Warm runtime working files retained')")
 assert second['exitCode'] == 0 and [f['name'] for f in second['files']] == ['next.md'], second
 assert hashlib.sha256(system.read_bytes()).hexdigest() == before
 assert subprocess.check_output(['/bin/sh', '-c', 'printf system-shell-unchanged']).decode() == 'system-shell-unchanged'
-Path('/acceptance/verified.json').write_text(json.dumps({'regression': regression, 'coldFiles': sorted(files), 'warmFiles': [f['name'] for f in second['files']], 'systemPythonUnchanged': True}))
+Path('/acceptance/verified.json').write_text(json.dumps({'regression': regression, 'coldFiles': sorted(files), 'warmFiles': [f['name'] for f in second['files']], 'systemPythonUnchanged': True, 'terminalRetryPreservedManifest': True, 'unacknowledgedOutputsRecovered': True}))
 `);
   writeFileSync(join(directory, 'verify-replacement.py'), String.raw`import base64, json, subprocess, sys
 from pathlib import Path

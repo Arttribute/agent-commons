@@ -2622,6 +2622,7 @@ export class CommonToolService {
     } catch { throw new BadRequestException(`Python did not produce a verified result. Runtime response: ${JSON.stringify(command).slice(0, 3000)}`); }
     if (output.exitCode !== 0) throw new BadRequestException(`Python failed (${output.exitCode}): ${output.stderr.slice(0, 16000)}\n${output.stdout.slice(0, 16000)}`);
     const artifacts = [];
+    const publicationHashes: Record<string, string> = {};
     if (output.files.length > 100) throw new BadRequestException('Python produced too many outputs.');
     if (output.files.some((file) => typeof file.name !== 'string' || /[\\\0]/.test(file.name) || /^[a-z]:/i.test(file.name) || posix.isAbsolute(file.name) || file.name.split('/').some((part) => !part || part === '.' || part === '..'))) throw new BadRequestException('Invalid Python output filename. Use portable relative paths within OUTPUT_DIR.');
     for (const file of output.files) {
@@ -2646,7 +2647,9 @@ export class CommonToolService {
       if (buffer.length > 10 * 1024 * 1024) throw new BadRequestException('Python output exceeds 10 MB.');
       const created = await this.files.createGeneratedFile({ buffer, fileName: posix.basename(file.name), mimeType: file.mimeType, agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId, metadata: { source: 'computed-python', toolCallId: metadata?.toolCallId, relativePath: file.name } });
       artifacts.push({ fileId: created.fileId, name: created.name, relativePath: file.name });
+      publicationHashes[file.name] = createHash('sha256').update(buffer).digest('hex');
     }
+    if (artifacts.length) await this.computers.writeFiles({ agentId, sessionId, files: [{ path: execution.publicationAcknowledgementPath, content: JSON.stringify(publicationHashes) }], runId: metadata?.runId, toolCallId: metadata?.toolCallId });
     const workspace = output.outputDirectory ?? `/mnt/shared/${execution.directory}/outputs`;
     return { exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, artifacts, workspace,
       ...(!artifacts.length ? { outputHint: `No newly generated Library files were found in this chat's managed output directory (${workspace}). Save requested files using the existing OUTPUT_DIR variable; do not replace it with a guessed path or a folder from another chat. Files saved elsewhere are working files and were not published.` } : {}),

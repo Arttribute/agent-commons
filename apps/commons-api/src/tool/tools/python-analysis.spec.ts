@@ -51,6 +51,22 @@ describe('computed Python output boundary', () => {
     expect(service.files.createGeneratedFile).toHaveBeenCalledWith(expect.objectContaining({ buffer: Buffer.from('image bytes'), fileName: 'headline.png', metadata: expect.objectContaining({ relativePath: 'ads/headline.png' }) }));
     expect(result.artifacts).toEqual([{ fileId: 'nested-image', name: 'headline.png', relativePath: 'ads/headline.png' }]);
   });
+  it('acknowledges verified bytes only after Library persistence in the captured chat', async () => {
+    const service = setup();
+    await service.runPythonAnalysis({ code: 'print(64)', sessionId: 'invented' }, { agentId: 'agent', sessionId: 'actual', ownerId: 'viewer' });
+    const acknowledgement = service.computers.writeFiles.mock.calls[1][0];
+    expect(acknowledgement.sessionId).toBe('actual');
+    const expectedRoot = createHash('sha256').update('viewer:agent:actual').digest('hex');
+    expect(acknowledgement.files[0].path).toMatch(new RegExp(`^\\.commons-python/sessions/${expectedRoot}/outputs\\.acks/[a-f0-9-]+\\.json$`));
+    expect(JSON.parse(acknowledgement.files[0].content)).toEqual({ 'means.json': createHash('sha256').update('{"T1":64}').digest('hex') });
+    expect(service.files.createGeneratedFile.mock.invocationCallOrder[0]).toBeLessThan(service.computers.writeFiles.mock.invocationCallOrder[1]);
+  });
+  it('leaves computed outputs recoverable when the Library upload fails', async () => {
+    const service = setup();
+    service.files.createGeneratedFile.mockRejectedValue(new Error('Library upload interrupted'));
+    await expect(service.runPythonAnalysis({ code: 'print(64)' }, { agentId: 'agent', sessionId: 'session' })).rejects.toThrow('Library upload interrupted');
+    expect(service.computers.writeFiles).toHaveBeenCalledTimes(1);
+  });
   it('rejects unsafe relative metadata paths before publishing any file', async () => {
     for (const name of ['../escape.txt', '/escape.txt', 'folder/../escape.txt', 'folder\\escape.txt', 'C:/escape.txt']) {
       const service = setup();

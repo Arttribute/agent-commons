@@ -7,6 +7,14 @@ import { CLOUD_PYTHON_PLATFORM } from './python-platform';
 export const CLOUD_PYTHON_BOOTSTRAP = String.raw`import base64, fcntl, hashlib, json, mimetypes, os, platform, subprocess, sys, tarfile, urllib.request
 from pathlib import Path
 run = Path(__file__).resolve().parent
+attempt_lock = (run / '.execute.lock').open('w')
+fcntl.flock(attempt_lock, fcntl.LOCK_EX)
+# CommonOS can retry a long terminal instruction. Never execute it twice or
+# replace its first manifest with an empty "nothing changed" result.
+if (run / 'result.json').exists():
+    completed = json.loads((run / 'result.json').read_text())
+    print(json.dumps({k: v for k, v in completed.items() if k != 'files'}))
+    sys.exit(0)
 config = json.loads((run / 'inputs.json').read_text())
 root = Path('/mnt/shared/.commons-python')
 if root.is_symlink(): raise RuntimeError('Python runtime folder contains a symbolic link')
@@ -124,7 +132,24 @@ def save_publication(hashes):
     temporary = publication.with_suffix('.json.tmp')
     temporary.write_text(json.dumps({str(path.relative_to(output)): digest for path, digest in hashes.items()}))
     temporary.replace(publication)
+# The API acknowledges actual Library persistence, using separate files so
+# concurrent uploads cannot overwrite each other's publication state.
+acknowledgements = output.parent / (output.name + '.acks')
+consumed = []
+if acknowledgements.exists():
+    if acknowledgements.is_symlink(): raise RuntimeError('Python publication folder contains a symbolic link')
+    for acknowledgement in acknowledgements.glob('*.json'):
+        if acknowledgement.is_symlink(): raise RuntimeError('Python publication record contains a symbolic link')
+        for name, digest in json.loads(acknowledgement.read_text()).items():
+            path = Path(name)
+            if path.is_absolute() or not name or '\\' in name or any(part in ('', '.', '..') for part in name.split('/')):
+                raise RuntimeError('Invalid Python publication filename')
+            if not isinstance(digest, str) or len(digest) != 64 or any(char not in '0123456789abcdef' for char in digest):
+                raise RuntimeError('Invalid Python publication hash')
+            baseline[output / path] = digest
+        consumed.append(acknowledgement)
 save_publication(baseline)
+for acknowledgement in consumed: acknowledgement.unlink()
 script = run / 'analysis.py'
 code = script.read_text()
 script.write_text('from pathlib import Path\nINPUT_FILES = ' + repr(inputs) + '\nOUTPUT_DIR = Path(' + repr(str(output)) + ')\nWORK_DIR = Path(' + repr(str(work)) + ')\nWORKSPACE_ROOT = "/mnt/shared"\n' + ${JSON.stringify(PYTHON_FONT_PRELUDE)} + code)
@@ -178,13 +203,14 @@ try:
         total_bytes += size
         if size > 10 * 1024 * 1024 or total_bytes > 25 * 1024 * 1024 or len(files) >= 100: raise RuntimeError('Python outputs exceed the size limit')
         files.append(export_file(path, str(path.relative_to(run))))
-    if result.returncode == 0: save_publication(working_hashes(output))
     manifest = dict(exitCode=result.returncode, stdout=result.stdout[-32000:], stderr=result.stderr[-16000:], files=files, outputDirectory=str(output))
 except subprocess.TimeoutExpired:
     manifest = dict(exitCode=-1, stdout='', stderr='Python execution timed out', files=[])
 except (ValueError, RuntimeError) as error:
     manifest = dict(exitCode=-1, stdout='', stderr=str(error), files=[])
-(run / 'result.json').write_text(json.dumps(manifest))
+temporary_manifest = run / 'result.json.tmp'
+temporary_manifest.write_text(json.dumps(manifest))
+temporary_manifest.replace(run / 'result.json')
 print(json.dumps({k: v for k, v in manifest.items() if k != 'files'}))
 `;
 
@@ -192,9 +218,13 @@ export function cloudPythonFiles(code: string, files: Array<{ itemId: string; na
   if (!code.trim() || code.length > 100_000) throw new Error('Provide Python code between 1 and 100,000 characters.');
   if (packages.length > 10 || packages.some((name) => !/^[a-zA-Z][a-zA-Z0-9_.-]*(?:\[[a-zA-Z0-9_,.-]+\])?(?:(?:==|>=|<=|~=)[a-zA-Z0-9_.+-]+)?$/.test(name))) throw new Error('Use package names with optional versions, without URLs or installer flags.');
   const directory = `.commons-python/runs/${randomUUID()}`;
-  return { directory, files: [
+  const workingDirectory = workspaceKey ? `sessions/${createHash('sha256').update(workspaceKey).digest('hex')}/outputs` : undefined;
+  const publicationAcknowledgementPath = workingDirectory
+    ? `.commons-python/${workingDirectory}.acks/${directory.split('/').at(-1)}.json`
+    : `${directory}/outputs.acks/${directory.split('/').at(-1)}.json`;
+  return { directory, publicationAcknowledgementPath, files: [
     { path: `${directory}/bootstrap.py`, content: CLOUD_PYTHON_BOOTSTRAP },
     { path: `${directory}/analysis.py`, content: code },
-    { path: `${directory}/inputs.json`, content: JSON.stringify({ files, packages, ...(workspaceKey ? { workingDirectory: `sessions/${createHash('sha256').update(workspaceKey).digest('hex')}/outputs` } : {}), timeoutSeconds: Math.max(1, Math.min(timeoutSeconds, 300)) }) },
+    { path: `${directory}/inputs.json`, content: JSON.stringify({ files, packages, ...(workingDirectory ? { workingDirectory } : {}), timeoutSeconds: Math.max(1, Math.min(timeoutSeconds, 300)) }) },
   ] };
 }
