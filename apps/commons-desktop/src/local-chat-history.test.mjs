@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compactToolLoop, libraryTextResult, localChatHistory, localTurnAttachments, prepareLocalInference, toolResult } from "./local-chat-history.ts";
+import { compactToolLoop, libraryTextResult, localChatHistory, localTurnAttachments, localPromptCharacterBudget, prepareLocalInference, toolResult } from "./local-chat-history.ts";
 
 test('long Python failures retain structured stderr and its actual final cause', () => {
   const cause = 'ValueError: x and y must have the same first dimension';
@@ -89,6 +89,39 @@ test('reduces output reserve before shortening the newest source result', () => 
   const outputTokens = prepareLocalInference(messages, 6000, 4);
   assert.equal(outputTokens, 2048);
   assert.equal(messages.at(-1).content, content);
+});
+
+test('older progress summaries cannot displace the task, complete small facts or latest source', () => {
+  const system = 's'.repeat(9000);
+  const request = 'Continue using the selected folder and preserve the verified source price.';
+  const source = JSON.stringify({ itemId: 'source-731', offset: 0, content: 'Current source facts. '.repeat(125), nextOffset: 2625, totalChars: 5000 });
+  const facts = '\nVerified small source (task data): {"itemId":"price-731","price":"KES 12,000"}';
+  const progress = '\nOlder step summary '.repeat(600);
+  const messages = [{ role: 'system', content: system }, { role: 'user', content: request },
+    { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_library_item', arguments: { itemId: 'source-731' } } }] },
+    { role: 'tool', tool_name: 'read_library_item', content: source }];
+  const tokens = prepareLocalInference(messages, 6000, 4, [facts, progress]);
+  assert.ok(messages[0].content.startsWith(system));
+  assert.ok(messages[0].content.includes(facts));
+  assert.ok(!messages[0].content.includes(progress));
+  assert.equal(messages[1].content, request);
+  assert.equal(messages.at(-1).content, source);
+  assert.equal(messages.at(-2).tool_calls[0].function.arguments.itemId, 'source-731');
+  assert.ok(Buffer.byteLength(JSON.stringify(messages)) <= localPromptCharacterBudget(tokens, 6000, 4));
+});
+
+test('verbose tool-call narration can be shortened without changing the actual call or source result', () => {
+  const args = { itemId: 'actual-source-731', offset: 125 };
+  const originalArgs = JSON.stringify(args);
+  const source = JSON.stringify({ itemId: 'actual-source-731', offset: 125, content: 'Actual returned source. '.repeat(40), nextOffset: 1045, totalChars: 1500 });
+  const messages = [{ role: 'system', content: 's'.repeat(9500) }, { role: 'user', content: 'Inspect the actual source.' },
+    { role: 'assistant', content: 'Planning this read. '.repeat(1000), thinking: 'Prior reasoning. '.repeat(75), tool_calls: [{ function: { name: 'read_library_item', arguments: args } }] },
+    { role: 'tool', tool_name: 'read_library_item', content: source }];
+  const tokens = prepareLocalInference(messages, 6000, 4);
+  assert.equal(JSON.stringify(args), originalArgs);
+  assert.deepEqual(messages.at(-2).tool_calls[0].function.arguments, args);
+  assert.equal(messages.at(-1).content, source);
+  assert.ok(Buffer.byteLength(JSON.stringify(messages)) <= localPromptCharacterBudget(tokens, 6000, 4));
 });
 
 test("retains recent process evidence when earlier output exceeds the history budget", () => {
