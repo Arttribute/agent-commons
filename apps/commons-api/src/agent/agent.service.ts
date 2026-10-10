@@ -2190,7 +2190,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             // also need actual image content parts to inspect those files.
             // Keep these pictures transient: later steps retain tool evidence and
             // the model's observations without accumulating signed images.
-            const toolImages = await toolImageContext.next(executedCalls, this.supportsImageInputs(agent.modelProvider, agent.modelId), (input) => this.filesService.readFileForAgent({
+            const toolImages = await toolImageContext.next(executedCalls, this.supportsImageInputs(effectiveModel.provider, effectiveModel.modelId), (input) => this.filesService.readFileForAgent({
               ...input, agentId, sessionId: currentSessionId, ownerId: initiator,
               maxChars: 1, includeImageUrls: true,
             }));
@@ -2365,8 +2365,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                       ownerId: initiator,
                       workspaceId: props.workspaceId,
                       includeImageParts: this.supportsImageInputs(
-                        agent.modelProvider,
-                        agent.modelId,
+                        effectiveModel.provider,
+                        effectiveModel.modelId,
                       ),
                       maxImageParts: Math.min(
                         8,
@@ -2452,7 +2452,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           if (
             canvasContext &&
             canvasRequest?.annotationIds.length &&
-            this.supportsImageInputs(agent.modelProvider, agent.modelId)
+            this.supportsImageInputs(effectiveModel.provider, effectiveModel.modelId)
           ) {
             const visuals =
               (await this.canvasVisuals
