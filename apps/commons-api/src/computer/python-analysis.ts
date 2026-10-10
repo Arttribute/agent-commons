@@ -32,14 +32,21 @@ resources = root / '.cache' / 'runtime' / triple
 for directory in (root / '.cache', resources.parent, resources):
     if directory.is_symlink(): raise RuntimeError('Python runtime folder contains a symbolic link')
     directory.mkdir(exist_ok=True)
-legacy = root / 'runtime'
 with (root / '.cache' / '.migration.lock').open('w') as migration_lock:
     fcntl.flock(migration_lock, fcntl.LOCK_EX)
-    if legacy.is_symlink(): raise RuntimeError('Python runtime folder contains a symbolic link')
-    if legacy.exists():
+    # Earlier bootstraps installed directly under these app-owned directories.
+    # Hiding only the latest /runtime layout leaves the older wheel cache,
+    # interpreter and v1 venv exposed to the recursive workspace watcher.
+    legacy_directories = [root / name for name in ('runtime', 'cache', 'interpreters')]
+    legacy_directories.extend(root.glob('data-3.12.11-*'))
+    for legacy in legacy_directories:
+        if legacy.is_symlink(): raise RuntimeError('Python runtime folder contains a symbolic link')
+        if not legacy.exists(): continue
+        if not legacy.is_dir(): raise RuntimeError('Legacy Python cache is not a directory')
         # Relocated venvs/ELF loaders retain absolute paths, so hide the old
-        # cache without reusing it as the newly prepared interpreter.
-        legacy.replace(root / '.cache' / ('legacy-runtime-' + run.name))
+        # cache without reusing it as the newly prepared interpreter. Keep
+        # all bytes; session outputs and execution journals are untouched.
+        legacy.replace(root / '.cache' / ('legacy-' + legacy.name + '-' + run.name))
 digests = {
     'aarch64-unknown-linux-gnu': '6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f',
     'x86_64-unknown-linux-gnu': '9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6',

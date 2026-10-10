@@ -25,6 +25,10 @@ before = hashlib.sha256(system.read_bytes()).hexdigest()
 legacy = Path('/mnt/shared/.commons-python/runtime/old-environment')
 legacy.mkdir(parents=True)
 (legacy / 'retained-marker').write_text('Preserve old cache without importing relocated binaries')
+older = Path('/mnt/shared/.commons-python')
+for name in ('cache', 'interpreters', 'data-3.12.11-v1'):
+    (older / name).mkdir()
+    (older / name / 'retained-marker').write_text('Original ' + name + ' bytes')
 def step(name, code, acknowledge=True):
     run = Path('/tmp') / name
     run.mkdir()
@@ -50,6 +54,10 @@ assert first['stdout'].endswith('analysis completed' + chr(10)) and len(first['s
 assert not legacy.exists(), 'Legacy runtime remains in the watched workspace'
 retained = list(Path('/mnt/shared/.commons-python/.cache').glob('legacy-runtime-*/old-environment/retained-marker'))
 assert len(retained) == 1 and retained[0].read_text() == 'Preserve old cache without importing relocated binaries'
+for name in ('cache', 'interpreters', 'data-3.12.11-v1'):
+    assert not (older / name).exists(), 'Older cache remains in watched workspace: ' + name
+    retained = list((older / '.cache').glob('legacy-' + name + '-*/retained-marker'))
+    assert len(retained) == 1 and retained[0].read_text() == 'Original ' + name + ' bytes'
 files = {f['name']: base64.b64decode(f['base64']) for f in first['files']}
 regression = json.loads(files['regression.json'])
 assert abs(regression['slope'] - 2) < 1e-8 and abs(regression['intercept'] - 1) < 1e-8 and abs(regression['prediction'] - 11) < 1e-8
