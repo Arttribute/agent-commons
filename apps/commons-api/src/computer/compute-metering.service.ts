@@ -14,9 +14,9 @@ import { ComputerService } from './computer.service';
 /**
  * Meters running computers by the minute and debits credits.
  *
- * Runs on every API task; a `SELECT ... FOR UPDATE SKIP LOCKED` ensures that
- * with multiple tasks each running instance is metered by exactly one task per
- * tick, so a minute is never double-billed. Debits are additionally idempotent
+ * Runs on every API task. A transaction advisory lock serializes each
+ * computer's debit and cursor update across tasks. Background ticks skip busy
+ * computers rather than queueing database connections. Debits are idempotent
  * on `compute:<computerId>:<intervalStartISO>`.
  *
  * When a debit would exceed the available balance we bill only whole minutes
@@ -26,6 +26,7 @@ import { ComputerService } from './computer.service';
 export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ComputeMeteringService.name);
   private timer?: ReturnType<typeof setInterval>;
+  private tickInFlight = false;
 
   constructor(
     private readonly db: DatabaseService,
@@ -53,6 +54,16 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
 
   /** Meter every running instance that has at least one full minute unbilled. */
   async tick(): Promise<void> {
+    if (this.tickInFlight) return;
+    this.tickInFlight = true;
+    try {
+      await this.meterDueInstances();
+    } finally {
+      this.tickInFlight = false;
+    }
+  }
+
+  private async meterDueInstances(): Promise<void> {
     const now = new Date();
     const dueBefore = new Date(now.getTime() - 60_000).toISOString();
     // Claim due instances with a row lock so concurrent API tasks don't
@@ -92,7 +103,7 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
         await this.withInstanceLock(inst.computerId, async () => {
           const current = await this.db.query.agentComputerInstance.findFirst({ where: eq(schema.agentComputerInstance.computerId, inst.computerId) });
           if (current && ['running', 'idle', 'stopping'].includes(current.status)) await this.meterInstance(current, now);
-        });
+        }, true);
       } catch (err: any) {
         this.logger.error(
           `Failed to meter computer ${inst.computerId}: ${err.message}`,
@@ -101,9 +112,17 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async withInstanceLock<T>(computerId: string, action: () => Promise<T>) {
+  private async withInstanceLock<T>(computerId: string, action: () => Promise<T>, skipIfBusy = false) {
     return this.db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${computerId}, 0))`);
+      if (skipIfBusy) {
+        // Queued overlapping ticks can consume the entire connection pool
+        // while the lock holder still needs the shared DB for credit queries.
+        const [lock] = await tx.execute<{ locked: boolean }>(sql`select pg_try_advisory_xact_lock(hashtextextended(${computerId}, 0)) as locked`);
+        if (!lock?.locked) return;
+      } else {
+        // Resource changes must settle the old rate before changing profiles.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${computerId}, 0))`);
+      }
       return action();
     });
   }
