@@ -107,6 +107,17 @@ async function verifyRuntime(runtimePath) {
       assert.ok(htmlRead.content.includes('Separate HTML source'));
       assert.ok(!htmlRead.content.includes('File bodies live here.'));
       assert.equal(htmlRead.availableMarkdownSource.itemId, member.itemId);
+      const directorySearch = await runtime.executeTool('search_library_item', { itemId: 'kit', query: 'START HERE' }, undefined, result.conversation.id);
+      assert.match(directorySearch, /^Error: That path identifies a directory/);
+      assert.ok(directorySearch.includes(member.itemId) && directorySearch.includes('read_library_item'));
+      assert.ok(!directorySearch.includes('File bodies live here.'), 'Directory guidance must not pretend filenames are document contents');
+      assert.ok(!directorySearch.includes(foreign.id) && !directorySearch.includes(foreign.name), 'Directory guidance must respect the captured chat scope');
+      const directoryRead = await runtime.executeTool('read_library_item', { itemId: 'kit/template' }, undefined, result.conversation.id);
+      assert.match(directoryRead, /^Error: That path identifies a directory/);
+      assert.ok(directoryRead.includes('kit/template/view.html'));
+      const missingDirectory = await runtime.executeTool('search_library_item', { itemId: 'unattached-folder', query: 'START HERE' }, undefined, result.conversation.id);
+      assert.match(missingDirectory, /^Error: that file is not attached/);
+      assert.ok(!missingDirectory.includes(member.itemId), 'Unknown folders must not disclose a current file inventory');
       runtime.updateSettings({ permissionMode: 'read-only' });
       const readOnly = await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'readonly.html' }, result.conversation.id);
       assert.match(readOnly, /^Error: This chat is read only/);

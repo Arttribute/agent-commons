@@ -2072,6 +2072,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const project = state.projects?.find((entry) => entry.id === conversation?.projectId);
       const scopedIds = new Set([...(conversation?.messages.flatMap((message) => message.attachments?.map((file) => file.id) ?? []) ?? []), ...(project?.libraryItemIds ?? []), ...(conversation?.artifacts?.map((file) => file.id) ?? [])]);
       let ambiguous: LocalLibraryItem[] = [];
+      let directoryFiles: LocalLibraryItem[] = [];
       if (!scopedIds.has(itemId)) {
         const candidates = (state.library ?? []).filter((file) => scopedIds.has(file.id));
         let matching = candidates.filter((file) => file.name === itemId);
@@ -2081,6 +2082,12 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
           const key = (path: string) => path.replaceAll("\\", "/").split("/").filter((part) => part && part !== ".").map((part) => part.replace(/^\d+\s+/, "").toLowerCase()).join("/");
           const requested = key(itemId);
           matching = candidates.filter((file) => key(file.name) === requested || key(file.name).endsWith(`/${requested}`));
+          if (requested && !matching.length) {
+            directoryFiles = candidates.filter((file) => key(file.name).startsWith(requested + '/') || key(file.name).includes('/' + requested + '/'));
+            const words = String(args.query ?? '').normalize('NFKC').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).slice(0, 20);
+            const relevance = (file: LocalLibraryItem) => words.filter((word) => key(file.name).includes(word)).length;
+            directoryFiles.sort((a, b) => relevance(b) - relevance(a) || a.name.localeCompare(b.name));
+          }
         }
         if (matching.length === 1) itemId = matching[0].id;
         else if (matching.length > 1) ambiguous = matching;
@@ -2090,6 +2097,8 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         Boolean(conversation?.artifacts?.some((artifact) => artifact.id === itemId));
       if (!permitted) result = ambiguous.length
         ? `Error: This filename is ambiguous. Choose the exact path or itemId for the correct workflow section: ${JSON.stringify(ambiguous.slice(0, 10).map((file) => ({ path: file.name, itemId: file.id })))}`
+        : directoryFiles.length
+        ? `Error: That path identifies a directory containing ${directoryFiles.length} files in this chat or project, not a document. ${name} requires one actual file's itemId or path. These are filenames only, not document contents: ${JSON.stringify(directoryFiles.slice(0, 8).map((file) => ({ path: file.name, itemId: file.id })))}. Read the relevant file with read_library_item; use list_session_files(query) to find other filenames anywhere in this chat or project.`
         : `Error: that file is not attached to this chat or included in its project. ${workspace ? `This chat also has a selected folder: ${workspace}. For documents in that folder, use cli_read_file with the file path relative to this root; use cli_list_directory if you need the exact path. ` : ""}For Library attachments, use list_session_files(query) to find the exact filename or itemId.`;
       else {
         try {
