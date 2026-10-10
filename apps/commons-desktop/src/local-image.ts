@@ -176,8 +176,9 @@ export class LocalImageManager {
     return this.modelPending;
   }
 
-  async generate(prompt: string, modelId = this.starter.id) {
+  async generate(prompt: string, modelId = this.starter.id, options: { negativePrompt?: string } = {}) {
     if (!prompt.trim() || prompt.length > 2_000) throw new Error("Image prompt must be 1 to 2,000 characters.");
+    if (options.negativePrompt !== undefined && (typeof options.negativePrompt !== "string" || options.negativePrompt.length > 2_000)) throw new Error("Negative image prompt must be at most 2,000 characters.");
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}\.(?:safetensors|gguf|ckpt)$/i.test(modelId)) throw new Error("Choose an installed image model.");
     await this.prepareModel(modelId);
     this.lifecycle.signal.throwIfAborted();
@@ -186,7 +187,7 @@ export class LocalImageManager {
     const output = join(this.root, `generated-${randomUUID()}.png`);
     try {
       await new Promise<void>((resolve, reject) => {
-        const child = spawn(this.executable(), ["-m", model, "-W", "512", "-H", "512", "--cfg-scale", "7", "--steps", "20", "--sampling-method", "euler_a", "--diffusion-fa", "--seed", "-1", "-o", output, "-p", prompt], { cwd: this.root, shell: false, stdio: ["ignore", "ignore", "pipe"], signal: this.lifecycle.signal });
+        const child = spawn(this.executable(), ["-m", model, "-W", "512", "-H", "512", "--cfg-scale", "7", "--steps", "20", "--sampling-method", "euler_a", "--diffusion-fa", "--seed", "-1", "-o", output, "-p", prompt, ...(options.negativePrompt ? ["-n", options.negativePrompt] : [])], { cwd: this.root, shell: false, stdio: ["ignore", "ignore", "pipe"], signal: this.lifecycle.signal });
         let errorOutput = "";
         let failure: Error | undefined;
         child.stderr.on("data", (chunk: Buffer) => { errorOutput = (errorOutput + chunk.toString()).slice(-4_000); });
