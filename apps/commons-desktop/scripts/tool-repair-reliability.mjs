@@ -19,6 +19,7 @@ async function verifyRuntime(runtimePath) {
   const malformed = '# Unsaved draft\n' + 'raw Markdown is not a files array\n'.repeat(220);
   const requests = new Map(models.map(model => [model, []]));
   const archiveRequests = new Map(models.map(model => [model, []]));
+  const sourceRequests = new Map(models.map(model => [model, []]));
   let archiveId;
   let serverError;
   const server = createServer(async (request, response) => {
@@ -31,6 +32,25 @@ async function verifyRuntime(runtimePath) {
       if (request.url === '/api/show') return response.end(JSON.stringify({ capabilities: ['completion', 'tools', 'thinking'], details: { family: 'qwen35' } }));
       if (request.url !== '/api/chat') return response.end(JSON.stringify({ done: true }));
       const model = body.model;
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Source mapping boundary'))) {
+        const calls = sourceRequests.get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        if (calls.length > 1 && calls.length < 4) {
+          const hint = body.messages.findLast(m => m.role === 'system' && m.content.includes('Available Python input identifiers'));
+          assert.ok(hint, 'Missing-input recovery lost the actual source identifiers');
+          assert.ok(hint.content.includes('scope-source.json'));
+          assert.ok(hint.content.includes('INPUT_FILES values are path strings'));
+          assert.ok(!hint.content.includes('source-template.html') && !hint.content.includes('not-in-this-chat'));
+          if (calls.length === 3) assert.ok(hint.content.includes('failed twice'), 'Repeat failure discarded the specific input repair');
+        }
+        const message = calls.length < 3 ? action('run_python', { code: 'open("missing-source.json")' })
+          : calls.length === 3 ? action('write_library_files', { files: [{ name: 'source-repair.md', content: 'Input lookup repaired.' }] })
+          : { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved source-repair.md.' } }) : 'Saved source-repair.md.' };
+        assert.ok(calls.length <= 4);
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
       if (body.messages.some(m => m.role === 'user' && m.content.includes('Archive completion boundary'))) {
         const calls = archiveRequests.get(model);
         calls.push(body);
@@ -180,6 +200,19 @@ async function verifyRuntime(runtimePath) {
       rmSync(memberFile.path);
       assert.equal(runtime.libraryArchiveState(archiveResult.conversation.id, new Set())[0].extracted, false, 'Missing member bytes must re-enable extraction');
       writeFileSync(memberFile.path, originalBytes);
+      const [source] = runtime.importLibraryFiles([{ name: 'scope-source.json', mimeType: 'application/json', bytes: new TextEncoder().encode('{"source":"current chat"}') }]);
+      const originalDataTool = runtime.executeDataTool.bind(runtime);
+      // Inject two controlled Python path failures; exercise the real recovery
+      // context and persistence without installing an interpreter in this test.
+      runtime.executeDataTool = async (name, ...args) => name === 'run_python'
+        ? 'Error: Python execution failed. FileNotFoundError: missing-source.json'
+        : originalDataTool(name, ...args);
+      try {
+        const repaired = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Source mapping boundary: save source-repair.md containing Input lookup repaired. Use the attached scope-source.json; do not use other Library files.' });
+        if (serverError) throw serverError;
+        assert.equal(sourceRequests.get(model).length, 4);
+        assert.equal(readFileSync(repaired.conversation.artifacts.find(file => file.name === 'source-repair.md').path, 'utf8'), 'Input lookup repaired.');
+      } finally { runtime.executeDataTool = originalDataTool; }
     }
     console.log(`Local malformed-write recovery passed on ${process.platform}-${process.arch}; original diagnostics, saved bytes, archive/member distinction and scoped template copies verified.`);
   } finally {

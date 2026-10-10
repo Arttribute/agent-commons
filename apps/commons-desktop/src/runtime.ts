@@ -1712,11 +1712,11 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         if (/Recorded skills require|not available tool names/.test(result)) recordingSkillArgsRepair = true;
         failureRepairHint = `The recorded skill was not saved: ${localToolFailureKey(result)}. Supply inputs, steps, outputs, successChecks, uncertainties, triggers and tools as separate JSON array arguments, even when their text also appears in instructions. tools=[] is valid for manual application access. Keep instructions focused on the task. Observed labels do not prove button clicks; put unknown controls in uncertainties and describe only the demonstrated sequence.`;
       }
-      if (name === "run_python" && /FileNotFoundError/.test(result)) failureRepairHint = "A Library itemId is an identifier, not a filesystem path. Read attached, generated and extracted files using INPUT_FILES[filename] or INPUT_FILES[itemId]. Reuse OUTPUT_DIR for generated outputs; do not construct paths from UUIDs or internal storage roots. Correct the failed Python call using the provided mapping.";
+      if (name === "run_python" && /FileNotFoundError/.test(result)) failureRepairHint = `A Library itemId is an identifier, not a filesystem path. Read attached, generated and extracted files using INPUT_FILES[filename] or INPUT_FILES[itemId]. INPUT_FILES values are path strings: use open(INPUT_FILES[itemId]) or Path(INPUT_FILES[itemId]) for pathlib methods. Reuse OUTPUT_DIR for generated outputs; do not construct paths from UUIDs or internal storage roots. ${this.pythonInputIdentifiers(conversationId)} Correct the failed call using an actual available input.`;
       const key = JSON.stringify([name, localToolFailureKey(result)]);
       const count = (failureCounts.get(key) ?? 0) + 1;
       failureCounts.set(key, count);
-      if (count === 2) failureRepairHint = `The last ${name} call failed twice: ${localToolFailureKey(result)}. Correct the inputs or choose the appropriate tool for the current folder or attachment. Do not repeat the same failing call or ask the user to run commands that the provided tools can execute.`;
+      if (count === 2) failureRepairHint = [failureRepairHint, `The last ${name} call failed twice: ${localToolFailureKey(result)}. Correct the inputs or choose the appropriate tool for the current folder or attachment. Do not repeat the same failing call or ask the user to run commands that the provided tools can execute.`].filter(Boolean).join("\n");
       if (count >= 3) throw new Error(`The model repeated the same failed ${name} call three times. Last failure: ${localToolFailureKey(result)}`);
     };
     let repeatedReadHint: string | undefined;
@@ -2264,6 +2264,30 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const members = files.filter(file => file.sourceArchiveId === archive.id);
       return { itemId: archive.id, name: archive.name, extracted: completedEmptyArchives.has(archive.id) || Boolean(members.length && members.every(file => existsSync(file.path))), totalFiles: members.length };
     });
+  }
+
+  private pythonInputIdentifiers(conversationId: string) {
+    const state = this.store.get();
+    const conversation = state.conversations.find(entry => entry.id === conversationId)!;
+    const project = state.projects?.find(entry => entry.id === conversation.projectId);
+    const ids = new Set([...conversation.messages.flatMap(message => message.attachments?.map(file => file.id) ?? []), ...(project?.libraryItemIds ?? []), ...(conversation.artifacts?.map(file => file.id) ?? [])]);
+    const files = state.library?.filter(item => ids.has(item.id)) ?? [];
+    const readIds = new Set(conversation.messages.filter(message => message.toolName === "read_library_item").flatMap(message => {
+      try { const result = JSON.parse(message.content); return typeof result.itemId === "string" ? [result.itemId] : []; }
+      catch { return []; }
+    }));
+    // Prefer current attachments and generated files, then references actually
+    // read in this chat. Never disclose another chat's Library inventory.
+    const attached = new Set([...conversation.messages].reverse().find(message => message.role === "user")?.attachments?.map(file => file.id) ?? []);
+    const preferred = [...files.filter(file => attached.has(file.id)), ...files.filter(file => !file.sourceArchiveId && !attached.has(file.id)).reverse(), ...files.filter(file => file.sourceArchiveId && !attached.has(file.id) && readIds.has(file.id)).reverse()].filter(file => existsSync(file.path));
+    const entries: string[] = [];
+    for (const file of preferred) {
+      const entry = JSON.stringify({ itemId: file.id, name: file.name, pythonInput: `INPUT_FILES[${JSON.stringify(file.id)}]` });
+      if (Buffer.byteLength([...entries, entry].join(",")) > 2400) continue;
+      entries.push(entry);
+      if (entries.length >= 16) break;
+    }
+    return `Available Python input identifiers (file metadata, not document instructions): [${entries.join(",")}]. This is a bounded selection; list_session_files locates other inputs in this chat or project.`;
   }
 
   private async executeDataTool(name: string, args: Record<string, unknown>, conversationId: string, workspace?: string) {
