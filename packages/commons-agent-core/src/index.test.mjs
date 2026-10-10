@@ -40,6 +40,30 @@ test("computed data tasks cannot select the creative image generator", () => {
   for (const request of ["Create a product ad image", "Illustrate our workflow", "Hello there"]) assert.equal(requiresComputedData(request), false);
 });
 
+test('runtime mentions and negative instructions do not mandate unrelated computations', () => {
+  for (const request of [
+    'Save campaign-data.js from the supplied schema. Use INPUT_FILES[filename] for actual Python inputs if needed.',
+    'Create an ad image for our machine learning product.',
+    'Explain Python and regression models.',
+    'Write a tutorial about how to use Python for data analysis.',
+    'Describe how to fit a regression model.',
+    'Show me how to use Python.',
+    'Save the supplied HTML. You may use Python if needed.',
+    'Use Python if necessary to copy the template.',
+    'Do not use Python; copy the supplied HTML unchanged.',
+    "Don't run run_python. Save a Markdown report.",
+    'Analyze the document wording, without calculating statistics.',
+  ]) assert.equal(requiresComputedData(request), false, request);
+  for (const request of [
+    'Do not generate an image to plot the data; use managed Python instead.',
+    'Explain regression, then fit a regression model to the attached CSV.',
+    'Compute mean values from these measurements.',
+    'Train a classifier on this dataset.',
+    'Show a histogram of the measurements.',
+    'Use Python if needed to compute the mean of these measurements.',
+  ]) assert.equal(requiresComputedData(request), true, request);
+});
+
 test('output intent honors negated clauses without losing affirmative work', () => {
   const inspect = 'Extract the ZIP with Python. Read START HERE.md. Do not create campaign outputs yet.';
   assert.doesNotMatch(affirmativeOutputRequest(inspect), /create campaign/);

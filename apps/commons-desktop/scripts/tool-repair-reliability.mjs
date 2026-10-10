@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 // verifies tool recovery and persistence, not the quality of any actual model.
 const app = resolve(import.meta.dirname, '..');
 const output = join(app, 'node_modules/.cache/tool-repair-reliability');
-await build({ entry: { runtime: join(app, 'src/runtime.ts') }, outDir: output, format: ['cjs'], outExtension: () => ({ js: '.cjs' }), platform: 'node', target: 'node22', external: ['electron'], noExternal: ['@agent-commons/agent-core', '@agent-commons/desktop-contract'], silent: true });
+await build({ entry: { runtime: join(app, 'src/runtime.ts') }, outDir: output, format: ['cjs'], outExtension: () => ({ js: '.cjs' }), platform: 'node', target: 'node22', external: ['electron'], noExternal: ['@agent-commons/agent-core', '@agent-commons/desktop-contract'], esbuildOptions(options) { options.alias = { ...options.alias, '@agent-commons/agent-core': resolve(app, '../../packages/commons-agent-core/src/index.cjs') }; }, silent: true });
 async function verifyRuntime(runtimePath) {
   const { PrivateLocalRuntime } = require(runtimePath);
   const directory = mkdtempSync(join(tmpdir(), 'commons-tool-repair-'));
@@ -208,7 +208,7 @@ async function verifyRuntime(runtimePath) {
         ? 'Error: Python execution failed. FileNotFoundError: missing-source.json'
         : originalDataTool(name, ...args);
       try {
-        const repaired = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Source mapping boundary: save source-repair.md containing Input lookup repaired. Use the attached scope-source.json; do not use other Library files.' });
+        const repaired = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Source mapping boundary: save source-repair.md containing Input lookup repaired. Use the attached scope-source.json; do not use other Library files. For Python inputs if needed, use INPUT_FILES by itemId.' });
         if (serverError) throw serverError;
         assert.equal(sourceRequests.get(model).length, 4);
         assert.equal(readFileSync(repaired.conversation.artifacts.find(file => file.name === 'source-repair.md').path, 'utf8'), 'Input lookup repaired.');
