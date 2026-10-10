@@ -9,13 +9,19 @@ from pathlib import Path
 run = Path(__file__).resolve().parent
 config = json.loads((run / 'inputs.json').read_text())
 root = Path('/mnt/shared/.commons-python')
+if root.is_symlink(): raise RuntimeError('Python runtime folder contains a symbolic link')
 root.mkdir(parents=True, exist_ok=True)
-resources = Path('/tmp/commons-python-runtime')
-resources.mkdir(parents=True, exist_ok=True)
 architecture = 'aarch64' if platform.machine() in ('aarch64', 'arm64') else 'x86_64'
 libc = 'musl' if any(Path('/lib').glob('ld-musl-*.so.1')) else 'gnu'
 python_version = '3.12.11'
 triple = architecture + '-unknown-linux-' + libc
+# The computer's private shared volume survives sleep and pod replacement.
+# Keep interpreters/venvs at their original absolute paths, separate from chat
+# outputs, and never reuse a binary from a different architecture or libc.
+resources = root / 'runtime' / triple
+for directory in (resources.parent, resources):
+    if directory.is_symlink(): raise RuntimeError('Python runtime folder contains a symbolic link')
+    directory.mkdir(exist_ok=True)
 digests = {
     'aarch64-unknown-linux-gnu': '6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f',
     'x86_64-unknown-linux-gnu': '9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6',
@@ -51,7 +57,9 @@ with (resources / '.prepare.lock').open('w') as lock:
             subprocess.run([str(python), '-I', '-c', 'import numpy, pandas, matplotlib, scipy, sklearn, seaborn, openpyxl, PIL'], env=env, check=True)
             (venv / 'commons-ready').write_text('ready')
         return python
-    python = prepare(resources / ('data-' + python_version + '-v1'), base_packages)
+    def environment_key(requirements):
+        return hashlib.sha256(json.dumps([python_version, sorted(requirements)]).encode()).hexdigest()[:16]
+    python = prepare(resources / ('data-' + python_version + '-' + environment_key(base_packages)), base_packages)
     if packages:
         selection = subprocess.run([str(python), '-I', '-c', ${JSON.stringify(PYTHON_PACKAGE_SELECTION_CODE)}, json.dumps(packages)], env=env, check=True, capture_output=True, text=True, timeout=30)
         packages = json.loads(selection.stdout)
@@ -59,7 +67,7 @@ with (resources / '.prepare.lock').open('w') as lock:
         import re
         overridden = {re.split(r'[<>=~\[]', name)[0].lower().replace('_', '-') for name in packages}
         requirements = [name for name in base_packages if name.split('==')[0] not in overridden] + packages
-        python = prepare(resources / ('extension-' + hashlib.sha256(json.dumps(sorted(packages)).encode()).hexdigest()[:16]), requirements)
+        python = prepare(resources / ('extension-' + environment_key(requirements)), requirements)
 inputs = {}
 output = root / config['workingDirectory'] if config.get('workingDirectory') else run / 'outputs'
 output.mkdir(parents=True, exist_ok=True)

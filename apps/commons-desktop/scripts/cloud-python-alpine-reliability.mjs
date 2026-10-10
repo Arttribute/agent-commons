@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
@@ -7,13 +7,16 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { build } from 'tsup';
 
-// Linux CI reproduces the musl agent computer from an empty runtime cache.
+// Linux CI reproduces a cold musl computer, then a replacement pod with only
+// its private volume retained and networking disabled.
 const app = resolve(import.meta.dirname, '..');
 const bundle = join(app, 'node_modules/.cache/cloud-python-alpine');
 await build({ entry: { cloud: join(app, '../commons-api/src/computer/python-analysis.ts') }, outDir: bundle, format: ['cjs'], outExtension: () => ({ js: '.cjs' }), platform: 'node', target: 'node22', silent: true });
 const { CLOUD_PYTHON_BOOTSTRAP } = createRequire(import.meta.url)(join(bundle, 'cloud.cjs'));
 const directory = mkdtempSync(join(tmpdir(), 'commons-alpine-python-'));
 try {
+  const shared = join(directory, 'shared');
+  mkdirSync(shared);
   writeFileSync(join(directory, 'bootstrap.py'), CLOUD_PYTHON_BOOTSTRAP);
   writeFileSync(join(directory, 'verify.py'), String.raw`import base64, hashlib, json, subprocess, sys
 from pathlib import Path
@@ -43,8 +46,39 @@ assert hashlib.sha256(system.read_bytes()).hexdigest() == before
 assert subprocess.check_output(['/bin/sh', '-c', 'printf system-shell-unchanged']).decode() == 'system-shell-unchanged'
 Path('/acceptance/verified.json').write_text(json.dumps({'regression': regression, 'coldFiles': sorted(files), 'warmFiles': [f['name'] for f in second['files']], 'systemPythonUnchanged': True}))
 `);
-  const { stdout, stderr } = await promisify(execFile)('docker', ['run', '--rm', '--memory=2g', '--cpus=1', '-v', `${directory}:/acceptance`, 'public.ecr.aws/docker/library/alpine:3.24.2', '/bin/sh', '-ec', 'apk add --no-cache python3 ca-certificates; python3 /acceptance/verify.py'], { timeout: 660_000, maxBuffer: 4_000_000 });
+  writeFileSync(join(directory, 'verify-replacement.py'), String.raw`import base64, json, subprocess, sys
+from pathlib import Path
+assert not Path('/tmp/commons-python-runtime').exists()
+run = Path('/tmp/replacement-run')
+run.mkdir()
+(run / 'bootstrap.py').write_text(Path('/acceptance/bootstrap.py').read_text())
+(run / 'inputs.json').write_text(json.dumps({'files': [], 'packages': ['numpy', 'PIL', 'sklearn'], 'timeoutSeconds': 120, 'workingDirectory': 'sessions/acceptance/outputs'}))
+(run / 'analysis.py').write_text('''import json, numpy as np
+from sklearn.linear_model import LinearRegression
+from PIL import Image
+assert json.loads((OUTPUT_DIR / 'regression.json').read_text())['prediction'] == 11
+with Image.open(OUTPUT_DIR / 'regression.png') as image: image.verify()
+assert (OUTPUT_DIR / 'next.md').read_text() == 'Warm runtime working files retained'
+assert all(Path(font).is_file() for font in FONT_FILES.values())
+model = LinearRegression().fit(np.array([1, 2, 3, 4]).reshape(-1, 1), [3, 5, 7, 9])
+(OUTPUT_DIR / 'replacement.json').write_text(json.dumps({'prediction': float(model.predict([[5]])[0])}, allow_nan=False))
+''')
+subprocess.run([sys.executable, str(run / 'bootstrap.py')], check=True, timeout=90)
+result = json.loads((run / 'result.json').read_text())
+assert result['exitCode'] == 0 and [file['name'] for file in result['files']] == ['replacement.json'], result
+assert json.loads(base64.b64decode(result['files'][0]['base64']))['prediction'] == 11
+assert not list(Path('/mnt/shared/.commons-python/runtime').glob('*/extension-*')), 'Installed alias imports must reuse the base environment'
+Path('/acceptance/replacement-verified.json').write_text(json.dumps({'replacementPod': True, 'networkDisabled': True, 'retainedSources': True, 'actualRegression': True, 'fontsAvailable': True, 'publishedOnlyNewOutput': True}))
+`);
+  const image = 'public.ecr.aws/docker/library/alpine:3.24.2';
+  const mounts = ['-v', `${directory}:/acceptance`, '-v', `${shared}:/mnt/shared`];
+  const { stdout, stderr } = await promisify(execFile)('docker', ['run', '--rm', '--memory=2g', '--cpus=1', ...mounts, image, '/bin/sh', '-ec', 'apk add --no-cache python3 ca-certificates; python3 /acceptance/verify.py'], { timeout: 660_000, maxBuffer: 4_000_000 });
   const result = JSON.parse(readFileSync(join(directory, 'verified.json'), 'utf8'));
   assert.equal(result.systemPythonUnchanged, true);
-  console.log(stdout, stderr, result);
+  // There is no system Python or package installation in this fresh container.
+  // The cached interpreter and ELF loader must work at their persisted paths.
+  await promisify(execFile)('docker', ['run', '--rm', '--network=none', '--memory=2g', '--cpus=1', ...mounts, image, '/bin/sh', '-ec', 'managed=$(find /mnt/shared/.commons-python/runtime -path "*/data-*/bin/python" -print -quit); test -n "$managed"; "$managed" -I /acceptance/verify-replacement.py'], { timeout: 120_000, maxBuffer: 4_000_000 });
+  const replacement = JSON.parse(readFileSync(join(directory, 'replacement-verified.json'), 'utf8'));
+  assert.equal(replacement.networkDisabled, true);
+  console.log(stdout, stderr, result, replacement);
 } finally { rmSync(directory, { recursive: true, force: true }); }
