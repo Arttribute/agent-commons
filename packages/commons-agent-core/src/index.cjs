@@ -97,6 +97,7 @@ function requiresComputedData(text) {
     .join('\n')
     .replace(/\b(?:(?:can|may|could|optionally)\s+(?:use|run|execute|invoke)\s+(?:python|run_python|runPythonAnalysis)|(?:use|run|execute|invoke)\s+(?:python|run_python|runPythonAnalysis)\s+(?:only\s+)?if\s+(?:needed|necessary|useful))\b/gi, ' ');
   return /\b(?:use|run|execute|invoke)\s+(?:(?:the|a|an|managed|local|cloud|isolated)\s+){0,3}(?:python|run_python|runPythonAnalysis|pandas|matplotlib|seaborn|scikit.learn)\b/i.test(request)
+    || /\b(?:produce|generate|create|build|save|write)\b.{0,100}\b(?:with|using|via|in)\s+(?:(?:the|a|an|managed|local|cloud|isolated)\s+){0,3}(?:python|run_python|runPythonAnalysis|pandas|matplotlib|seaborn|scikit.learn)\b/i.test(request)
     || /\b(?:calculate|compute|fit|train|evaluate|plot|chart|visuali[sz]e|analy[sz]e)\b.{0,100}\b(?:data|dataset|csv|xlsx|spreadsheet|measurements|heart.rate|sales|numbers|mean|median|average|regression|correlation|classifier|model|histogram|time.series)\b/i.test(request)
     || /\b(?:create|make|generate|draw|show)\b.{0,60}\b(?:histogram|scatter plot|time.series plot)\b/i.test(request);
 }

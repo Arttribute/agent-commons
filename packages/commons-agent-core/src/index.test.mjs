@@ -61,6 +61,7 @@ test('runtime mentions and negative instructions do not mandate unrelated comput
     'Train a classifier on this dataset.',
     'Show a histogram of the measurements.',
     'Use Python if needed to compute the mean of these measurements.',
+    'Produce headline.png and offer.png with runPythonAnalysis, then save campaign-data.js.',
   ]) assert.equal(requiresComputedData(request), true, request);
 });
 

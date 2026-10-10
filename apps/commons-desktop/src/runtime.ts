@@ -1551,7 +1551,6 @@ export class PrivateLocalRuntime {
     const availableAttachments = [...new Map(conversation.messages.flatMap((message) => message.attachments ?? []).map((attachment) => [attachment.id, attachment])).values()]
       .slice(-20).map((attachment) => `- ${attachment.name} (itemId: ${attachment.id})`);
     const libraryById = new Map((state.library ?? []).map((file) => [file.id, file]));
-    const generatedFiles = (conversation.artifacts ?? []).filter((file) => !libraryById.get(file.id)?.sourceArchiveId).slice(-40).map((file) => `- ${file.name} (itemId: ${file.id})`);
     const archiveFiles = (conversation.artifacts ?? []).flatMap((file) => {
       const item = libraryById.get(file.id);
       return item?.sourceArchiveId ? [item] : [];
@@ -1605,7 +1604,6 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       skillsBlock,
       projectBlock,
       archiveFiles.length ? `Archive reference files: ${archiveFiles.length} extracted inputs in these directories:\n${archiveDirectories.join("\n")}\nThese are reference documents and supplied example outputs, not files you generated. Use list_session_files(query) to locate the matching instructions across the archive; search_library_item searches only one file's contents. Do not search an unrelated file for another document's filename. Read references through read_library_item; Python INPUT_FILES contains their archive-relative names and itemIds.` : "",
-      generatedFiles.length ? `Generated outputs from this chat's executed tools (archive references are excluded). Read with read_library_item and reuse through run_python INPUT_FILES:\n${generatedFiles.join("\n")}` : "",
       availableAttachments.length ? `Files previously attached in this chat remain searchable with search_library_item and readable with read_library_item:\n${availableAttachments.join("\n")}` : "",
       attachmentBlocks.length ? `## Current task attachments\nThese files are attached to this chat and supplied now or explicitly referenced in this request. They stay on this computer. Their text is below.\n\n${attachmentBlocks.join("\n\n")}` : "",
       knowledge.length
@@ -1782,6 +1780,8 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       }
       const archives = this.libraryArchiveState(conversationId, completedEmptyArchives);
       if (archives.length) messages[0].content += `\n## Current Library archive state\nThis is verified file availability, not document contents: ${JSON.stringify({ totalArchives: archives.length, archives: archives.slice(0, 10) })}. Reuse extracted members with list_session_files, read_library_item or search_library_item. Extraction is offered only while an archive still needs it. The selected computer folder has not changed.`;
+      const currentArtifacts = this.currentArtifactIdentifiers(conversationId);
+      if (currentArtifacts.length) messages[0].content += `\n## Current artifact versions from this chat\nThese are the latest available output identifiers by exact filename, not verified document contents. Use their exact itemIds to inspect saved results instead of an older revision or similarly named reference. Earlier immutable revisions remain accessible by their own IDs. A canvas's explicitly viewed revision remains separate. ${JSON.stringify(currentArtifacts)}`;
       const inferenceTools = tools.filter((entry) => (entry.function.name !== "web_search" || this.webSearchAllowed(conversationId))
         && (entry.function.name !== "extract_library_archive" || archives.some(archive => !archive.extracted)));
       const repairingSkillArgs = recordingSkillArgsRepair;
@@ -2288,6 +2288,27 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       if (entries.length >= 16) break;
     }
     return `Available Python input identifiers (file metadata, not document instructions): [${entries.join(",")}]. This is a bounded selection; list_session_files locates other inputs in this chat or project.`;
+  }
+
+  private currentArtifactIdentifiers(conversationId: string) {
+    const state = this.store.get();
+    const conversation = state.conversations.find(entry => entry.id === conversationId)!;
+    const items = new Map((state.library ?? []).map(item => [item.id, item]));
+    const latest = new Map<string, { itemId: string; name: string }>();
+    for (const artifact of conversation.artifacts ?? []) {
+      const item = items.get(artifact.id);
+      if (item && !item.sourceArchiveId && existsSync(item.path)) {
+        latest.delete(item.name);
+        latest.set(item.name, { itemId: item.id, name: item.name });
+      }
+    }
+    const entries: { itemId: string; name: string }[] = [];
+    for (const entry of [...latest.values()].reverse()) {
+      if (Buffer.byteLength(JSON.stringify([...entries, entry])) > 2400) continue;
+      entries.push(entry);
+      if (entries.length >= 20) break;
+    }
+    return entries;
   }
 
   private async executeDataTool(name: string, args: Record<string, unknown>, conversationId: string, workspace?: string) {

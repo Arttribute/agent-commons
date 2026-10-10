@@ -90,6 +90,9 @@ async function verifyRuntime(runtimePath) {
         message = { role: 'assistant', content: JSON.stringify({ files: [{ name: 'report.md', content: 'Schema repair verified.' }] }) };
       } else {
         assert.equal(calls.length, 3, 'Unexpected continuation after verified output');
+        const saved = runtime.state().conversations[0].artifacts.find(file => file.name === 'report.md');
+        assert.ok(body.messages[0].content.includes(saved.id), 'Model context did not refresh after saving the output');
+        assert.match(body.messages[0].content, /Current artifact versions from this chat/);
         message = { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved report.md.' } }) : 'Saved report.md.' };
       }
       response.end(JSON.stringify({ model, message, done: true }) + '\n');
@@ -132,6 +135,11 @@ async function verifyRuntime(runtimePath) {
       const copy = runtime.state().library.find(item => item.id === copied.artifacts[0].itemId);
       assert.equal(readFileSync(copy.path, 'utf8'), templateText);
       assert.equal(readFileSync(template.path, 'utf8'), templateText);
+      const revised = JSON.parse(await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'templates/copied.html' }, result.conversation.id));
+      const current = runtime.currentArtifactIdentifiers(result.conversation.id);
+      assert.equal(current.find(file => file.name === 'templates/copied.html').itemId, revised.artifacts[0].itemId);
+      assert.ok(!current.some(file => file.itemId === copied.artifacts[0].itemId || file.itemId === foreign.id));
+      assert.equal(readFileSync(copy.path, 'utf8'), templateText, 'Refreshing current identifiers mutated an earlier immutable revision');
       const forbidden = await runtime.executeDataTool('copy_library_file', { itemId: foreign.id, name: 'foreign.txt' }, result.conversation.id);
       assert.match(forbidden, /^Error: Source file is not available/);
       const escaped = await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: '../outside.html' }, result.conversation.id);
