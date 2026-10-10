@@ -45,6 +45,8 @@ async function verifyRuntime(runtimePath) {
         if (calls.length === 2 || calls.length === 3) {
           if (model.startsWith('qwen')) {
             assert.deepEqual(pictures, [visualBytes.toString('base64')], 'Actual tool-generated/read pixels were not supplied');
+            assert.deepEqual(body.messages.at(-1).images, pictures, 'Tool pixels must follow the result, not rewrite an earlier user turn');
+            assert.equal(body.messages.find(m => m.role === 'user' && m.content.includes('Visual tool boundary')).images, undefined);
             assert.ok(system.includes(visualArtifactId), 'Visual evidence lost its actual Library identity');
           } else {
             assert.deepEqual(pictures, [], 'Text-only model received unsupported image inputs');

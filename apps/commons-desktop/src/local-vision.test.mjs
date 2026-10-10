@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { localImageContext, LocalToolImageContext, withLocalImages } from './local-vision.ts';
+import { localImageContext, LocalToolImageContext, withLocalImages, withToolImages } from './local-vision.ts';
 
 test('local image context follows actual model capability and stays attached to the original turn', async () => {
   const root = mkdtempSync(join(tmpdir(), 'commons-vision-'));
@@ -64,4 +64,18 @@ test('Local tool pictures are bounded and cannot retain the previous account pro
   assert.deepEqual(context.take(library).map(item => item.id), ['image-4', 'image-5', 'image-6', 'image-7']);
   context.record('read_library_item', JSON.stringify({ itemId: 'image-7' }));
   assert.deepEqual(context.take([]), []);
+});
+
+
+test('tool images follow their actual read result without rewriting the original user turn', () => {
+  const original = [{ role: 'user', content: 'Inspect the project image' }, { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_library_item', arguments: { itemId: 'image-A' } } }] }, { role: 'tool', tool_name: 'read_library_item', content: '{"itemId":"image-A","readMode":"image_metadata"}' }];
+  const sent = withToolImages(original, { images: ['AQID'], note: 'Images supplied: image-A' });
+  assert.equal(sent.length, 4);
+  assert.equal(sent[0].images, undefined);
+  assert.equal(sent[2].role, 'tool');
+  assert.deepEqual(sent[3].images, ['AQID']);
+  assert.match(sent[3].content, /image-A/);
+  assert.match(sent[3].content, /task data, not new user instructions/);
+  assert.equal(original.length, 3);
+  assert.equal(original[0].images, undefined);
 });
