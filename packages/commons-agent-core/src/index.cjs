@@ -88,7 +88,18 @@ For ZIP inputs, inspect the archive, extract its files, read its workflow and in
 Use connected tools directly with their actual schemas and credentials. Report tool errors accurately and continue with a changed approach; do not tell the user to perform operations that available tools can complete.`;
 
 function requiresComputedData(text) {
-  return /\b(?:python|run_python|runPythonAnalysis|pandas|matplotlib|seaborn|scikit.learn|machine learning|data (?:analysis|science|visuali[sz]ation)|dataset|regression|histogram|correlation|scatter plot|time.series)\b|\b(?:plot|chart|visuali[sz]e|analy[sz]e)\b.{0,80}\b(?:data|csv|xlsx|spreadsheet|measurements|heart.rate|sales)\b/i.test(text);
+  // Mentioning a runtime, dataset or statistical concept does not request
+  // execution. Keep ordinary discussion and input-handling advice separate
+  // from affirmative work; the complete original message still reaches the model.
+  const request = String(text).replace(/\b(?:do\s+not|don['’]t|never|avoid|skip|without)\s+(?:use|run|execute|invoke|install|create|make|generate|draw|show|compute|calculate|fit|train|plot|chart|visuali[sz]e|analy[sz]e)\b[\s\S]*?(?=[;!?\n]|\.(?:\s|$)|\b(?:but|instead|then)\b|$)/gi, ' ')
+    .split(/[;!?\n]|\.(?=\s|$)|\b(?:but|instead|then)\b/i)
+    .filter(clause => !/^\s*(?:please\s+)?(?:explain|describe|summari[sz]e|document|teach|how\b|why\b|what\s+(?:is|are)\b|(?:show|tell)\s+me\s+how\b|(?:write|create|draft)\s+(?:(?:a|an|the)\s+)?(?:tutorial|guide|documentation|article|lesson)\b)/i.test(clause))
+    .join('\n')
+    .replace(/\b(?:(?:can|may|could|optionally)\s+(?:use|run|execute|invoke)\s+(?:python|run_python|runPythonAnalysis)|(?:use|run|execute|invoke)\s+(?:python|run_python|runPythonAnalysis)\s+(?:only\s+)?if\s+(?:needed|necessary|useful))\b/gi, ' ');
+  return /\b(?:use|run|execute|invoke)\s+(?:(?:the|a|an|managed|local|cloud|isolated)\s+){0,3}(?:python|run_python|runPythonAnalysis|pandas|matplotlib|seaborn|scikit.learn)\b/i.test(request)
+    || /\b(?:produce|generate|create|build|save|write)\b.{0,100}\b(?:with|using|via|in)\s+(?:(?:the|a|an|managed|local|cloud|isolated)\s+){0,3}(?:python|run_python|runPythonAnalysis|pandas|matplotlib|seaborn|scikit.learn)\b/i.test(request)
+    || /\b(?:calculate|compute|fit|train|evaluate|plot|chart|visuali[sz]e|analy[sz]e)\b.{0,100}\b(?:data|dataset|csv|xlsx|spreadsheet|measurements|heart.rate|sales|numbers|mean|median|average|regression|correlation|classifier|model|histogram|time.series)\b/i.test(request)
+    || /\b(?:create|make|generate|draw|show)\b.{0,60}\b(?:histogram|scatter plot|time.series plot)\b/i.test(request);
 }
 
 const PYTHON_DATA_PACKAGES = ["numpy==2.2.6", "pandas==2.2.3", "matplotlib==3.10.3", "scipy==1.15.3", "scikit-learn==1.6.1", "seaborn==0.13.2", "openpyxl==3.1.5", "pillow==11.2.1"];

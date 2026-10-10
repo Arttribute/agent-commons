@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -19,22 +19,36 @@ async function fixture(handler, check) {
 
 test('an interrupted download resumes at verified byte position and checks the whole file', async () => {
   const ranges = [];
+  let destination, firstResponse, interruption;
+  const owner = new AbortController();
+  const deadline = setTimeout(() => owner.abort(new Error('Resume fixture timed out')), 10_000);
+  const disconnectAfterWrite = () => {
+    if (existsSync(destination) && statSync(destination).size === 8192) firstResponse.destroy();
+    else interruption = setTimeout(disconnectAfterWrite, 5);
+  };
+  try {
   await fixture((req, res) => {
     ranges.push(req.headers.range);
     if (ranges.length === 1) {
       res.writeHead(200, { 'content-length': bytes.length });
+      firstResponse = res;
       res.write(bytes.subarray(0, 8192));
-      setTimeout(() => res.destroy(), 25);
     } else {
-      assert.equal(req.headers.range, 'bytes=8192-');
+      if (req.headers.range !== 'bytes=8192-') { res.writeHead(400); return res.end(); }
       res.writeHead(206, { 'content-length': 8192, 'content-range': 'bytes 8192-16383/16384' });
       res.end(bytes.subarray(8192));
     }
   }, async (url, path) => {
-    await downloadVerified(url, path, sha, () => {}, bytes.length);
+    destination = path;
+    let disconnectScheduled = false;
+    await downloadVerified(url, path, sha, progress => {
+      if (progress >= 0.5 && !disconnectScheduled) { disconnectScheduled = true; disconnectAfterWrite(); }
+    }, bytes.length, owner.signal);
     assert.ok(readFileSync(path).equals(bytes));
     assert.equal(ranges.length, 2);
+    assert.equal(ranges[1], 'bytes=8192-');
   });
+  } finally { clearTimeout(interruption); clearTimeout(deadline); }
 });
 
 test('a server ignoring Range replaces partial bytes without appending duplicates', async () => {
