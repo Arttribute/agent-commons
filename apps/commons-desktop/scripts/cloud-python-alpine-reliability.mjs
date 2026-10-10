@@ -72,12 +72,15 @@ Path('/acceptance/replacement-verified.json').write_text(json.dumps({'replacemen
 `);
   const image = 'public.ecr.aws/docker/library/alpine:3.24.2';
   const mounts = ['-v', `${directory}:/acceptance`, '-v', `${shared}:/mnt/shared`];
-  const { stdout, stderr } = await promisify(execFile)('docker', ['run', '--rm', '--memory=2g', '--cpus=1', ...mounts, image, '/bin/sh', '-ec', 'apk add --no-cache python3 ca-certificates; python3 /acceptance/verify.py'], { timeout: 660_000, maxBuffer: 4_000_000 });
+  // Match the host owner for the mounted private volume; otherwise root-owned
+  // container cache files can mask a failed check with a cleanup EACCES.
+  const owner = `${process.getuid()}:${process.getgid()}`;
+  const { stdout, stderr } = await promisify(execFile)('docker', ['run', '--rm', '--memory=2g', '--cpus=1', ...mounts, image, '/bin/sh', '-ec', `apk add --no-cache python3 ca-certificates su-exec; su-exec ${owner} python3 /acceptance/verify.py`], { timeout: 660_000, maxBuffer: 4_000_000 });
   const result = JSON.parse(readFileSync(join(directory, 'verified.json'), 'utf8'));
   assert.equal(result.systemPythonUnchanged, true);
   // There is no system Python or package installation in this fresh container.
   // The cached interpreter and ELF loader must work at their persisted paths.
-  await promisify(execFile)('docker', ['run', '--rm', '--network=none', '--memory=2g', '--cpus=1', ...mounts, image, '/bin/sh', '-ec', 'managed=$(find /mnt/shared/.commons-python/runtime -path "*/data-*/bin/python" -print -quit); test -n "$managed"; "$managed" -I /acceptance/verify-replacement.py'], { timeout: 120_000, maxBuffer: 4_000_000 });
+  await promisify(execFile)('docker', ['run', '--rm', '--user', owner, '--network=none', '--memory=2g', '--cpus=1', ...mounts, image, '/bin/sh', '-ec', 'managed=$(find /mnt/shared/.commons-python/runtime -path "*/data-*/bin/python" -print -quit); test -n "$managed"; "$managed" -I /acceptance/verify-replacement.py'], { timeout: 120_000, maxBuffer: 4_000_000 });
   const replacement = JSON.parse(readFileSync(join(directory, 'replacement-verified.json'), 'utf8'));
   assert.equal(replacement.networkDisabled, true);
   console.log(stdout, stderr, result, replacement);
