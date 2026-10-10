@@ -22,6 +22,11 @@ async function verifyRuntime(runtimePath) {
   const sourceRequests = new Map(models.map(model => [model, []]));
   const visualRequests = new Map(models.map(model => [model, []]));
   const visualBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
+  const saveRequests = new Map(models.map(model => [model, []]));
+  const deniedRequests = new Map(models.map(model => [model, []]));
+  let sourceId;
+  let denyWrite = false;
+  let deniedApprovals = 0;
   let visualArtifactId;
   let archiveId;
   let serverError;
@@ -35,6 +40,29 @@ async function verifyRuntime(runtimePath) {
       if (request.url === '/api/show') return response.end(JSON.stringify({ capabilities: ['completion', 'tools', 'thinking', ...(body.model.startsWith('qwen') ? ['vision'] : [])], details: { family: 'qwen35' } }));
       if (request.url !== '/api/chat') return response.end(JSON.stringify({ done: true }));
       const model = body.model;
+      const savedBoundary = body.messages.some(m => m.role === 'user' && m.content.includes('Saved output boundary'));
+      const deniedBoundary = body.messages.some(m => m.role === 'user' && m.content.includes('Denied output boundary'));
+      if (savedBoundary || deniedBoundary) {
+        const calls = (savedBoundary ? saveRequests : deniedRequests).get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        const final = text => ({ role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: text } }) : text });
+        let message;
+        if (calls.length === 1) message = action('read_library_item', { itemId: sourceId });
+        else if (calls.length === 2) message = savedBoundary ? final('Saved inspected-report.md.') : action('write_library_files', { files: [{ name: 'denied-report.md', content: 'Should not be saved.' }] });
+        else if (calls.length === 3 && savedBoundary) {
+          assert.equal(body.format.properties.files.type, 'array', 'A false saved claim did not receive structured write recovery');
+          assert.ok(body.messages.some(m => m.content.includes('scope-source.json')));
+          message = { role: 'assistant', content: JSON.stringify({ files: [{ name: 'inspected-report.md', content: 'Verified source: current chat.' }] }) };
+        } else if (calls.length === 3) message = final('Saved denied-report.md.');
+        else {
+          assert.equal(calls.length, 4);
+          if (deniedBoundary) assert.ok(!body.format?.properties?.files, 'Denied write was forced through structured recovery');
+          message = final(savedBoundary ? 'Saved inspected-report.md.' : 'The write was denied. The requested report is unavailable.');
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
       if (body.messages.some(m => m.role === 'user' && m.content.includes('Visual tool boundary'))) {
         const calls = visualRequests.get(model); calls.push(body);
         const action = (name, args) => model.startsWith('deepseek')
@@ -139,7 +167,7 @@ async function verifyRuntime(runtimePath) {
     runtime = new PrivateLocalRuntime(directory);
     runtime.updateSettings({ ollamaUrl: `http://127.0.0.1:${server.address().port}`, defaultModel: models[0] });
     runtime.setTarget({ isDestroyed: () => false, send: (_channel, event) => {
-      if (event.type === 'approval') queueMicrotask(() => runtime.resolveApproval(event.approval.id, true));
+      if (event.type === 'approval') { const denied = denyWrite && event.approval.toolName === 'write_library_files'; if (denied) deniedApprovals++; queueMicrotask(() => runtime.resolveApproval(event.approval.id, !denied)); }
     } });
     const templateText = '<!doctype html><title>Source template</title>\n' + '<p>Exact source template bytes.</p>\n'.repeat(1500);
     const [template, foreign] = runtime.importLibraryFiles([
@@ -240,6 +268,22 @@ async function verifyRuntime(runtimePath) {
       assert.equal(runtime.libraryArchiveState(archiveResult.conversation.id, new Set())[0].extracted, false, 'Missing member bytes must re-enable extraction');
       writeFileSync(memberFile.path, originalBytes);
       const [source] = runtime.importLibraryFiles([{ name: 'scope-source.json', mimeType: 'application/json', bytes: new TextEncoder().encode('{"source":"current chat"}') }]);
+      sourceId = source.id;
+      const savedReport = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Saved output boundary: read the attached source, then save inspected-report.md describing its verified source value.' });
+      if (serverError) throw serverError;
+      assert.equal(saveRequests.get(model).length, 4);
+      assert.equal(readFileSync(savedReport.conversation.artifacts.find(file => file.name === 'inspected-report.md').path, 'utf8'), 'Verified source: current chat.');
+      assert.equal(savedReport.conversation.messages.filter(m => m.toolName === 'write_library_files').length, 1);
+      denyWrite = true;
+      const priorDenials = deniedApprovals;
+      try {
+        const denied = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Denied output boundary: read the attached source, then save denied-report.md describing its verified source value.' });
+        if (serverError) throw serverError;
+        assert.equal(deniedRequests.get(model).length, 4);
+        assert.equal(deniedApprovals - priorDenials, 1, 'Write denial was asked again');
+        assert.ok(!denied.conversation.artifacts?.some(file => file.name === 'denied-report.md'));
+        assert.match(denied.conversation.messages.find(m => m.toolName === 'write_library_files').content, /^User denied/);
+      } finally { denyWrite = false; }
       const originalDataTool = runtime.executeDataTool.bind(runtime);
       // Inject two controlled Python path failures; exercise the real recovery
       // context and persistence without installing an interpreter in this test.
