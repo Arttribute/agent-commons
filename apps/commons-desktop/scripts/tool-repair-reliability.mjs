@@ -18,6 +18,8 @@ async function verifyRuntime(runtimePath) {
   const models = ['qwen3.5:2b-q8_0', 'deepseek-r1:1.5b'];
   const malformed = '# Unsaved draft\n' + 'raw Markdown is not a files array\n'.repeat(220);
   const requests = new Map(models.map(model => [model, []]));
+  const archiveRequests = new Map(models.map(model => [model, []]));
+  let archiveId;
   let serverError;
   const server = createServer(async (request, response) => {
     try {
@@ -29,6 +31,30 @@ async function verifyRuntime(runtimePath) {
       if (request.url === '/api/show') return response.end(JSON.stringify({ capabilities: ['completion', 'tools', 'thinking'], details: { family: 'qwen35' } }));
       if (request.url !== '/api/chat') return response.end(JSON.stringify({ done: true }));
       const model = body.model;
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Archive completion boundary'))) {
+        const calls = archiveRequests.get(model);
+        calls.push(body);
+        const names = body.tools?.map(tool => tool.function.name) ?? body.format.properties.tool.enum;
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        let message;
+        if (calls.length === 1) {
+          assert.ok(names.includes('extract_library_archive'), 'Another chat’s extracted members must not hide this chat’s extraction tool');
+          message = action('extract_library_archive', { itemId: archiveId });
+        } else if (calls.length === 2) {
+          assert.ok(!names.includes('extract_library_archive'), 'Completed extraction is still offered to the model');
+          assert.match(body.messages[0].content, /Current Library archive state/);
+          assert.match(body.messages[0].content, /"extracted":true/);
+          message = action('read_library_item', { itemId: 'kit/START HERE.md' });
+        } else {
+          assert.equal(calls.length, 3);
+          assert.ok(body.messages.some(m => m.content.includes('File bodies live here.')));
+          assert.ok(!names.includes('extract_library_archive'));
+          message = { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Verified actual archive source.' } }) : 'Verified actual archive source.' };
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
       const calls = requests.get(model);
       assert.ok(calls, 'Unexpected fixture model');
       calls.push(body);
@@ -67,6 +93,7 @@ async function verifyRuntime(runtimePath) {
       { name: 'START guide not-in-this-chat.txt', mimeType: 'text/plain', bytes: new TextEncoder().encode('Other Library file') },
     ]);
     const [archive] = runtime.importLibraryFiles([{ name: 'sources.zip', mimeType: 'application/zip', bytes: new Uint8Array(Buffer.from('UEsDBBQAAAAIABu4SV3Vvl/PMQAAAC8AAAARAAAAa2l0L1NUQVJUIEhFUkUubWRzy8xJVUjKT8lMLVbIySxLVchILUrVUwhKTUxRKMnILFZITC4pTcxRKM4vLUpO1QMAUEsDBBQAAAAIABu4SV1pNMixTQAAAFEAAAATAAAAa2l0L1NUQVJUIEhFUkUuaHRtbLNRTMlPLqksSFXIKMnNsbMpLqnMSbVLyk+pVKhWSM7PyS+yUkjKSUzOtlaotdGHyNpkGNoFpxYkFiWWpCp4hPj6KBTnlxYlp9roAyUAUEsDBBQAAAAIABu4SV1fcMvZLQAAAC8AAAAWAAAAa2l0L3RlbXBsYXRlL3ZpZXcuaHRtbLNRTMlPLqksSFXIKMnNsbMpySzJSbULLi0oyMlMTVEoSc0tyEksSbXRh0gAAFBLAQIUAxQAAAAIABu4SV3Vvl/PMQAAAC8AAAARAAAAAAAAAAAAAACAAQAAAABraXQvU1RBUlQgSEVSRS5tZFBLAQIUAxQAAAAIABu4SV1pNMixTQAAAFEAAAATAAAAAAAAAAAAAACAAWAAAABraXQvU1RBUlQgSEVSRS5odG1sUEsBAhQDFAAAAAgAG7hJXV9wy9ktAAAALwAAABYAAAAAAAAAAAAAAIAB3gAAAGtpdC90ZW1wbGF0ZS92aWV3Lmh0bWxQSwUGAAAAAAMAAwDEAAAAPwEAAAAA', 'base64')) }]);
+    archiveId = archive.id;
     for (const model of models) {
       const agent = runtime.saveAgent({ name: 'Controlled tool recovery', model, instructions: 'Save requested files using the available Library tool.' }).agents.at(-1);
       const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [template.id, archive.id], prompt: 'Save report.md containing Schema repair verified. Return its actual saved Library output.' });
@@ -142,6 +169,17 @@ async function verifyRuntime(runtimePath) {
       const readOnly = await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'readonly.html' }, result.conversation.id);
       assert.match(readOnly, /^Error: This chat is read only/);
       runtime.updateSettings({ permissionMode: 'ask' });
+      const archiveResult = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [archive.id], prompt: 'Archive completion boundary: extract the attached ZIP once and read its actual START source. Report the verified source.' });
+      if (serverError) throw serverError;
+      assert.equal(archiveRequests.get(model).length, 3);
+      assert.equal(archiveResult.conversation.messages.filter(m => m.toolName === 'extract_library_archive').length, 1);
+      const completed = runtime.libraryArchiveState(archiveResult.conversation.id, new Set());
+      assert.equal(completed[0].extracted, true);
+      const memberFile = runtime.state().library.find(item => item.sourceArchiveId === archive.id && archiveResult.conversation.artifacts.some(a => a.id === item.id));
+      const originalBytes = readFileSync(memberFile.path);
+      rmSync(memberFile.path);
+      assert.equal(runtime.libraryArchiveState(archiveResult.conversation.id, new Set())[0].extracted, false, 'Missing member bytes must re-enable extraction');
+      writeFileSync(memberFile.path, originalBytes);
     }
     console.log(`Local malformed-write recovery passed on ${process.platform}-${process.arch}; original diagnostics, saved bytes, archive/member distinction and scoped template copies verified.`);
   } finally {
@@ -159,7 +197,7 @@ const worker = join(output, 'verify.cjs');
 writeFileSync(worker, `const { app } = require('electron');
 const assert = require('node:assert/strict');
 const { createServer } = require('node:http');
-const { mkdtempSync, readFileSync, rmSync } = require('node:fs');
+const { mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 ${verifyRuntime.toString()}

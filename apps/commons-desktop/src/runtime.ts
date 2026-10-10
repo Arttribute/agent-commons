@@ -1534,12 +1534,14 @@ export class PrivateLocalRuntime {
     const spaces = conversation.knowledgeMode === "off" ? [] : accessibleSpaces(state.spaces, agent.id, selectedIds);
     const knowledge = searchSpaces(spaces, lastUser);
     const lastUserMessage = [...conversation.messages].reverse().find((message) => message.role === "user");
+    const completedEmptyArchives = new Set<string>();
+    const initialArchives = this.libraryArchiveState(conversationId, completedEmptyArchives);
     const turnAttachments = localTurnAttachments(lastUserMessage?.attachments ?? [], conversation.messages.flatMap(message => message.attachments ?? []), lastUser);
     const attachmentBlocks = await Promise.all(turnAttachments.map(async (attachment) => {
       const item = state.library?.find((entry) => entry.id === attachment.id);
       if (!item) return `- ${attachment.name}: no longer available in the Local Library.`;
       try {
-        if (/\.zip$/i.test(item.name)) return `### ${item.name} (itemId: ${item.id})\nZIP container, not document text. Use extract_library_archive with this itemId, then read the actual member's returned itemId or exact archive-relative path. read_library_item on this ZIP returns only a filename inventory. Python INPUT_FILES also stages the original ZIP for zipfile inspection; keep extracted sources in WORK_DIR.`;
+        if (/\.zip$/i.test(item.name)) return `### ${item.name} (itemId: ${item.id})\nZIP container, not document text. ${initialArchives.find(archive => archive.itemId === item.id)?.extracted ? 'Its members are already extracted and available through list_session_files and read_library_item.' : 'If its members are not available yet, extract it once with extract_library_archive, then reuse the actual member itemIds or exact archive-relative paths.'} read_library_item on this ZIP returns only a filename inventory. Python INPUT_FILES also stages the original ZIP for zipfile inspection; keep extracted sources in WORK_DIR.`;
         const text = await readLibraryText(item);
         return `### ${item.name} (itemId: ${item.id})\n${text.slice(0, 2_000)}${text.length > 2_000 ? `\n[Showing 2,000 of ${text.length.toLocaleString()} characters. Use search_library_item to locate relevant passages, then read_library_item with a matching offset for context. Do not read a large document sequentially.]` : ""}`;
       } catch (error) {
@@ -1727,7 +1729,10 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       try {
         const data = JSON.parse(result);
         if (["write_library_files", "copy_library_file", "run_python"].includes(name) && data.artifacts?.length && (data.exitCode === undefined || data.exitCode === 0)) repeatedReads.clear();
-        if (name === "extract_library_archive") details = `Extracted ${data.totalFiles} files. Use list_session_files to locate members; do not extract again.`;
+        if (name === "extract_library_archive") {
+          if (data.archiveItemId && data.totalFiles === 0) completedEmptyArchives.add(data.archiveItemId);
+          details = `Extracted ${data.totalFiles} files. Use list_session_files to locate members; do not extract again.`;
+        }
         else if (name === "read_library_item") {
           readIdentity = { itemId: data.itemId, offset: data.offset ?? (Number(args.offset) || 0) };
           const content = typeof data.content === "string" ? data.content : "";
@@ -1775,7 +1780,10 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         const pending = missingOutputs();
         messages[0].content += `\nRequested output files still missing from this turn: ${pending.join(", ") || "none"}. ${pending.length ? `Next requested output: ${pending[0]}. Save substantial new text documents with write_library_files one at a time. Use copy_library_file for unchanged supplied text templates and run_python for computations and images; one computation may generate several related outputs.` : ""} Complete them from the verified source facts. Previously supplied reference files are not fresh outputs.`;
       }
-      const inferenceTools = tools.filter((entry) => entry.function.name !== "web_search" || this.webSearchAllowed(conversationId));
+      const archives = this.libraryArchiveState(conversationId, completedEmptyArchives);
+      if (archives.length) messages[0].content += `\n## Current Library archive state\nThis is verified file availability, not document contents: ${JSON.stringify({ totalArchives: archives.length, archives: archives.slice(0, 10) })}. Reuse extracted members with list_session_files, read_library_item or search_library_item. Extraction is offered only while an archive still needs it. The selected computer folder has not changed.`;
+      const inferenceTools = tools.filter((entry) => (entry.function.name !== "web_search" || this.webSearchAllowed(conversationId))
+        && (entry.function.name !== "extract_library_archive" || archives.some(archive => !archive.extracted)));
       const repairingSkillArgs = recordingSkillArgsRepair;
       const repairingArgs = repairingSkillArgs || libraryWriteArgsRepair;
       const repairTool = repairingSkillArgs ? "local_save_skill" : "write_library_files";
@@ -1789,7 +1797,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       if (outputsConfirmed) messages[0].content += "\nExecuted tools have confirmed persistence of the requested output files or saved skill. This does not prove their content is correct. Verify the actual saved results and any remaining user requirements, then report them. Do not restart source research or rewrite saved outputs unless you identify a concrete defect that needs correction.";
       const outputTokens = prepareLocalInference(messages, requestNativeTools ? JSON.stringify(inferenceTools).length : 0, imageContext.images.length, optionalSystemContext);
       const response = await requestLocalModel(`${endpoint}/api/chat`, {
-        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(requestNativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: requestNativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(repairingArgs ? { format: toolArgumentRepairSchema } : !nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...offeredNames, "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: localTaskReasoning(reasoningEffort, requiresComputedData(lastUser) || Boolean(recordingSkill) || outputNames.length > 1 || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells")), outputsConfirmed) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
+        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: withLocalImages(requestNativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) }), lastUser, imageContext.images), tools: requestNativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(repairingArgs ? { format: toolArgumentRepairSchema } : !nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...inferenceTools.map(entry => entry.function.name), "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: localTaskReasoning(reasoningEffort, requiresComputedData(lastUser) || Boolean(recordingSkill) || outputNames.length > 1 || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells")), outputsConfirmed) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
         signal: AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(10 * 60_000)]),
       });
       if (!response.ok) {
@@ -2246,6 +2254,18 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     return result;
   }
 
+  private libraryArchiveState(conversationId: string, completedEmptyArchives: Set<string>) {
+    const state = this.store.get();
+    const conversation = state.conversations.find(entry => entry.id === conversationId)!;
+    const project = state.projects?.find(entry => entry.id === conversation.projectId);
+    const ids = new Set([...conversation.messages.flatMap(message => message.attachments?.map(file => file.id) ?? []), ...(project?.libraryItemIds ?? []), ...(conversation.artifacts?.map(file => file.id) ?? [])]);
+    const files = state.library?.filter(item => ids.has(item.id)) ?? [];
+    return files.filter(file => /\.zip$/i.test(file.name)).map(archive => {
+      const members = files.filter(file => file.sourceArchiveId === archive.id);
+      return { itemId: archive.id, name: archive.name, extracted: completedEmptyArchives.has(archive.id) || Boolean(members.length && members.every(file => existsSync(file.path))), totalFiles: members.length };
+    });
+  }
+
   private async executeDataTool(name: string, args: Record<string, unknown>, conversationId: string, workspace?: string) {
     const state = this.store.get();
     const conversation = state.conversations.find((entry) => entry.id === conversationId)!;
@@ -2264,7 +2284,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             ? `The provided itemId does not identify a ZIP. Use an actual ZIP itemId or exact filename already available in this chat: ${JSON.stringify(available)}. Do not ask for another upload.`
             : "Attach a ZIP file to this chat or its project first.");
         }
-        const manifest = (members: LocalLibraryItem[], directory: string, totalBytes?: number, alreadyExtracted = false) => JSON.stringify({ directory, totalBytes, totalFiles: members.length, alreadyExtracted, hint: `${alreadyExtracted ? "This archive is already extracted; the existing member files and IDs are reused. " : "Extraction is complete. "}Do not extract it again to find or read documents. Use list_session_files(query) to find any member. read_library_item accepts its exact filename/archive-relative path or returned itemId. run_python INPUT_FILES includes archive-relative names. The selected folder has not changed.`, files: [...members].sort((a, b) => Number(!a.name.endsWith(".md")) - Number(!b.name.endsWith(".md"))).slice(0, 30).map((file) => ({ path: file.name, itemId: file.id })) });
+        const manifest = (members: LocalLibraryItem[], directory: string, totalBytes?: number, alreadyExtracted = false) => JSON.stringify({ archiveItemId: item.id, directory, totalBytes, totalFiles: members.length, alreadyExtracted, hint: `${alreadyExtracted ? "This archive is already extracted; the existing member files and IDs are reused. " : "Extraction is complete. "}Do not extract it again to find or read documents. Use list_session_files(query) to find any member. read_library_item accepts its exact filename/archive-relative path or returned itemId. run_python INPUT_FILES includes archive-relative names. The selected folder has not changed.`, files: [...members].sort((a, b) => Number(!a.name.endsWith(".md")) - Number(!b.name.endsWith(".md"))).slice(0, 30).map((file) => ({ path: file.name, itemId: file.id })) });
         const existing = files.filter((file) => file.sourceArchiveId === item.id);
         if (existing.length && existing.every((file) => existsSync(file.path))) {
           const member = existing[0];
