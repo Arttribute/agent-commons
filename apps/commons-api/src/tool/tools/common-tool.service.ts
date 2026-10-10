@@ -2613,7 +2613,9 @@ export class CommonToolService {
     const inputs = await Promise.all(inputIds.map((id) => this.files.createDownloadUrl(id, { agentId, sessionId, ownerId: owner.principalId, workspaceId: owner.workspaceId ?? undefined })));
     const execution = cloudPythonFiles(props.code, inputs, props.timeoutSeconds, props.packages, `${owner.principalId}:${agentId}:${sessionId ?? "agent"}`);
     await this.computers.writeFiles({ agentId, sessionId, files: execution.files, runId: metadata?.runId, toolCallId: metadata?.toolCallId });
-    const command = await this.computers.runCommand({ agentId, sessionId, command: `python3 /mnt/shared/${execution.directory}/bootstrap.py`, cwd: '/mnt/shared', timeoutSeconds: 600, runId: metadata?.runId, toolCallId: metadata?.toolCallId });
+    // The verified manifest carries computed stdout/stderr. Keep installer
+    // output in a private log so large writes cannot fill the terminal pipe.
+    const command = await this.computers.runCommand({ agentId, sessionId, command: `python3 /mnt/shared/${execution.directory}/bootstrap.py > /mnt/shared/${execution.directory}/execution.log 2>&1`, cwd: '/mnt/shared', timeoutSeconds: 600, runId: metadata?.runId, toolCallId: metadata?.toolCallId });
     let output: { exitCode: number; stdout: string; stderr: string; outputDirectory?: string; files: Array<{ name: string; mimeType: string; base64?: string; chunks?: string[]; size?: number; sha256?: string }> };
     try {
       const result = await this.computers.readFile({ agentId, sessionId, path: `${execution.directory}/result.json` });

@@ -4,7 +4,7 @@ import { CLOUD_PYTHON_PLATFORM } from './python-platform';
 
 // Bootstrap runs in the agent's isolated CommonOS computer, never in the API
 // process. A managed interpreter is installed without modifying system Python.
-export const CLOUD_PYTHON_BOOTSTRAP = String.raw`import base64, fcntl, hashlib, json, mimetypes, os, platform, subprocess, sys, tarfile, urllib.request
+const CLOUD_PYTHON_PROGRAM = String.raw`import base64, fcntl, hashlib, json, mimetypes, os, platform, shutil, subprocess, sys, tarfile, urllib.request
 from pathlib import Path
 run = Path(__file__).resolve().parent
 attempt_lock = (run / '.execute.lock').open('w')
@@ -26,10 +26,20 @@ triple = architecture + '-unknown-linux-' + libc
 # The computer's private shared volume survives sleep and pod replacement.
 # Keep interpreters/venvs at their original absolute paths, separate from chat
 # outputs, and never reuse a binary from a different architecture or libc.
-resources = root / 'runtime' / triple
-for directory in (resources.parent, resources):
+# CommonOS excludes .cache from workspace watching. Thousands of installed
+# package files must not become workspace events or starve daemon heartbeats.
+resources = root / '.cache' / 'runtime' / triple
+for directory in (root / '.cache', resources.parent, resources):
     if directory.is_symlink(): raise RuntimeError('Python runtime folder contains a symbolic link')
     directory.mkdir(exist_ok=True)
+legacy = root / 'runtime'
+with (root / '.cache' / '.migration.lock').open('w') as migration_lock:
+    fcntl.flock(migration_lock, fcntl.LOCK_EX)
+    if legacy.is_symlink(): raise RuntimeError('Python runtime folder contains a symbolic link')
+    if legacy.exists():
+        # Relocated venvs/ELF loaders retain absolute paths, so hide the old
+        # cache without reusing it as the newly prepared interpreter.
+        legacy.replace(root / '.cache' / ('legacy-runtime-' + run.name))
 digests = {
     'aarch64-unknown-linux-gnu': '6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f',
     'x86_64-unknown-linux-gnu': '9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6',
@@ -60,7 +70,13 @@ with (resources / '.prepare.lock').open('w') as lock:
     def prepare(venv, requirements):
         python = venv / 'bin/python'
         if not (venv / 'commons-ready').exists():
-            if not python.exists(): subprocess.run([str(uv), 'venv', '--python', str(managed_python), '--no-config', str(venv)], env=env, check=True, timeout=300)
+            # A stopped pod can leave half-written dist-info/METADATA files.
+            # uv cannot repair these while scanning the existing environment.
+            # Only this app-owned, never-ready venv is reset, under the shared
+            # preparation lock; completed environments and outputs survive.
+            if venv.is_symlink(): raise RuntimeError('Python environment contains a symbolic link')
+            if venv.exists(): shutil.rmtree(venv)
+            subprocess.run([str(uv), 'venv', '--python', str(managed_python), '--no-config', str(venv)], env=env, check=True, timeout=300)
             subprocess.run([str(uv), 'pip', 'install', '--python', str(python), '--no-config'] + requirements, env=env, check=True, timeout=300)
             subprocess.run([str(python), '-I', '-c', 'import numpy, pandas, matplotlib, scipy, sklearn, seaborn, openpyxl, PIL'], env=env, check=True)
             (venv / 'commons-ready').write_text('ready')
@@ -213,6 +229,24 @@ temporary_manifest.write_text(json.dumps(manifest))
 temporary_manifest.replace(run / 'result.json')
 print(json.dumps({k: v for k, v in manifest.items() if k != 'files'}))
 `;
+
+// Preparation and input-download failures happen before analysis starts. Keep
+// their actionable errors in the same verified protocol as analysis failures;
+// the redirected terminal log must not be the only place to find the reason.
+export const CLOUD_PYTHON_BOOTSTRAP = [
+  'import json, re, traceback',
+  'from pathlib import Path',
+  'try:',
+  ...CLOUD_PYTHON_PROGRAM.split('\n').map((line) => `    ${line}`),
+  'except Exception as error:',
+  '    traceback.print_exc()',
+  "    message = re.sub(r'https?://\\S+', '[redacted URL]', str(error))[:16000]",
+  "    failure = dict(exitCode=-1, stdout='', stderr='Python bootstrap failed (' + type(error).__name__ + '): ' + message, files=[])",
+  '    run = Path(__file__).resolve().parent',
+  "    temporary = run / 'result.json.tmp'",
+  '    temporary.write_text(json.dumps(failure))',
+  "    temporary.replace(run / 'result.json')",
+].join('\n');
 
 export function cloudPythonFiles(code: string, files: Array<{ itemId: string; name: string; url: string }>, timeoutSeconds = 120, packages: string[] = [], workspaceKey?: string) {
   if (!code.trim() || code.length > 100_000) throw new Error('Provide Python code between 1 and 100,000 characters.');

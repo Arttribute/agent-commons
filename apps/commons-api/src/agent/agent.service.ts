@@ -44,7 +44,6 @@ import {
 } from 'drizzle-orm';
 import { compact, first, get, map, omit } from 'lodash';
 import {
-  ChatCompletionCreateParams,
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from 'openai/resources/chat/completions';
@@ -57,6 +56,7 @@ import { EncryptionService } from '~/modules/encryption';
 import { SessionService } from '~/session/session.service';
 import { ProjectService } from '~/project/project.service';
 import { ToolService } from '~/tool/tool.service';
+import { optionalContext } from './optional-context';
 import { CommonTool } from '../tool/tools/common-tool.service';
 import { WalletTool } from '../tool/tools/ethereum-tool.service';
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
@@ -617,6 +617,12 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
   }
 
   /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
+  private optionalPromptContext<T>(label: string, work: PromiseLike<T>, fallback: T) {
+    return optionalContext(work, fallback, (reason) =>
+      this.logger.warn(`Optional conversation context ${label} unavailable (${reason})`),
+    );
+  }
+
   private async createAgentSession(
     agentId: string,
     sessionId: string,
@@ -632,20 +638,14 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       appsBlock,
     ] = await Promise.all([
       this.getAgent({ agentId }),
-      this.getChildSessions(sessionId),
+      this.optionalPromptContext('child sessions', this.getChildSessions(sessionId), []),
       firstUserMessage
-        ? this.memoryService
-            .buildMemoryBlock(agentId, firstUserMessage)
-            .catch(() => '')
+        ? this.optionalPromptContext('memory', this.memoryService.buildMemoryBlock(agentId, firstUserMessage), '')
         : Promise.resolve(''),
-      this.taskExecution.listSessionTasks(sessionId).catch(() => []),
-      this.computerService
-        .buildComputerPrompt(agentId, sessionId)
-        .catch(() => ''),
-      this.skillService
-        .buildPromptIndex(agentId, firstUserMessage)
-        .catch(() => ''),
-      this.uiPlugins.buildAgentPromptBlock(agentId).catch(() => ''),
+      this.optionalPromptContext('tasks', this.taskExecution.listSessionTasks(sessionId), []),
+      this.optionalPromptContext('computer summary', this.computerService.buildComputerPrompt(agentId, sessionId), 'Computer summary is unavailable. Use computer tools to verify its actual state and workspace before acting.'),
+      this.optionalPromptContext('skills', this.skillService.buildPromptIndex(agentId, firstUserMessage), ''),
+      this.optionalPromptContext('apps', this.uiPlugins.buildAgentPromptBlock(agentId), ''),
     ]);
     const childSessionsInfo =
       childSessions.length > 0
@@ -674,34 +674,10 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       },
     ];
 
-    /* build tool definitions exactly like before */
-    const storedTools = await this.toolService.getAllTools().catch(() => []);
-    const dynamicTools = storedTools.map((dbTool) => ({
-      type: 'function',
-      function: { ...dbTool.schema, name: dbTool.name },
-      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-    }));
-    const staticTools = map(app.functions, (_) => ({
-      type: 'function',
-      function: {
-        ..._,
-        parameters:
-          _?.parameters as unknown as ChatCompletionTool['function']['parameters'],
-      },
-      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-    })) as (ChatCompletionTool & { endpoint: string })[];
-
-    const completionBody: ChatCompletionCreateParams = {
-      messages,
-      tools: [
-        ...dynamicTools.map((tool) => ({ ...tool, type: 'function' as const })),
-        ...staticTools.map((tool) => ({ ...tool, type: 'function' as const })),
-      ],
-      tool_choice: 'auto',
-      parallel_tool_calls: true,
-      model: 'gpt-5.4-mini',
-    };
-    return completionBody;
+    // Tools and the selected model are already bound by the authenticated run.
+    // The caller consumes only messages; rebuilding a global tool list here
+    // adds an unrelated database scan to every new conversation.
+    return { messages };
   }
 
   /* ─────────────────────────  CHILD SESSION TRACKING  ───────────────────────── */
@@ -2264,22 +2240,14 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               appsBlock,
             ] = await Promise.all([
               this.getAgent({ agentId }),
-              this.getChildSessions(currentSessionId),
+              this.optionalPromptContext('child sessions', this.getChildSessions(currentSessionId), []),
               firstUserText
-                ? this.memoryService
-                    .buildMemoryBlock(agentId, firstUserText)
-                    .catch(() => '')
+                ? this.optionalPromptContext('memory', this.memoryService.buildMemoryBlock(agentId, firstUserText), '')
                 : Promise.resolve(''),
-              this.taskExecution
-                .listSessionTasks(currentSessionId)
-                .catch(() => []),
-              this.computerService
-                .buildComputerPrompt(agentId, currentSessionId)
-                .catch(() => ''),
-              this.skillService
-                .buildPromptIndex(agentId, firstUserText)
-                .catch(() => ''),
-              this.uiPlugins.buildAgentPromptBlock(agentId).catch(() => ''),
+              this.optionalPromptContext('tasks', this.taskExecution.listSessionTasks(currentSessionId), []),
+              this.optionalPromptContext('computer summary', this.computerService.buildComputerPrompt(agentId, currentSessionId), 'Computer summary is unavailable. Use computer tools to verify its actual state and workspace before acting.'),
+              this.optionalPromptContext('skills', this.skillService.buildPromptIndex(agentId, firstUserText), ''),
+              this.optionalPromptContext('apps', this.uiPlugins.buildAgentPromptBlock(agentId), ''),
             ]);
             const childSessionsInfo =
               childSessions.length > 0

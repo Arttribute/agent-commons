@@ -22,6 +22,9 @@ try {
 from pathlib import Path
 system = Path(sys.executable).resolve()
 before = hashlib.sha256(system.read_bytes()).hexdigest()
+legacy = Path('/mnt/shared/.commons-python/runtime/old-environment')
+legacy.mkdir(parents=True)
+(legacy / 'retained-marker').write_text('Preserve old cache without importing relocated binaries')
 def step(name, code, acknowledge=True):
     run = Path('/tmp') / name
     run.mkdir()
@@ -39,19 +42,35 @@ first = step('platform-first', '''import json, numpy as np, pandas, matplotlib.p
 from sklearn.linear_model import LinearRegression
 model = LinearRegression().fit(np.array([1, 2, 3, 4]).reshape(-1, 1), [3, 5, 7, 9])
 (OUTPUT_DIR / 'regression.json').write_text(json.dumps({'slope': float(model.coef_[0]), 'intercept': float(model.intercept_), 'prediction': float(model.predict([[5]])[0])}, allow_nan=False))
-plt.plot([1, 2, 3, 4], [3, 5, 7, 9]); plt.savefig(OUTPUT_DIR / 'regression.png')''', acknowledge=False)
+plt.plot([1, 2, 3, 4], [3, 5, 7, 9]); plt.savefig(OUTPUT_DIR / 'regression.png')
+print('large output ' * 20000)
+print('analysis completed')''', acknowledge=False)
 assert first['exitCode'] == 0, first
+assert first['stdout'].endswith('analysis completed' + chr(10)) and len(first['stdout']) <= 32000
+assert not legacy.exists(), 'Legacy runtime remains in the watched workspace'
+retained = list(Path('/mnt/shared/.commons-python/.cache').glob('legacy-runtime-*/old-environment/retained-marker'))
+assert len(retained) == 1 and retained[0].read_text() == 'Preserve old cache without importing relocated binaries'
 files = {f['name']: base64.b64decode(f['base64']) for f in first['files']}
 regression = json.loads(files['regression.json'])
 assert abs(regression['slope'] - 2) < 1e-8 and abs(regression['intercept'] - 1) < 1e-8 and abs(regression['prediction'] - 11) < 1e-8
 assert files['regression.png'][:8] == b'\x89PNG\r\n\x1a\n'
 original_manifest = Path('/tmp/platform-first/result.json').read_bytes()
 original_script = Path('/tmp/platform-first/analysis.py').read_bytes()
+# Reproduce a killed installer: an unfinished environment with an installed
+# package directory but missing metadata. Existing uv scans fail on this state.
+environments = list(Path('/mnt/shared/.commons-python/.cache/runtime').glob('*/data-*/commons-ready'))
+assert len(environments) == 1
+environment = environments[0].parent
+metadata = environment / 'lib/python3.12/site-packages/seaborn-0.13.2.dist-info/METADATA'
+assert metadata.is_file()
+environments[0].unlink()
+metadata.unlink()
 subprocess.run([sys.executable, '/tmp/platform-first/bootstrap.py'], check=True, timeout=30)
 assert Path('/tmp/platform-first/result.json').read_bytes() == original_manifest, 'Terminal retry replaced the original output manifest'
 assert Path('/tmp/platform-first/analysis.py').read_bytes() == original_script, 'Terminal retry ran or rewrote the source code again'
 recovered = step('platform-recover-publication', "print('Recover outputs whose Library upload was interrupted')")
 assert recovered['exitCode'] == 0 and {file['name'] for file in recovered['files']} == set(files), recovered
+assert (environment / 'commons-ready').is_file() and metadata.is_file(), 'Interrupted environment was not rebuilt'
 assert all(base64.b64decode(file['base64']) == files[file['name']] for file in recovered['files'])
 second = step('platform-second', "assert (OUTPUT_DIR / 'regression.png').exists()\n(OUTPUT_DIR / 'next.md').write_text('Warm runtime working files retained')")
 assert second['exitCode'] == 0 and [f['name'] for f in second['files']] == ['next.md'], second
@@ -80,7 +99,7 @@ subprocess.run([sys.executable, str(run / 'bootstrap.py')], check=True, timeout=
 result = json.loads((run / 'result.json').read_text())
 assert result['exitCode'] == 0 and [file['name'] for file in result['files']] == ['replacement.json'], result
 assert json.loads(base64.b64decode(result['files'][0]['base64']))['prediction'] == 11
-assert not list(Path('/mnt/shared/.commons-python/runtime').glob('*/extension-*')), 'Installed alias imports must reuse the base environment'
+assert not list(Path('/mnt/shared/.commons-python/.cache/runtime').glob('*/extension-*')), 'Installed alias imports must reuse the base environment'
 Path('/acceptance/replacement-verified.json').write_text(json.dumps({'replacementPod': True, 'networkDisabled': True, 'retainedSources': True, 'actualRegression': True, 'fontsAvailable': True, 'publishedOnlyNewOutput': True}))
 `);
   const image = 'public.ecr.aws/docker/library/alpine:3.24.2';
@@ -93,7 +112,7 @@ Path('/acceptance/replacement-verified.json').write_text(json.dumps({'replacemen
   assert.equal(result.systemPythonUnchanged, true);
   // There is no system Python or package installation in this fresh container.
   // The cached interpreter and ELF loader must work at their persisted paths.
-  await promisify(execFile)('docker', ['run', '--rm', '--user', owner, '--network=none', '--memory=2g', '--cpus=1', ...mounts, image, '/bin/sh', '-ec', 'managed=$(find /mnt/shared/.commons-python/runtime -path "*/data-*/bin/python" -print -quit); test -n "$managed"; "$managed" -I /acceptance/verify-replacement.py'], { timeout: 120_000, maxBuffer: 4_000_000 });
+  await promisify(execFile)('docker', ['run', '--rm', '--user', owner, '--network=none', '--memory=2g', '--cpus=1', ...mounts, image, '/bin/sh', '-ec', 'managed=$(find /mnt/shared/.commons-python/.cache/runtime -path "*/data-*/bin/python" -print -quit); test -n "$managed"; "$managed" -I /acceptance/verify-replacement.py'], { timeout: 120_000, maxBuffer: 4_000_000 });
   const replacement = JSON.parse(readFileSync(join(directory, 'replacement-verified.json'), 'utf8'));
   assert.equal(replacement.networkDisabled, true);
   console.log(stdout, stderr, result, replacement);

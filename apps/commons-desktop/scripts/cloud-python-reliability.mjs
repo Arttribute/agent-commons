@@ -34,6 +34,10 @@ try {
   copyFileSync(join(managed, 'uv-0.12.23/uv'), join(cloud, 'uv-0.12.23')); chmodSync(join(cloud, 'uv-0.12.23'), 0o700);
   // Match Python json.dumps' default separator spacing for the pinned cache key.
   const baseKey = createHash('sha256').update(JSON.stringify(['3.12.11', [...PYTHON_DATA_PACKAGES].sort()]).replaceAll(',', ', ')).digest('hex').slice(0, 16);
+  // This host fixture borrows the already verified managed environment. The
+  // real cold/unready-environment path is exercised in the Alpine container.
+  await promisify(execFile)(python, ['-I', '-c', 'import numpy, pandas, matplotlib, scipy, sklearn, seaborn, openpyxl, PIL'], { timeout: 60_000 });
+  writeFileSync(join(managed, 'data-3.12.11-v1/commons-ready'), 'ready');
   symlinkSync(join(managed, 'data-3.12.11-v1'), join(cloud, `data-3.12.11-${baseKey}`));
   writeFileSync(join(directory, 'sales.csv'), 'revenue\n10\n20\n30\n');
   writeFileSync(join(directory, 'inputs.json'), JSON.stringify({ files: [{ itemId: 'file-731', name: 'sales.csv', url: pathToFileURL(join(directory, 'sales.csv')).toString() }], packages: ['json', 'os', 'pathlib', 'numpy', 'pandas', 'PIL', 'sklearn'], timeoutSeconds: 120, workingDirectory: 'sessions/acceptance/outputs' }));
@@ -55,7 +59,7 @@ Path(INPUT_FILES['sales.csv']).write_text('revenue\\n40\\n50\\n')
 (OUTPUT_DIR / 'large-report.bin').write_bytes(b'a' * 650000)
 print('Verified cloud bootstrap')`);
   // Reuse this host's verified uv executable while exercising the cloud code.
-  const bootstrap = CLOUD_PYTHON_BOOTSTRAP.replace("Path('/mnt/shared/.commons-python')", `Path(${JSON.stringify(cloud)})`).replace("resources = root / 'runtime' / triple", `resources = Path(${JSON.stringify(cloud)})`).replace("uv = resources / ('uv-0.12.23-' + triple)", "uv = resources / 'uv-0.12.23'");
+  const bootstrap = CLOUD_PYTHON_BOOTSTRAP.replace("Path('/mnt/shared/.commons-python')", `Path(${JSON.stringify(cloud)})`).replace("resources = root / '.cache' / 'runtime' / triple", `resources = Path(${JSON.stringify(cloud)})`).replace("uv = resources / ('uv-0.12.23-' + triple)", "uv = resources / 'uv-0.12.23'");
   writeFileSync(join(directory, 'bootstrap.py'), bootstrap);
   await promisify(execFile)(python, ['-I', join(directory, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
   const result = JSON.parse(readFileSync(join(directory, 'result.json'), 'utf8'));
@@ -108,5 +112,14 @@ print('Cloud working files persisted')`);
   assert.equal(recovered.exitCode, 0, recovered.stderr);
   assert.equal(recovered.files.length, 2, 'Failed-run files were lost from the successful result');
   assert.equal(Buffer.from(recovered.files.find((item) => item.name === 'pending.md').base64, 'base64').toString(), 'Preserved draft');
+  const missingInput = join(directory, 'missing-input-run'); mkdirSync(missingInput);
+  writeFileSync(join(missingInput, 'bootstrap.py'), bootstrap);
+  writeFileSync(join(missingInput, 'analysis.py'), "raise AssertionError('Analysis must not run without its source')");
+  writeFileSync(join(missingInput, 'inputs.json'), JSON.stringify({ files: [{ itemId: 'missing', name: 'missing.csv', url: pathToFileURL(join(directory, 'does-not-exist.csv')).toString() }], packages: [], workingDirectory: 'sessions/acceptance/outputs' }));
+  await promisify(execFile)(python, ['-I', join(missingInput, 'bootstrap.py')], { timeout: 300_000, maxBuffer: 2_000_000 });
+  const missing = JSON.parse(readFileSync(join(missingInput, 'result.json'), 'utf8'));
+  assert.equal(missing.exitCode, -1);
+  assert.match(missing.stderr, /Python bootstrap failed.*URLError/);
+  assert.deepEqual(missing.files, [], 'Preparation failure claimed generated outputs');
   console.log('Cloud bootstrap executed real Python with staged inputs, nested artifacts and no stdlib installation.');
 } finally { rmSync(directory, { recursive: true, force: true }); }
