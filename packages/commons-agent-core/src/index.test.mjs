@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { affirmativeOutputRequest, requestedFileOutputs, buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills, requiresComputedData } from "./index.cjs";
+import { affirmativeOutputRequest, requestedFileOutputs, buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills, requiresComputedData, shouldOfferCreativeMedia } from "./index.cjs";
 
 test("cloud and local skill matching uses the same trigger rules", () => {
   const skills = [
@@ -35,9 +35,29 @@ test("cloud and local agent prompts use one identity block", () => {
   assert.match(prompt, /Instructions: Verify work\./);
 });
 
-test("computed data tasks cannot select the creative image generator", () => {
+test("computed data intent remains separate from creative intent", () => {
   for (const request of ["Use Python for these measurements", "Visualize the attached dataset", "Plot sales from this CSV", "Fit a regression model", "Use run_python to create the campaign assets", "Use runPythonAnalysis for this file"]) assert.equal(requiresComputedData(request), true);
   for (const request of ["Create a product ad image", "Illustrate our workflow", "Hello there"]) assert.equal(requiresComputedData(request), false);
+});
+
+test('mixed creative tasks retain image tools while numeric plots require computation', () => {
+  for (const request of [
+    'Finish this offline campaign from its five complete generated ads. Use managed Python to copy the actual bytes into OUTPUT_DIR.',
+    'Use Python to typeset five campaign ads, and generate the required image backgrounds.',
+    'Create a poster with an illustrated background and plot the measured sales dataset in Python.',
+    'Repair the campaign assets. Use runPythonAnalysis and the image-generation tool.',
+  ]) {
+    assert.equal(requiresComputedData(request), true, request);
+    assert.equal(shouldOfferCreativeMedia(request), true, request);
+  }
+  for (const request of [
+    'Plot sales from this CSV with Python.',
+    'Calculate ad campaign ROI from the actual dataset.',
+    'Do not generate an image to plot the data; use managed Python instead.',
+    'Use Python to finish the campaign ads. Do not generate new images.',
+    'Do not create campaign ads, then plot the sales dataset in Python.',
+  ]) assert.equal(shouldOfferCreativeMedia(request), false, request);
+  assert.equal(shouldOfferCreativeMedia('Create an ad image'), true);
 });
 
 test('runtime mentions and negative instructions do not mandate unrelated computations', () => {

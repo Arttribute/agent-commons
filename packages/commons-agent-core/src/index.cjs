@@ -102,6 +102,15 @@ function requiresComputedData(text) {
     || /\b(?:create|make|generate|draw|show)\b.{0,60}\b(?:histogram|scatter plot|time.series plot)\b/i.test(request);
 }
 
+/** Keep creative tools available for mixed visual/computational deliverables. */
+function shouldOfferCreativeMedia(text) {
+  if (!requiresComputedData(text)) return true;
+  const request = affirmativeOutputRequest(String(text));
+  const explicitlyForbidden = /\b(?:do\s+not|don['’]t|never|without)\s+(?:use|invoke|call|generate|create|render|draw)\s+(?:(?:any|new|another|the|a|an)\s+){0,2}(?:images?|image\s+generation|generateImage|generateMedia|generate_image)\b/i.test(String(text));
+  if (explicitlyForbidden) return false;
+  return /\b(?:create|generate|design|render|illustrate|typeset|assemble|finish|complete|repair|edit|correct)\b[^;!?\n]{0,180}\b(?:ads?|adverts?|advertisements?|posters?|illustrations?|artwork|portraits?|logos?|book\s+covers?|creative\s+(?:images?|assets?)|image\s+backgrounds?|campaign\s+(?:assets|creatives))\b/i.test(request);
+}
+
 const PYTHON_DATA_PACKAGES = ["numpy==2.2.6", "pandas==2.2.3", "matplotlib==3.10.3", "scipy==1.15.3", "scikit-learn==1.6.1", "seaborn==0.13.2", "openpyxl==3.1.5", "pillow==11.2.1"];
 
 // Filenames described as inputs are separate from requested saved outputs.
@@ -152,7 +161,7 @@ for raw in json.loads(sys.argv[1]):
 print(json.dumps(missing))
 `;
 
-module.exports = { affirmativeOutputRequest, requestedFileOutputs, PYTHON_FONT_PRELUDE, PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE, DATA_EXECUTION_CONTRACT, requiresComputedData, findMatchingSkills, buildSkillPromptIndex, AUTONOMOUS_EXECUTION_CONTRACT, buildWorkspaceModeContext, buildAgentIdentityPrompt };
+module.exports = { affirmativeOutputRequest, requestedFileOutputs, PYTHON_FONT_PRELUDE, PYTHON_DATA_PACKAGES, PYTHON_PACKAGE_SELECTION_CODE, DATA_EXECUTION_CONTRACT, requiresComputedData, shouldOfferCreativeMedia, findMatchingSkills, buildSkillPromptIndex, AUTONOMOUS_EXECUTION_CONTRACT, buildWorkspaceModeContext, buildAgentIdentityPrompt };
 
 const canvasContext = require("./canvas-context.cjs");
 module.exports.canvasContextRequest = canvasContext.canvasContextRequest;

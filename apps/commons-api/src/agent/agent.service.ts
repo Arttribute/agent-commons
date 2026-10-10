@@ -98,7 +98,7 @@ import { durableRole, restoreSessionMessages } from '~/session/session-history';
 import { filterPlatformToolsForAgent } from './copilot-tool-policy';
 import { selectModelTools } from './model-tool-selection';
 import { MAX_CONSECUTIVE_TOOL_SCHEMA_FAILURES, nextToolSchemaFailureCount } from './tool-schema-retry';
-import { DATA_EXECUTION_CONTRACT, requiresComputedData, AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
+import { DATA_EXECUTION_CONTRACT, requiresComputedData, shouldOfferCreativeMedia, AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
 
 const got = import('got');
 
@@ -1702,7 +1702,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             && preferManagedArtifactTools(requestText, Boolean(props.cliContext));
           const selectedTools = selectModelTools(
             toolDefs.filter((entry) => (knowledgeMode !== "off" || !/Knowledge/.test(entry.function.name))
-              && (!requiresComputedData(requestText) || !["generateImage", "generateMedia"].includes(entry.function.name))
+              && (shouldOfferCreativeMedia(requestText) || !["generateImage", "generateMedia"].includes(entry.function.name))
               && (!managedArtifactTask || !['runComputerCommand', 'writeComputerFiles'].includes(entry.function.name))),
             cliToolSchemas,
             requestText,

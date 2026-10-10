@@ -27,6 +27,7 @@ async function verifyRuntime(runtimePath) {
   let sourceId;
   let denyWrite = false;
   let deniedApprovals = 0;
+  const mixedRequests = new Map();
   let visualArtifactId;
   let archiveId;
   let serverError;
@@ -61,6 +62,22 @@ async function verifyRuntime(runtimePath) {
           if (deniedBoundary) assert.ok(!body.format?.properties?.files, 'Denied write was forced through structured recovery');
           message = final(savedBoundary ? 'Saved inspected-report.md.' : 'The write was denied. The requested report is unavailable.');
         }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
+      const mixed = body.messages.some(m => m.role === 'user' && m.content.includes('Mixed creative boundary'));
+      const numeric = body.messages.some(m => m.role === 'user' && m.content.includes('Numeric output boundary'));
+      if (mixed || numeric) {
+        const key = model + ':' + (mixed ? 'mixed' : 'numeric');
+        const calls = mixedRequests.get(key) ?? []; calls.push(body); mixedRequests.set(key, calls);
+        const names = body.tools?.map(tool => tool.function.name) ?? body.format.properties.tool.enum;
+        assert.equal(names.includes('generate_image'), mixed, 'Creative image tools do not reflect the mixed or numeric task');
+        assert.ok(names.includes('run_python'), 'Mixed media tasks lost their computation tool');
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        assert.ok(calls.length <= 2);
+        const message = calls.length === 1 ? action('run_python', { code: 'print("Controlled computation")' })
+          : { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Verified the offered tools and completed the controlled computation.' } }) : 'Verified the offered tools and completed the controlled computation.' };
         return response.end(JSON.stringify({ model, message, done: true }) + '\n');
       }
       if (body.messages.some(m => m.role === 'user' && m.content.includes('Visual tool boundary'))) {
@@ -295,6 +312,22 @@ async function verifyRuntime(runtimePath) {
         if (serverError) throw serverError;
         assert.equal(sourceRequests.get(model).length, 4);
         assert.equal(readFileSync(repaired.conversation.artifacts.find(file => file.name === 'source-repair.md').path, 'utf8'), 'Input lookup repaired.');
+      } finally { runtime.executeDataTool = originalDataTool; }
+      // Only computation is controlled here. The actual runtime chooses its
+      // native/JSON tool catalog and persists the resulting tool evidence.
+      runtime.executeDataTool = async (name, ...args) => name === 'run_python'
+        ? JSON.stringify({ exitCode: 0, stdout: 'Controlled computation', stderr: '', artifacts: [] })
+        : originalDataTool(name, ...args);
+      try {
+        for (const [mode, prompt] of [
+          ['mixed', 'Mixed creative boundary: Finish five complete generated ads. Use managed Python to assemble the campaign assets.'],
+          ['numeric', 'Numeric output boundary: Plot the measured sales dataset with Python.'],
+        ]) {
+          const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, prompt });
+          if (serverError) throw serverError;
+          assert.equal(mixedRequests.get(model + ':' + mode).length, 2);
+          assert.equal(result.conversation.messages.filter(message => message.toolName === 'run_python').length, 1);
+        }
       } finally { runtime.executeDataTool = originalDataTool; }
       // Stub image computation only; the actual scoped generation tool, Library
       // persistence, read tool and native/JSON model requests run unchanged.
