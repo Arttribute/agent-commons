@@ -7,6 +7,7 @@ import {
   OnModuleDestroy,
   SetMetadata,
 } from '@nestjs/common';
+import { timingSafeEqual } from 'node:crypto';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { sql } from 'drizzle-orm';
@@ -135,7 +136,27 @@ export class RateLimitGuard implements CanActivate, OnModuleDestroy {
   }
 
   private resolveKey(req: Request, strategy: string): string {
-    // Never key on caller-supplied body fields or headers — they are
+    // Internal tools carry a server-authenticated agent identity in metadata.
+    // Their public transport route does not receive an ApiKeyGuard principal,
+    // so using localhost IP would serialize every agent into one bucket.
+    const internalSecret = req.headers['x-internal-tool-secret'];
+    const expected = process.env.API_SECRET_KEY;
+    const internalAgentId = req.body?.metadata?.agentId;
+    if (
+      strategy === 'agent' &&
+      req.path === '/v1/agents/tools' &&
+      expected &&
+      typeof internalSecret === 'string' &&
+      Buffer.byteLength(internalSecret) === Buffer.byteLength(expected) &&
+      timingSafeEqual(Buffer.from(internalSecret), Buffer.from(expected)) &&
+      typeof internalAgentId === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        internalAgentId,
+      )
+    ) {
+      return `agent:${internalAgentId.toLowerCase()}`;
+    }
+    // External callers cannot rotate body fields or headers — they are
     // trivially rotated to evade the limiter. The authenticated principal
     // (attached by ApiKeyGuard, which runs first) is the identity we trust;
     // unauthenticated traffic degrades to per-IP buckets.
