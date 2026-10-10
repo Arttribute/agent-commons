@@ -95,7 +95,12 @@ async function verifyRuntime(runtimePath) {
       assert.equal(inventory.content, undefined);
       assert.equal(inventory.nextOffset, undefined);
       assert.ok(!JSON.stringify(inventory).includes('File bodies live here.'));
-      await runtime.executeDataTool('extract_library_archive', { itemId: archive.id }, result.conversation.id);
+      const extracted = JSON.parse(await runtime.executeDataTool('extract_library_archive', { itemId: archive.id }, result.conversation.id));
+      assert.equal(extracted.alreadyExtracted, false);
+      const reused = JSON.parse(await runtime.executeDataTool('extract_library_archive', { itemId: archive.id }, result.conversation.id));
+      assert.equal(reused.alreadyExtracted, true);
+      assert.equal(reused.directory, extracted.directory);
+      assert.deepEqual(reused.files, extracted.files);
       const sourceLookup = JSON.parse(await runtime.executeTool('search_library_item', { itemId: archive.id, query: 'START HERE' }, undefined, result.conversation.id));
       assert.equal(sourceLookup.extracted, true);
       const member = sourceLookup.files.find(file => file.path === 'kit/START HERE.md');
@@ -111,6 +116,12 @@ async function verifyRuntime(runtimePath) {
       assert.ok(!JSON.stringify(descriptiveList).includes(foreign.id), 'A matching foreign filename must not enter chat-scoped suggestions');
       const actualSource = JSON.parse(await runtime.executeTool('read_library_item', { itemId: member.itemId }, undefined, result.conversation.id));
       assert.ok(actualSource.content.includes('File bodies live here.'));
+      assert.equal(actualSource.endOfText, true);
+      assert.equal(actualSource.readStatus, 'final_chunk');
+      const eof = JSON.parse(await runtime.executeTool('read_library_item', { itemId: member.itemId, offset: actualSource.totalChars }, undefined, result.conversation.id));
+      assert.equal(eof.content, '');
+      assert.equal(eof.readStatus, 'end_of_text');
+      assert.match(eof.hint, /There is no next chunk/);
       const htmlRead = JSON.parse(await runtime.executeTool('read_library_item', { itemId: 'kit/START HERE.html' }, undefined, result.conversation.id));
       assert.equal(htmlRead.name, 'kit/START HERE.html');
       assert.ok(htmlRead.content.includes('Separate HTML source'));

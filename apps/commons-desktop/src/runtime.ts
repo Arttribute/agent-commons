@@ -2264,12 +2264,12 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             ? `The provided itemId does not identify a ZIP. Use an actual ZIP itemId or exact filename already available in this chat: ${JSON.stringify(available)}. Do not ask for another upload.`
             : "Attach a ZIP file to this chat or its project first.");
         }
-        const manifest = (members: LocalLibraryItem[], directory: string, totalBytes?: number) => JSON.stringify({ directory, totalBytes, totalFiles: members.length, hint: "Use list_session_files(query) to find any member. read_library_item accepts its exact filename/archive-relative path or returned itemId. run_python INPUT_FILES includes archive-relative names. The selected folder has not changed.", files: [...members].sort((a, b) => Number(!a.name.endsWith(".md")) - Number(!b.name.endsWith(".md"))).slice(0, 30).map((file) => ({ path: file.name, itemId: file.id })) });
+        const manifest = (members: LocalLibraryItem[], directory: string, totalBytes?: number, alreadyExtracted = false) => JSON.stringify({ directory, totalBytes, totalFiles: members.length, alreadyExtracted, hint: `${alreadyExtracted ? "This archive is already extracted; the existing member files and IDs are reused. " : "Extraction is complete. "}Do not extract it again to find or read documents. Use list_session_files(query) to find any member. read_library_item accepts its exact filename/archive-relative path or returned itemId. run_python INPUT_FILES includes archive-relative names. The selected folder has not changed.`, files: [...members].sort((a, b) => Number(!a.name.endsWith(".md")) - Number(!b.name.endsWith(".md"))).slice(0, 30).map((file) => ({ path: file.name, itemId: file.id })) });
         const existing = files.filter((file) => file.sourceArchiveId === item.id);
         if (existing.length && existing.every((file) => existsSync(file.path))) {
           const member = existing[0];
           const directory = member.path.slice(0, -member.name.length).replace(/[\\/]$/, "");
-          return manifest(existing, directory);
+          return manifest(existing, directory, undefined, true);
         }
         if (!(await this.requestApproval(`Extract ${item.name} into this chat's working files.`, "extract_archive", { conversationId, toolName: name }))) return "User denied archive extraction.";
         const root = this.layout.path("artifacts", conversationId);

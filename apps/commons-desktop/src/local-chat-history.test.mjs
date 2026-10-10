@@ -24,6 +24,32 @@ test('paginated Library reads preserve valid JSON and the exact next unread char
   assert.equal(parsed.offset, 500);
 });
 
+test('a complete Unicode document can be reconstructed through final-chunk and EOF results', () => {
+  const source = 'Source facts "quoted" 👩🏽‍💻\n'.repeat(600);
+  let offset = 0, reconstructed = '', final;
+  do {
+    const raw = libraryTextResult('source-731', 'guide.md', 'text/markdown', source.slice(offset, offset + 6000), offset, source.length);
+    assert.ok(Buffer.byteLength(raw) <= 4800);
+    final = JSON.parse(toolResult('read_library_item', raw).content);
+    assert.equal(final.offset, offset);
+    reconstructed += final.content;
+    if (final.nextOffset !== null) {
+      assert.ok(final.content.length > 0);
+      assert.equal(final.endOfText, false);
+      offset = final.nextOffset;
+    }
+  } while (final.nextOffset !== null);
+  assert.equal(reconstructed, source);
+  assert.equal(final.endOfText, true);
+  assert.equal(final.readStatus, 'final_chunk');
+  const eof = JSON.parse(libraryTextResult('source-731', 'guide.md', 'text/markdown', '', source.length, source.length, { hint: 'Separate source guidance.' }));
+  assert.equal(eof.content, '');
+  assert.equal(eof.nextOffset, null);
+  assert.equal(eof.endOfText, true);
+  assert.equal(eof.readStatus, 'end_of_text');
+  assert.match(eof.hint, /Separate source guidance.*There is no next chunk/);
+});
+
 test("replays saved commands as named call/result pairs before a follow-up", () => {
   const history = localChatHistory([
     { role: "user", content: "Create the project" },

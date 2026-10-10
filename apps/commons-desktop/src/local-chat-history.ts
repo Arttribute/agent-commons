@@ -4,7 +4,12 @@ import type { OllamaMessage } from "./ollama-stream";
 export const LOCAL_CONTEXT_SIZE = 16_384;
 
 export function libraryTextResult(itemId: string, name: string, mimeType: string, text: string, offset: number, totalChars: number, sourceContext: Record<string, unknown> = {}) {
-  const encode = (length: number) => JSON.stringify({ itemId, name, mimeType, pythonInput: `INPUT_FILES[${JSON.stringify(itemId)}]`, offset, content: text.slice(0, length), nextOffset: offset + length < totalChars ? offset + length : null, totalChars, ...sourceContext });
+  const encode = (length: number) => {
+    const endOfText = offset + length >= totalChars;
+    return JSON.stringify({ ...sourceContext, itemId, name, mimeType, pythonInput: `INPUT_FILES[${JSON.stringify(itemId)}]`, offset, content: text.slice(0, length), nextOffset: endOfText ? null : offset + length, totalChars, endOfText,
+      ...(endOfText ? { readStatus: length ? "final_chunk" : "end_of_text", hint: `${sourceContext.hint ? `${sourceContext.hint} ` : ""}End of this document. There is no next chunk. Use the source facts already read to complete the requested task; read another source only if needed. To revisit a specific passage, supply its explicit earlier offset.` } : {}),
+    });
+  };
   let low = 0, high = text.length;
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
