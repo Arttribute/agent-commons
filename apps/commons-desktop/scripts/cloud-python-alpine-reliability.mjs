@@ -56,11 +56,21 @@ assert abs(regression['slope'] - 2) < 1e-8 and abs(regression['intercept'] - 1) 
 assert files['regression.png'][:8] == b'\x89PNG\r\n\x1a\n'
 original_manifest = Path('/tmp/platform-first/result.json').read_bytes()
 original_script = Path('/tmp/platform-first/analysis.py').read_bytes()
+# Reproduce a killed installer: an unfinished environment with an installed
+# package directory but missing metadata. Existing uv scans fail on this state.
+environments = list(Path('/mnt/shared/.commons-python/.cache/runtime').glob('*/data-*/commons-ready'))
+assert len(environments) == 1
+environment = environments[0].parent
+metadata = environment / 'lib/python3.12/site-packages/seaborn-0.13.2.dist-info/METADATA'
+assert metadata.is_file()
+environments[0].unlink()
+metadata.unlink()
 subprocess.run([sys.executable, '/tmp/platform-first/bootstrap.py'], check=True, timeout=30)
 assert Path('/tmp/platform-first/result.json').read_bytes() == original_manifest, 'Terminal retry replaced the original output manifest'
 assert Path('/tmp/platform-first/analysis.py').read_bytes() == original_script, 'Terminal retry ran or rewrote the source code again'
 recovered = step('platform-recover-publication', "print('Recover outputs whose Library upload was interrupted')")
 assert recovered['exitCode'] == 0 and {file['name'] for file in recovered['files']} == set(files), recovered
+assert (environment / 'commons-ready').is_file() and metadata.is_file(), 'Interrupted environment was not rebuilt'
 assert all(base64.b64decode(file['base64']) == files[file['name']] for file in recovered['files'])
 second = step('platform-second', "assert (OUTPUT_DIR / 'regression.png').exists()\n(OUTPUT_DIR / 'next.md').write_text('Warm runtime working files retained')")
 assert second['exitCode'] == 0 and [f['name'] for f in second['files']] == ['next.md'], second

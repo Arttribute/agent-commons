@@ -34,6 +34,10 @@ try {
   copyFileSync(join(managed, 'uv-0.12.23/uv'), join(cloud, 'uv-0.12.23')); chmodSync(join(cloud, 'uv-0.12.23'), 0o700);
   // Match Python json.dumps' default separator spacing for the pinned cache key.
   const baseKey = createHash('sha256').update(JSON.stringify(['3.12.11', [...PYTHON_DATA_PACKAGES].sort()]).replaceAll(',', ', ')).digest('hex').slice(0, 16);
+  // This host fixture borrows the already verified managed environment. The
+  // real cold/unready-environment path is exercised in the Alpine container.
+  await promisify(execFile)(python, ['-I', '-c', 'import numpy, pandas, matplotlib, scipy, sklearn, seaborn, openpyxl, PIL'], { timeout: 60_000 });
+  writeFileSync(join(managed, 'data-3.12.11-v1/commons-ready'), 'ready');
   symlinkSync(join(managed, 'data-3.12.11-v1'), join(cloud, `data-3.12.11-${baseKey}`));
   writeFileSync(join(directory, 'sales.csv'), 'revenue\n10\n20\n30\n');
   writeFileSync(join(directory, 'inputs.json'), JSON.stringify({ files: [{ itemId: 'file-731', name: 'sales.csv', url: pathToFileURL(join(directory, 'sales.csv')).toString() }], packages: ['json', 'os', 'pathlib', 'numpy', 'pandas', 'PIL', 'sklearn'], timeoutSeconds: 120, workingDirectory: 'sessions/acceptance/outputs' }));

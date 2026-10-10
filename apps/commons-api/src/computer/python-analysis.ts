@@ -4,7 +4,7 @@ import { CLOUD_PYTHON_PLATFORM } from './python-platform';
 
 // Bootstrap runs in the agent's isolated CommonOS computer, never in the API
 // process. A managed interpreter is installed without modifying system Python.
-const CLOUD_PYTHON_PROGRAM = String.raw`import base64, fcntl, hashlib, json, mimetypes, os, platform, subprocess, sys, tarfile, urllib.request
+const CLOUD_PYTHON_PROGRAM = String.raw`import base64, fcntl, hashlib, json, mimetypes, os, platform, shutil, subprocess, sys, tarfile, urllib.request
 from pathlib import Path
 run = Path(__file__).resolve().parent
 attempt_lock = (run / '.execute.lock').open('w')
@@ -70,7 +70,13 @@ with (resources / '.prepare.lock').open('w') as lock:
     def prepare(venv, requirements):
         python = venv / 'bin/python'
         if not (venv / 'commons-ready').exists():
-            if not python.exists(): subprocess.run([str(uv), 'venv', '--python', str(managed_python), '--no-config', str(venv)], env=env, check=True, timeout=300)
+            # A stopped pod can leave half-written dist-info/METADATA files.
+            # uv cannot repair these while scanning the existing environment.
+            # Only this app-owned, never-ready venv is reset, under the shared
+            # preparation lock; completed environments and outputs survive.
+            if venv.is_symlink(): raise RuntimeError('Python environment contains a symbolic link')
+            if venv.exists(): shutil.rmtree(venv)
+            subprocess.run([str(uv), 'venv', '--python', str(managed_python), '--no-config', str(venv)], env=env, check=True, timeout=300)
             subprocess.run([str(uv), 'pip', 'install', '--python', str(python), '--no-config'] + requirements, env=env, check=True, timeout=300)
             subprocess.run([str(python), '-I', '-c', 'import numpy, pandas, matplotlib, scipy, sklearn, seaborn, openpyxl, PIL'], env=env, check=True)
             (venv / 'commons-ready').write_text('ready')
