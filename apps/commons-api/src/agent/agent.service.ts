@@ -1,5 +1,6 @@
 import { missingComputedArtifacts, preferManagedArtifactTools } from './computed-artifact-completion';
 import { LiveTurnSteering } from './live-turn-steering';
+import { ToolImageContext } from './tool-image-context';
 import { AIMessage } from '@langchain/core/messages';
 import * as schema from '#/models/schema';
 import { MEDIA_MODEL_REGISTRY } from "~/media/media-model.registry";
@@ -2157,6 +2158,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
 
           const toolNode = new ToolNode(toolRunners);
           const collectedToolCalls = executedCalls;
+          const toolImageContext = new ToolImageContext();
 
           let consecutiveToolSchemaFailures = 0;
           let artifactRepairPending = false;
@@ -2184,7 +2186,15 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             if (consecutiveToolSchemaFailures >= MAX_CONSECUTIVE_TOOL_SCHEMA_FAILURES) {
               throw new Error('The agent repeatedly sent invalid tool input. This run stopped before further model requests.');
             }
-            const reply = await llmWithTools.invoke([...s.messages, ...steering]);
+            // Tool messages preserve structured file metadata. Vision providers
+            // also need actual image content parts to inspect those files.
+            // Keep these pictures transient: later steps retain tool evidence and
+            // the model's observations without accumulating signed images.
+            const toolImages = await toolImageContext.next(executedCalls, this.supportsImageInputs(agent.modelProvider, agent.modelId), (input) => this.filesService.readFileForAgent({
+              ...input, agentId, sessionId: currentSessionId, ownerId: initiator,
+              maxChars: 1, includeImageUrls: true,
+            }));
+            const reply = await llmWithTools.invoke([...s.messages, ...steering, ...toolImages]);
             if (!reply.tool_calls?.length) {
               const missing = missingComputedArtifacts(liveSteering.request, attachmentContext?.attachments.map(file => file.name) ?? [], executedCalls, Boolean(props.cliContext));
               if (missing.length) {
