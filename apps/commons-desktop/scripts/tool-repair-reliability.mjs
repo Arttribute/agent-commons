@@ -64,7 +64,7 @@ async function verifyRuntime(runtimePath) {
     const templateText = '<!doctype html><title>Source template</title>\n' + '<p>Exact source template bytes.</p>\n'.repeat(1500);
     const [template, foreign] = runtime.importLibraryFiles([
       { name: 'source-template.html', mimeType: 'text/html', bytes: new TextEncoder().encode(templateText) },
-      { name: 'not-in-this-chat.txt', mimeType: 'text/plain', bytes: new TextEncoder().encode('Other Library file') },
+      { name: 'START guide not-in-this-chat.txt', mimeType: 'text/plain', bytes: new TextEncoder().encode('Other Library file') },
     ]);
     const [archive] = runtime.importLibraryFiles([{ name: 'sources.zip', mimeType: 'application/zip', bytes: new Uint8Array(Buffer.from('UEsDBBQAAAAIABu4SV3Vvl/PMQAAAC8AAAARAAAAa2l0L1NUQVJUIEhFUkUubWRzy8xJVUjKT8lMLVbIySxLVchILUrVUwhKTUxRKMnILFZITC4pTcxRKM4vLUpO1QMAUEsDBBQAAAAIABu4SV1pNMixTQAAAFEAAAATAAAAa2l0L1NUQVJUIEhFUkUuaHRtbLNRTMlPLqksSFXIKMnNsbMpLqnMSbVLyk+pVKhWSM7PyS+yUkjKSUzOtlaotdGHyNpkGNoFpxYkFiWWpCp4hPj6KBTnlxYlp9roAyUAUEsDBBQAAAAIABu4SV1fcMvZLQAAAC8AAAAWAAAAa2l0L3RlbXBsYXRlL3ZpZXcuaHRtbLNRTMlPLqksSFXIKMnNsbMpySzJSbULLi0oyMlMTVEoSc0tyEksSbXRh0gAAFBLAQIUAxQAAAAIABu4SV3Vvl/PMQAAAC8AAAARAAAAAAAAAAAAAACAAQAAAABraXQvU1RBUlQgSEVSRS5tZFBLAQIUAxQAAAAIABu4SV1pNMixTQAAAFEAAAATAAAAAAAAAAAAAACAAWAAAABraXQvU1RBUlQgSEVSRS5odG1sUEsBAhQDFAAAAAgAG7hJXV9wy9ktAAAALwAAABYAAAAAAAAAAAAAAIAB3gAAAGtpdC90ZW1wbGF0ZS92aWV3Lmh0bWxQSwUGAAAAAAMAAwDEAAAAPwEAAAAA', 'base64')) }]);
     for (const model of models) {
@@ -100,6 +100,15 @@ async function verifyRuntime(runtimePath) {
       assert.equal(sourceLookup.extracted, true);
       const member = sourceLookup.files.find(file => file.path === 'kit/START HERE.md');
       assert.ok(member?.itemId);
+      const descriptiveSearch = JSON.parse(await runtime.executeTool('search_library_item', { itemId: archive.id, query: 'START guide' }, undefined, result.conversation.id));
+      assert.equal(descriptiveSearch.matchingMembers, 0);
+      assert.deepEqual(descriptiveSearch.files, []);
+      assert.equal(descriptiveSearch.suggestions[0].itemId, member.itemId);
+      assert.ok(!JSON.stringify(descriptiveSearch).includes('File bodies live here.'), 'Filename suggestions must not imply document content retrieval');
+      const descriptiveList = JSON.parse(await runtime.executeTool('list_session_files', { query: 'START guide' }, undefined, result.conversation.id));
+      assert.equal(descriptiveList.totalFiles, 0);
+      assert.equal(descriptiveList.suggestions[0].itemId, member.itemId);
+      assert.ok(!JSON.stringify(descriptiveList).includes(foreign.id), 'A matching foreign filename must not enter chat-scoped suggestions');
       const actualSource = JSON.parse(await runtime.executeTool('read_library_item', { itemId: member.itemId }, undefined, result.conversation.id));
       assert.ok(actualSource.content.includes('File bodies live here.'));
       const htmlRead = JSON.parse(await runtime.executeTool('read_library_item', { itemId: 'kit/START HERE.html' }, undefined, result.conversation.id));

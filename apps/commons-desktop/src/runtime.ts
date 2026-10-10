@@ -69,6 +69,7 @@ import { RECORDED_SKILL_FIELDS, recordedSkillInstructions } from "./recorded-ski
 import { requestedFileOutputs } from "./requested-file-outputs";
 import { LocalSourceEvidence } from "./local-source-evidence";
 import { LibraryReadCursor } from "./library-read-cursor";
+import { libraryFilenameSuggestions } from "./library-filename-suggestions";
 
 type PendingApproval = {
   resolve: (allow: boolean) => void;
@@ -2062,9 +2063,13 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const normalize = (value: string) => value.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ');
       const query = normalize(String(args.query ?? '')).trim().split(/\s+/).filter(Boolean);
       const attachedIds = new Set(conversation.messages.flatMap((message) => message.attachments?.map((file) => file.id) ?? []));
-      const files = (state.library ?? []).filter((file) => ids.has(file.id) && query.every((word) => normalize(file.name).includes(word)));
+      const scopedFiles = (state.library ?? []).filter((file) => ids.has(file.id));
+      const files = scopedFiles.filter((file) => query.every((word) => normalize(file.name).includes(word)));
+      const suggestions = files.length || !query.length ? [] : libraryFilenameSuggestions(scopedFiles, String(args.query ?? ''), file => file.name);
       const offset = Math.max(0, Math.floor(Number(args.offset) || 0));
-      result = JSON.stringify({ files: files.slice(offset, offset + 30).map((file) => ({ itemId: file.id, name: file.name, mimeType: file.mimeType, role: file.sourceArchiveId ? 'archive-reference' : attachedIds.has(file.id) ? 'attachment' : file.source === 'agent' && file.conversationId === conversationId ? 'generated' : 'project-reference' })), totalFiles: files.length, nextOffset: offset + 30 < files.length ? offset + 30 : null });
+      result = JSON.stringify({ files: files.slice(offset, offset + 30).map((file) => ({ itemId: file.id, name: file.name, mimeType: file.mimeType, role: file.sourceArchiveId ? 'archive-reference' : attachedIds.has(file.id) ? 'attachment' : file.source === 'agent' && file.conversationId === conversationId ? 'generated' : 'project-reference' })), totalFiles: files.length, nextOffset: offset + 30 < files.length ? offset + 30 : null,
+        ...(suggestions.length ? { suggestions: suggestions.map(file => ({ itemId: file.id, name: file.name, mimeType: file.mimeType })), hint: 'No filename matched every query word. These are partial filename matches in this chat or project, not document contents. Read the appropriate actual file; do not invent the requested path or repeat the unchanged empty query.' } : {}),
+      });
     } else if (name === "read_library_item" || name === "search_library_item") {
       const state = this.store.get();
       const conversation = state.conversations.find((item) => item.id === conversationId);
@@ -2112,8 +2117,10 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             const normalize = (value: string) => value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ");
             const query = name === "search_library_item" ? normalize(String(args.query ?? "")).trim().split(/\s+/).filter(Boolean) : [];
             const matches = entries.filter((file) => query.every((word) => normalize(file.path).includes(word)));
+            const suggestions = matches.length || !query.length ? [] : libraryFilenameSuggestions(entries, String(args.query ?? ''), file => file.path);
             result = JSON.stringify({ itemId, name: item.name, mimeType: item.mimeType, readMode: "archive_inventory", memberContentsReturned: false, extracted: extracted.length > 0, totalMembers: entries.length, matchingMembers: matches.length,
               files: [...matches].sort((a, b) => a.path.split("/").length - b.path.split("/").length || a.path.localeCompare(b.path)).slice(0, 10),
+              ...(suggestions.length ? { suggestions, searchHint: 'No archive filename matched every query word. These are partial filename matches, not document contents. Read the appropriate actual member; a descriptive guide name may differ from the supplied filename. Do not invent that path or repeat the unchanged empty query.' } : {}),
               hint: extracted.length
                 ? "These are filenames and source itemIds only, not the contents of the documents inside this ZIP. Read the requested member with read_library_item using its returned itemId or exact archive-relative path. Search a member's actual contents using its itemId. list_session_files locates additional extracted members. Archive entries are reference inputs, not generated outputs."
                 : "This ZIP inventory lists filenames only; it does not contain the documents' contents. Use extract_library_archive with this archive itemId first, then read the requested member's returned itemId or exact archive-relative path. Do not read the ZIP inventory at character offsets as if it were a member document.",
