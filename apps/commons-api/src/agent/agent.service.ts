@@ -1,4 +1,6 @@
 import { missingComputedArtifacts, preferManagedArtifactTools } from './computed-artifact-completion';
+import { LiveTurnSteering } from './live-turn-steering';
+import { AIMessage } from '@langchain/core/messages';
 import * as schema from '#/models/schema';
 import { MEDIA_MODEL_REGISTRY } from "~/media/media-model.registry";
 import { TRANSCRIPTION_MODELS } from "~/audio/audio-models";
@@ -2159,7 +2161,22 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           let consecutiveToolSchemaFailures = 0;
           let artifactRepairPending = false;
           let artifactRepairAttempts = 0;
+          const liveSteering = new LiveTurnSteering(this.contentToText(latestUserMessage?.content));
           const callModel = async (s: typeof MessagesAnnotation.State) => {
+            // Consume steering between tool steps, before any model call or
+            // forced output retry. Waiting until graph completion makes an
+            // accepted stop/correction ineffective during a long task.
+            const steering = await liveSteering.beforeModel(props.consumeSteers);
+            if (steering.length) {
+              artifactRepairAttempts = 0;
+              consecutiveToolSchemaFailures = 0;
+              emitStatus('steer', 'running', 'Working on your new prompt');
+            }
+            if (liveSteering.stopped) {
+              artifactRepairPending = false;
+              emitStatus('steer', 'completed', 'Stopped at your request');
+              return { messages: [...steering, new AIMessage('Stopped after the last tool completed. Its executed results are saved in this conversation.')] };
+            }
             consecutiveToolSchemaFailures = nextToolSchemaFailureCount(
               consecutiveToolSchemaFailures,
               s.messages.at(-1),
@@ -2167,18 +2184,18 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             if (consecutiveToolSchemaFailures >= MAX_CONSECUTIVE_TOOL_SCHEMA_FAILURES) {
               throw new Error('The agent repeatedly sent invalid tool input. This run stopped before further model requests.');
             }
-            const reply = await llmWithTools.invoke(s.messages);
+            const reply = await llmWithTools.invoke([...s.messages, ...steering]);
             if (!reply.tool_calls?.length) {
-              const missing = missingComputedArtifacts(this.contentToText(latestUserMessage?.content), attachmentContext?.attachments.map(file => file.name) ?? [], executedCalls, Boolean(props.cliContext));
+              const missing = missingComputedArtifacts(liveSteering.request, attachmentContext?.attachments.map(file => file.name) ?? [], executedCalls, Boolean(props.cliContext));
               if (missing.length) {
                 if (artifactRepairAttempts >= 2) throw new Error(`The agent did not produce the requested Library outputs: ${missing.join(', ')}. Its executed tool results are preserved; this task is incomplete.`);
                 artifactRepairAttempts++;
                 artifactRepairPending = true;
                 emitStatus('outputs', 'running', 'Completing requested files', `Missing verified outputs: ${missing.join(', ')}`);
-                return { messages: [reply, { role: 'system', content: `The current request is not complete. Missing verified Library outputs from this run: ${missing.join(', ')}. Files written only on the computer have not been published to the Library. Use runPythonAnalysis to create or assemble the requested files in OUTPUT_DIR; it automatically publishes its generated outputs. Working drafts from this session may be reused as source inputs. ${requiresComputedData(this.contentToText(latestUserMessage?.content)) ? 'Execute the requested calculation against the real attached input file IDs and save its actual results.' : 'For document or template work, read the actual source and save the assembled documents; no unrelated calculation is needed.'} Document tools are also available for their supported report formats. Return verified new file IDs or links. Supplied examples and files from another chat are reference inputs, not outputs you created for this request.` }] as any };
+                return { messages: [...steering, reply, { role: 'system', content: `The current request is not complete. Missing verified Library outputs from this run: ${missing.join(', ')}. Files written only on the computer have not been published to the Library. Use runPythonAnalysis to create or assemble the requested files in OUTPUT_DIR; it automatically publishes its generated outputs. Working drafts from this session may be reused as source inputs. ${requiresComputedData(liveSteering.request) ? 'Execute the requested calculation against the real attached input file IDs and save its actual results.' : 'For document or template work, read the actual source and save the assembled documents; no unrelated calculation is needed.'} Document tools are also available for their supported report formats. Return verified new file IDs or links. Supplied examples and files from another chat are reference inputs, not outputs you created for this request.` }] as any };
               }
             }
-            return { messages: reply };
+            return { messages: [...steering, reply] };
           };
 
           const shouldCont = (s: typeof MessagesAnnotation.State) => {
@@ -2551,7 +2568,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
 
           while (loop++ < maxTaskCycles) {
             // ✅ Check for next executable task using new TaskExecutionService
-            const nextTask = await this.taskExecution.getNextExecutableTask(
+            const nextTask = liveSteering.stopped ? null : await this.taskExecution.getNextExecutableTask(
               agentId,
               currentSessionId,
             );
@@ -2643,6 +2660,14 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             messages = result.messages;
             finalResult = result;
 
+            if (liveSteering.stopped) {
+              if (nextTask) {
+                await this.db.update(schema.task).set({ status: 'cancelled', updatedAt: new Date() })
+                  .where(and(eq(schema.task.taskId, nextTask.taskId), eq(schema.task.status, 'running')));
+              }
+              break;
+            }
+
             // ── Auto-complete the task if the agent didn't call updateTaskProgress ──
             if (nextTask && nextTask.executionMode !== 'workflow') {
               const taskAfter = await this.db.query.task.findFirst({
@@ -2697,8 +2722,9 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             );
             const steering = (await props.consumeSteers?.()) ?? [];
             if (steering.length) {
-              messages.push(...steering.map((content) => ({ role: 'user', content } as any)));
-              emitStatus('steer', 'running', 'Working on your new prompt');
+              // A steer can arrive just after the last safe model boundary.
+              // Feed it through the same request/stop handling on the next one.
+              messages.push(...await liveSteering.beforeModel(() => steering));
               continue;
             }
             if (!pending) break;
