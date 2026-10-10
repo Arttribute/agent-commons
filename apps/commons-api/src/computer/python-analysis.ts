@@ -26,10 +26,20 @@ triple = architecture + '-unknown-linux-' + libc
 # The computer's private shared volume survives sleep and pod replacement.
 # Keep interpreters/venvs at their original absolute paths, separate from chat
 # outputs, and never reuse a binary from a different architecture or libc.
-resources = root / 'runtime' / triple
-for directory in (resources.parent, resources):
+# CommonOS excludes .cache from workspace watching. Thousands of installed
+# package files must not become workspace events or starve daemon heartbeats.
+resources = root / '.cache' / 'runtime' / triple
+for directory in (root / '.cache', resources.parent, resources):
     if directory.is_symlink(): raise RuntimeError('Python runtime folder contains a symbolic link')
     directory.mkdir(exist_ok=True)
+legacy = root / 'runtime'
+with (root / '.cache' / '.migration.lock').open('w') as migration_lock:
+    fcntl.flock(migration_lock, fcntl.LOCK_EX)
+    if legacy.is_symlink(): raise RuntimeError('Python runtime folder contains a symbolic link')
+    if legacy.exists():
+        # Relocated venvs/ELF loaders retain absolute paths, so hide the old
+        # cache without reusing it as the newly prepared interpreter.
+        legacy.replace(root / '.cache' / ('legacy-runtime-' + run.name))
 digests = {
     'aarch64-unknown-linux-gnu': '6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f',
     'x86_64-unknown-linux-gnu': '9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6',
