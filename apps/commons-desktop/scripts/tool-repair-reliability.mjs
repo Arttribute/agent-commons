@@ -27,6 +27,8 @@ async function verifyRuntime(runtimePath) {
   let sourceId;
   let denyWrite = false;
   let deniedApprovals = 0;
+  let failImage = false;
+  const nativeImageRequests = new Map();
   const mixedRequests = new Map();
   let visualArtifactId;
   let archiveId;
@@ -41,6 +43,25 @@ async function verifyRuntime(runtimePath) {
       if (request.url === '/api/show') return response.end(JSON.stringify({ capabilities: ['completion', 'tools', 'thinking', ...(body.model.startsWith('qwen') ? ['vision'] : [])], details: { family: 'qwen35' } }));
       if (request.url !== '/api/chat') return response.end(JSON.stringify({ done: true }));
       const model = body.model;
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Native image completion boundary'))) {
+        const key = model + ':' + (failImage ? 'failed' : 'saved');
+        const calls = nativeImageRequests.get(key) ?? []; calls.push(body); nativeImageRequests.set(key, calls);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        const final = text => ({ role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: text } }) : text });
+        let message;
+        if (calls.length === 1) message = action('run_python', { code: 'print(40)' });
+        else if (calls.length === 2) message = final('Completed the calculation and generated the image.');
+        else if (calls.length === 3) {
+          assert.ok(body.messages.some(m => m.content.includes('computed files do not complete the separate creative image')));
+          message = action('generate_image', { prompt: 'Controlled fixture background', negativePrompt: 'text, logos' });
+        } else {
+          assert.equal(calls.length, 4);
+          message = final(failImage ? 'The computation returned 40. Image generation failed; that output is unavailable.' : 'Generated the image and computed 40.');
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
       const savedBoundary = body.messages.some(m => m.role === 'user' && m.content.includes('Saved output boundary'));
       const deniedBoundary = body.messages.some(m => m.role === 'user' && m.content.includes('Denied output boundary'));
       if (savedBoundary || deniedBoundary) {
@@ -336,16 +357,38 @@ async function verifyRuntime(runtimePath) {
       const fixturePath = join(directory, 'controlled-image.png');
       writeFileSync(fixturePath, visualBytes);
       runtime.imageManager.generate = async (prompt, modelId, options) => {
+        if (failImage) throw new Error('Controlled image generation failure');
         assert.equal(prompt, 'Controlled fixture background');
         assert.equal(options.negativePrompt, 'text, logos');
         return { path: fixturePath, modelId: 'fixture.gguf' };
       };
       runtime.executeTool = async (name, ...args) => {
         const result = await originalTool(name, ...args);
-        if (name === 'generate_image') visualArtifactId = JSON.parse(result).artifactId;
+        if (name === 'generate_image' && !result.startsWith('Error:')) visualArtifactId = JSON.parse(result).artifactId;
         return result;
       };
       try {
+        runtime.executeDataTool = async (name, ...args) => name === 'run_python'
+          ? JSON.stringify({ exitCode: 0, stdout: '40', stderr: '', artifacts: [] })
+          : originalDataTool(name, ...args);
+        for (const failed of [false, true]) {
+          failImage = failed;
+          const mixed = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, prompt: 'Native image completion boundary: create an illustration using generate_image. Separately calculate the mean of the dataset with Python and report the value in chat.' });
+          if (serverError) throw serverError;
+          assert.equal(nativeImageRequests.get(model + ':' + (failed ? 'failed' : 'saved')).length, 4);
+          const image = mixed.conversation.messages.find(m => m.toolName === 'generate_image');
+          assert.ok(image, 'A final answer skipped the explicitly requested image tool');
+          if (failed) {
+            assert.match(image.content, /^Error: Controlled image generation failure/);
+            assert.equal(mixed.conversation.messages.filter(m => m.toolName === 'generate_image').length, 1, 'Failed generation was retried without a changed approach');
+            assert.equal(mixed.conversation.artifacts?.length ?? 0, 0);
+          } else {
+            const receipt = JSON.parse(image.content);
+            assert.ok(mixed.conversation.artifacts.some(a => a.id === receipt.artifactId));
+          }
+        }
+        failImage = false;
+        runtime.executeDataTool = originalDataTool;
         const visual = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, prompt: 'Visual tool boundary: generate a fixture image, read that exact saved image, then save visual-check.md containing Controlled image context verified.' });
         if (serverError) throw serverError;
         assert.equal(visualRequests.get(model).length, 4);
@@ -361,6 +404,8 @@ async function verifyRuntime(runtimePath) {
         assert.equal(readFileSync(visual.conversation.artifacts.find(file => file.name === 'visual-check.md').path, 'utf8'), 'Controlled image context verified.');
         assert.ok(!JSON.stringify(visual.conversation).includes(visualBytes.toString('base64')), 'Image bytes persisted in the conversation');
       } finally {
+        failImage = false;
+        runtime.executeDataTool = originalDataTool;
         runtime.imageManager.generate = originalGenerate;
         runtime.executeTool = originalTool;
       }

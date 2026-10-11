@@ -98,7 +98,7 @@ import { durableRole, restoreSessionMessages } from '~/session/session-history';
 import { filterPlatformToolsForAgent } from './copilot-tool-policy';
 import { selectModelTools } from './model-tool-selection';
 import { MAX_CONSECUTIVE_TOOL_SCHEMA_FAILURES, nextToolSchemaFailureCount } from './tool-schema-retry';
-import { DATA_EXECUTION_CONTRACT, requiresComputedData, shouldOfferCreativeMedia, AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
+import { DATA_EXECUTION_CONTRACT, requiresComputedData, shouldOfferCreativeMedia, requiresNativeImageGeneration, AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
 
 const got = import('got');
 
@@ -2202,7 +2202,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 artifactRepairAttempts++;
                 artifactRepairPending = true;
                 emitStatus('outputs', 'running', 'Completing requested files', `Missing verified outputs: ${missing.join(', ')}`);
-                return { messages: [...steering, reply, { role: 'system', content: `The current request is not complete. Missing verified Library outputs from this run: ${missing.join(', ')}. Files written only on the computer have not been published to the Library. Use runPythonAnalysis to create or assemble the requested files in OUTPUT_DIR; it automatically publishes its generated outputs. Working drafts from this session may be reused as source inputs. ${requiresComputedData(liveSteering.request) ? 'Execute the requested calculation against the real attached input file IDs and save its actual results.' : 'For document or template work, read the actual source and save the assembled documents; no unrelated calculation is needed.'} Document tools are also available for their supported report formats. Return verified new file IDs or links. Supplied examples and files from another chat are reference inputs, not outputs you created for this request.` }] as any };
+                return { messages: [...steering, reply, { role: 'system', content: `The current request is not complete. Missing verified Library outputs from this run: ${missing.join(', ')}. Files written only on the computer have not been published to the Library. Use runPythonAnalysis to create or assemble the requested files in OUTPUT_DIR; it automatically publishes its generated outputs. Working drafts from this session may be reused as source inputs. ${requiresComputedData(liveSteering.request) ? 'Execute the requested calculation against the real attached input file IDs and save its actual results.' : 'For document or template work, read the actual source and save the assembled documents; no unrelated calculation is needed.'} ${requiresNativeImageGeneration(liveSteering.request) ? 'Also use the explicitly requested image-generation tool for the separate creative illustration; Python plots do not replace it.' : ''} Document tools are also available for their supported report formats. Return verified new file IDs or links. Supplied examples and files from another chat are reference inputs, not outputs you created for this request.` }] as any };
               }
             }
             return { messages: [...steering, reply] };

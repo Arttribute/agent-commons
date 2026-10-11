@@ -33,7 +33,7 @@ import type {
   WorkflowInput,
   WorkspacePreferences,
 } from "@agent-commons/desktop-contract";
-import { DATA_EXECUTION_CONTRACT, requiresComputedData, shouldOfferCreativeMedia, AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills } from "@agent-commons/agent-core";
+import { DATA_EXECUTION_CONTRACT, requiresComputedData, shouldOfferCreativeMedia, requiresNativeImageGeneration, AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills } from "@agent-commons/agent-core";
 import {
   extractDocumentText,
   buildDirSnapshot,
@@ -1685,6 +1685,8 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
 
     let executionRepairAttempted = false;
     let outputRepairAttempted = false;
+    let nativeImageRepairAttempted = false;
+    const nativeImageRequired = requiresNativeImageGeneration(lastUser);
     let emptyResponseRepairAttempted = false;
     let skillRepairAttempted = false;
     const initialOutputIds = new Set((conversation.artifacts ?? []).map((file) => file.id));
@@ -1805,7 +1807,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       else if (!nativeTools) messages[0].content += `\nThis model uses the text tool protocol. To take an action, output ONLY {"tool":"exact_tool_name","args":{...}}. After each tool result, continue the task. When done, output {"tool":"final","args":{"response":"your final answer"}}. Available tools and schemas: ${JSON.stringify(inferenceTools.map((entry) => entry.function))}`;
       const requestNativeTools = nativeTools && !repairingArgs;
       const outputsConfirmed = Boolean(recordingSkill && successfulTools.has("local_save_skill"))
-        || (needsLibraryOutput && missingOutputs().length === 0 && (!requiresComputedData(lastUser) || ["run_python", "cli_run_command", "cli_wait_for_process"].some((name) => successfulTools.has(name))));
+        || (needsLibraryOutput && missingOutputs().length === 0 && (!requiresComputedData(lastUser) || ["run_python", "cli_run_command", "cli_wait_for_process"].some((name) => successfulTools.has(name))) && (!nativeImageRequired || successfulTools.has("generate_image")));
       if (outputsConfirmed) messages[0].content += "\nExecuted tools have confirmed persistence of the requested output files or saved skill. This does not prove their content is correct. Verify the actual saved results and any remaining user requirements, then report them. Do not restart source research or rewrite saved outputs unless you identify a concrete defect that needs correction.";
       const inspectedImages = toolImageContext.take(this.store.get().library ?? []);
       const stepImages = inspectedImages.length ? await localImageContext(endpoint, agent.model || state.settings.defaultModel, inspectedImages) : imageContext;
@@ -1879,6 +1881,15 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             continue;
           }
           const computedEvidenceMissing = requiresComputedData(lastUser) && !["run_python", "cli_run_command", "cli_wait_for_process"].some((name) => successfulTools.has(name));
+          const nativeImageMissing = nativeImageRequired && !successfulTools.has("generate_image");
+          if (nativeImageMissing) {
+            if (!nativeImageRepairAttempted) {
+              nativeImageRepairAttempted = true;
+              messages.push({ role: "system", content: "The computed files do not complete the separate creative image requested with generate_image. Use generate_image to create that image and retain the existing computed outputs. Do not regenerate the data files or represent measurements with image generation." });
+              continue;
+            }
+            if (/\b(?:successfully|created|generated|saved|completed|finished|done)\b/i.test(message.content ?? "")) throw new Error("The model claimed completion without generating the separately requested creative image. Its computed outputs are saved; continue from them.");
+          }
           if (needsLibraryOutput) {
             const current = this.store.get();
             const outputExists = current.conversations.find((entry) => entry.id === conversationId)?.artifacts?.some((file) => !initialOutputIds.has(file.id) && !current.library?.find((item) => item.id === file.id)?.sourceArchiveId) && !missingOutputs().length;
@@ -1909,7 +1920,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
           }
           if (computedEvidenceMissing && /\b(?:successfully|created|generated|saved|completed|finished|done)\b/i.test(message.content ?? "")) throw new Error("The model claimed completion without successful code execution. Its tool results are saved; continue from the reported error.");
           if (!message.content?.trim()) {
-            if (needsLibraryOutput && !missingOutputs().length && !computedEvidenceMissing) return `Saved to the Local Library: ${outputNames.join(", ")}.`;
+            if (needsLibraryOutput && !missingOutputs().length && !computedEvidenceMissing && !nativeImageMissing) return `Saved to the Local Library: ${outputNames.join(", ")}.`;
             if (!emptyResponseRepairAttempted) {
               emptyResponseRepairAttempted = true;
               messages.push({ role: "system", content: `Your response was empty. Continue the request from the saved tool evidence. ${missingOutputs().length ? `Next missing output: ${missingOutputs()[0]}. Use the appropriate tool to create it, then finish the remaining outputs.` : "Return a brief answer grounded in the actual tool results; do not invent completion."}` });
