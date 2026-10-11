@@ -94,6 +94,9 @@ jobs:
 
       # A failed token refresh must back off instead of retrying on every
       # request; retry storms exhausted identity's rate limit for everyone.
+      - name: Test signed-in agent proxy authentication and ownership
+        run: node --experimental-vm-modules --test apps/commons-app/lib/agents-proxy.test.mjs
+
       - name: Test session token refresh backoff
         run: node --experimental-strip-types --test apps/commons-app/lib/token-refresh.test.mjs
 
