@@ -135,6 +135,7 @@ jobs:
           pnpm --filter commons-api build
           pnpm --filter commons-api exec jest --runInBand src/modules/auth/rate-limit.guard.spec.ts src/agent/optional-context.spec.ts src/agent/live-turn-steering.spec.ts src/agent/tool-image-context.spec.ts src/agent/blocking-model-callbacks.spec.ts src/agent/run-stream.registry.spec.ts src/agent/run-stream.registry.shared.spec.ts
           pnpm --filter commons-api exec jest --runInBand src/modules/auth/dto/api-key.dto.spec.ts
+          NODE_OPTIONS='--experimental-vm-modules --max-old-space-size=4096' pnpm --filter commons-api exec jest --runInBand src/session/session-model-inheritance.spec.ts src/task/task-execution.service.spec.ts src/agent/run-stream.registry.integration.spec.ts
           node apps/commons-api/scripts/video-sampling-reliability.mjs
           node apps/commons-api/scripts/copilot-runtime-reliability.mjs
           pnpm --filter commons-api exec jest --runInBand src/computer/resource-upgrade-policy.spec.ts src/computer/resource-upgrade.service.spec.ts src/computer/computer-upgrade.controller.spec.ts src/computer/compute-metering.service.spec.ts
