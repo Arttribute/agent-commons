@@ -32,6 +32,7 @@ async function verifyRuntime(runtimePath) {
   const mixedRequests = new Map();
   const readLoopRequests = new Map(models.map(model => [model, []]));
   const eofLoopRequests = new Map(models.map(model => [model, []]));
+  const pythonEOFRequests = new Map(models.map(model => [model, []]));
   const writeLoopRequests = new Map(models.map(model => [model, []]));
   let visualArtifactId;
   let archiveId;
@@ -46,6 +47,25 @@ async function verifyRuntime(runtimePath) {
       if (request.url === '/api/show') return response.end(JSON.stringify({ capabilities: ['completion', 'tools', 'thinking', ...(body.model.startsWith('qwen') ? ['vision'] : [])], details: { family: 'qwen35' } }));
       if (request.url !== '/api/chat') return response.end(JSON.stringify({ done: true }));
       const model = body.model;
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Python EOF recovery boundary'))) {
+        const calls = pythonEOFRequests.get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        let message;
+        if (calls.length <= 2) message = action('read_library_item', { itemId: sourceId });
+        else if (calls.length === 3) {
+          assert.ok(body.format.properties.code, 'EOF repair must request executable Python arguments');
+          assert.ok(!body.tools);
+          message = { role: 'assistant', content: JSON.stringify({ code: 'print("Controlled Python dispatch")' }) };
+        } else {
+          assert.equal(calls.length, 4);
+          assert.ok(!body.format?.properties.code, 'Python argument repair must end after dispatch');
+          message = { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved computed.md.' } }) : 'Saved computed.md.' };
+          if (model.startsWith('deepseek')) assert.ok(body.format.properties.tool);
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
       if (body.messages.some(m => m.role === 'user' && m.content.includes('Write loop recovery boundary'))) {
         const calls = writeLoopRequests.get(model); calls.push(body);
         const action = (name, args) => model.startsWith('deepseek')
@@ -373,6 +393,22 @@ async function verifyRuntime(runtimePath) {
       const eofReads = eofLoop.conversation.messages.filter(m => m.toolName === 'read_library_item');
       assert.equal(JSON.parse(eofReads[1].content).readStatus, 'end_of_text');
       for (const name of ['ad-copy.md', 'plan.md']) assert.equal(readFileSync(eofLoop.conversation.artifacts.find(a => a.name === name).path, 'utf8'), 'Verified source: current chat.');
+      const dataToolBeforePythonFixture = runtime.executeDataTool.bind(runtime);
+      let pythonDispatches = 0;
+      runtime.executeDataTool = async (name, args, conversationId, workspace) => {
+        if (name !== 'run_python') return dataToolBeforePythonFixture(name, args, conversationId, workspace);
+        pythonDispatches++;
+        assert.equal(args.code, 'print("Controlled Python dispatch")');
+        const saved = JSON.parse(await dataToolBeforePythonFixture('write_library_files', { files: [{ name: 'computed.md', content: 'Controlled Python dispatch fixture; numeric execution is tested separately.' }] }, conversationId, workspace));
+        return JSON.stringify({ ...saved, exitCode: 0 });
+      };
+      try {
+        const pythonEOF = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Python EOF recovery boundary: read the attached source, execute Python, and save computed.md in OUTPUT_DIR.' });
+        if (serverError) throw serverError;
+        assert.equal(pythonEOFRequests.get(model).length, 4);
+        assert.equal(pythonDispatches, 1);
+        assert.ok(pythonEOF.conversation.artifacts.some(a => a.name === 'computed.md'));
+      } finally { runtime.executeDataTool = dataToolBeforePythonFixture; }
       const savedReport = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Saved output boundary: read the attached source, then save inspected-report.md describing its verified source value.' });
       if (serverError) throw serverError;
       assert.equal(saveRequests.get(model).length, 4);

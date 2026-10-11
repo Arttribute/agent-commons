@@ -1680,6 +1680,8 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     const offeredNames = new Set(tools.map((entry) => entry.function.name));
     let recordingSkillArgsRepair = false;
     let libraryWriteArgsRepair = false;
+    let pythonArgsRepair = false;
+    let pythonEOFRepairAttempted = false;
     let libraryWriteDenied = false;
     let nativeTools = openingGreeting || !/^deepseek-r1:(?:1\.5b|7b|8b)/.test(agent.model);
 
@@ -1773,6 +1775,14 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             libraryWriteArgsRepair = true;
             repeatedReadHint = `This source was completely returned during this request. The latest read is an empty end-of-file result, not additional evidence. Use the verified source facts to save the complete requested ${next}; do not restart completed reference reads.`;
           }
+          if (!content.length && data.totalChars > 0 && readCursor.fullyRead(data.itemId)
+            && needsLibraryOutput && requiresComputedData(lastUser) && !successfulTools.has("run_python")
+            && offeredNames.has("run_python") && this.store.get().settings.permissionMode !== "read-only"
+            && !pythonEOFRepairAttempted) {
+            pythonArgsRepair = true;
+            pythonEOFRepairAttempted = true;
+            repeatedReadHint = "The source was completely returned during this request; the latest read is an empty EOF result. Execute the requested Python work using the retained source facts and INPUT_FILES, rather than restarting completed reads.";
+          }
           const excerpt = content.length <= 1200 ? content : `${content.slice(0, 300)}\n${(content.match(/^#{1,6} .+$/gm) ?? []).slice(0, 10).join("\n")}\n${content.slice(-700)}`;
           details = data.readMode === "image_metadata"
             ? `Requested visual preview of ${data.name} (${data.itemId}). This tool returned image metadata, not document text or visual findings.`
@@ -1807,6 +1817,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       if (beforeStep.length) {
         recordingSkillArgsRepair = false;
         libraryWriteArgsRepair = false;
+        pythonArgsRepair = false;
         messages.push(...beforeStep.map((content): OllamaMessage => ({ role: "user", content })));
         if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
       }
@@ -1830,8 +1841,8 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const inferenceTools = tools.filter((entry) => (entry.function.name !== "web_search" || this.webSearchAllowed(conversationId))
         && (entry.function.name !== "extract_library_archive" || archives.some(archive => !archive.extracted)));
       const repairingSkillArgs = recordingSkillArgsRepair;
-      const repairingArgs = repairingSkillArgs || libraryWriteArgsRepair;
-      const repairTool = repairingSkillArgs ? "local_save_skill" : "write_library_files";
+      const repairingArgs = repairingSkillArgs || libraryWriteArgsRepair || pythonArgsRepair;
+      const repairTool = repairingSkillArgs ? "local_save_skill" : pythonArgsRepair ? "run_python" : "write_library_files";
       const nextTextOutput = libraryWriteArgsRepair ? nextRecoverableTextOutput() : undefined;
       const toolArgumentRepairSchema = nextTextOutput ? {
         type: "object", properties: { files: { type: "array", minItems: 1, maxItems: 1,
@@ -1839,6 +1850,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         } }, required: ["files"],
       } : inferenceTools.find((entry) => entry.function.name === repairTool)?.function.parameters;
       if (repairingSkillArgs) messages[0].content += `\nCorrect the failed local_save_skill arguments. Return ONLY the argument JSON object matching this schema, without a tool wrapper or Markdown. Each required field must be an actual JSON field. Array contents must describe the observed task and its checks. Schema: ${JSON.stringify(toolArgumentRepairSchema)}`;
+      else if (pythonArgsRepair) messages[0].content += `\nComplete the explicitly requested Python work from the verified source inputs. Return ONLY the run_python argument JSON object matching this schema, without a tool wrapper or Markdown. code must contain executable Python, use INPUT_FILES for source paths and OUTPUT_DIR for the requested deliverables, and verify the actual result. Ordinary execution approvals still apply. Schema: ${JSON.stringify(toolArgumentRepairSchema)}`;
       else if (libraryWriteArgsRepair) messages[0].content += `\nThe requested text output has not been saved with valid write_library_files arguments. Return ONLY a JSON argument object matching this schema, without a tool wrapper or Markdown. files must be an array of objects with separate name and content strings; never put the whole Markdown document in the files field. ${nextTextOutput ? `Save only the next requested document, ${nextTextOutput}, using verified source facts; continue with the other missing outputs after it is saved.` : "Use the requested filenames and verified source facts."} Schema: ${JSON.stringify(toolArgumentRepairSchema)}`;
       else if (!nativeTools) messages[0].content += `\nThis model uses the text tool protocol. To take an action, output ONLY {"tool":"exact_tool_name","args":{...}}. After each tool result, continue the task. When done, output {"tool":"final","args":{"response":"your final answer"}}. Available tools and schemas: ${JSON.stringify(inferenceTools.map((entry) => entry.function))}`;
       const requestNativeTools = nativeTools && !repairingArgs;
@@ -1870,6 +1882,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       if (afterStep.length) {
         recordingSkillArgsRepair = false;
         libraryWriteArgsRepair = false;
+        pythonArgsRepair = false;
         messages.push(...afterStep.map((content): OllamaMessage => ({ role: "user", content })));
         if (interactive) this.emit({ type: "chat-token", conversationId, content: "" });
         continue;
@@ -1881,6 +1894,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         message.content = "";
         recordingSkillArgsRepair = false;
         libraryWriteArgsRepair = false;
+        pythonArgsRepair = false;
       }
       // Native tool continuations can use the prior reasoning trace. Bound it
       // so long traces cannot consume the input budget on subsequent calls.
