@@ -1,4 +1,4 @@
-import { affirmativeOutputRequest, requiresComputedData, requestedFileOutputs } from '@agent-commons/agent-core';
+import { affirmativeOutputRequest, requiresComputedData, requestedFileOutputs, requiresNativeImageGeneration } from '@agent-commons/agent-core';
 
 type ExecutedCall = { name: string; status: string; result: unknown };
 
@@ -53,20 +53,26 @@ export function missingComputedArtifacts(
   if (!outputVerb) return [];
   const outputText = request.slice(outputVerb.index);
   const expected = requestedFileOutputs(request, inputNames).map(name => name.toLowerCase());
+  const nativeImageRequired = requiresNativeImageGeneration(request);
+  const wantsComputedOutput = /\b(?:save|export)\b|\b(?:create|generate|write)\b[^;!?\n.]{0,100}\b(?:files?|outputs?|charts?|plots?|reports?)\b/i.test(outputText);
   if (
     !expected.length &&
-    !/\b(?:save|export)\b|\b(?:create|generate|write)\b.{0,100}\b(?:files?|outputs?|charts?|plots?|reports?)\b/i.test(
-      outputText,
-    )
+    !wantsComputedOutput && !nativeImageRequired
   )
     return [];
   const produced = new Set<string>();
+  let nativeImageSaved = false;
   const computed = requiresComputedData(request);
   for (const call of calls) {
     const data = unwrap(call.result);
     // Approval requests legitimately end a turn without activating resources.
     if (data.requiresConfirmation === true || data.requiresApproval === true)
       return [];
+    if (call.status === 'success' && /^(?:generateImage|generateMedia)$/.test(call.name)) {
+      const media = Array.isArray(data) ? data : [data];
+      nativeImageSaved ||= media.some((file: any) => Boolean(file.fileId || file.artifact?.itemId)
+        && /\.(?:png|jpe?g|webp|gif|avif)$/i.test(file.name ?? file.artifact?.name ?? ''));
+    }
     const dataFileCreation = /^(?:runPythonAnalysis|create(?:Text|Document|Presentation|Pdf|Spreadsheet)File)$/.test(call.name);
     const mediaCreation = !computed && /^(?:generateImage|generateMedia)$/.test(call.name);
     if (call.status !== 'success' || (!dataFileCreation && !mediaCreation))
@@ -81,9 +87,11 @@ export function missingComputedArtifacts(
         produced.add(file.name.split(/[\\/]/).at(-1)!.toLowerCase());
     }
   }
-  return expected.length
+  const missing = expected.length
     ? expected.filter((name) => !produced.has(name))
-    : produced.size
+    : !wantsComputedOutput || produced.size
       ? []
       : ['a newly generated Library output'];
+  if (nativeImageRequired && !nativeImageSaved) missing.push('a creative image saved by the requested image-generation tool');
+  return missing;
 }
