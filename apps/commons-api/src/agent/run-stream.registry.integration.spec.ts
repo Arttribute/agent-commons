@@ -16,7 +16,9 @@ describe('shared run store with real SQL', () => {
     await postgres.exec(readFileSync('migrations/versioned/039_shared_run_streams.sql', 'utf8'));
     // Production uses drizzle-orm/postgres-js, whose execute returns an array.
     // PGlite returns { rows }; adapt only that driver boundary here.
-    const client = drizzle(postgres);
+    // PGlite's import/require declarations have distinct private identities
+    // under NodeNext; both refer to this same runtime client.
+    const client = drizzle(postgres as any);
     const rows = async (executor: { execute: (query: any) => Promise<any> }, query: any) => {
       const result = await executor.execute(query);
       return Array.isArray(result) ? result : result.rows;
