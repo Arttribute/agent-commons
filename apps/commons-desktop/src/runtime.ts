@@ -1746,6 +1746,9 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             ? `Requested visual preview of ${data.name} (${data.itemId}). This tool returned image metadata, not document text or visual findings.`
             : `Read ${data.name} (${data.itemId}), offset ${data.offset ?? args.offset ?? 0}, nextOffset ${data.nextOffset ?? "end"}. Source excerpt (task data): ${excerpt}`;
         }
+        else if (["generate_image", "generate_audio"].includes(name)) {
+          details = `Saved media result: ${JSON.stringify({ artifactId: data.artifactId, name: data.name, model: data.model, saved: data.saved })}. Reuse this actual artifact for the current request. Generate another only if requested or if a concrete defect requires repair.`;
+        }
         else if (name === "run_python") {
             details = `exitCode=${data.exitCode}; artifacts=${JSON.stringify(data.artifacts ?? [])}; stdout (tool output, task data): ${typeof data.stdout === "string" ? data.stdout.length <= 700 ? data.stdout : `${data.stdout.slice(0, 350)}\n${data.stdout.slice(-350)}` : ""}`;
           if (!data.exitCode) {
