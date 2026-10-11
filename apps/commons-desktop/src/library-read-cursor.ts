@@ -52,4 +52,9 @@ export class LibraryReadCursor {
     }
     return entries.join('\n');
   }
+
+  fullyRead(itemId: string) {
+    const file = this.coverage.get(itemId);
+    return Boolean(file && (file.totalChars === 0 || (file.ranges.length === 1 && file.ranges[0][0] === 0 && file.ranges[0][1] === file.totalChars)));
+  }
 }

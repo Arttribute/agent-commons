@@ -31,6 +31,8 @@ async function verifyRuntime(runtimePath) {
   const nativeImageRequests = new Map();
   const mixedRequests = new Map();
   const readLoopRequests = new Map(models.map(model => [model, []]));
+  const eofLoopRequests = new Map(models.map(model => [model, []]));
+  const pythonEOFRequests = new Map(models.map(model => [model, []]));
   const writeLoopRequests = new Map(models.map(model => [model, []]));
   let visualArtifactId;
   let archiveId;
@@ -45,6 +47,25 @@ async function verifyRuntime(runtimePath) {
       if (request.url === '/api/show') return response.end(JSON.stringify({ capabilities: ['completion', 'tools', 'thinking', ...(body.model.startsWith('qwen') ? ['vision'] : [])], details: { family: 'qwen35' } }));
       if (request.url !== '/api/chat') return response.end(JSON.stringify({ done: true }));
       const model = body.model;
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Python EOF recovery boundary'))) {
+        const calls = pythonEOFRequests.get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        let message;
+        if (calls.length <= 2) message = action('read_library_item', { itemId: sourceId });
+        else if (calls.length === 3) {
+          assert.ok(body.format.properties.code, 'EOF repair must request executable Python arguments');
+          assert.ok(!body.tools);
+          message = { role: 'assistant', content: JSON.stringify({ code: 'print("Controlled Python dispatch")' }) };
+        } else {
+          assert.equal(calls.length, 4);
+          assert.ok(!body.format?.properties.code, 'Python argument repair must end after dispatch');
+          message = { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved computed.md.' } }) : 'Saved computed.md.' };
+          if (model.startsWith('deepseek')) assert.ok(body.format.properties.tool);
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
       if (body.messages.some(m => m.role === 'user' && m.content.includes('Write loop recovery boundary'))) {
         const calls = writeLoopRequests.get(model); calls.push(body);
         const action = (name, args) => model.startsWith('deepseek')
@@ -63,13 +84,14 @@ async function verifyRuntime(runtimePath) {
         }
         return response.end(JSON.stringify({ model, message, done: true }) + '\n');
       }
-      if (body.messages.some(m => m.role === 'user' && m.content.includes('Read loop recovery boundary'))) {
-        const calls = readLoopRequests.get(model); calls.push(body);
+      const eofBoundary = body.messages.some(m => m.role === 'user' && m.content.includes('End of file recovery boundary'));
+      if (eofBoundary || body.messages.some(m => m.role === 'user' && m.content.includes('Read loop recovery boundary'))) {
+        const calls = (eofBoundary ? eofLoopRequests : readLoopRequests).get(model); calls.push(body);
         const action = (name, args) => model.startsWith('deepseek')
           ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
           : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
         let message;
-        if (calls.length <= 2) message = action('read_library_item', { itemId: sourceId, offset: 0 });
+        if (calls.length <= 2) message = action('read_library_item', { itemId: sourceId, ...(eofBoundary && calls.length === 2 ? {} : { offset: 0 }) });
         else if (calls.length === 3 || calls.length === 5) {
           const filename = calls.length === 3 ? 'ad-copy.md' : 'plan.md';
           assert.equal(body.format.properties.files.maxItems, 1, 'Recovery should save one document at a time');
@@ -248,15 +270,17 @@ async function verifyRuntime(runtimePath) {
       if (event.type === 'approval') { const denied = denyWrite && event.approval.toolName === 'write_library_files'; if (denied) deniedApprovals++; queueMicrotask(() => runtime.resolveApproval(event.approval.id, !denied)); }
     } });
     const templateText = '<!doctype html><title>Source template</title>\n' + '<p>Exact source template bytes.</p>\n'.repeat(1500);
-    const [template, foreign] = runtime.importLibraryFiles([
+    const [template, foreign, reference, foreignReference] = runtime.importLibraryFiles([
       { name: 'source-template.html', mimeType: 'text/html', bytes: new TextEncoder().encode(templateText) },
       { name: 'START guide not-in-this-chat.txt', mimeType: 'text/plain', bytes: new TextEncoder().encode('Other Library file') },
+      { name: 'exact-rules.md', mimeType: 'text/markdown', bytes: new TextEncoder().encode('Actual referenced rules must be read separately.') },
+      { name: 'exact-rules.md', mimeType: 'text/markdown', bytes: new TextEncoder().encode('Unattached private rules.') },
     ]);
     const [archive] = runtime.importLibraryFiles([{ name: 'sources.zip', mimeType: 'application/zip', bytes: new Uint8Array(Buffer.from('UEsDBBQAAAAIABu4SV3Vvl/PMQAAAC8AAAARAAAAa2l0L1NUQVJUIEhFUkUubWRzy8xJVUjKT8lMLVbIySxLVchILUrVUwhKTUxRKMnILFZITC4pTcxRKM4vLUpO1QMAUEsDBBQAAAAIABu4SV1pNMixTQAAAFEAAAATAAAAa2l0L1NUQVJUIEhFUkUuaHRtbLNRTMlPLqksSFXIKMnNsbMpLqnMSbVLyk+pVKhWSM7PyS+yUkjKSUzOtlaotdGHyNpkGNoFpxYkFiWWpCp4hPj6KBTnlxYlp9roAyUAUEsDBBQAAAAIABu4SV1fcMvZLQAAAC8AAAAWAAAAa2l0L3RlbXBsYXRlL3ZpZXcuaHRtbLNRTMlPLqksSFXIKMnNsbMpySzJSbULLi0oyMlMTVEoSc0tyEksSbXRh0gAAFBLAQIUAxQAAAAIABu4SV3Vvl/PMQAAAC8AAAARAAAAAAAAAAAAAACAAQAAAABraXQvU1RBUlQgSEVSRS5tZFBLAQIUAxQAAAAIABu4SV1pNMixTQAAAFEAAAATAAAAAAAAAAAAAACAAWAAAABraXQvU1RBUlQgSEVSRS5odG1sUEsBAhQDFAAAAAgAG7hJXV9wy9ktAAAALwAAABYAAAAAAAAAAAAAAIAB3gAAAGtpdC90ZW1wbGF0ZS92aWV3Lmh0bWxQSwUGAAAAAAMAAwDEAAAAPwEAAAAA', 'base64')) }]);
     archiveId = archive.id;
     for (const model of models) {
       const agent = runtime.saveAgent({ name: 'Controlled tool recovery', model, instructions: 'Save requested files using the available Library tool.' }).agents.at(-1);
-      const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [template.id, archive.id], prompt: 'Save report.md containing Schema repair verified. Return its actual saved Library output.' });
+      const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [template.id, archive.id, reference.id], prompt: 'Save report.md containing Schema repair verified. Return its actual saved Library output.' });
       if (serverError) throw serverError;
       const artifact = result.conversation.artifacts.find(a => a.name === 'report.md');
       assert.ok(artifact);
@@ -267,6 +291,12 @@ async function verifyRuntime(runtimePath) {
       assert.equal(writes[0].toolArgs.files, malformed, 'Stored failed arguments changed');
       assert.ok(!writes[1].content.startsWith('Error:'));
       assert.equal(requests.get(model).length, 3);
+      const referenceSearch = JSON.parse(await runtime.executeTool('search_library_item', { itemId: template.id, query: 'exact-rules.md Part 10 checklist' }, undefined, result.conversation.id));
+      assert.deepEqual(referenceSearch.referencedFiles.map(file => file.itemId), [reference.id]);
+      assert.ok(!JSON.stringify(referenceSearch).includes(foreignReference.id));
+      assert.ok(!JSON.stringify(referenceSearch).includes('Actual referenced rules must be read separately.'));
+      assert.ok(!JSON.stringify(referenceSearch).includes('Unattached private rules.'));
+      assert.match(referenceSearch.referenceHint, /filename metadata, not their contents/);
       const copied = JSON.parse(await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'templates/copied.html' }, result.conversation.id));
       assert.equal(copied.copiedFrom.itemId, template.id);
       const copy = runtime.state().library.find(item => item.id === copied.artifacts[0].itemId);
@@ -357,6 +387,28 @@ async function verifyRuntime(runtimePath) {
       assert.equal(readLoopRequests.get(model).length, 6);
       assert.equal(readLoop.conversation.messages.filter(m => m.toolName === 'read_library_item').length, 2);
       for (const name of ['ad-copy.md', 'plan.md']) assert.equal(readFileSync(readLoop.conversation.artifacts.find(a => a.name === name).path, 'utf8'), 'Verified source: current chat.');
+      const eofLoop = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'End of file recovery boundary: read the attached source, then save ad-copy.md and plan.md describing its verified source value.' });
+      if (serverError) throw serverError;
+      assert.equal(eofLoopRequests.get(model).length, 6);
+      const eofReads = eofLoop.conversation.messages.filter(m => m.toolName === 'read_library_item');
+      assert.equal(JSON.parse(eofReads[1].content).readStatus, 'end_of_text');
+      for (const name of ['ad-copy.md', 'plan.md']) assert.equal(readFileSync(eofLoop.conversation.artifacts.find(a => a.name === name).path, 'utf8'), 'Verified source: current chat.');
+      const dataToolBeforePythonFixture = runtime.executeDataTool.bind(runtime);
+      let pythonDispatches = 0;
+      runtime.executeDataTool = async (name, args, conversationId, workspace) => {
+        if (name !== 'run_python') return dataToolBeforePythonFixture(name, args, conversationId, workspace);
+        pythonDispatches++;
+        assert.equal(args.code, 'print("Controlled Python dispatch")');
+        const saved = JSON.parse(await dataToolBeforePythonFixture('write_library_files', { files: [{ name: 'computed.md', content: 'Controlled Python dispatch fixture; numeric execution is tested separately.' }] }, conversationId, workspace));
+        return JSON.stringify({ ...saved, exitCode: 0 });
+      };
+      try {
+        const pythonEOF = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Python EOF recovery boundary: read the attached source, execute Python, and save computed.md in OUTPUT_DIR.' });
+        if (serverError) throw serverError;
+        assert.equal(pythonEOFRequests.get(model).length, 4);
+        assert.equal(pythonDispatches, 1);
+        assert.ok(pythonEOF.conversation.artifacts.some(a => a.name === 'computed.md'));
+      } finally { runtime.executeDataTool = dataToolBeforePythonFixture; }
       const savedReport = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Saved output boundary: read the attached source, then save inspected-report.md describing its verified source value.' });
       if (serverError) throw serverError;
       assert.equal(saveRequests.get(model).length, 4);
