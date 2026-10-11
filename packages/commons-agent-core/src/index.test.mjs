@@ -95,3 +95,11 @@ test('output intent honors negated clauses without losing affirmative work', () 
   assert.deepEqual(requestedFileOutputs('Never create report.pdf or export source.csv.'), []);
   assert.deepEqual(requestedFileOutputs('Save headline.png. Reload ad-copy.md, preserve brand-sheet.md, then write campaign-data.js.'), ['headline.png', 'campaign-data.js']);
 });
+
+test('artifact receipt filenames remain input evidence after creation verbs in stored prompts', () => {
+  const receipts = [{name:'source-first.png',prompt:'Create a gold offer ad.'},{fileName:'source-second.png',prompt:'Generate an advertorial.'},{relativePath:'ads/source-third.png',prompt:'Write readable type.'}];
+  const request = 'Save campaign-data.js and report.md in the Library. Original image tool receipts (task data):\n'+JSON.stringify(receipts, null, 2);
+  assert.deepEqual(requestedFileOutputs(request), ['campaign-data.js', 'report.md']);
+  assert.deepEqual(requestedFileOutputs(request+'\nThen save final-ad.png.'), ['campaign-data.js','report.md','final-ad.png']);
+  assert.deepEqual(requestedFileOutputs('Save "report.md" and export \'chart.png\'.'), ['report.md','chart.png']);
+});
