@@ -110,7 +110,18 @@ assert json.loads(base64.b64decode(result['files'][0]['base64']))['prediction'] 
 assert not list(Path('/mnt/shared/.commons-python/.cache/runtime').glob('*/extension-*')), 'Installed alias imports must reuse the base environment'
 Path('/acceptance/replacement-verified.json').write_text(json.dumps({'replacementPod': True, 'networkDisabled': True, 'retainedSources': True, 'actualRegression': True, 'fontsAvailable': True, 'publishedOnlyNewOutput': True}))
 `);
-  const image = 'public.ecr.aws/docker/library/alpine:3.24.2';
+  let image = 'public.ecr.aws/docker/library/alpine:3.24.2';
+  try {
+    await promisify(execFile)('docker', ['pull', image], { timeout: 120_000, maxBuffer: 1_000_000 });
+  } catch (error) {
+    // Public ECR's anonymous quota is shared by hosted runners. Only a pull
+    // rate limit permits the same official version from Docker Hub; bootstrap
+    // and regression failures below still fail the check normally.
+    if (!/toomanyrequests|rate exceeded|too many requests/i.test(String(error.stderr ?? error.message))) throw error;
+    image = 'docker.io/library/alpine:3.24.2';
+    console.log('Public ECR pull rate limited; using the same official Alpine version from Docker Hub.');
+    await promisify(execFile)('docker', ['pull', image], { timeout: 120_000, maxBuffer: 1_000_000 });
+  }
   const mounts = ['-v', `${directory}:/acceptance`, '-v', `${shared}:/mnt/shared`];
   // Match the host owner for the mounted private volume; otherwise root-owned
   // container cache files can mask a failed check with a cleanup EACCES.
