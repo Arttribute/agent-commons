@@ -57,4 +57,24 @@ describe('shared run store with real SQL', () => {
     expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4]);
     expect(await reader.attachShared(runId, 0, 'other-user')).toBeUndefined();
   });
+
+  it('keeps the interruption and completed tools resumable after the worker shuts down', async () => {
+    const interruptedId = '49373a09-f379-4bc7-bc90-605c6f38dfc8';
+    const source = new Subject<Record<string, unknown>>();
+    await worker.startPersisted(interruptedId, source, { agentId: 'agent-1', initiator: 'user-1' });
+    source.next({ type: 'toolEnd', toolName: 'createTextFile', output: { fileId: 'saved-output' } });
+    await worker.onModuleDestroy();
+    expect(source.observed).toBe(false);
+
+    const remote = await reader.attachShared(interruptedId, 0, 'user-1');
+    expect(remote).toBeDefined();
+    const events = await lastValueFrom(remote!.pipe(toArray()));
+    const tool = events.find((event) => event.type === 'toolEnd');
+    expect(tool).toMatchObject({ output: { fileId: 'saved-output' } });
+    expect(events.at(-1)).toMatchObject({ type: 'error', message: 'The agent run was interrupted by a server restart.' });
+
+    const resumed = await reader.attachShared(interruptedId, tool!.seq, 'user-1');
+    expect(await lastValueFrom(resumed!.pipe(toArray()))).toEqual([events.at(-1)]);
+    expect(await reader.attachShared(interruptedId, 0, 'other-user')).toBeUndefined();
+  });
 });
