@@ -28,8 +28,10 @@ test('verified coverage survives aliases, overlapping reads and missing earlier 
   record(7, 'hij', null);
   assert.deepEqual(JSON.parse(cursor.render()).readRanges, [[0, 4], [7, 10]]);
   assert.equal(JSON.parse(cursor.render()).fullyRead, false);
+  assert.equal(cursor.fullyRead('file-id'), false);
   record(3, 'defgh', 8);
   assert.deepEqual(JSON.parse(cursor.render()), { itemId: 'file-id', name: 'guide.md', totalChars: 10, readRanges: [[0, 10]], fullyRead: true });
+  assert.equal(cursor.fullyRead('file-id'), true);
   assert.equal(cursor.arguments('read_library_item', { itemId: 'file-id' }).offset, 8);
 });
 
@@ -37,8 +39,16 @@ test('truncated or invalid tool content cannot claim complete coverage', () => {
   const cursor = new LibraryReadCursor();
   cursor.record('read_library_item', { itemId: 'guide.md' }, JSON.stringify({ itemId: 'file-id', name: 'guide.md', content: 'short excerpt', offset: 0, nextOffset: null, totalChars: 100 }));
   assert.equal(cursor.render(), '');
+  assert.equal(cursor.fullyRead('file-id'), false);
   cursor.record('read_library_item', { itemId: 'guide.md' }, 'Error: unavailable');
   assert.equal(cursor.render(), '');
+});
+
+test('an empty EOF response alone does not prove earlier source content was read', () => {
+  const cursor = new LibraryReadCursor();
+  cursor.record('read_library_item', { itemId: 'file-id', offset: 10 }, JSON.stringify({ itemId: 'file-id', name: 'guide.md', offset: 10, content: '', nextOffset: null, totalChars: 10 }));
+  assert.equal(cursor.fullyRead('file-id'), false);
+  assert.equal(cursor.fullyRead('unavailable'), false);
 });
 
 test('changed length clears old coverage and UTF-8 metadata stays bounded', () => {

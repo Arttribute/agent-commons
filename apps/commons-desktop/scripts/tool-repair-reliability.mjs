@@ -31,6 +31,7 @@ async function verifyRuntime(runtimePath) {
   const nativeImageRequests = new Map();
   const mixedRequests = new Map();
   const readLoopRequests = new Map(models.map(model => [model, []]));
+  const eofLoopRequests = new Map(models.map(model => [model, []]));
   const writeLoopRequests = new Map(models.map(model => [model, []]));
   let visualArtifactId;
   let archiveId;
@@ -63,13 +64,14 @@ async function verifyRuntime(runtimePath) {
         }
         return response.end(JSON.stringify({ model, message, done: true }) + '\n');
       }
-      if (body.messages.some(m => m.role === 'user' && m.content.includes('Read loop recovery boundary'))) {
-        const calls = readLoopRequests.get(model); calls.push(body);
+      const eofBoundary = body.messages.some(m => m.role === 'user' && m.content.includes('End of file recovery boundary'));
+      if (eofBoundary || body.messages.some(m => m.role === 'user' && m.content.includes('Read loop recovery boundary'))) {
+        const calls = (eofBoundary ? eofLoopRequests : readLoopRequests).get(model); calls.push(body);
         const action = (name, args) => model.startsWith('deepseek')
           ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
           : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
         let message;
-        if (calls.length <= 2) message = action('read_library_item', { itemId: sourceId, offset: 0 });
+        if (calls.length <= 2) message = action('read_library_item', { itemId: sourceId, ...(eofBoundary && calls.length === 2 ? {} : { offset: 0 }) });
         else if (calls.length === 3 || calls.length === 5) {
           const filename = calls.length === 3 ? 'ad-copy.md' : 'plan.md';
           assert.equal(body.format.properties.files.maxItems, 1, 'Recovery should save one document at a time');
@@ -365,6 +367,12 @@ async function verifyRuntime(runtimePath) {
       assert.equal(readLoopRequests.get(model).length, 6);
       assert.equal(readLoop.conversation.messages.filter(m => m.toolName === 'read_library_item').length, 2);
       for (const name of ['ad-copy.md', 'plan.md']) assert.equal(readFileSync(readLoop.conversation.artifacts.find(a => a.name === name).path, 'utf8'), 'Verified source: current chat.');
+      const eofLoop = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'End of file recovery boundary: read the attached source, then save ad-copy.md and plan.md describing its verified source value.' });
+      if (serverError) throw serverError;
+      assert.equal(eofLoopRequests.get(model).length, 6);
+      const eofReads = eofLoop.conversation.messages.filter(m => m.toolName === 'read_library_item');
+      assert.equal(JSON.parse(eofReads[1].content).readStatus, 'end_of_text');
+      for (const name of ['ad-copy.md', 'plan.md']) assert.equal(readFileSync(eofLoop.conversation.artifacts.find(a => a.name === name).path, 'utf8'), 'Verified source: current chat.');
       const savedReport = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Saved output boundary: read the attached source, then save inspected-report.md describing its verified source value.' });
       if (serverError) throw serverError;
       assert.equal(saveRequests.get(model).length, 4);

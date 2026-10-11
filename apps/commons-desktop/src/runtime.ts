@@ -1768,6 +1768,11 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
         else if (name === "read_library_item") {
           readIdentity = { itemId: data.itemId, offset: data.offset ?? (Number(args.offset) || 0) };
           const content = typeof data.content === "string" ? data.content : "";
+          const next = nextRecoverableTextOutput();
+          if (!content.length && data.totalChars > 0 && readCursor.fullyRead(data.itemId) && next) {
+            libraryWriteArgsRepair = true;
+            repeatedReadHint = `This source was completely returned during this request. The latest read is an empty end-of-file result, not additional evidence. Use the verified source facts to save the complete requested ${next}; do not restart completed reference reads.`;
+          }
           const excerpt = content.length <= 1200 ? content : `${content.slice(0, 300)}\n${(content.match(/^#{1,6} .+$/gm) ?? []).slice(0, 10).join("\n")}\n${content.slice(-700)}`;
           details = data.readMode === "image_metadata"
             ? `Requested visual preview of ${data.name} (${data.itemId}). This tool returned image metadata, not document text or visual findings.`
