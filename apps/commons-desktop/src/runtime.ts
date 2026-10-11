@@ -1696,6 +1696,17 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     const needsLibraryOutput = outputNames.length > 0 && (!workspace || /\b(?:library|artifacts?|downloads?|write_library_files|OUTPUT_DIR)\b/i.test(lastUser));
     let executedTools = 0;
     const successfulTools = new Set<string>();
+    const nextRecoverableTextOutput = () => {
+      const pending = missingOutputs();
+      return needsLibraryOutput && !libraryWriteDenied
+        && this.store.get().settings.permissionMode !== "read-only"
+        && offeredNames.has("write_library_files")
+        && pending.length > 0 && pending.every(name => /\.(?:md|txt)$/i.test(name))
+        && ["read_library_item", "cli_read_file"].some(name => successfulTools.has(name))
+        && !requiresComputedData(lastUser)
+        && !/\b(?:unchanged|identical|byte-for-byte|copy_library_file)\b|\bcopy\s+(?:(?:the|a|an|this|that|these|those|supplied|existing|original|provided|source)\s+)*(?:["'`]?[^\s"'`]+\.(?:md|txt)|files?|sources?|templates?|documents?)\b/i.test(lastUser)
+        ? pending[0] : undefined;
+    };
     const mustReadFile = /\b(?:read|contents?)\b/i.test(lastUser) && /\b(?:files?|txt|csv|pdf|documents?)\b/i.test(lastUser);
     const failureCounts = new Map<string, number>();
     const repeatedReads = new Map<string, number>();
@@ -1766,6 +1777,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const count = (repeatedReads.get(key) ?? 0) + 1;
       repeatedReads.set(key, count);
       if (count === 2) repeatedReadHint = `You have read ${name} with these inputs twice. Its source facts are in the execution progress and recent results. Complete the remaining requested actions using that evidence, or report the findings if this was an inspection. Do not restart this read.${missingOutputs().length ? ` Still missing: ${missingOutputs().join(', ')}. Save the next requested output using write_library_files or run_python; do not restart the task.` : ""}`;
+      if (count === 2 && nextRecoverableTextOutput()) libraryWriteArgsRepair = true;
       if (count >= 3) throw new Error(`The model repeatedly read the same unchanged file without completing this request. Its tool results are saved; continue from them or choose a stronger local model.`);
     };
     let identityRepairAttempted = false;
@@ -1799,9 +1811,14 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       const repairingSkillArgs = recordingSkillArgsRepair;
       const repairingArgs = repairingSkillArgs || libraryWriteArgsRepair;
       const repairTool = repairingSkillArgs ? "local_save_skill" : "write_library_files";
-      const toolArgumentRepairSchema = inferenceTools.find((entry) => entry.function.name === repairTool)?.function.parameters;
+      const nextTextOutput = libraryWriteArgsRepair ? nextRecoverableTextOutput() : undefined;
+      const toolArgumentRepairSchema = nextTextOutput ? {
+        type: "object", properties: { files: { type: "array", minItems: 1, maxItems: 1,
+          items: { type: "object", properties: { name: { type: "string", enum: [nextTextOutput] }, content: { type: "string" } }, required: ["name", "content"] },
+        } }, required: ["files"],
+      } : inferenceTools.find((entry) => entry.function.name === repairTool)?.function.parameters;
       if (repairingSkillArgs) messages[0].content += `\nCorrect the failed local_save_skill arguments. Return ONLY the argument JSON object matching this schema, without a tool wrapper or Markdown. Each required field must be an actual JSON field. Array contents must describe the observed task and its checks. Schema: ${JSON.stringify(toolArgumentRepairSchema)}`;
-      else if (libraryWriteArgsRepair) messages[0].content += `\nThe requested text output has not been saved with valid write_library_files arguments. Return ONLY a JSON argument object matching this schema, without a tool wrapper or Markdown. files must be an array of objects with separate name and content strings; never put the whole Markdown document in the files field. Use the requested filenames and verified source facts. Schema: ${JSON.stringify(toolArgumentRepairSchema)}`;
+      else if (libraryWriteArgsRepair) messages[0].content += `\nThe requested text output has not been saved with valid write_library_files arguments. Return ONLY a JSON argument object matching this schema, without a tool wrapper or Markdown. files must be an array of objects with separate name and content strings; never put the whole Markdown document in the files field. ${nextTextOutput ? `Save only the next requested document, ${nextTextOutput}, using verified source facts; continue with the other missing outputs after it is saved.` : "Use the requested filenames and verified source facts."} Schema: ${JSON.stringify(toolArgumentRepairSchema)}`;
       else if (!nativeTools) messages[0].content += `\nThis model uses the text tool protocol. To take an action, output ONLY {"tool":"exact_tool_name","args":{...}}. After each tool result, continue the task. When done, output {"tool":"final","args":{"response":"your final answer"}}. Available tools and schemas: ${JSON.stringify(inferenceTools.map((entry) => entry.function))}`;
       const requestNativeTools = nativeTools && !repairingArgs;
       const outputsConfirmed = Boolean(recordingSkill && successfulTools.has("local_save_skill"))
@@ -1885,18 +1902,11 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
             if (!outputExists && !outputRepairAttempted) {
               outputRepairAttempted = true;
               // A small model can announce a saved document without making a
-              // write call. Reuse the argument repair for one new text output
+              // write call. Reuse the argument repair for the next text output
               // after successful source inspection, while retaining normal
               // approvals and the final persistence check. Copies, computed
               // outputs and denied writes still require their own next action.
-              const pending = missingOutputs();
-              libraryWriteArgsRepair = !libraryWriteDenied
-                && this.store.get().settings.permissionMode !== "read-only"
-                && offeredNames.has("write_library_files")
-                && pending.length === 1 && /\.(?:md|txt)$/i.test(pending[0])
-                && ["read_library_item", "cli_read_file"].some(name => successfulTools.has(name))
-                && !requiresComputedData(lastUser)
-                && !/\b(?:copy|unchanged|identical|byte-for-byte)\b/i.test(lastUser);
+              libraryWriteArgsRepair = Boolean(nextRecoverableTextOutput());
               messages.push({ role: "system", content: `The requested files are not all saved. Missing outputs: ${missingOutputs().join(', ') || 'a generated output from this request'}. Read results and extracted reference files are inputs, not completed outputs. Resolve a missing reference with list_session_files using one filename or short phrase at a time. Use copy_library_file for unchanged supplied templates, write_library_files for new text documents or run_python for computed images, and continue until all requested outputs are saved. Do not ask the user to supply a reference already in this chat.` });
               continue;
             }
