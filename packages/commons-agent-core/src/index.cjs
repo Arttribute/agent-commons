@@ -126,6 +126,10 @@ function requestedFileOutputs(prompt, inputNames = []) {
   const names = new Set();
   for (const match of prompt.matchAll(/\b([\w-][\w.-]*\.(?:md|txt|html|json|csv|png|jpg|jpeg|js|css|svg|pdf|docx|pptx|xlsx|pkl|pt|onnx))\b/gi)) {
     const filename = match[1];
+    // Names in structured artifact receipts describe existing task inputs;
+    // nearby creation verbs inside a saved prompt are not new output requests.
+    const fieldPrefix = prompt.slice(Math.max(0, match.index - 80), match.index);
+    if (/["'](?:name|fileName|filename|relativePath|path)["']\s*:\s*["'][^"'\n]*$/i.test(fieldPrefix)) continue;
     const prefix = prompt.slice(0, match.index);
     const actions = [...prefix.matchAll(/\b(save|write|draft|create|produce|generate|export|read|inspect|use|using|open|load|reload|reuse|retain|preserve)\b/gi)];
     const action = actions.at(-1)?.[1].toLowerCase();
