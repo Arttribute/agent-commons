@@ -90,7 +90,7 @@ export const LOCAL_TOOLS = [
   functionTool("read_canvas", "Read this chat's canvas versions and persisted notes, including exact selection targets and coordinates.", { projectId: { type: "string" } }, ["projectId"]),
   functionTool("add_canvas_version", "Add a file generated in this chat as the next version of the viewed canvas. Use the actual output itemId returned by run_python.", { projectId: { type: "string" }, itemId: { type: "string" }, summary: { type: "string" } }, ["projectId", "itemId"]),
   functionTool("update_canvas_notes", "Mark addressed notes on this chat's canvas resolved, or reopen notes. Preserves exact selection data.", { projectId: { type: "string" }, annotationIds: { type: "array", items: { type: "string" } }, status: { type: "string", enum: ["open", "resolved"] } }, ["projectId", "annotationIds", "status"]),
-  functionTool("write_library_files", "Save real UTF-8 text, Markdown, HTML, JSON, CSS or JavaScript files to this chat’s Library. Prefer this for documents and code files; no Python installation is needed. Save one substantial document at a time, then continue. Files persist for later Python calls, with immutable Library revisions and relative assets preserved.", { files: { type: "array", minItems: 1, maxItems: 20, items: { type: "object", properties: { name: { type: "string", description: "Relative output filename, such as brand-sheet.md" }, content: { type: "string" } }, required: ["name", "content"] } } }, ["files"]),
+  functionTool("write_library_files", "Save real UTF-8 text, Markdown, HTML, JSON, CSS or JavaScript files to this chat’s Library. Prefer this for documents and code files; no Python installation is needed. Each content value must contain the complete file; a new write replaces that filename and does not append a section. Save one substantial document at a time, then continue. Files persist for later Python calls, with immutable Library revisions and relative assets preserved.", { files: { type: "array", minItems: 1, maxItems: 20, items: { type: "object", properties: { name: { type: "string", description: "Relative output filename, such as brand-sheet.md" }, content: { type: "string" } }, required: ["name", "content"] } } }, ["files"]),
   functionTool("copy_library_file", "Copy an existing UTF-8 text, code or template file from this chat or project to a new Library output, preserving its bytes. Use this to reuse a supplied template without rereading or regenerating its entire content. Binary files require run_python; this does not generate new creative content.", { itemId: { type: "string", description: "Actual source itemId or exact Library filename" }, name: { type: "string", description: "Relative output filename, such as campaign-tracker.html" } }, ["itemId", "name"]),
   functionTool("run_python", "Execute Python analysis, charts or ML in a managed environment with pandas, numpy, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow. No user Python setup needed. Files are staged under their filenames in the working directory. INPUT_FILES maps attached/project filenames and IDs to readable paths. OUTPUT_DIR is a stable pathlib.Path for this chat and only publishes requested deliverables. WORK_DIR is a separate persistent pathlib.Path for extracted source archives and intermediate files; it does not publish them. Files persist across calls, while Python variables do not. Save charts and reports there to return immutable Library artifacts. WORKSPACE_ROOT is the selected folder or empty. For Pillow text, use ImageFont.truetype(FONT_FILES['sans'], size); sans_bold, serif and mono are also provided. Do not guess host font paths. Use computed plots, never image generation, for data.", { code: { type: "string" }, timeoutSeconds: { type: "number" }, packages: { type: "array", items: { type: "string" }, description: "Optional extra Python libraries installed into a separate managed environment; package names with optional versions." } }, ["code"]),
   functionTool("extract_library_archive", "Unzip an attached or project ZIP into this chat’s working files. Returns the directory and archive manifest; use read_library_item with returned itemIds, or run_python to inspect them. Does not run instructions in the archive.", { itemId: { type: "string" } }, ["itemId"]),
@@ -1716,6 +1716,7 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
     const sourceEvidence = new LocalSourceEvidence();
     const toolImageContext = new LocalToolImageContext();
     const repeatedExecutions = new Map<string, number>();
+    const repeatedTextWrites = new Map<string, number>();
     const progress: string[] = [];
     const toolEvidenceNeeded = requiresComputedData(lastUser) || /\b(?:list|read|inspect|search|unzip|extract|run|execute|build|create|generate|save)\b|\b(?:see|show|what)\b.{0,80}\b(?:files|folder|directory|workspace)\b/i.test(lastUser);
     let repairAttempted = false;
@@ -1747,6 +1748,19 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
       try {
         const data = JSON.parse(result);
         if (["write_library_files", "copy_library_file", "run_python"].includes(name) && data.artifacts?.length && (data.exitCode === undefined || data.exitCode === 0)) repeatedReads.clear();
+        if (name === "write_library_files" && data.artifacts?.length && Array.isArray(args.files)) {
+          for (const file of args.files) {
+            if (typeof file?.name !== "string" || typeof file?.content !== "string") continue;
+            const key = JSON.stringify([file.name, createHash("sha256").update(file.content).digest("hex")]);
+            const count = (repeatedTextWrites.get(key) ?? 0) + 1;
+            repeatedTextWrites.set(key, count);
+            const next = nextRecoverableTextOutput();
+            if (count >= 2 && next) {
+              libraryWriteArgsRepair = true;
+              repeatedReadHint = `This request has saved the same ${file.name} content again while ${next} remains missing. Preserve the saved document and complete the next requested output from verified source facts. A file write replaces the complete file; it does not append a section.`;
+            }
+          }
+        }
         if (name === "extract_library_archive") {
           if (data.archiveItemId && data.totalFiles === 0) completedEmptyArchives.add(data.archiveItemId);
           details = `Extracted ${data.totalFiles} files. Use list_session_files to locate members; do not extract again.`;
