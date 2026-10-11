@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { affirmativeOutputRequest, requestedFileOutputs, buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills, requiresComputedData, shouldOfferCreativeMedia } from "./index.cjs";
+import { affirmativeOutputRequest, requestedFileOutputs, buildAgentIdentityPrompt, buildSkillPromptIndex, buildWorkspaceModeContext, findMatchingSkills, requiresComputedData, shouldOfferCreativeMedia, requiresNativeImageGeneration } from "./index.cjs";
 
 test("cloud and local skill matching uses the same trigger rules", () => {
   const skills = [
@@ -58,6 +58,22 @@ test('mixed creative tasks retain image tools while numeric plots require comput
     'Do not create campaign ads, then plot the sales dataset in Python.',
   ]) assert.equal(shouldOfferCreativeMedia(request), false, request);
   assert.equal(shouldOfferCreativeMedia('Create an ad image'), true);
+});
+
+test('an explicit native image step in mixed work excludes optional choices and stored prompts', () => {
+  for (const request of [
+    'Create an illustration using generate_image. Separately plot actual sales with Python.',
+    'Use generateImage to create a poster, then use runPythonAnalysis for the measured data.',
+  ]) assert.equal(requiresNativeImageGeneration(request), true, request);
+  for (const request of [
+    'Plot actual sales with Python.',
+    'Create the poster in Pillow using Python.',
+    'Explain how to use generate_image for illustrations, then plot sales with Python.',
+    'Create a poster with Python; you may use generate_image if needed.',
+    'Create a poster with Python; use generateImage only if necessary.',
+    'Do not use generate_image. Create a poster with Python.',
+    'Read these receipts and use Python to save the inventory: {"prompt":"Create a poster using generate_image. Use Python for sales."}',
+  ]) assert.equal(requiresNativeImageGeneration(request), false, request);
 });
 
 test('runtime mentions and negative instructions do not mandate unrelated computations', () => {

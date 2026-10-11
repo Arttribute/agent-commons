@@ -11,6 +11,21 @@ const files = [
   { name: 'regression.png', fileId: 'new-plot' },
 ];
 describe('computed artifact completion', () => {
+  it('requires the separately chosen image tool in mixed work, without accepting image generation as the data plot', () => {
+    const mixed = 'Create an illustration using generateImage. Separately fit regression using input.csv. Save regression.json and regression.png and return their Library links.';
+    const missingImage = 'a creative image saved by the requested image-generation tool';
+    const image = { name: 'generateImage', status: 'success', result: { toolData: [{ name: 'illustration.png', fileId: 'fresh-image' }] } };
+    expect(missingComputedArtifacts(mixed, ['input.csv'], [python(files)])).toEqual([missingImage]);
+    expect(missingComputedArtifacts(mixed, ['input.csv'], [python(files), image])).toEqual([]);
+    expect(missingComputedArtifacts(mixed, ['input.csv'], [image])).toEqual(['regression.json', 'regression.png']);
+    expect(missingComputedArtifacts(mixed, ['input.csv'], [python(files), { ...image, status: 'error' }])).toEqual([missingImage]);
+    expect(missingComputedArtifacts(mixed, ['input.csv'], [python(files), { ...image, result: { fileId: 'audio', name: 'voice.mp3' } }])).toEqual([missingImage]);
+    expect(missingComputedArtifacts(mixed, ['input.csv'], [python(files), { name: 'generateMedia', status: 'success', result: { artifact: { itemId: 'fresh-image', name: 'illustration.png' } } }])).toEqual([]);
+    expect(missingComputedArtifacts(mixed, ['input.csv'], [python(files), { ...image, result: { requiresApproval: true } }])).toEqual([]);
+    const unnamed = 'Create an illustration using generateImage. Separately calculate the mean of the dataset with Python and report the value in chat.';
+    expect(missingComputedArtifacts(unnamed, [], [python([])])).toEqual([missingImage]);
+    expect(missingComputedArtifacts(unnamed, [], [python([]), image])).toEqual([]);
+  });
   it('routes durable Library requests through publishing tools while preserving explicit terminal and selected-folder tasks', () => {
     expect(preferManagedArtifactTools('Save campaign-tracker.html and campaign-data.js in the Library.')).toBe(true);
     expect(preferManagedArtifactTools(request)).toBe(true);
