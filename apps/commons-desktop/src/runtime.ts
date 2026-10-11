@@ -69,7 +69,7 @@ import { RECORDED_SKILL_FIELDS, recordedSkillInstructions } from "./recorded-ski
 import { requestedFileOutputs } from "./requested-file-outputs";
 import { LocalSourceEvidence } from "./local-source-evidence";
 import { LibraryReadCursor } from "./library-read-cursor";
-import { libraryFilenameSuggestions } from "./library-filename-suggestions";
+import { libraryFilenameSuggestions, libraryReferencedFiles } from "./library-filename-suggestions";
 
 type PendingApproval = {
   resolve: (allow: boolean) => void;
@@ -2213,7 +2213,11 @@ Current selected-folder snapshot:\n${buildDirSnapshot(workspace, 1).slice(0, 4_0
           } else if (name === "search_library_item") {
             const text = await readLibraryText(item);
             const search = searchTextPassages(text, item.name, String(args.query ?? ""), "Use read_library_item with this itemId and a matching offset for more context.");
-            result = JSON.stringify({ itemId, ...search, ...(!search.matches.length ? { hint: "No matching passages were found in this file. Choose a different query or another relevant source document; do not repeat this empty search. list_session_files(query) locates filenames and archive paths; search_library_item searches only the chosen file's contents." } : {}) });
+            const references = libraryReferencedFiles((state.library ?? []).filter(file => scopedIds.has(file.id) && file.id !== itemId), String(args.query ?? ""), file => file.name);
+            result = JSON.stringify({ itemId, ...search, ...(references.length ? {
+              referencedFiles: references.map(file => ({ itemId: file.id, name: file.name, mimeType: file.mimeType })),
+              referenceHint: "Your query names other files available in this chat or project. These are filename metadata, not their contents. Read or search the appropriate referenced file using its exact itemId; searching the current file cannot return another file's contents. Choose the matching archive path when names are duplicated.",
+            } : {}), ...(!search.matches.length ? { hint: "No matching passages were found in this file. Choose a different query or another relevant source document; do not repeat this empty search. list_session_files(query) locates filenames and archive paths; search_library_item searches only the chosen file's contents." } : {}) });
           } else {
             const read = await this.readLibraryItem(itemId, Number(args.offset) || 0);
             const markdownName = read.item.name.replace(/\.html?$/i, ".md");

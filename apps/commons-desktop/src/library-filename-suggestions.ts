@@ -14,3 +14,10 @@ export function libraryFilenameSuggestions<T>(files: T[], query: string, filenam
   }).filter(entry => entry.score > 0);
   return ranked.sort((a, b) => b.score - a.score || Number(!/\.md$/i.test(a.path)) - Number(!/\.md$/i.test(b.path)) || a.path.localeCompare(b.path)).slice(0, 8).map(entry => entry.file);
 }
+
+/** Exact referenced filenames, from an already-authorized file scope only. */
+export function libraryReferencedFiles<T>(files: T[], query: string, filename: (file: T) => string): T[] {
+  const references = new Set([...query.normalize('NFKC').matchAll(/(?:^|[^\p{L}\p{N}._-])([\p{L}\p{N}_-][\p{L}\p{N}._-]*\.(?:md|txt|html?|json|js|csv|pdf|docx|xlsx|pptx))(?=$|[^\p{L}\p{N}._-])/giu)].map(match => match[1].toLowerCase()));
+  if (!references.size) return [];
+  return files.filter(file => references.has(filename(file).replaceAll('\\', '/').split('/').at(-1)!.normalize('NFKC').toLowerCase())).slice(0, 8);
+}

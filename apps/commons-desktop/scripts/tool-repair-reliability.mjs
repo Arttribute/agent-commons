@@ -248,15 +248,17 @@ async function verifyRuntime(runtimePath) {
       if (event.type === 'approval') { const denied = denyWrite && event.approval.toolName === 'write_library_files'; if (denied) deniedApprovals++; queueMicrotask(() => runtime.resolveApproval(event.approval.id, !denied)); }
     } });
     const templateText = '<!doctype html><title>Source template</title>\n' + '<p>Exact source template bytes.</p>\n'.repeat(1500);
-    const [template, foreign] = runtime.importLibraryFiles([
+    const [template, foreign, reference, foreignReference] = runtime.importLibraryFiles([
       { name: 'source-template.html', mimeType: 'text/html', bytes: new TextEncoder().encode(templateText) },
       { name: 'START guide not-in-this-chat.txt', mimeType: 'text/plain', bytes: new TextEncoder().encode('Other Library file') },
+      { name: 'exact-rules.md', mimeType: 'text/markdown', bytes: new TextEncoder().encode('Actual referenced rules must be read separately.') },
+      { name: 'exact-rules.md', mimeType: 'text/markdown', bytes: new TextEncoder().encode('Unattached private rules.') },
     ]);
     const [archive] = runtime.importLibraryFiles([{ name: 'sources.zip', mimeType: 'application/zip', bytes: new Uint8Array(Buffer.from('UEsDBBQAAAAIABu4SV3Vvl/PMQAAAC8AAAARAAAAa2l0L1NUQVJUIEhFUkUubWRzy8xJVUjKT8lMLVbIySxLVchILUrVUwhKTUxRKMnILFZITC4pTcxRKM4vLUpO1QMAUEsDBBQAAAAIABu4SV1pNMixTQAAAFEAAAATAAAAa2l0L1NUQVJUIEhFUkUuaHRtbLNRTMlPLqksSFXIKMnNsbMpLqnMSbVLyk+pVKhWSM7PyS+yUkjKSUzOtlaotdGHyNpkGNoFpxYkFiWWpCp4hPj6KBTnlxYlp9roAyUAUEsDBBQAAAAIABu4SV1fcMvZLQAAAC8AAAAWAAAAa2l0L3RlbXBsYXRlL3ZpZXcuaHRtbLNRTMlPLqksSFXIKMnNsbMpySzJSbULLi0oyMlMTVEoSc0tyEksSbXRh0gAAFBLAQIUAxQAAAAIABu4SV3Vvl/PMQAAAC8AAAARAAAAAAAAAAAAAACAAQAAAABraXQvU1RBUlQgSEVSRS5tZFBLAQIUAxQAAAAIABu4SV1pNMixTQAAAFEAAAATAAAAAAAAAAAAAACAAWAAAABraXQvU1RBUlQgSEVSRS5odG1sUEsBAhQDFAAAAAgAG7hJXV9wy9ktAAAALwAAABYAAAAAAAAAAAAAAIAB3gAAAGtpdC90ZW1wbGF0ZS92aWV3Lmh0bWxQSwUGAAAAAAMAAwDEAAAAPwEAAAAA', 'base64')) }]);
     archiveId = archive.id;
     for (const model of models) {
       const agent = runtime.saveAgent({ name: 'Controlled tool recovery', model, instructions: 'Save requested files using the available Library tool.' }).agents.at(-1);
-      const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [template.id, archive.id], prompt: 'Save report.md containing Schema repair verified. Return its actual saved Library output.' });
+      const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [template.id, archive.id, reference.id], prompt: 'Save report.md containing Schema repair verified. Return its actual saved Library output.' });
       if (serverError) throw serverError;
       const artifact = result.conversation.artifacts.find(a => a.name === 'report.md');
       assert.ok(artifact);
@@ -267,6 +269,12 @@ async function verifyRuntime(runtimePath) {
       assert.equal(writes[0].toolArgs.files, malformed, 'Stored failed arguments changed');
       assert.ok(!writes[1].content.startsWith('Error:'));
       assert.equal(requests.get(model).length, 3);
+      const referenceSearch = JSON.parse(await runtime.executeTool('search_library_item', { itemId: template.id, query: 'exact-rules.md Part 10 checklist' }, undefined, result.conversation.id));
+      assert.deepEqual(referenceSearch.referencedFiles.map(file => file.itemId), [reference.id]);
+      assert.ok(!JSON.stringify(referenceSearch).includes(foreignReference.id));
+      assert.ok(!JSON.stringify(referenceSearch).includes('Actual referenced rules must be read separately.'));
+      assert.ok(!JSON.stringify(referenceSearch).includes('Unattached private rules.'));
+      assert.match(referenceSearch.referenceHint, /filename metadata, not their contents/);
       const copied = JSON.parse(await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'templates/copied.html' }, result.conversation.id));
       assert.equal(copied.copiedFrom.itemId, template.id);
       const copy = runtime.state().library.find(item => item.id === copied.artifacts[0].itemId);
