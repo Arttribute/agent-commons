@@ -6,6 +6,7 @@ import { GeneralAgentDrawer } from "@/components/agents/general-agent-drawer";
 import { LearnerProfileDialog } from "@/components/learning/learner-profile-dialog";
 import { connectDB } from "@/lib/db";
 import Enrollment from "@/models/Enrollment";
+import Certificate from "@/models/Certificate";
 import { BookOpen, ArrowRight, Clock } from "lucide-react";
 
 export default async function DashboardPage() {
@@ -16,6 +17,10 @@ export default async function DashboardPage() {
   const enrollments = await Enrollment.find({ userId: session.user.id })
     .populate("courseId")
     .sort({ enrolledAt: -1 })
+    .lean();
+  const certificates = await Certificate.find({ userId: session.user.id, awardedAt: { $exists: true } })
+    .populate("courseId", "title")
+    .sort({ awardedAt: -1 })
     .lean();
 
   return (
@@ -116,6 +121,23 @@ export default async function DashboardPage() {
             })}
           </div>
         )}
+
+        {certificates.length ? (
+          <section className="mt-10" aria-label="Your certificates">
+            <h2 className="mb-3 text-lg font-medium text-slate-900">Your certificates</h2>
+            <div className="divide-y divide-slate-200 rounded-xl border border-slate-200">
+              {certificates.map((certificate) => (
+                <a key={String(certificate._id)} href={`/api/certificates/${certificate._id}/pdf`} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 p-4 text-sm hover:bg-slate-50">
+                  <span>
+                    <span className="block font-medium">{(certificate.courseId as unknown as { title?: string } | null)?.title || "Course certificate"}</span>
+                    <span className="text-xs text-slate-500">{certificate.recipientName}{certificate.completionPeriod ? ` · ${certificate.completionPeriod}` : ""}</span>
+                  </span>
+                  <span className="shrink-0 text-xs font-medium">View PDF →</span>
+                </a>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {/* Browse more */}
         <div className="mt-12 pt-8 border-t border-slate-100 flex items-center justify-between">

@@ -68,6 +68,9 @@ jobs:
       - name: Test packages
         run: pnpm --filter './packages/*' run test --passWithNoTests
 
+      - name: Test Common Courses certificate delivery and course policies
+        run: pnpm --filter commons-courses test
+
       # The gateway fronts every /v1/* request and decides what is reachable
       # without a credential, but nothing here used to exercise it — a broken
       # public-route list reached production unnoticed. Staging cannot catch
