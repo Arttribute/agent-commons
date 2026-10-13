@@ -140,9 +140,13 @@ export const courseSections: CourseSection[] = [
     label: "Learners",
     icon: GraduationCap,
     href: "students",
-    segments: ["students"],
+    segments: ["students", "certificates"],
     group: "audience",
-    purpose: "enrolled learners, progress, payment and access",
+    purpose: "enrolled learners, progress, payment, access and completion certificates",
+    views: [
+      { label: "Learners", href: "students", purpose: "enrolled learners, progress, payment and access" },
+      { label: "Certificates", href: "certificates", purpose: "prepare PDF certificates, review recipients, and send to award completion and email learners" },
+    ],
   },
   {
     key: "sales",

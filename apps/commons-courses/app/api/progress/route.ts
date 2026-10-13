@@ -9,12 +9,15 @@ import { getCourseStartStatus } from "@/lib/course-schedule";
 import { isInstallmentOverdue } from "@/lib/installment-enforcement";
 import User from "@/models/User";
 import { claimCommonLabReward } from "@/lib/credits";
+import { lessonCompletionProgress } from "@/lib/certificate-policy";
 
 interface EnrollmentProgress {
   _id: mongoose.Types.ObjectId;
   completedLessons?: string[];
   progress?: number;
   status?: string;
+  completedAt?: Date;
+  completionSource?: "certificate";
   accessLevel?: "full" | "partial";
   paymentStatus?: "free" | "paid" | "partial" | "overdue";
   currentInstallment?: number;
@@ -194,7 +197,7 @@ export async function POST(req: NextRequest) {
   const updated = existing.includes(lessonKey)
     ? existing
     : [...existing, lessonKey];
-  const progress = Math.round((updated.length / totalLessons) * 100);
+  const progress = lessonCompletionProgress(updated.length, totalLessons, match.completionSource);
   const status = progress >= 100 ? "completed" : "active";
 
   await Enrollment.updateOne(
@@ -204,7 +207,7 @@ export async function POST(req: NextRequest) {
         completedLessons: updated,
         progress,
         status,
-        ...(status === "completed" ? { completedAt: new Date() } : {}),
+        ...(status === "completed" && !match.completedAt ? { completedAt: new Date() } : {}),
       },
     },
   );
