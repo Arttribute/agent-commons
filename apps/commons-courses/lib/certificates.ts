@@ -1,5 +1,6 @@
 import "server-only";
 import { Resend } from "resend";
+import { Types } from "mongoose";
 import Certificate, { type ICertificate } from "@/models/Certificate";
 import Enrollment from "@/models/Enrollment";
 import type { ICourse } from "@/models/Course";
@@ -38,12 +39,13 @@ export async function sendCourseCertificate(course: ICourse, id: string, educato
       }
       if (!certificate.awardedAt) {
         certificate.awardedAt = now;
-        certificate.awardedBy = educatorId as unknown as ICertificate["awardedBy"];
+        certificate.awardedBy = new Types.ObjectId(educatorId);
         await certificate.save();
       }
       // Do not fabricate lesson completions, quiz answers or points for an
       // educator-awarded workshop completion.
       enrollment.status = "completed";
+      enrollment.completionSource = "certificate";
       enrollment.progress = 100;
       enrollment.completedAt ||= certificate.awardedAt;
       await enrollment.save();

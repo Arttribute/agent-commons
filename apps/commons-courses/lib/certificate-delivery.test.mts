@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { deliverCertificate } from "./certificate-delivery.ts";
-import { canRetryCertificate, certificateSendIds, SAFE_RETRY_MS, SEND_LEASE_MS, validateCertificatePdf, serializeCertificate } from "./certificate-policy.ts";
+import { canRetryCertificate, certificateSendIds, SAFE_RETRY_MS, SEND_LEASE_MS, validateCertificatePdf, serializeCertificate, lessonCompletionProgress } from "./certificate-policy.ts";
+
+test("continuing lessons cannot undo an educator-awarded workshop completion", () => {
+  assert.equal(lessonCompletionProgress(1, 12, "certificate"), 100);
+  assert.equal(lessonCompletionProgress(1, 12), 8);
+  assert.equal(lessonCompletionProgress(12, 12), 100);
+});
 
 test("awards completion before sending the email and records provider acceptance", async () => {
   const events: string[] = [];

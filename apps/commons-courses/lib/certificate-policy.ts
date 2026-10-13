@@ -3,6 +3,10 @@ export const SEND_LEASE_MS = 5 * 60 * 1000;
 // Resend keeps idempotency keys for 24 hours. Leave an hour of headroom.
 export const SAFE_RETRY_MS = 23 * 60 * 60 * 1000;
 
+export function lessonCompletionProgress(completedLessonCount: number, totalLessons: number, completionSource?: string) {
+  return completionSource === "certificate" ? 100 : Math.round(completedLessonCount / Math.max(1, totalLessons) * 100);
+}
+
 export function validateCertificatePdf(data: Uint8Array) {
   if (!data.length || data.length > MAX_CERTIFICATE_BYTES) {
     throw new Error("Choose a PDF smaller than 2 MB.");
