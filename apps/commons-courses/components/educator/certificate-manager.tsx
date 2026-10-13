@@ -90,10 +90,10 @@ export function CertificateManager({ slug, courseTitle, initialCertificates, lea
   return (
     <div>
       <CourseSectionHeader section="learners" title="Certificates" meta={`${certificates.length} certificates · ${certificates.filter((item) => item.emailStatus === "sent").length} emailed`} info="Send awards course completion, makes the certificate available in the learner's dashboard, and emails the PDF. Sent means the email provider accepted the message." actions={
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-2">
+          <Button variant="primary" size="sm" icon={Send} loading={busy && !adding} disabled={!emailConfigured || !pendingIds.length || busy} onClick={send}>Send {Math.min(pendingIds.length, 30)} certificates</Button>
           <Button size="sm" icon={RefreshCw} disabled={busy} onClick={() => refresh().catch((error) => setError(error.message))}>Refresh</Button>
           <Button size="sm" icon={Plus} disabled={busy || !unprepared.length} onClick={() => setAdding(true)}>Prepare certificate</Button>
-          <Button variant="primary" size="sm" icon={Send} loading={busy && !adding} disabled={!emailConfigured || !pendingIds.length || busy} onClick={send}>Send {Math.min(pendingIds.length, 30)} certificates</Button>
         </div>
       } />
       {!emailConfigured ? <p className="mb-4 text-sm text-red-700" role="alert">Certificate email is not configured. Set the Resend API key and sender before sending.</p> : null}
