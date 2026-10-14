@@ -7,11 +7,9 @@ import {
   Check,
   ChevronDown,
   ExternalLink,
-  FolderClosed,
   Loader2,
   MessageSquarePlus,
   Minus,
-  Search,
   X,
 } from "lucide-react";
 import { AgentProvider, useAgentContext } from "@/context/AgentContext";
@@ -31,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { cn } from "@/lib/utils";
 import { ChromeButton } from "./canvas-chrome";
+import { ProjectChip } from "@/components/projects/project-chip";
 
 type ChatAgent = { agentId: string; name: string; avatar?: string | null; [key: string]: unknown };
 type Mode = "bubble" | "composer" | "panel";
@@ -383,7 +382,7 @@ function CanvasChatInner() {
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-stone-100 px-2">
         <AgentPicker agents={agentList} selected={agent} onSelect={chooseAgent} />
         <div className="ml-auto flex items-center gap-0.5">
-          <ProjectChip projects={projects} projectId={projectId} onChange={(next) => void changeProject(next)} iconOnly />
+          <ProjectChip projects={projects} projectId={projectId} onChange={(next) => void changeProject(next)} variant="icon" />
           {sessionId && !local && (
             <Link
               href={`/sessions/${encodeURIComponent(sessionId)}`}
@@ -487,88 +486,3 @@ function AgentPicker({
   );
 }
 
-function ProjectChip({
-  projects,
-  projectId,
-  onChange,
-  iconOnly = false,
-}: {
-  projects: Array<{ projectId: string; name: string }>;
-  projectId: string | null;
-  onChange: (projectId: string | null) => void;
-  iconOnly?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const selected = projects.find((project) => project.projectId === projectId);
-  const visible = projects.filter((project) => project.name.toLowerCase().includes(query.trim().toLowerCase()));
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        {iconOnly ? (
-          <button
-            type="button"
-            aria-label={selected ? `Project: ${selected.name}` : "Choose project"}
-            title={selected ? selected.name : "Choose project"}
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-900",
-              selected && "text-stone-900",
-            )}
-          >
-            <FolderClosed className="h-4 w-4" strokeWidth={1.75} />
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="flex max-w-[240px] items-center gap-1.5 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs text-stone-600 shadow-card hover:text-stone-900"
-          >
-            <FolderClosed className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
-            <span className="truncate">{selected?.name ?? "Choose project"}</span>
-          </button>
-        )}
-      </PopoverTrigger>
-      <PopoverContent align="start" side={iconOnly ? "bottom" : "top"} className="w-64 p-1">
-        <div className="flex items-center gap-2 border-b border-stone-100 px-2 pb-1.5 pt-1">
-          <Search className="h-3.5 w-3.5 text-stone-400" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search projects"
-            className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-stone-400"
-          />
-        </div>
-        <div className="max-h-64 overflow-y-auto py-1">
-          {visible.map((project) => (
-            <button
-              key={project.projectId}
-              type="button"
-              onClick={() => {
-                onChange(project.projectId);
-                setOpen(false);
-              }}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-stone-100"
-            >
-              <FolderClosed className="h-4 w-4 shrink-0 text-stone-400" strokeWidth={1.75} />
-              <span className="min-w-0 flex-1 truncate">{project.name}</span>
-              {project.projectId === projectId && <Check className="h-3.5 w-3.5" />}
-            </button>
-          ))}
-          {!visible.length && <p className="px-2 py-2 text-xs text-stone-500">No projects found</p>}
-        </div>
-        {projectId && (
-          <button
-            type="button"
-            onClick={() => {
-              onChange(null);
-              setOpen(false);
-            }}
-            className="flex w-full items-center gap-2 rounded-lg border-t border-stone-100 px-2 py-2 text-left text-sm text-stone-600 hover:bg-stone-100"
-          >
-            <X className="h-4 w-4" />
-            Don&apos;t work in a project
-          </button>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
-}

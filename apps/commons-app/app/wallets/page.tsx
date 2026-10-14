@@ -227,11 +227,11 @@ export default function WalletsPage() {
   const { agents, loading } = useAgents(userAddress || undefined);
 
   return (
-    <div className="h-screen overflow-hidden bg-page">
-      <div className="flex h-screen">
+    <div className="h-app overflow-hidden bg-page">
+      <div className="flex h-app flex-col md:flex-row">
         <DashboardSideBar username={userAddress} />
 
-        <div className="flex-1 min-w-0 overflow-y-auto">
+        <div className="min-h-0 flex-1 min-w-0 overflow-y-auto">
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border/60 bg-background">
             <div>

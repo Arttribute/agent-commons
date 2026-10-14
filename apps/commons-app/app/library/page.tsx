@@ -285,10 +285,10 @@ export default function LibraryPage() {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-page text-stone-950">
-      <div className="flex h-screen">
+    <div className="h-app overflow-hidden bg-page text-stone-950">
+      <div className="flex h-app flex-col md:flex-row">
         <DashboardSideBar username={userAddress} />
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1500px] px-5 py-6 sm:px-8 lg:px-12">
             <header className="flex flex-col gap-4 pb-3 lg:flex-row lg:items-end lg:justify-between">
               <div>

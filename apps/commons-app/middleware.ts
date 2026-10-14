@@ -14,7 +14,7 @@ const cloudAuthMiddleware = auth((request) => {
 
   if (pathname === "/") {
     if (!signedIn) return NextResponse.next();
-    return NextResponse.redirect(new URL("/studio/agents", origin));
+    return NextResponse.redirect(new URL("/new", origin));
   }
 
   if (signedIn) return NextResponse.next();
@@ -36,7 +36,7 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
   if (policy === 'local-session') return NextResponse.json(null);
   if (policy === 'block-cloud-api') return NextResponse.json({ error: 'Cloud APIs are unavailable in Local mode.' }, { status: 503 });
   if (policy === 'local-page') {
-    if (request.nextUrl.pathname === '/') return NextResponse.redirect(new URL('/studio/agents', request.nextUrl.origin));
+    if (request.nextUrl.pathname === '/') return NextResponse.redirect(new URL('/new', request.nextUrl.origin));
     return NextResponse.next();
   }
   if (request.nextUrl.pathname === "/api/desktop-search/search") return NextResponse.next();
@@ -49,6 +49,7 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
 export const config = {
   matcher: [
     "/",
+    "/new",
     "/studio/:path*",
     "/sessions/:path*",
     "/settings/:path*",

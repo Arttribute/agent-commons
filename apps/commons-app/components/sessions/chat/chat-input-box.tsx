@@ -160,6 +160,7 @@ export default function ChatInputBox({
   onSent,
   localContext,
   hideThinking = false,
+  variant = "default",
 }: {
   agentId: string;
   sessionId: string;
@@ -201,6 +202,12 @@ export default function ChatInputBox({
    */
   localContext?: string;
   hideThinking?: boolean;
+  /**
+   * `compact` is the one-line chat-app composer: the add menu, the message
+   * and send in a single row. Computer, thinking and folder choices move into
+   * the add menu and show as chips while they are on.
+   */
+  variant?: "default" | "compact";
 }) {
   const { mode } = useWorkspaceMode();
   const local = mode === "private-local";
@@ -710,6 +717,15 @@ export default function ChatInputBox({
     (attachment) => attachment.status === "uploaded" && attachment.fileId,
   );
 
+  // The compact composer grows with its text, up to a few lines.
+  useEffect(() => {
+    if (variant !== "compact") return;
+    const node = composerInputRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${Math.min(node.scrollHeight, 160)}px`;
+  }, [variant, inputText]);
+
   useEffect(() => {
     if (!isLoading && restoreComposerFocusRef.current) {
       restoreComposerFocusRef.current = false;
@@ -1109,11 +1125,187 @@ export default function ChatInputBox({
     };
   }, []);
 
+  const compact = variant === "compact";
+  const desktopAvailable = typeof window !== "undefined" && Boolean(window.agentCommonsDesktop);
+  const thinkingLabel = THINKING_LEVELS.find((level) => level.key === thinkingLevel)?.label ?? "Auto";
+  const chooseWorkspace = () =>
+    void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then((folder) => {
+      if (folder) {
+        workspaceRevision.current += 1;
+        setDesktopWorkspace(folder);
+        setWorkspaceRemoved(false);
+      }
+    });
+  const clearWorkspace = () => {
+    workspaceRevision.current += 1;
+    setDesktopWorkspace(null);
+    setWorkspaceRemoved(true);
+  };
+
+  const attachMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={!!isLoading}
+          title="Add photos & files"
+          aria-label="Add photos & files"
+          className={cn(
+            "text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40",
+            compact ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-full" : "rounded-lg p-1.5",
+          )}
+        >
+          <Plus className={compact ? "h-5 w-5" : "h-4 w-4"} strokeWidth={compact ? 1.75 : 2} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        side="top"
+        className="w-72"
+      >
+        <DropdownMenuItem onSelect={openFilePicker}>
+          <HardDriveUpload className="mr-2 h-4 w-4" />
+          Upload from device
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
+          <LibraryBig className="mr-2 h-4 w-4" />
+          Choose from Library
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Brain className="mr-2 h-4 w-4" />
+            Reference Knowledge
+            <span className="ml-auto mr-1 text-xs text-muted-foreground">
+              {knowledgeMode === "off" ? "Off" : knowledgeMode === "selected" ? `${knowledgeSpaceIds.length} selected` : "Auto"}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-64">
+            <DropdownMenuLabel>
+              <span className="block text-sm">
+                Knowledge Spaces
+              </span>
+              <span className="block text-[11px] font-normal text-muted-foreground">
+                Choose how this chat uses indexed knowledge
+              </span>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {(["auto", "selected", "off"] as const).map((mode) => <DropdownMenuCheckboxItem key={mode} checked={knowledgeMode === mode} onCheckedChange={() => { contextRevision.current += 1; setKnowledgeMode(mode); }}>{mode === "auto" ? "Automatic" : mode === "selected" ? "Selected spaces" : "Off"}</DropdownMenuCheckboxItem>)}
+            <DropdownMenuSeparator />
+            {knowledgeSpaces.map((space) => (
+              <DropdownMenuCheckboxItem
+                key={space.spaceId}
+                checked={knowledgeSpaceIds.includes(space.spaceId)}
+                onCheckedChange={(checked) =>
+                  (contextRevision.current += 1, setKnowledgeMode("selected"), setKnowledgeSpaceIds((current) =>
+                    checked
+                      ? [...new Set([...current, space.spaceId])]
+                      : current.filter(
+                          (id) => id !== space.spaceId,
+                        ),
+                  ))
+                }
+              >
+                <span className="min-w-0">
+                  <span className="block truncate">
+                    {space.name}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    {space.counts?.documents || 0} notes
+                  </span>
+                </span>
+              </DropdownMenuCheckboxItem>
+            ))}
+            {knowledgeLoading && (
+              <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading spaces
+              </div>
+            )}
+            {!knowledgeLoading && !knowledgeSpaces.length && (
+              <p className="px-2 py-3 text-xs text-muted-foreground">
+                No Knowledge Spaces available
+              </p>
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        {local && <DropdownMenuCheckboxItem checked={webSearchEnabled} onCheckedChange={(checked) => { void setChatWebSearch(checked === true); }}>
+          <Globe2 className="mr-2 h-4 w-4" />
+          <span>Web search</span>
+        </DropdownMenuCheckboxItem>}
+        {local && webSearchConfigured && <DropdownMenuItem onSelect={() => { setTimeout(openWebSearchSettings, 0); }} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
+        {local && <DropdownMenuSub>
+          <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />Connected tools</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-56">
+            <DropdownMenuLabel>Use in this chat</DropdownMenuLabel>
+            {mcpServers.filter((server) => server.enabled).map((server) => <DropdownMenuCheckboxItem key={server.id} checked={mcpServerIds.includes(server.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, server.id])] : current.filter((id) => id !== server.id))}>{server.name} · {server.mode === "read" ? "Read" : "Write"}</DropdownMenuCheckboxItem>)}
+            {connectedApps.map((app) => <DropdownMenuCheckboxItem key={app.id} disabled={!app.connected && !mcpServerIds.includes(app.id)} checked={mcpServerIds.includes(app.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, app.id])] : current.filter((id) => id !== app.id))}>{app.name}{!app.connected ? " · Not connected" : ""}</DropdownMenuCheckboxItem>)}
+            {!connectedApps.length && !mcpServers.some((server) => server.enabled) && <p className="px-2 py-2 text-xs text-muted-foreground">Set up a connector in Settings.</p>}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>}
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            Provenance
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-72">
+            <DropdownMenuLabel>Provenance for new runs</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={provenance.mode} onValueChange={(mode) => updateProvenance({ ...provenance, mode: mode as ProvenancePreferences["mode"] })}>
+              <DropdownMenuRadioItem value="metadata">Metadata only</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="full">Full disclosure</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="off">Off</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem checked={provenance.onchain} disabled={provenance.mode === "off"} onCheckedChange={(checked) => updateProvenance({ ...provenance, onchain: checked === true })}>
+              Request on-chain anchor
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        {compact && (canUseComputer || !hideThinking || desktopAvailable) && <DropdownMenuSeparator />}
+        {compact && canUseComputer && (
+          <DropdownMenuCheckboxItem checked={computerEnabled} onCheckedChange={(checked) => setComputerEnabled(checked === true)}>
+            <Monitor className="mr-2 h-4 w-4" />
+            Use agent&rsquo;s computer
+          </DropdownMenuCheckboxItem>
+        )}
+        {compact && !hideThinking && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Gauge className="mr-2 h-4 w-4" />
+              Thinking
+              <span className="ml-auto mr-1 text-xs text-muted-foreground">{thinkingLabel}</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-56">
+              <DropdownMenuRadioGroup value={thinkingLevel} onValueChange={(level) => setThinkingLevel(level as ThinkingLevel)}>
+                {THINKING_LEVELS.map((level) => (
+                  <DropdownMenuRadioItem key={level.key} value={level.key}>
+                    <span className="min-w-0">
+                      <span className="block leading-tight">{level.label}</span>
+                      <span className="block text-xs text-muted-foreground">{level.detail}</span>
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
+        {compact && desktopAvailable && (
+          <DropdownMenuItem onSelect={chooseWorkspace}>
+            <FolderOpen className="mr-2 h-4 w-4" />
+            {desktopWorkspace ? "Change folder" : "Work in a folder"}
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
     <ComposerSurface
       ref={containerRef}
       className={cn(
         "relative rounded-2xl bg-white border border-stone-300 shadow-composer transition-colors",
+        compact && "rounded-[22px] border-stone-200 shadow-card",
         isDragging && "border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20",
       )}
       onDragOver={(event) => {
@@ -1247,6 +1439,24 @@ export default function ChatInputBox({
           })}
         </div>
       )}
+      {compact && voice.state === "idle" && ((canUseComputer && computerEnabled) || (!hideThinking && thinkingLevel !== "auto") || desktopWorkspace) && (
+        <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+          {canUseComputer && computerEnabled && (
+            <ComposerOptionChip icon={Monitor} label="Agent computer" onRemove={() => setComputerEnabled(false)} disabled={!!isLoading} />
+          )}
+          {!hideThinking && thinkingLevel !== "auto" && (
+            <ComposerOptionChip icon={Gauge} label={thinkingLabel} onRemove={() => setThinkingLevel("auto")} disabled={!!isLoading} />
+          )}
+          {desktopWorkspace && (
+            <ComposerOptionChip
+              icon={FolderOpen}
+              label={desktopWorkspace.split(/[\\/]/).filter(Boolean).at(-1) ?? desktopWorkspace}
+              onRemove={clearWorkspace}
+              disabled={!!isLoading}
+            />
+          )}
+        </div>
+      )}
       {voice.state !== "idle" ? (
         <VoiceRecorderPanel
           state={voice.state}
@@ -1255,6 +1465,66 @@ export default function ChatInputBox({
           onCancel={voice.cancel}
           onAccept={voice.accept}
         />
+      ) : compact ? (
+        <>
+          {steerError && <p className="px-4 pt-2 text-xs text-red-500">{steerError}</p>}
+          {voiceError && <p className="px-4 pt-2 text-xs text-red-500">{voiceError}</p>}
+          <div className="flex items-end gap-1 p-1.5">
+            {attachMenu}
+            <ComposerTextArea
+              ref={composerInputRef}
+              rows={1}
+              aria-label="Message your agent"
+              autoCapitalize="sentences"
+              autoCorrect="on"
+              spellCheck
+              enterKeyHint="send"
+              placeholder={isRunning ? "Add a prompt while the agent works…" : placeholder}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing &&
+                  e.nativeEvent.keyCode !== 229
+                ) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              disabled={disabled || launching}
+              className="h-9 max-h-40 min-h-9 flex-1 rounded-none px-1.5 py-2 leading-5"
+            />
+            {footerLeft && <div className="min-w-0 self-center">{footerLeft}</div>}
+            {footerEnd}
+            <button
+              type="button"
+              onClick={() => {
+                setVoiceError(null);
+                voice.start();
+              }}
+              disabled={!!isLoading || isUploading || (!local && outOfCredits)}
+              title="Dictate a message"
+              aria-label="Dictate a message"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            >
+              <Mic className="h-[18px] w-[18px]" strokeWidth={1.75} />
+            </button>
+            <ComposerSendButton
+              onClick={() => handleSend()}
+              busy={Boolean((isLoading && !isRunning) || isUploading)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full p-0"
+              disabled={
+                (!inputText.trim() && uploadedAttachments.length === 0) ||
+                (isLoading && !isRunning) ||
+                (isRunning && !inputText.trim()) ||
+                isUploading ||
+                (!local && outOfCredits)
+              }
+            />
+          </div>
+        </>
       ) : (
         <>
           <ComposerTextArea
@@ -1286,124 +1556,7 @@ export default function ChatInputBox({
           <div className="flex justify-between items-center px-2 pb-2">
             {(
               <div className="flex min-w-0 items-center gap-1">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      disabled={!!isLoading}
-                      title="Add photos & files"
-                      aria-label="Add photos & files"
-                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    side="top"
-                    className="w-72"
-                  >
-                    <DropdownMenuItem onSelect={openFilePicker}>
-                      <HardDriveUpload className="mr-2 h-4 w-4" />
-                      Upload from device
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
-                      <LibraryBig className="mr-2 h-4 w-4" />
-                      Choose from Library
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <Brain className="mr-2 h-4 w-4" />
-                        Reference Knowledge
-                        <span className="ml-auto mr-1 text-xs text-muted-foreground">
-                          {knowledgeMode === "off" ? "Off" : knowledgeMode === "selected" ? `${knowledgeSpaceIds.length} selected` : "Auto"}
-                        </span>
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-64">
-                        <DropdownMenuLabel>
-                          <span className="block text-sm">
-                            Knowledge Spaces
-                          </span>
-                          <span className="block text-[11px] font-normal text-muted-foreground">
-                            Choose how this chat uses indexed knowledge
-                          </span>
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {(["auto", "selected", "off"] as const).map((mode) => <DropdownMenuCheckboxItem key={mode} checked={knowledgeMode === mode} onCheckedChange={() => { contextRevision.current += 1; setKnowledgeMode(mode); }}>{mode === "auto" ? "Automatic" : mode === "selected" ? "Selected spaces" : "Off"}</DropdownMenuCheckboxItem>)}
-                        <DropdownMenuSeparator />
-                        {knowledgeSpaces.map((space) => (
-                          <DropdownMenuCheckboxItem
-                            key={space.spaceId}
-                            checked={knowledgeSpaceIds.includes(space.spaceId)}
-                            onCheckedChange={(checked) =>
-                              (contextRevision.current += 1, setKnowledgeMode("selected"), setKnowledgeSpaceIds((current) =>
-                                checked
-                                  ? [...new Set([...current, space.spaceId])]
-                                  : current.filter(
-                                      (id) => id !== space.spaceId,
-                                    ),
-                              ))
-                            }
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate">
-                                {space.name}
-                              </span>
-                              <span className="block text-[11px] text-muted-foreground">
-                                {space.counts?.documents || 0} notes
-                              </span>
-                            </span>
-                          </DropdownMenuCheckboxItem>
-                        ))}
-                        {knowledgeLoading && (
-                          <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Loading spaces
-                          </div>
-                        )}
-                        {!knowledgeLoading && !knowledgeSpaces.length && (
-                          <p className="px-2 py-3 text-xs text-muted-foreground">
-                            No Knowledge Spaces available
-                          </p>
-                        )}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    {local && <DropdownMenuCheckboxItem checked={webSearchEnabled} onCheckedChange={(checked) => { void setChatWebSearch(checked === true); }}>
-                      <Globe2 className="mr-2 h-4 w-4" />
-                      <span>Web search</span>
-                    </DropdownMenuCheckboxItem>}
-                    {local && webSearchConfigured && <DropdownMenuItem onSelect={() => { setTimeout(openWebSearchSettings, 0); }} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
-                    {local && <DropdownMenuSub>
-                      <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />Connected tools</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="min-w-56">
-                        <DropdownMenuLabel>Use in this chat</DropdownMenuLabel>
-                        {mcpServers.filter((server) => server.enabled).map((server) => <DropdownMenuCheckboxItem key={server.id} checked={mcpServerIds.includes(server.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, server.id])] : current.filter((id) => id !== server.id))}>{server.name} · {server.mode === "read" ? "Read" : "Write"}</DropdownMenuCheckboxItem>)}
-                        {connectedApps.map((app) => <DropdownMenuCheckboxItem key={app.id} disabled={!app.connected && !mcpServerIds.includes(app.id)} checked={mcpServerIds.includes(app.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, app.id])] : current.filter((id) => id !== app.id))}>{app.name}{!app.connected ? " · Not connected" : ""}</DropdownMenuCheckboxItem>)}
-                        {!connectedApps.length && !mcpServers.some((server) => server.enabled) && <p className="px-2 py-2 text-xs text-muted-foreground">Set up a connector in Settings.</p>}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <ShieldCheck className="mr-2 h-4 w-4" />
-                        Provenance
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-72">
-                        <DropdownMenuLabel>Provenance for new runs</DropdownMenuLabel>
-                        <DropdownMenuRadioGroup value={provenance.mode} onValueChange={(mode) => updateProvenance({ ...provenance, mode: mode as ProvenancePreferences["mode"] })}>
-                          <DropdownMenuRadioItem value="metadata">Metadata only</DropdownMenuRadioItem>
-                          <DropdownMenuRadioItem value="full">Full disclosure</DropdownMenuRadioItem>
-                          <DropdownMenuRadioItem value="off">Off</DropdownMenuRadioItem>
-                        </DropdownMenuRadioGroup>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuCheckboxItem checked={provenance.onchain} disabled={provenance.mode === "off"} onCheckedChange={(checked) => updateProvenance({ ...provenance, onchain: checked === true })}>
-                          Request on-chain anchor
-                        </DropdownMenuCheckboxItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {attachMenu}
                 {canUseComputer && (
                   <button
                     type="button"
@@ -1538,6 +1691,34 @@ export default function ChatInputBox({
         </>
       )}
     </ComposerSurface>
+  );
+}
+
+function ComposerOptionChip({
+  icon: Icon,
+  label,
+  onRemove,
+  disabled,
+}: {
+  icon: typeof Monitor;
+  label: string;
+  onRemove: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <span className="flex max-w-full items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs text-foreground/80">
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span className="max-w-40 truncate">{label}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={disabled}
+        className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-40"
+        aria-label={`Turn off ${label}`}
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
   );
 }
 

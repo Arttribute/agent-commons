@@ -156,7 +156,10 @@ function FloatingCommonsCopilotInner() {
       pathname.startsWith("/terms") ||
       // An open artifact has its own chat, with Copilot as its default agent.
       /^\/library\/[^/]+/.test(pathname) ||
-      pathname.startsWith("/studio/canvas"),
+      pathname.startsWith("/studio/canvas") ||
+      // Chat surfaces: the copilot is one of the agents there already.
+      pathname === "/new" ||
+      /^\/studio\/agents(\/|$)/.test(pathname),
     [authenticated, pathname, ready]
   );
 
@@ -531,7 +534,11 @@ function FloatingCommonsCopilotInner() {
             setOpen(true);
             setView("chat");
           }}
-          className="fixed bottom-5 right-5 z-40 rounded-full border border-border bg-background p-1 shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl"
+          className={cn(
+            "fixed bottom-5 right-5 z-40 rounded-full border border-border bg-background p-1 shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl",
+            // On phones a chat's composer owns the bottom edge.
+            pathname.startsWith("/sessions/") && "max-md:hidden",
+          )}
         >
           <AgentAvatar
             name={copilot.name}

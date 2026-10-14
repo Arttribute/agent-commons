@@ -218,6 +218,15 @@ body {
 }
 
 @layer utilities {
+  /* App surfaces fill the visible viewport. --app-height follows the on-screen
+     keyboard (see components/layout/app-height.tsx), so a composer pinned to
+     the bottom stays above it. */
+  .h-app {
+    height: var(--app-height, 100dvh);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
   /* Slide-deck style highlight pill behind a word or heading.
      Always dark text on a pastel wash so it reads the same in both themes. */
   .hl {

@@ -1,5 +1,5 @@
 import { CommonsAppWindows } from "@/components/plugins/app-windows";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import Providers from "@/Providers";
@@ -17,6 +17,7 @@ import { cookies } from "next/headers";
 import { DesktopApprovalBridge } from "@/components/desktop/approval-widgets";
 import { WorkspaceModeProvider } from "@/context/WorkspaceModeContext";
 import { AgentProvider } from "@/context/AgentContext";
+import { AppHeight } from "@/components/layout/app-height";
 
 const spaceGrotesk = localFont({
   src: "../fonts/SpaceGrotesk-variable.ttf",
@@ -78,6 +79,15 @@ export const metadata: Metadata = {
   },
 };
 
+// Phones resize the layout for the keyboard so bottom composers stay visible,
+// and content can reach the safe areas around a notch or home indicator.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+};
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -121,6 +131,7 @@ export default async function RootLayout({
                 <FloatingCommonsCopilot />
                 <CommonsAppWindows />
                 <DesktopApprovalBridge />
+                <AppHeight />
                 <Toaster />
                 <RateLimitNotice />
               </GlobalSearchProvider>

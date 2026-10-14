@@ -975,10 +975,10 @@ export function KnowledgeSpacesView() {
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-white text-stone-950">
-      <div className="flex h-screen">
+    <div className="h-app overflow-hidden bg-white text-stone-950">
+      <div className="flex h-app flex-col md:flex-row">
         <DashboardSideBar username={userAddress} />
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <main className="min-h-0 flex min-w-0 flex-1 flex-col overflow-hidden">
           <header className="flex h-14 shrink-0 items-center justify-between border-b border-stone-200/80 bg-white px-5">
             <div className="min-w-0">
               <PageTitle title="Knowledge" />

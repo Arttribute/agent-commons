@@ -21,14 +21,14 @@ export default function DesktopAuthCompletePage() {
       const result = await signIn("desktop-device", {
         identitySessionToken,
         redirect: false,
-        callbackUrl: "/studio/agents",
+        callbackUrl: "/new",
       });
       if (!active) return;
       if (result?.error) {
         setError("The desktop grant could not be verified. Please try again.");
         return;
       }
-      window.location.replace(result?.url ?? "/studio/agents");
+      window.location.replace(result?.url ?? "/new");
     };
     void complete();
     return () => {

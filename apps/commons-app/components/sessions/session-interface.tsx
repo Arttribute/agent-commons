@@ -106,6 +106,10 @@ interface SessionInterfaceImprovedProps {
   /** Context appended to messages in Private Local (see ChatInputBox). */
   composerLocalContext?: string;
   composerPlaceholder?: string;
+  /** `compact` keeps the one-line composer pinned to the bottom, chat-app style. */
+  composerVariant?: "default" | "compact";
+  /** Shown just above the composer, e.g. the project picker for a new chat. */
+  composerAccessory?: React.ReactNode;
 }
 
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
@@ -170,6 +174,8 @@ export default function SessionInterfaceImproved({
   onComposerSent,
   composerLocalContext,
   composerPlaceholder,
+  composerVariant = "default",
+  composerAccessory,
 }: SessionInterfaceImprovedProps) {
   const { mode } = useWorkspaceMode();
   useEffect(() => {
@@ -195,7 +201,7 @@ export default function SessionInterfaceImproved({
   const [openArtifact, setOpenArtifact] = useState<ArtifactRef | null>(null);
 
   // Surface width drives the empty-state layout: wide surfaces center the
-  // composer with one starter row; narrow ones (mobile, the copilot panel)
+  // composer with one starter row; narrow ones (phones, the copilot panel)
   // keep the composer at the bottom and stack starters one per row.
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [isNarrowSurface, setIsNarrowSurface] = useState(false);
@@ -204,7 +210,7 @@ export default function SessionInterfaceImproved({
     if (!node || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect?.width ?? 0;
-      setIsNarrowSurface(width > 0 && width < 480);
+      setIsNarrowSurface(width > 0 && width < 640);
     });
     observer.observe(node);
     return () => observer.disconnect();
@@ -489,11 +495,13 @@ export default function SessionInterfaceImproved({
       onSent={onComposerSent}
       localContext={composerLocalContext}
       placeholder={composerPlaceholder}
+      variant={composerVariant}
     />
   );
 
+  // Chat-app surfaces keep the composer at the bottom, like any messenger.
   const showCenteredEmptyState =
-    !isNarrowSurface && !isLoadingSession && messages.length === 0;
+    composerVariant !== "compact" && !isNarrowSurface && !isLoadingSession && messages.length === 0;
 
   return (
     <div
@@ -541,6 +549,7 @@ export default function SessionInterfaceImproved({
                     </h2>
                   )}
                 </div>
+                {composerAccessory && <div className="mb-2">{composerAccessory}</div>}
                 {composer}
                 {conversationStarters.length > 0 && (
                   <div className="mt-3 grid w-full grid-flow-col auto-cols-fr gap-2">
@@ -567,33 +576,50 @@ export default function SessionInterfaceImproved({
               ref={scrollRef}
             >
               {isLoadingSession && messages.length === 0 ? null : messages.length === 0 &&
-                (greeting || conversationStarters.length > 0) ? (
+                (greeting || conversationStarters.length > 0 || composerVariant === "compact") ? (
                 <div className="flex min-h-[45vh] flex-col justify-center py-8">
                   <div className="space-y-6">
-                    <div className="flex flex-col items-center gap-4 text-center">
-                      <AgentAvatar
-                        name={agent?.name}
-                        src={(agent as any)?.avatar}
-                        size={56}
-                      />
-                      {greeting && (
-                        <h2 className="text-xl font-normal tracking-tight text-foreground sm:text-2xl">
-                          {greeting}
-                        </h2>
-                      )}
-                    </div>
+                    {composerVariant === "compact" ? (
+                      // A new chat introduces the agent, like opening a contact.
+                      <div className="flex flex-col items-center gap-3 text-center">
+                        <AgentAvatar name={agent?.name} src={(agent as any)?.avatar} size={64} />
+                        <div className="max-w-sm">
+                          <p className="text-base font-medium">{agent?.name}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {greeting || (agent as any)?.description || "Send a message to start."}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-4 text-center">
+                        <AgentAvatar
+                          name={agent?.name}
+                          src={(agent as any)?.avatar}
+                          size={56}
+                        />
+                        {greeting && (
+                          <h2 className="text-xl font-normal tracking-tight text-foreground sm:text-2xl">
+                            {greeting}
+                          </h2>
+                        )}
+                      </div>
+                    )}
                     {conversationStarters.length > 0 && (
                       <div
-                        // Narrow surfaces stack starters one per row; wide
-                        // surfaces use the centered layout above instead.
-                        className="grid w-full grid-cols-1 gap-2"
+                        // Narrow surfaces stack starters one per row; chat
+                        // surfaces wrap them as pills; wide surfaces use the
+                        // centered layout above instead.
+                        className={composerVariant === "compact" ? "flex flex-wrap justify-center gap-2" : "grid w-full grid-cols-1 gap-2"}
                       >
                         {conversationStarters.map((starter) => (
                           <button
                             key={starter.label}
                             type="button"
                             title={starter.prompt}
-                            className="min-w-0 rounded-xl border border-border bg-white px-3 py-2.5 text-center text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
+                            className={cn(
+                              "min-w-0 border border-border bg-white text-center text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground",
+                              composerVariant === "compact" ? "max-w-[16rem] rounded-full px-3.5 py-1.5" : "rounded-xl px-3 py-2.5",
+                            )}
                             onClick={() => setInputText(starter.prompt)}
                           >
                             <span className="block truncate">
@@ -692,7 +718,8 @@ export default function SessionInterfaceImproved({
         )}
 
         {!showCenteredEmptyState && (
-          <div className="container mx-auto w-full max-w-[46rem] shrink-0 px-4 pb-4">
+          <div className="container mx-auto w-full max-w-[46rem] shrink-0 px-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:px-4 sm:pb-4">
+            {composerAccessory && <div className="mb-2">{composerAccessory}</div>}
             {composer}
           </div>
         )}

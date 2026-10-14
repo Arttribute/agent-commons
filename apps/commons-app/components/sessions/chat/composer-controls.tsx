@@ -5,7 +5,7 @@ import { ArrowUp, Loader2 } from "lucide-react";
 import { cn } from "../../../lib/utils";
 
 export function ComposerTextArea({ className, ...props }: ComponentProps<"textarea">) {
-  return <textarea {...props} className={cn("h-16 w-full resize-none rounded-2xl bg-transparent p-3 text-sm placeholder:text-muted-foreground/60 focus:outline-none", className)} />;
+  return <textarea {...props} className={cn("h-16 w-full resize-none rounded-2xl bg-transparent p-3 text-base placeholder:text-muted-foreground/60 focus:outline-none md:text-sm", className)} />;
 }
 
 export function ComposerSendButton({ busy = false, className, ...props }: ComponentProps<"button"> & { busy?: boolean }) {

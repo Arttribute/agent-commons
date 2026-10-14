@@ -1,8 +1,9 @@
+import { AgentsChatShell } from "@/components/agents/chat/agents-chat-shell";
 
-export default function AgentLayout({
+export default function AgentsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  return <AgentsChatShell>{children}</AgentsChatShell>;
 }

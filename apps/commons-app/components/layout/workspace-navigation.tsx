@@ -37,22 +37,23 @@ export function WorkspaceMoreMenu({ items, activeSection, navigate, collapsed = 
   </DropdownMenu>;
 }
 
-export function WorkspaceNavigation({ activeTab, navigate, brand, rightSlot, search, more }: {
+export function WorkspaceNavigation({ activeTab, navigate, brand, rightSlot, lead, more }: {
   activeTab: string;
   navigate: (path: string) => void;
   brand: ReactNode;
   rightSlot?: ReactNode;
-  search?: ReactNode;
+  /** The first row above the sections, e.g. "New chat". */
+  lead?: ReactNode;
   more?: ReactNode;
 }) {
   return (
     <div className="w-full" data-workspace-navigation>
       <div className="flex h-8 justify-between items-center mb-3 px-1">
         {brand}
-        <div className="flex items-center">{rightSlot}</div>
+        <div className="flex items-center gap-1">{rightSlot}</div>
       </div>
       <div className="flex flex-col gap-1">
-        {search}
+        {lead}
         {workspaceNavigationItems.map(({ key, label, icon: Icon, path }) => (
           <button
             key={key}

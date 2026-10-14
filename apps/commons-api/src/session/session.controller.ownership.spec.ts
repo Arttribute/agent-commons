@@ -14,7 +14,8 @@ describe('SessionController ownership', () => {
     getSessionsByAgentId: jest.fn().mockResolvedValue([session]),
     getSessionsByInitiator: jest.fn().mockResolvedValue([session]),
   };
-  const controller = new SessionController(sessions as any, {} as any);
+  const suggestions = { suggest: jest.fn().mockResolvedValue({ suggestions: [{ text: 'Draft the launch email' }] }) };
+  const controller = new SessionController(sessions as any, {} as any, suggestions as any);
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -46,6 +47,25 @@ describe('SessionController ownership', () => {
     await expect(
       controller.getSessionsByInitiator('alice', request),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('writes start suggestions only for the signed-in person', async () => {
+    const other = {
+      principal: { principalType: 'service', principalId: 'web-app' },
+      headers: { 'x-owner-id': 'bob' },
+    } as any;
+    await expect(
+      controller.getStartSuggestions('alice', { connectedApps: ['Gmail'] }, other),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(suggestions.suggest).not.toHaveBeenCalled();
+
+    const owner = {
+      principal: { principalType: 'service', principalId: 'web-app' },
+      headers: { 'x-owner-id': 'alice' },
+    } as any;
+    const result = await controller.getStartSuggestions('alice', { connectedApps: ['Gmail', 3] }, owner);
+    expect(suggestions.suggest).toHaveBeenCalledWith('alice', ['Gmail']);
+    expect(result.data.suggestions[0].text).toBe('Draft the launch email');
   });
 
   it('allows the owning user to read their session', async () => {
