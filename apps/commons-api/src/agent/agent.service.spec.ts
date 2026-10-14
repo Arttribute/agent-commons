@@ -103,3 +103,26 @@ describe('AgentService CLI result handoff', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 });
+
+describe('host-managed team conversation memory', () => {
+  it('keeps another member\'s agent-wide private memories out of hosted session context', async () => {
+    const service = Object.create(AgentService.prototype) as any;
+    const buildMemoryBlock = jest.fn().mockResolvedValue('Another member private note');
+    Object.assign(service, {
+      getAgent: jest.fn().mockResolvedValue({ agentId: 'business-agent' }),
+      getChildSessions: jest.fn().mockResolvedValue([]),
+      memoryService: { buildMemoryBlock },
+      taskExecution: { listSessionTasks: jest.fn().mockResolvedValue([]) },
+      computerService: { buildComputerPrompt: jest.fn().mockResolvedValue('') },
+      skillService: { buildPromptIndex: jest.fn().mockResolvedValue('') },
+      uiPlugins: { buildAgentPromptBlock: jest.fn().mockResolvedValue('') },
+      optionalPromptContext: (_label: string, promise: Promise<unknown>) => promise,
+      buildSystemPrompt: jest.fn((_agent, _session, _children, memory) => memory),
+    });
+    const hosted = await service.createAgentSession('business-agent', 'member-session', 'Question', false);
+    expect(buildMemoryBlock).not.toHaveBeenCalled();
+    expect(hosted.messages[0].content).not.toContain('Another member private note');
+    await service.createAgentSession('personal-agent', 'personal-session', 'Question');
+    expect(buildMemoryBlock).toHaveBeenCalledWith('personal-agent', 'Question');
+  });
+});
