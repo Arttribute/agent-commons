@@ -4,9 +4,22 @@ describe('parseSuggestions', () => {
   it('keeps three clean suggestions and only known apps', () => {
     const raw = 'Sure! {"suggestions":[{"text":"  \\"Draft the launch email.\\" ","app":"gmail","kind":"document"},{"text":"Draft the launch email"},{"text":"Schedule a weekly review","app":"Slack","kind":"schedule"},{"text":"Summarize the research","kind":"nonsense"},{"text":"A fourth"}]}';
     expect(parseSuggestions(raw, ['Gmail'])).toEqual([
-      { text: 'Draft the launch email', app: 'Gmail', kind: 'document' },
-      { text: 'Schedule a weekly review', app: null, kind: 'schedule' },
-      { text: 'Summarize the research', app: null },
+      { text: 'Draft the launch email', agentId: null, app: 'Gmail', kind: 'document' },
+      { text: 'Schedule a weekly review', agentId: null, app: null, kind: 'schedule' },
+      { text: 'Summarize the research', agentId: null, app: null },
+    ]);
+  });
+
+  it('keeps a prompt, context and one of the person\'s agents', () => {
+    const raw = JSON.stringify({
+      suggestions: [
+        { text: 'Turn the brief into a memo', prompt: 'Turn  my fintech brief into a one-page memo.', detail: 'You finished the brief yesterday.', agentId: 'scout' },
+        { text: 'Write the launch post', agentId: 'someone-elses-agent' },
+      ],
+    });
+    expect(parseSuggestions(raw, [], ['scout', 'writer'])).toEqual([
+      { text: 'Turn the brief into a memo', prompt: 'Turn my fintech brief into a one-page memo.', detail: 'You finished the brief yesterday.', agentId: 'scout', app: null },
+      { text: 'Write the launch post', agentId: null, app: null },
     ]);
   });
 
@@ -18,9 +31,14 @@ describe('parseSuggestions', () => {
 
 describe('SessionSuggestionsService', () => {
   function setup(sessions: any[], reply: string) {
+    const agents = [{ agentId: 'a1', name: 'Research Scout', persona: 'Cites every claim.' }];
     const db: any = {
       query: { session: { findMany: jest.fn().mockResolvedValue(sessions) } },
-      select: jest.fn(() => ({ from: () => ({ where: () => Promise.resolve([]) }) })),
+      select: jest.fn(() => ({
+        from: () => ({
+          where: () => Object.assign(Promise.resolve([]), { limit: () => Promise.resolve(agents) }),
+        }),
+      })),
     };
     const invoke = jest.fn().mockResolvedValue({ content: reply });
     const models: any = { build: jest.fn(() => ({ invoke })) };
@@ -44,6 +62,7 @@ describe('SessionSuggestionsService', () => {
     const prompt = invoke.mock.calls[0][0][1].content as string;
     expect(prompt).toContain('Launch plan');
     expect(prompt).toContain('Connected apps: Gmail');
+    expect(prompt).toContain('- a1: Research Scout (Cites every claim.)');
   });
 
   it('returns no suggestions when the model fails', async () => {

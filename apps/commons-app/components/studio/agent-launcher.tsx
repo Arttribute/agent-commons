@@ -35,6 +35,7 @@ export function StudioAgentLauncher({
   placeholder,
   hideStarters = false,
   projectPicker = false,
+  requestedAgent,
 }: {
   agents: LauncherAgent[];
   userAddress: string;
@@ -47,6 +48,8 @@ export function StudioAgentLauncher({
   hideStarters?: boolean;
   /** Let the person choose a project for the chat when none is fixed. */
   projectPicker?: boolean;
+  /** Switch to this agent, e.g. when a suggestion names one. `key` repeats a request. */
+  requestedAgent?: { agentId: string; key: number } | null;
 }) {
   const router = useRouter();
   const { setInputText } = useAgentContext();
@@ -86,6 +89,17 @@ export function StudioAgentLauncher({
     seededRef.current = true;
     if (defaultAgentId) setSelectedAgentId(defaultAgentId);
   }, [sessionsLoading, defaultAgentId]);
+
+  const appliedRequestRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!requestedAgent || appliedRequestRef.current === requestedAgent.key) return;
+    if (!agents.some((agent) => agent.agentId === requestedAgent.agentId)) return;
+    appliedRequestRef.current = requestedAgent.key;
+    manualPickRef.current = true;
+    setSelectedAgentId(requestedAgent.agentId);
+    onAgentChange?.(requestedAgent.agentId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedAgent?.key, agents]);
 
   const handleSelect = (id: string) => {
     manualPickRef.current = true;

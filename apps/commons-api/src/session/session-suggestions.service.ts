@@ -1,10 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq, inArray, or } from 'drizzle-orm';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import { ModelProviderFactory } from '~/modules/model-provider';
 
-export type StartSuggestion = { text: string; app?: string | null; kind?: string };
+export type StartSuggestion = {
+  text: string;
+  /** The message the composer receives: fuller than the label. */
+  prompt?: string;
+  /** A few sentences of context shown on hover. */
+  detail?: string;
+  /** The person's agent best placed to take it. */
+  agentId?: string | null;
+  app?: string | null;
+  kind?: string;
+};
 
 const CACHE_MS = 6 * 60 * 60_000;
 const CACHE_LIMIT = 1_000;
@@ -16,16 +26,22 @@ const PROMPT = `You suggest what a person could ask their AI agents to do next o
 
 Agents on Agent Commons can research the web with sources, write and edit documents, slides and spreadsheets, build and publish small websites and apps, create and edit images and video, run tasks on a schedule (daily briefings, monitoring), work inside connected apps, use a cloud computer to run code, remember facts, and organize work into projects.
 
-From the person's recent chat titles (newest first), their projects and their connected apps, write exactly 3 suggestions:
-- Each is one short imperative request in the person's voice, at most 12 words, specific to their work. Example: "Draft the launch email for Common Business".
-- Prefer continuing or advancing recent work. Never just repeat a title.
-- At most one suggestion may use a connected app, and only an app from the list.
-- No emojis, no quotes, no trailing period.
+From the person's recent chat titles (newest first, with the agent and project each was in), their agents, their projects and their connected apps, write exactly 3 suggestions. For each:
+- "text": one short imperative request in the person's voice, at most 12 words, specific to their work. Example: "Draft the launch email for Common Business".
+- "prompt": the message the person would actually send, 1 to 3 sentences, self-contained, in their voice.
+- "detail": 2 or 3 plain sentences shown when they hover: what this builds on (name the earlier chat when it continues one) and why it is a good next step. No marketing tone.
+- "agentId": the id of the listed agent best placed to do it. When it continues a chat, prefer the agent from that chat.
+- "app": a connected app name it uses, or null. At most one suggestion may use an app, and only from the list.
+- "kind": research, document, website, schedule, data, image, agent, or null.
+Prefer continuing or advancing recent work. Never just repeat a title. No emojis, no quotes, no trailing period on "text".
 
-Reply with JSON only: {"suggestions":[{"text":"...","app":"<connected app name or null>","kind":"research|document|website|schedule|data|image|agent|null"}]}`;
+Reply with JSON only: {"suggestions":[{"text":"...","prompt":"...","detail":"...","agentId":"...","app":null,"kind":null}]}`;
+
+const clean = (value: unknown, max: number) =>
+  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '';
 
 /** Clean, cap and deduplicate whatever the model returned. */
-export function parseSuggestions(raw: string, connectedApps: string[]): StartSuggestion[] {
+export function parseSuggestions(raw: string, connectedApps: string[], agentIds: string[] = []): StartSuggestion[] {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) return [];
   let parsed: any;
@@ -35,6 +51,7 @@ export function parseSuggestions(raw: string, connectedApps: string[]): StartSug
     return [];
   }
   const apps = new Map(connectedApps.map((app) => [app.toLowerCase(), app]));
+  const agents = new Set(agentIds);
   const seen = new Set<string>();
   const out: StartSuggestion[] = [];
   for (const item of Array.isArray(parsed?.suggestions) ? parsed.suggestions : []) {
@@ -46,7 +63,17 @@ export function parseSuggestions(raw: string, connectedApps: string[]): StartSug
     seen.add(text.toLowerCase());
     const app = typeof item?.app === 'string' ? apps.get(item.app.trim().toLowerCase()) ?? null : null;
     const kind = typeof item?.kind === 'string' && KINDS.includes(item.kind) ? item.kind : undefined;
-    out.push({ text, app, ...(kind ? { kind } : {}) });
+    const prompt = clean(item?.prompt, 800);
+    const detail = clean(item?.detail, 600);
+    const agentId = typeof item?.agentId === 'string' && agents.has(item.agentId) ? item.agentId : null;
+    out.push({
+      text,
+      ...(prompt ? { prompt } : {}),
+      ...(detail ? { detail } : {}),
+      agentId,
+      app,
+      ...(kind ? { kind } : {}),
+    });
     if (out.length === 3) break;
   }
   return out;
@@ -79,16 +106,25 @@ export class SessionSuggestionsService {
     const titled = sessions.filter((session) => session.title && !GENERIC_TITLES.has(session.title.trim().toLowerCase()));
     if (!titled.length) return { suggestions: [] };
 
-    const key = `${sessions[0].sessionId}:${sessions.length}:${apps.sort().join(',')}`;
+    const cacheKey = `${sessions[0].sessionId}:${sessions.length}:${apps.sort().join(',')}`;
     const cached = this.cache.get(owner);
-    if (cached && cached.key === key && Date.now() - cached.at < CACHE_MS) return { suggestions: cached.suggestions };
+    if (cached && cached.key === cacheKey && Date.now() - cached.at < CACHE_MS) return { suggestions: cached.suggestions };
 
     const agentIds = [...new Set(titled.map((session) => session.agentId))];
     const projectIds = [...new Set(titled.map((session) => session.projectId).filter((id): id is string => Boolean(id)))];
+    const owners = [...new Set([initiator, owner])];
     const [agents, projects] = await Promise.all([
-      agentIds.length
-        ? this.db.select({ agentId: schema.agent.agentId, name: schema.agent.name }).from(schema.agent).where(inArray(schema.agent.agentId, agentIds))
-        : Promise.resolve([] as Array<{ agentId: string; name: string }>),
+      this.db
+        .select({ agentId: schema.agent.agentId, name: schema.agent.name, persona: schema.agent.persona })
+        .from(schema.agent)
+        .where(
+          or(
+            inArray(schema.agent.agentId, agentIds.length ? agentIds : ['']),
+            inArray(schema.agent.ownerUserId, owners),
+            inArray(schema.agent.owner, owners),
+          ),
+        )
+        .limit(24),
       projectIds.length
         ? this.db.select({ projectId: schema.project.projectId, name: schema.project.name }).from(schema.project).where(inArray(schema.project.projectId, projectIds))
         : Promise.resolve([] as Array<{ projectId: string; name: string }>),
@@ -100,8 +136,10 @@ export class SessionSuggestionsService {
       const where = [agentNames.get(session.agentId), session.projectId ? projectNames.get(session.projectId) : null].filter(Boolean).join(', ');
       return `- ${session.title!.slice(0, 100)}${where ? ` (${where})` : ''}`;
     });
+    const agentLines = agents.map((agent) => `- ${agent.agentId}: ${agent.name}${agent.persona ? ` (${agent.persona.replace(/\s+/g, ' ').slice(0, 140)})` : ''}`);
     const context = [
       `Recent chats:\n${lines.join('\n')}`,
+      agentLines.length ? `Agents:\n${agentLines.join('\n')}` : '',
       projects.length ? `Projects: ${projects.map((project) => project.name).join(', ')}` : '',
       `Connected apps: ${apps.length ? apps.join(', ') : 'none'}`,
     ]
@@ -110,7 +148,7 @@ export class SessionSuggestionsService {
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const model = this.models.build({ provider: 'openai', modelId: 'gpt-5.4-mini', temperature: 0.7, maxTokens: 400 });
+      const model = this.models.build({ provider: 'openai', modelId: 'gpt-5.4-mini', temperature: 0.7, maxTokens: 1200 });
       const response = await Promise.race([
         model.invoke([
           { role: 'system', content: PROMPT },
@@ -125,10 +163,10 @@ export class SessionSuggestionsService {
         : Array.isArray(response.content)
           ? response.content.map((part: any) => (typeof part === 'string' ? part : part?.text ?? '')).join('')
           : '';
-      const suggestions = parseSuggestions(content, apps);
+      const suggestions = parseSuggestions(content, apps, agents.map((agent) => agent.agentId));
       if (suggestions.length) {
         if (this.cache.size >= CACHE_LIMIT) this.cache.delete(this.cache.keys().next().value!);
-        this.cache.set(owner, { key, at: Date.now(), suggestions });
+        this.cache.set(owner, { key: cacheKey, at: Date.now(), suggestions });
       }
       return { suggestions };
     } catch (error) {
