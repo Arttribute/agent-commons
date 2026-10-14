@@ -53,10 +53,9 @@ export function DashboardSideBar({ username }: { username: string }) {
   const { projects } = useProjects(Boolean(username));
   const [focusExpanded, setFocusExpanded] = useState(false);
 
-  // Detail views and the agents chat app (which brings its own list) keep the
-  // main sidebar as a rail.
-  const isLockedDetailRoute = isLockedStudioDetailRoute(pathname) || isAgentsChatRoute(pathname);
-  const focusRoute = isFocusRoute(pathname);
+  // Detail views, Knowledge and the agents chat app (which brings its own
+  // list) start with the sidebar as a rail; it can still be opened.
+  const focusRoute = isFocusRoute(pathname) || isLockedStudioDetailRoute(pathname) || isAgentsChatRoute(pathname);
   // Library files and projects show their own list; the main sidebar stays a
   // rail beside it, and opening one closes the other.
   const secondaryRoute = hasSecondaryNav(pathname);
@@ -64,13 +63,11 @@ export function DashboardSideBar({ username }: { username: string }) {
   const setMainExpanded = useSecondaryNav((state) => state.setMainExpanded);
   useEffect(() => { setFocusExpanded(false); }, [pathname]);
   useEffect(() => { if (secondaryRoute) setMainExpanded(false); }, [pathname, secondaryRoute, setMainExpanded]);
-  const sidebarOpen = isLockedDetailRoute
-    ? false
-    : secondaryRoute
-      ? mainExpanded
-      : focusRoute
-        ? focusExpanded
-        : isOpen;
+  const sidebarOpen = secondaryRoute
+    ? mainExpanded
+    : focusRoute
+      ? focusExpanded
+      : isOpen;
   const setOpen = (open: boolean) =>
     secondaryRoute ? setMainExpanded(open) : focusRoute ? setFocusExpanded(open) : setIsOpen(open);
 
@@ -217,28 +214,17 @@ export function DashboardSideBar({ username }: { username: string }) {
               }
             />
           ) : (
-            <div className="flex flex-col items-center gap-4 px-2">
-              {isLockedDetailRoute ? (
-                <Link href="/new" aria-label="Agent Commons" title="Agent Commons">
-                  <div className="rounded-full border border-border bg-background p-[1px]">
-                    <span className="block h-6 w-6 overflow-hidden rounded-full border">
-                      <Image src="/ac-icon.svg" alt="Agent Commons Logo" width={24} height={24} className="h-full w-full object-cover" />
-                    </span>
-                  </div>
-                </Link>
-              ) : (
-                <button
-                  onClick={() => setOpen(true)}
-                  className="text-foreground/70 hover:text-foreground"
-                  aria-label="Expand sidebar"
-                  title="Open sidebar"
-                >
-                  <PanelLeft className="h-4 w-4" />
-                </button>
-              )}
+            <div className="flex flex-col items-center gap-2 px-2">
+              <button
+                onClick={() => setOpen(true)}
+                className="rounded-md p-1.5 text-foreground/70 hover:bg-accent hover:text-foreground"
+                aria-label="Expand sidebar"
+                title="Open sidebar"
+              >
+                <PanelLeft className="h-4 w-4" strokeWidth={1.75} />
+              </button>
               <div className="mt-2 flex flex-col items-center gap-3">
                 <NewChatButton collapsed active={activeSection === "new"} />
-                <SearchTrigger collapsed />
                 {workspaceNavigationItems.map(({ key, icon: Icon, path, label }) => (
                   <button
                     key={key}

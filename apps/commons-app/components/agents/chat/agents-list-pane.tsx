@@ -148,8 +148,8 @@ export function AgentsListPane({
         {loading && !agents.length ? (
           <div className="space-y-1 px-1 pt-1" aria-hidden="true">
             {[0, 1, 2, 3, 4].map((index) => (
-              <div key={index} className="flex items-center gap-3 px-2 py-2.5" style={{ opacity: 1 - index * 0.15 }}>
-                <span className="h-11 w-11 shrink-0 animate-pulse rounded-full bg-muted" />
+              <div key={index} className="flex items-center gap-2.5 px-2 py-1.5" style={{ opacity: 1 - index * 0.15 }}>
+                <span className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-muted" />
                 <span className="flex-1 space-y-2">
                   <span className="block h-3 w-1/3 animate-pulse rounded bg-muted" />
                   <span className="block h-3 w-2/3 animate-pulse rounded bg-muted" />
@@ -179,7 +179,7 @@ export function AgentsListPane({
             )}
           </div>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="space-y-px">
             {rows.map(({ agent, last, run }) => {
               const selected = agent.agentId === selectedAgentId;
               const status = runStatusLabel(run);
@@ -193,30 +193,30 @@ export function AgentsListPane({
                     href={`/studio/agents/${encodeURIComponent(agent.agentId)}`}
                     aria-current={selected ? "page" : undefined}
                     className={cn(
-                      "flex items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors",
+                      "flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors",
                       selected ? "bg-accent" : "hover:bg-muted/70",
                     )}
                   >
                     <span className="relative shrink-0">
-                      <AgentAvatar name={agent.name} src={agent.avatar} size={44} />
-                      <RunStatusDot state={run?.state} />
+                      <AgentAvatar name={agent.name} src={agent.avatar} size={28} />
+                      <RunStatusDot state={run?.state} size="sm" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-baseline gap-2">
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{agent.name}</span>
+                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5 text-foreground">{agent.name}</span>
                         {last && <span className="shrink-0 text-[11px] text-muted-foreground">{shortTime(last.updatedAt ?? last.createdAt)}</span>}
                       </span>
-                      <span className="mt-0.5 flex items-center gap-2">
+                      <span className="flex items-center gap-2">
                         <span
                           className={cn(
-                            "min-w-0 flex-1 truncate text-[13px]",
+                            "min-w-0 flex-1 truncate text-xs leading-4",
                             waiting ? "text-amber-700" : "text-muted-foreground",
                             run?.state === "running" && "text-shimmer",
                           )}
                         >
                           {preview}
                         </span>
-                        {waiting && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />}
+                        {waiting && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />}
                       </span>
                     </span>
                   </Link>
