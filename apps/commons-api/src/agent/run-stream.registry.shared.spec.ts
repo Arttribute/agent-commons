@@ -113,3 +113,23 @@ describe('steering control independent of token persistence', () => {
     } finally { source.complete(); await registry.onModuleDestroy(); jest.useRealTimers(); }
   });
 });
+
+describe('host navigation across API replicas', () => {
+  it.each([
+    { state: 'awaiting_input', activity: 'Continue in Common Business', hosted: true },
+    { state: 'awaiting_approval', activity: 'A change is waiting for your review', hosted: false },
+    { state: 'awaiting_input', activity: 'Waiting for your response in an app', hosted: false },
+  ])('routes $state / $activity to the correct controls', async ({ state, activity, hosted }) => {
+    const now = new Date().toISOString();
+    const db = { execute: jest.fn().mockResolvedValue([{
+      run_id: runId, agent_id: 'a1', session_id: 's1', state, activity, done: false,
+      action_url: 'https://business.example.com', started_at: now, updated_at: now,
+    }]) };
+    const reader = new RunStreamRegistry(db as any);
+    try {
+      const [run] = await reader.listForInitiatorShared('u');
+      expect(run.state).toBe(state);
+      expect(run.actionUrl).toBe(hosted ? 'https://business.example.com' : undefined);
+    } finally { await reader.onModuleDestroy(); }
+  });
+});

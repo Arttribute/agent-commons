@@ -392,7 +392,9 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
         agentId: String(row.agent_id),
         sessionId: row.session_id ? String(row.session_id) : undefined,
         state: !row.done && Date.now() - new Date(row.updated_at).getTime() > STALE_RUN_MS ? 'failed' : row.state as RunState,
-        actionUrl: row.action_url ? String(row.action_url) : undefined,
+        actionUrl: row.action_url && row.state !== 'awaiting_approval' &&
+          (row.state !== 'awaiting_input' || String(row.activity ?? '').startsWith('Continue in '))
+          ? String(row.action_url) : undefined,
         activity: !row.done && Date.now() - new Date(row.updated_at).getTime() > STALE_RUN_MS
           ? 'The agent run was interrupted by a server restart.'
           : row.activity ? String(row.activity) : undefined,
@@ -430,11 +432,13 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
         const output = event.output ?? event.result ?? event.payload;
         if (name === 'showCommonsApp' && event.status !== 'error') {
           meta.state = 'awaiting_input';
+          meta.actionUrl = undefined;
           meta.activity = 'Waiting for your response in an app';
           return;
         }
         if (output?.requiresConfirmation || output?.data?.requiresConfirmation) {
           meta.state = 'awaiting_approval';
+          meta.actionUrl = undefined;
           meta.activity = 'A change is waiting for your review';
           return;
         }
