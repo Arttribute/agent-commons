@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -20,9 +21,15 @@ interface AutonomyStatus {
 interface AgentAutonomyProps {
   agentId: string;
   isOwner: boolean;
+  /**
+   * On its own screen the heartbeat drops its card title and puts the
+   * interval's Save button here, in the screen header.
+   */
+  actionsTarget?: HTMLElement | null;
 }
 
-export function AgentAutonomy({ agentId, isOwner }: AgentAutonomyProps) {
+export function AgentAutonomy({ agentId, isOwner, actionsTarget }: AgentAutonomyProps) {
+  const embedded = actionsTarget !== undefined;
   const [status, setStatus] = useState<AutonomyStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -107,9 +114,22 @@ export function AgentAutonomy({ agentId, isOwner }: AgentAutonomyProps) {
     );
   }
 
+  const intervalDirty = Boolean(status?.enabled) && intervalSec !== status?.intervalSec;
+  const headerSave =
+    embedded && isOwner && actionsTarget && status?.enabled
+      ? createPortal(
+          <Button size="sm" className="h-8 gap-1.5 px-3.5" onClick={handleIntervalSave} disabled={saving || !intervalDirty}>
+            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Save
+          </Button>,
+          actionsTarget,
+        )
+      : null;
+
   return (
-    <div className="rounded-xl border border-border p-3 space-y-3">
-      <div className="flex items-center gap-2">
+    <div className={cn("space-y-3", !embedded && "rounded-xl border border-border p-3")}>
+      {headerSave}
+      {!embedded && <div className="flex items-center gap-2">
         <div className="bg-purple-100 dark:bg-purple-900/30 p-1 rounded">
           <Zap className="h-3.5 w-3.5 text-purple-500" />
         </div>
@@ -120,13 +140,13 @@ export function AgentAutonomy({ agentId, isOwner }: AgentAutonomyProps) {
             Active
           </Badge>
         )}
-      </div>
+      </div>}
 
       <div className="flex items-center justify-between">
         <div className="space-y-0.5">
-          <Label className="text-xs font-medium">Heartbeat</Label>
+          <Label className={embedded ? "text-sm font-medium" : "text-xs font-medium"}>Heartbeat</Label>
           <p className="text-xs text-muted-foreground">
-            Agent checks for work autonomously
+            {embedded && status?.isArmed ? "On. The agent checks for work on its own." : "Agent checks for work autonomously"}
           </p>
         </div>
         <Switch
@@ -150,7 +170,7 @@ export function AgentAutonomy({ agentId, isOwner }: AgentAutonomyProps) {
                 className="h-7 text-xs"
                 disabled={!isOwner}
               />
-              {isOwner && (
+              {isOwner && !embedded && (
                 <Button
                   size="sm"
                   variant="outline"

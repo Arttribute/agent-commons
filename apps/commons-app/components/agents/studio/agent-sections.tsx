@@ -4,6 +4,7 @@
 // skills, activity, usage, wallet and sessions.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
   Activity,
@@ -182,59 +183,8 @@ function relative(value?: string | null) {
   return formatDistanceToNow(date, { addSuffix: true });
 }
 
-export function SetupView({
-  agent,
-  isOwner,
-  onSaved,
-  onOpenSection,
-  part = "all",
-}: {
-  agent: CommonAgent;
-  isOwner: boolean;
-  onSaved: (agent: CommonAgent) => void;
-  onOpenSection?: (section: SectionKey) => void;
-  /** Show one focused part (profile, instructions, or model) with its own save bar. */
-  part?: "all" | "profile" | "behavior" | "model";
-}) {
-  const show = (name: "profile" | "behavior" | "model") => part === "all" || part === name;
-  const { mode } = useWorkspaceMode();
-  const [installedLocalModels, setInstalledLocalModels] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const runtimeType = agent.runtimeType ?? "native";
-  const isManagedRuntime =
-    runtimeType === "openclaw" || runtimeType === "hermes";
-  const [form, setForm] = useState({
-    name: agent.name || "",
-    avatar: agent.avatar || "",
-    persona: agent.persona || "",
-    instructions: agent.instructions || "",
-    description: agent.description || "",
-    greeting: agent.greeting || "",
-    conversationStarters: normalizeConversationStarters(
-      agent.conversationStarters,
-    ),
-    a2aEnabled: Boolean((agent as any).a2aEnabled),
-    modelProvider: (agent as any).modelProvider || "openai",
-    modelId: (agent as any).modelId || "",
-    modelBaseUrl: (agent as any).modelBaseUrl || "",
-    modelApiKey: "",
-    temperature: String((agent as any).temperature ?? 0.7),
-    maxTokens: String((agent as any).maxTokens ?? 4096),
-    topP: String((agent as any).topP ?? 1),
-    presencePenalty: String((agent as any).presencePenalty ?? 0),
-    frequencyPenalty: String((agent as any).frequencyPenalty ?? 0),
-  });
-
-  useEffect(() => {
-    if (mode !== "private-local") return;
-    void window.agentCommonsLocal?.listModels().then(setInstalledLocalModels).catch(() => undefined);
-  }, [mode]);
-
-  useEffect(() => {
-    setForm({
+function formFromAgent(agent: CommonAgent) {
+  return {
       name: agent.name || "",
       avatar: agent.avatar || "",
       persona: agent.persona || "",
@@ -254,8 +204,48 @@ export function SetupView({
       topP: String((agent as any).topP ?? 1),
       presencePenalty: String((agent as any).presencePenalty ?? 0),
       frequencyPenalty: String((agent as any).frequencyPenalty ?? 0),
-    });
-  }, [agent]);
+  };
+}
+
+export function SetupView({
+  agent,
+  isOwner,
+  onSaved,
+  onOpenSection,
+  part = "all",
+  actionsTarget,
+}: {
+  agent: CommonAgent;
+  isOwner: boolean;
+  onSaved: (agent: CommonAgent) => void;
+  onOpenSection?: (section: SectionKey) => void;
+  /** Show one focused part (profile, instructions, or model). */
+  part?: "all" | "profile" | "behavior" | "model";
+  /** Where a focused part puts its Save button, e.g. the screen header. */
+  actionsTarget?: HTMLElement | null;
+}) {
+  const show = (name: "profile" | "behavior" | "model") => part === "all" || part === name;
+  const { mode } = useWorkspaceMode();
+  const [installedLocalModels, setInstalledLocalModels] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const runtimeType = agent.runtimeType ?? "native";
+  const isManagedRuntime =
+    runtimeType === "openclaw" || runtimeType === "hermes";
+  const initialForm = useMemo(() => formFromAgent(agent), [agent]);
+  const [form, setForm] = useState(initialForm);
+  const dirty = JSON.stringify(form) !== JSON.stringify(initialForm);
+
+  useEffect(() => {
+    if (mode !== "private-local") return;
+    void window.agentCommonsLocal?.listModels().then(setInstalledLocalModels).catch(() => undefined);
+  }, [mode]);
+
+  useEffect(() => {
+    setForm(initialForm);
+  }, [initialForm]);
 
   const save = async () => {
     setSaving(true);
@@ -722,15 +712,17 @@ export function SetupView({
           )}
         </div>}
       </div>
-      {part !== "all" && isOwner && (
-        <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-border bg-white/95 px-5 py-3 backdrop-blur">
-          {saved && <span className="text-xs text-muted-foreground">Saved</span>}
-          <Button size="sm" className="h-9 gap-1.5" disabled={saving} onClick={save}>
-            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Save
-          </Button>
-        </div>
-      )}
+      {part !== "all" && isOwner && actionsTarget &&
+        createPortal(
+          <div className="flex items-center gap-2.5">
+            {saved && !dirty && <span className="text-xs text-muted-foreground">Saved</span>}
+            <Button size="sm" className="h-8 gap-1.5 px-3.5" disabled={saving || !dirty} onClick={save}>
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Save
+            </Button>
+          </div>,
+          actionsTarget,
+        )}
     </div>
   );
 }

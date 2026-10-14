@@ -328,6 +328,53 @@ export class SessionService {
     return sessions;
   }
 
+  /**
+   * For each agent, the last thing said in that person's latest chat with it:
+   * the newest human or agent message with text. Only the tail of each chosen
+   * history is read, never whole transcripts.
+   */
+  public async getLatestMessagePerAgent(props: { initiator: string }) {
+    const initiator = props.initiator.toLowerCase();
+    const rows = (await this.db.execute(sql`
+      WITH latest AS (
+        SELECT DISTINCT ON (agent_id) session_id
+        FROM session
+        WHERE initiator = ${initiator}
+        ORDER BY agent_id, updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+      )
+      SELECT s.agent_id AS "agentId", s.session_id AS "sessionId",
+             s.updated_at AS "updatedAt", m.role, m.content, m.ts AS "timestamp"
+      FROM session s
+      JOIN latest l ON l.session_id = s.session_id
+      LEFT JOIN LATERAL (
+        SELECT e->>'role' AS role, left(e->>'content', 400) AS content, e->>'timestamp' AS ts
+        FROM jsonb_array_elements(
+          CASE WHEN jsonb_typeof(s.history) = 'array' THEN s.history ELSE '[]'::jsonb END
+        ) WITH ORDINALITY AS t(e, i)
+        WHERE e->>'role' IN ('human', 'user', 'ai', 'assistant')
+          AND jsonb_typeof(e->'content') = 'string'
+          AND btrim(e->>'content') <> ''
+        ORDER BY i DESC
+        LIMIT 1
+      ) m ON true
+    `)) as unknown as Array<{
+      agentId: string;
+      sessionId: string;
+      updatedAt: string | Date | null;
+      role: string | null;
+      content: string | null;
+      timestamp: string | null;
+    }>;
+    return rows.map((row) => ({
+      agentId: row.agentId,
+      sessionId: row.sessionId,
+      updatedAt: row.updatedAt,
+      role: row.role === 'human' || row.role === 'user' ? 'human' : row.role ? 'ai' : null,
+      text: row.content ?? null,
+      timestamp: row.timestamp,
+    }));
+  }
+
   public async getSessionsByAgentAndInitiator(props: {
     agentId: string;
     initiator: string;

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { AgentAutonomy } from "@/components/agents/agent-autonomy";
@@ -91,13 +92,15 @@ export function AgentSectionScreen({
 }) {
   const meta = CHAT_SECTIONS[section];
   const agentId = agent.agentId;
+  // Forms that need saving put their Save button in the header.
+  const [actions, setActions] = useState<HTMLDivElement | null>(null);
 
   const content = (() => {
     switch (section) {
       case "profile":
-        return <SetupView agent={agent} isOwner={isOwner} onSaved={onAgentUpdated} part="profile" />;
+        return <SetupView agent={agent} isOwner={isOwner} onSaved={onAgentUpdated} part="profile" actionsTarget={actions} />;
       case "instructions":
-        return <SetupView agent={agent} isOwner={isOwner} onSaved={onAgentUpdated} part="behavior" />;
+        return <SetupView agent={agent} isOwner={isOwner} onSaved={onAgentUpdated} part="behavior" actionsTarget={actions} />;
       case "model":
         return (
           <SetupView
@@ -105,13 +108,14 @@ export function AgentSectionScreen({
             isOwner={isOwner}
             onSaved={onAgentUpdated}
             part="model"
+            actionsTarget={actions}
             onOpenSection={(key) => key === "runtime" && onOpenSection("runtime")}
           />
         );
       case "heartbeat":
         return (
           <div className="mx-auto max-w-3xl p-4 sm:p-5">
-            <AgentAutonomy agentId={agentId} isOwner={isOwner} />
+            <AgentAutonomy agentId={agentId} isOwner={isOwner} actionsTarget={actions} />
           </div>
         );
       case "tools":
@@ -164,6 +168,7 @@ export function AgentSectionScreen({
           </p>
           <p className="truncate text-xs text-muted-foreground">{agent.name}</p>
         </div>
+        <div ref={setActions} className="ml-auto flex shrink-0 items-center" />
       </header>
       <div className={meta.fill ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-y-auto overscroll-contain"}>
         <EmbeddedSection>{content}</EmbeddedSection>

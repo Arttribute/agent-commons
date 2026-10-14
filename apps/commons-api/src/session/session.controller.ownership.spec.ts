@@ -13,6 +13,9 @@ describe('SessionController ownership', () => {
     getSessionWithGoalsAndTasks: jest.fn().mockResolvedValue(session),
     getSessionsByAgentId: jest.fn().mockResolvedValue([session]),
     getSessionsByInitiator: jest.fn().mockResolvedValue([session]),
+    getLatestMessagePerAgent: jest.fn().mockResolvedValue([
+      { agentId: 'agent-1', sessionId: 'session-1', role: 'ai', text: 'Done' },
+    ]),
   };
   const suggestions = { suggest: jest.fn().mockResolvedValue({ suggestions: [{ text: 'Draft the launch email' }] }) };
   const controller = new SessionController(sessions as any, {} as any, suggestions as any);
@@ -47,6 +50,24 @@ describe('SessionController ownership', () => {
     await expect(
       controller.getSessionsByInitiator('alice', request),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('shows chat previews only to the signed-in person', async () => {
+    const other = {
+      principal: { principalType: 'service', principalId: 'web-app' },
+      headers: { 'x-owner-id': 'bob' },
+    } as any;
+    await expect(
+      controller.getLatestMessagePerAgent('alice', other),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(sessions.getLatestMessagePerAgent).not.toHaveBeenCalled();
+    const owner = {
+      principal: { principalType: 'service', principalId: 'web-app' },
+      headers: { 'x-owner-id': 'alice' },
+    } as any;
+    const result = await controller.getLatestMessagePerAgent('alice', owner);
+    expect(sessions.getLatestMessagePerAgent).toHaveBeenCalledWith({ initiator: 'alice' });
+    expect(result.data[0].text).toBe('Done');
   });
 
   it('writes start suggestions only for the signed-in person', async () => {
