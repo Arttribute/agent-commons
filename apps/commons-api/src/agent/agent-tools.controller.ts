@@ -9,10 +9,9 @@ import {
   Inject,
   Post,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
-import { Public, RateLimitGuard, RateLimit } from '~/modules/auth';
+import { Public, RateLimit } from '~/modules/auth';
 import { ChatCompletionMessageToolCall } from 'openai/resources/index.mjs';
 
 import { AgentService } from './agent.service';
@@ -59,7 +58,6 @@ export class AgentToolsController {
 
   @Post('tools')
   @Public()
-  @UseGuards(RateLimitGuard)
   @RateLimit({ limit: 200, windowMs: 60_000, keyStrategy: 'agent' })
   async makeAgentToolCall(
     @TypedBody()
@@ -71,6 +69,11 @@ export class AgentToolsController {
         sessionId?: string;
         ownerId?: string;
         attachmentFileIds?: string[];
+        knowledgeMode?: "auto" | "selected" | "off";
+        knowledgeSpaceIds?: string[];
+        canvasProjectId?: string;
+        canvasRevisionId?: string;
+      canvasContextSnapshot?: string;
         spaceId?: string;
         runId?: string;
         toolCallId?: string;
@@ -108,7 +111,7 @@ export class AgentToolsController {
       // ------------------------------------------------------------------------------------
       const spaceToolMatch = spaceId
         ? this.spaceTools.findToolByName(functionName, spaceId)
-        : this.spaceTools.findToolByName(functionName);
+        : null;
       if (spaceToolMatch) {
         const result = await this.toolInvocation.invokeDynamicTool(
           spaceToolMatch.tool.apiSpec,
@@ -124,8 +127,8 @@ export class AgentToolsController {
       // ------------------------------------------------------------------------------------
       try {
         const mcpTools = await this.mcpToolDiscovery.getToolsByOwner({
-          ownerId: agent.owner || agentId,
-          ownerType: agent.owner ? 'user' : 'agent',
+          ownerId: agent.ownerUserId || agent.owner || agentId,
+          ownerType: agent.ownerUserId || agent.owner ? 'user' : 'agent',
         });
         const mcpTool = mcpTools.find((t) => t.toolName === functionName);
 

@@ -45,6 +45,8 @@ export interface CommonAgent {
   // LLM model config
   modelProvider?: string;
   modelId?: string;
+  effectiveModelId?: string;
+  mediaModels?: import("@agent-commons/desktop-contract").LocalAgent["mediaModels"];
   modelApiKey?: string;
   modelBaseUrl?: string;
   temperature: number;

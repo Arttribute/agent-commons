@@ -1,0 +1,544 @@
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { build } from 'tsup';
+import { spawnSync } from 'node:child_process';
+
+// Exercise the real runtime with a controlled model-protocol failure. This
+// verifies tool recovery and persistence, not the quality of any actual model.
+const app = resolve(import.meta.dirname, '..');
+const output = join(app, 'node_modules/.cache/tool-repair-reliability');
+await build({ entry: { runtime: join(app, 'src/runtime.ts') }, outDir: output, format: ['cjs'], outExtension: () => ({ js: '.cjs' }), platform: 'node', target: 'node22', external: ['electron'], noExternal: ['@agent-commons/agent-core', '@agent-commons/desktop-contract'], esbuildOptions(options) { options.alias = { ...options.alias, '@agent-commons/agent-core': resolve(app, '../../packages/commons-agent-core/src/index.cjs') }; }, silent: true });
+async function verifyRuntime(runtimePath) {
+  const { PrivateLocalRuntime } = require(runtimePath);
+  const directory = mkdtempSync(join(tmpdir(), 'commons-tool-repair-'));
+  const models = ['qwen3.5:2b-q8_0', 'deepseek-r1:1.5b'];
+  const malformed = '# Unsaved draft\n' + 'raw Markdown is not a files array\n'.repeat(220);
+  const requests = new Map(models.map(model => [model, []]));
+  const archiveRequests = new Map(models.map(model => [model, []]));
+  const sourceRequests = new Map(models.map(model => [model, []]));
+  const visualRequests = new Map(models.map(model => [model, []]));
+  const visualBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
+  const saveRequests = new Map(models.map(model => [model, []]));
+  const deniedRequests = new Map(models.map(model => [model, []]));
+  let sourceId;
+  let denyWrite = false;
+  let deniedApprovals = 0;
+  let failImage = false;
+  const nativeImageRequests = new Map();
+  const mixedRequests = new Map();
+  const readLoopRequests = new Map(models.map(model => [model, []]));
+  const eofLoopRequests = new Map(models.map(model => [model, []]));
+  const pythonEOFRequests = new Map(models.map(model => [model, []]));
+  const writeLoopRequests = new Map(models.map(model => [model, []]));
+  let visualArtifactId;
+  let archiveId;
+  let serverError;
+  const server = createServer(async (request, response) => {
+    try {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
+      response.setHeader('Content-Type', 'application/x-ndjson');
+      if (request.url === '/api/tags') return response.end(JSON.stringify({ models: models.map(model => ({ name: model, model, details: { family: model.startsWith('qwen') ? 'qwen35' : 'deepseek', parameter_size: '2B', quantization_level: 'Q8_0' } })) }));
+      if (request.url === '/api/show') return response.end(JSON.stringify({ capabilities: ['completion', 'tools', 'thinking', ...(body.model.startsWith('qwen') ? ['vision'] : [])], details: { family: 'qwen35' } }));
+      if (request.url !== '/api/chat') return response.end(JSON.stringify({ done: true }));
+      const model = body.model;
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Python EOF recovery boundary'))) {
+        const calls = pythonEOFRequests.get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        let message;
+        if (calls.length <= 2) message = action('read_library_item', { itemId: sourceId });
+        else if (calls.length === 3) {
+          assert.ok(body.format.properties.code, 'EOF repair must request executable Python arguments');
+          assert.ok(!body.tools);
+          message = { role: 'assistant', content: JSON.stringify({ code: 'print("Controlled Python dispatch")' }) };
+        } else {
+          assert.equal(calls.length, 4);
+          assert.ok(!body.format?.properties.code, 'Python argument repair must end after dispatch');
+          message = { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved computed.md.' } }) : 'Saved computed.md.' };
+          if (model.startsWith('deepseek')) assert.ok(body.format.properties.tool);
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Write loop recovery boundary'))) {
+        const calls = writeLoopRequests.get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        let message;
+        if (calls.length === 1) message = action('read_library_item', { itemId: sourceId });
+        else if (calls.length === 2 || calls.length === 3) message = action('write_library_files', { files: [{ name: 'ad-copy.md', content: 'Verified source: current chat.' }] });
+        else if (calls.length === 4) {
+          assert.deepEqual(body.format.properties.files.items.properties.name.enum, ['plan.md']);
+          assert.equal(body.format.properties.files.maxItems, 1);
+          message = { role: 'assistant', content: JSON.stringify({ files: [{ name: 'plan.md', content: 'Next output from verified source: current chat.' }] }) };
+        } else {
+          assert.equal(calls.length, 5);
+          message = { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved both requested documents.' } }) : 'Saved both requested documents.' };
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
+      const eofBoundary = body.messages.some(m => m.role === 'user' && m.content.includes('End of file recovery boundary'));
+      if (eofBoundary || body.messages.some(m => m.role === 'user' && m.content.includes('Read loop recovery boundary'))) {
+        const calls = (eofBoundary ? eofLoopRequests : readLoopRequests).get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        let message;
+        if (calls.length <= 2) message = action('read_library_item', { itemId: sourceId, ...(eofBoundary && calls.length === 2 ? {} : { offset: 0 }) });
+        else if (calls.length === 3 || calls.length === 5) {
+          const filename = calls.length === 3 ? 'ad-copy.md' : 'plan.md';
+          assert.equal(body.format.properties.files.maxItems, 1, 'Recovery should save one document at a time');
+          assert.deepEqual(body.format.properties.files.items.properties.name.enum, [filename]);
+          assert.ok(!body.tools, 'Unrelated tools remain offered during write recovery');
+          assert.ok(body.messages.some(m => m.content.includes('scope-source.json')));
+          message = { role: 'assistant', content: JSON.stringify({ files: [{ name: filename, content: 'Verified source: current chat.' }] }) };
+        } else {
+          assert.ok(calls.length === 4 || calls.length === 6);
+          message = { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved ad-copy.md and plan.md.' } }) : 'Saved ad-copy.md and plan.md.' };
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Native image completion boundary'))) {
+        const key = model + ':' + (failImage ? 'failed' : 'saved');
+        const calls = nativeImageRequests.get(key) ?? []; calls.push(body); nativeImageRequests.set(key, calls);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        const final = text => ({ role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: text } }) : text });
+        let message;
+        if (calls.length === 1) message = action('run_python', { code: 'print(40)' });
+        else if (calls.length === 2) message = final('Completed the calculation and generated the image.');
+        else if (calls.length === 3) {
+          assert.ok(body.messages.some(m => m.content.includes('computed files do not complete the separate creative image')));
+          message = action('generate_image', { prompt: 'Controlled fixture background', negativePrompt: 'text, logos' });
+        } else {
+          assert.equal(calls.length, 4);
+          message = final(failImage ? 'The computation returned 40. Image generation failed; that output is unavailable.' : 'Generated the image and computed 40.');
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
+      const savedBoundary = body.messages.some(m => m.role === 'user' && m.content.includes('Saved output boundary'));
+      const deniedBoundary = body.messages.some(m => m.role === 'user' && m.content.includes('Denied output boundary'));
+      if (savedBoundary || deniedBoundary) {
+        const calls = (savedBoundary ? saveRequests : deniedRequests).get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        const final = text => ({ role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: text } }) : text });
+        let message;
+        if (calls.length === 1) message = action('read_library_item', { itemId: sourceId });
+        else if (calls.length === 2) message = savedBoundary ? final('Saved inspected-report.md.') : action('write_library_files', { files: [{ name: 'denied-report.md', content: 'Should not be saved.' }] });
+        else if (calls.length === 3 && savedBoundary) {
+          assert.equal(body.format.properties.files.type, 'array', 'A false saved claim did not receive structured write recovery');
+          assert.ok(body.messages.some(m => m.content.includes('scope-source.json')));
+          message = { role: 'assistant', content: JSON.stringify({ files: [{ name: 'inspected-report.md', content: 'Verified source: current chat.' }] }) };
+        } else if (calls.length === 3) message = final('Saved denied-report.md.');
+        else {
+          assert.equal(calls.length, 4);
+          if (deniedBoundary) assert.ok(!body.format?.properties?.files, 'Denied write was forced through structured recovery');
+          message = final(savedBoundary ? 'Saved inspected-report.md.' : 'The write was denied. The requested report is unavailable.');
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
+      const mixed = body.messages.some(m => m.role === 'user' && m.content.includes('Mixed creative boundary'));
+      const numeric = body.messages.some(m => m.role === 'user' && m.content.includes('Numeric output boundary'));
+      if (mixed || numeric) {
+        const key = model + ':' + (mixed ? 'mixed' : 'numeric');
+        const calls = mixedRequests.get(key) ?? []; calls.push(body); mixedRequests.set(key, calls);
+        const names = body.tools?.map(tool => tool.function.name) ?? body.format.properties.tool.enum;
+        assert.equal(names.includes('generate_image'), mixed, 'Creative image tools do not reflect the mixed or numeric task');
+        assert.ok(names.includes('run_python'), 'Mixed media tasks lost their computation tool');
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        assert.ok(calls.length <= 2);
+        const message = calls.length === 1 ? action('run_python', { code: 'print("Controlled computation")' })
+          : { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Verified the offered tools and completed the controlled computation.' } }) : 'Verified the offered tools and completed the controlled computation.' };
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Visual tool boundary'))) {
+        const calls = visualRequests.get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        const pictures = body.messages.flatMap(m => m.images ?? []);
+        const system = body.messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
+        if (calls.length === 2 || calls.length === 3) {
+          if (model.startsWith('qwen')) {
+            assert.deepEqual(pictures, [visualBytes.toString('base64')], 'Actual tool-generated/read pixels were not supplied');
+            assert.deepEqual(body.messages.at(-1).images, pictures, 'Tool pixels must follow the result, not rewrite an earlier user turn');
+            assert.equal(body.messages.find(m => m.role === 'user' && m.content.includes('Visual tool boundary')).images, undefined);
+            assert.ok(system.includes(visualArtifactId), 'Visual evidence lost its actual Library identity');
+          } else {
+            assert.deepEqual(pictures, [], 'Text-only model received unsupported image inputs');
+            assert.ok(system.includes('cannot inspect image pixels'), 'Text-only model was told it had inspected pixels');
+          }
+        } else {
+          assert.deepEqual(pictures, [], 'Old tool images leaked into another step');
+          assert.ok(!system.includes('Images supplied to the vision model'), 'Old visual identity leaked into another step');
+        }
+        const message = calls.length === 1 ? action('generate_image', { prompt: 'Controlled fixture background', negativePrompt: 'text, logos' })
+          : calls.length === 2 ? action('read_library_item', { itemId: visualArtifactId })
+          : calls.length === 3 ? action('write_library_files', { files: [{ name: 'visual-check.md', content: 'Controlled image context verified.' }] })
+          : { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved visual-check.md.' } }) : 'Saved visual-check.md.' };
+        assert.ok(calls.length <= 4);
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Source mapping boundary'))) {
+        const calls = sourceRequests.get(model); calls.push(body);
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        if (calls.length > 1 && calls.length < 4) {
+          const hint = body.messages.findLast(m => m.role === 'system' && m.content.includes('Available Python input identifiers'));
+          assert.ok(hint, 'Missing-input recovery lost the actual source identifiers');
+          assert.ok(hint.content.includes('scope-source.json'));
+          assert.ok(hint.content.includes('INPUT_FILES values are path strings'));
+          assert.ok(!hint.content.includes('source-template.html') && !hint.content.includes('not-in-this-chat'));
+          if (calls.length === 3) assert.ok(hint.content.includes('failed twice'), 'Repeat failure discarded the specific input repair');
+        }
+        const message = calls.length < 3 ? action('run_python', { code: 'open("missing-source.json")' })
+          : calls.length === 3 ? action('write_library_files', { files: [{ name: 'source-repair.md', content: 'Input lookup repaired.' }] })
+          : { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved source-repair.md.' } }) : 'Saved source-repair.md.' };
+        assert.ok(calls.length <= 4);
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
+      if (body.messages.some(m => m.role === 'user' && m.content.includes('Archive completion boundary'))) {
+        const calls = archiveRequests.get(model);
+        calls.push(body);
+        const names = body.tools?.map(tool => tool.function.name) ?? body.format.properties.tool.enum;
+        const action = (name, args) => model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: name, args }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] };
+        let message;
+        if (calls.length === 1) {
+          assert.ok(names.includes('extract_library_archive'), 'Another chat’s extracted members must not hide this chat’s extraction tool');
+          message = action('extract_library_archive', { itemId: archiveId });
+        } else if (calls.length === 2) {
+          assert.ok(!names.includes('extract_library_archive'), 'Completed extraction is still offered to the model');
+          assert.match(body.messages[0].content, /Current Library archive state/);
+          assert.match(body.messages[0].content, /"extracted":true/);
+          message = action('read_library_item', { itemId: 'kit/START HERE.md' });
+        } else {
+          assert.equal(calls.length, 3);
+          assert.ok(body.messages.some(m => m.content.includes('File bodies live here.')));
+          assert.ok(!names.includes('extract_library_archive'));
+          message = { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Verified actual archive source.' } }) : 'Verified actual archive source.' };
+        }
+        return response.end(JSON.stringify({ model, message, done: true }) + '\n');
+      }
+      const calls = requests.get(model);
+      assert.ok(calls, 'Unexpected fixture model');
+      calls.push(body);
+      let message;
+      if (calls.length === 1) {
+        message = model.startsWith('deepseek')
+          ? { role: 'assistant', content: JSON.stringify({ tool: 'write_library_files', args: { files: malformed } }) }
+          : { role: 'assistant', content: '', tool_calls: [{ function: { name: 'write_library_files', arguments: { files: malformed } } }] };
+      } else if (calls.length === 2) {
+        assert.equal(body.format.properties.files.type, 'array', 'Repair did not enforce the offered argument schema');
+        assert.ok(!body.tools, 'Repair still offered unrelated tool calls');
+        assert.ok(body.messages.some(m => m.content.includes('files must be an array')));
+        message = { role: 'assistant', content: JSON.stringify({ files: [{ name: 'report.md', content: 'Schema repair verified.' }] }) };
+      } else {
+        assert.equal(calls.length, 3, 'Unexpected continuation after verified output');
+        const saved = runtime.state().conversations[0].artifacts.find(file => file.name === 'report.md');
+        assert.ok(body.messages[0].content.includes(saved.id), 'Model context did not refresh after saving the output');
+        assert.match(body.messages[0].content, /Current artifact versions from this chat/);
+        message = { role: 'assistant', content: model.startsWith('deepseek') ? JSON.stringify({ tool: 'final', args: { response: 'Saved report.md.' } }) : 'Saved report.md.' };
+      }
+      response.end(JSON.stringify({ model, message, done: true }) + '\n');
+    } catch (error) {
+      serverError = error;
+      response.statusCode = 500;
+      response.end(JSON.stringify({ error: error.message }));
+    }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  let runtime;
+  try {
+    runtime = new PrivateLocalRuntime(directory);
+    runtime.updateSettings({ ollamaUrl: `http://127.0.0.1:${server.address().port}`, defaultModel: models[0] });
+    runtime.setTarget({ isDestroyed: () => false, send: (_channel, event) => {
+      if (event.type === 'approval') { const denied = denyWrite && event.approval.toolName === 'write_library_files'; if (denied) deniedApprovals++; queueMicrotask(() => runtime.resolveApproval(event.approval.id, !denied)); }
+    } });
+    const templateText = '<!doctype html><title>Source template</title>\n' + '<p>Exact source template bytes.</p>\n'.repeat(1500);
+    const [template, foreign, reference, foreignReference] = runtime.importLibraryFiles([
+      { name: 'source-template.html', mimeType: 'text/html', bytes: new TextEncoder().encode(templateText) },
+      { name: 'START guide not-in-this-chat.txt', mimeType: 'text/plain', bytes: new TextEncoder().encode('Other Library file') },
+      { name: 'exact-rules.md', mimeType: 'text/markdown', bytes: new TextEncoder().encode('Actual referenced rules must be read separately.') },
+      { name: 'exact-rules.md', mimeType: 'text/markdown', bytes: new TextEncoder().encode('Unattached private rules.') },
+    ]);
+    const [archive] = runtime.importLibraryFiles([{ name: 'sources.zip', mimeType: 'application/zip', bytes: new Uint8Array(Buffer.from('UEsDBBQAAAAIABu4SV3Vvl/PMQAAAC8AAAARAAAAa2l0L1NUQVJUIEhFUkUubWRzy8xJVUjKT8lMLVbIySxLVchILUrVUwhKTUxRKMnILFZITC4pTcxRKM4vLUpO1QMAUEsDBBQAAAAIABu4SV1pNMixTQAAAFEAAAATAAAAa2l0L1NUQVJUIEhFUkUuaHRtbLNRTMlPLqksSFXIKMnNsbMpLqnMSbVLyk+pVKhWSM7PyS+yUkjKSUzOtlaotdGHyNpkGNoFpxYkFiWWpCp4hPj6KBTnlxYlp9roAyUAUEsDBBQAAAAIABu4SV1fcMvZLQAAAC8AAAAWAAAAa2l0L3RlbXBsYXRlL3ZpZXcuaHRtbLNRTMlPLqksSFXIKMnNsbMpySzJSbULLi0oyMlMTVEoSc0tyEksSbXRh0gAAFBLAQIUAxQAAAAIABu4SV3Vvl/PMQAAAC8AAAARAAAAAAAAAAAAAACAAQAAAABraXQvU1RBUlQgSEVSRS5tZFBLAQIUAxQAAAAIABu4SV1pNMixTQAAAFEAAAATAAAAAAAAAAAAAACAAWAAAABraXQvU1RBUlQgSEVSRS5odG1sUEsBAhQDFAAAAAgAG7hJXV9wy9ktAAAALwAAABYAAAAAAAAAAAAAAIAB3gAAAGtpdC90ZW1wbGF0ZS92aWV3Lmh0bWxQSwUGAAAAAAMAAwDEAAAAPwEAAAAA', 'base64')) }]);
+    archiveId = archive.id;
+    for (const model of models) {
+      const agent = runtime.saveAgent({ name: 'Controlled tool recovery', model, instructions: 'Save requested files using the available Library tool.' }).agents.at(-1);
+      const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [template.id, archive.id, reference.id], prompt: 'Save report.md containing Schema repair verified. Return its actual saved Library output.' });
+      if (serverError) throw serverError;
+      const artifact = result.conversation.artifacts.find(a => a.name === 'report.md');
+      assert.ok(artifact);
+      assert.equal(readFileSync(artifact.path, 'utf8'), 'Schema repair verified.');
+      const writes = result.conversation.messages.filter(m => m.toolName === 'write_library_files');
+      assert.equal(writes.length, 2);
+      assert.ok(writes[0].content.startsWith('Error:'));
+      assert.equal(writes[0].toolArgs.files, malformed, 'Stored failed arguments changed');
+      assert.ok(!writes[1].content.startsWith('Error:'));
+      assert.equal(requests.get(model).length, 3);
+      const referenceSearch = JSON.parse(await runtime.executeTool('search_library_item', { itemId: template.id, query: 'exact-rules.md Part 10 checklist' }, undefined, result.conversation.id));
+      assert.deepEqual(referenceSearch.referencedFiles.map(file => file.itemId), [reference.id]);
+      assert.ok(!JSON.stringify(referenceSearch).includes(foreignReference.id));
+      assert.ok(!JSON.stringify(referenceSearch).includes('Actual referenced rules must be read separately.'));
+      assert.ok(!JSON.stringify(referenceSearch).includes('Unattached private rules.'));
+      assert.match(referenceSearch.referenceHint, /filename metadata, not their contents/);
+      const copied = JSON.parse(await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'templates/copied.html' }, result.conversation.id));
+      assert.equal(copied.copiedFrom.itemId, template.id);
+      const copy = runtime.state().library.find(item => item.id === copied.artifacts[0].itemId);
+      assert.equal(readFileSync(copy.path, 'utf8'), templateText);
+      assert.equal(readFileSync(template.path, 'utf8'), templateText);
+      const revised = JSON.parse(await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'templates/copied.html' }, result.conversation.id));
+      const current = runtime.currentArtifactIdentifiers(result.conversation.id);
+      assert.equal(current.find(file => file.name === 'templates/copied.html').itemId, revised.artifacts[0].itemId);
+      assert.ok(!current.some(file => file.itemId === copied.artifacts[0].itemId || file.itemId === foreign.id));
+      assert.equal(readFileSync(copy.path, 'utf8'), templateText, 'Refreshing current identifiers mutated an earlier immutable revision');
+      const forbidden = await runtime.executeDataTool('copy_library_file', { itemId: foreign.id, name: 'foreign.txt' }, result.conversation.id);
+      assert.match(forbidden, /^Error: Source file is not available/);
+      const escaped = await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: '../outside.html' }, result.conversation.id);
+      assert.match(escaped, /^Error: Use relative filenames/);
+      const inventory = JSON.parse(await runtime.executeTool('read_library_item', { itemId: archive.id, offset: 9994 }, undefined, result.conversation.id));
+      assert.equal(inventory.readMode, 'archive_inventory');
+      assert.equal(inventory.memberContentsReturned, false);
+      assert.equal(inventory.content, undefined);
+      assert.equal(inventory.nextOffset, undefined);
+      assert.ok(!JSON.stringify(inventory).includes('File bodies live here.'));
+      const extracted = JSON.parse(await runtime.executeDataTool('extract_library_archive', { itemId: archive.id }, result.conversation.id));
+      assert.equal(extracted.alreadyExtracted, false);
+      const reused = JSON.parse(await runtime.executeDataTool('extract_library_archive', { itemId: archive.id }, result.conversation.id));
+      assert.equal(reused.alreadyExtracted, true);
+      assert.equal(reused.directory, extracted.directory);
+      assert.deepEqual(reused.files, extracted.files);
+      const sourceLookup = JSON.parse(await runtime.executeTool('search_library_item', { itemId: archive.id, query: 'START HERE' }, undefined, result.conversation.id));
+      assert.equal(sourceLookup.extracted, true);
+      const member = sourceLookup.files.find(file => file.path === 'kit/START HERE.md');
+      assert.ok(member?.itemId);
+      const descriptiveSearch = JSON.parse(await runtime.executeTool('search_library_item', { itemId: archive.id, query: 'START guide' }, undefined, result.conversation.id));
+      assert.equal(descriptiveSearch.matchingMembers, 0);
+      assert.deepEqual(descriptiveSearch.files, []);
+      assert.equal(descriptiveSearch.suggestions[0].itemId, member.itemId);
+      assert.ok(!JSON.stringify(descriptiveSearch).includes('File bodies live here.'), 'Filename suggestions must not imply document content retrieval');
+      const descriptiveList = JSON.parse(await runtime.executeTool('list_session_files', { query: 'START guide' }, undefined, result.conversation.id));
+      assert.equal(descriptiveList.totalFiles, 0);
+      assert.equal(descriptiveList.suggestions[0].itemId, member.itemId);
+      assert.ok(!JSON.stringify(descriptiveList).includes(foreign.id), 'A matching foreign filename must not enter chat-scoped suggestions');
+      const actualSource = JSON.parse(await runtime.executeTool('read_library_item', { itemId: member.itemId }, undefined, result.conversation.id));
+      assert.ok(actualSource.content.includes('File bodies live here.'));
+      assert.equal(actualSource.endOfText, true);
+      assert.equal(actualSource.readStatus, 'final_chunk');
+      const eof = JSON.parse(await runtime.executeTool('read_library_item', { itemId: member.itemId, offset: actualSource.totalChars }, undefined, result.conversation.id));
+      assert.equal(eof.content, '');
+      assert.equal(eof.readStatus, 'end_of_text');
+      assert.match(eof.hint, /There is no next chunk/);
+      const htmlRead = JSON.parse(await runtime.executeTool('read_library_item', { itemId: 'kit/START HERE.html' }, undefined, result.conversation.id));
+      assert.equal(htmlRead.name, 'kit/START HERE.html');
+      assert.ok(htmlRead.content.includes('Separate HTML source'));
+      assert.ok(!htmlRead.content.includes('File bodies live here.'));
+      assert.equal(htmlRead.availableMarkdownSource.itemId, member.itemId);
+      const directorySearch = await runtime.executeTool('search_library_item', { itemId: 'kit', query: 'START HERE' }, undefined, result.conversation.id);
+      assert.match(directorySearch, /^Error: That path identifies a directory/);
+      assert.ok(directorySearch.includes(member.itemId) && directorySearch.includes('read_library_item'));
+      assert.ok(!directorySearch.includes('File bodies live here.'), 'Directory guidance must not pretend filenames are document contents');
+      assert.ok(!directorySearch.includes(foreign.id) && !directorySearch.includes(foreign.name), 'Directory guidance must respect the captured chat scope');
+      const directoryRead = await runtime.executeTool('read_library_item', { itemId: 'kit/template' }, undefined, result.conversation.id);
+      assert.match(directoryRead, /^Error: That path identifies a directory/);
+      assert.ok(directoryRead.includes('kit/template/view.html'));
+      const missingDirectory = await runtime.executeTool('search_library_item', { itemId: 'unattached-folder', query: 'START HERE' }, undefined, result.conversation.id);
+      assert.match(missingDirectory, /^Error: that file is not attached/);
+      assert.ok(!missingDirectory.includes(member.itemId), 'Unknown folders must not disclose a current file inventory');
+      runtime.updateSettings({ permissionMode: 'read-only' });
+      const readOnly = await runtime.executeDataTool('copy_library_file', { itemId: template.id, name: 'readonly.html' }, result.conversation.id);
+      assert.match(readOnly, /^Error: This chat is read only/);
+      runtime.updateSettings({ permissionMode: 'ask' });
+      const archiveResult = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [archive.id], prompt: 'Archive completion boundary: extract the attached ZIP once and read its actual START source. Report the verified source.' });
+      if (serverError) throw serverError;
+      assert.equal(archiveRequests.get(model).length, 3);
+      assert.equal(archiveResult.conversation.messages.filter(m => m.toolName === 'extract_library_archive').length, 1);
+      const completed = runtime.libraryArchiveState(archiveResult.conversation.id, new Set());
+      assert.equal(completed[0].extracted, true);
+      const memberFile = runtime.state().library.find(item => item.sourceArchiveId === archive.id && archiveResult.conversation.artifacts.some(a => a.id === item.id));
+      const originalBytes = readFileSync(memberFile.path);
+      rmSync(memberFile.path);
+      assert.equal(runtime.libraryArchiveState(archiveResult.conversation.id, new Set())[0].extracted, false, 'Missing member bytes must re-enable extraction');
+      writeFileSync(memberFile.path, originalBytes);
+      const [source] = runtime.importLibraryFiles([{ name: 'scope-source.json', mimeType: 'application/json', bytes: new TextEncoder().encode('{"source":"current chat"}') }]);
+      sourceId = source.id;
+      const writeLoop = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Write loop recovery boundary: read the attached source, then save ad-copy.md and plan.md describing its verified source value.' });
+      if (serverError) throw serverError;
+      assert.equal(writeLoopRequests.get(model).length, 5);
+      assert.equal(writeLoop.conversation.messages.filter(m => m.toolName === 'write_library_files').length, 3);
+      assert.equal(readFileSync(writeLoop.conversation.artifacts.find(a => a.name === 'plan.md').path, 'utf8'), 'Next output from verified source: current chat.');
+      const readLoop = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Read loop recovery boundary: read the attached source, then save ad-copy.md and plan.md describing its verified source value. Use one substantial Markdown document per call.' });
+      if (serverError) throw serverError;
+      assert.equal(readLoopRequests.get(model).length, 6);
+      assert.equal(readLoop.conversation.messages.filter(m => m.toolName === 'read_library_item').length, 2);
+      for (const name of ['ad-copy.md', 'plan.md']) assert.equal(readFileSync(readLoop.conversation.artifacts.find(a => a.name === name).path, 'utf8'), 'Verified source: current chat.');
+      const eofLoop = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'End of file recovery boundary: read the attached source, then save ad-copy.md and plan.md describing its verified source value.' });
+      if (serverError) throw serverError;
+      assert.equal(eofLoopRequests.get(model).length, 6);
+      const eofReads = eofLoop.conversation.messages.filter(m => m.toolName === 'read_library_item');
+      assert.equal(JSON.parse(eofReads[1].content).readStatus, 'end_of_text');
+      for (const name of ['ad-copy.md', 'plan.md']) assert.equal(readFileSync(eofLoop.conversation.artifacts.find(a => a.name === name).path, 'utf8'), 'Verified source: current chat.');
+      const dataToolBeforePythonFixture = runtime.executeDataTool.bind(runtime);
+      let pythonDispatches = 0;
+      runtime.executeDataTool = async (name, args, conversationId, workspace) => {
+        if (name !== 'run_python') return dataToolBeforePythonFixture(name, args, conversationId, workspace);
+        pythonDispatches++;
+        assert.equal(args.code, 'print("Controlled Python dispatch")');
+        const saved = JSON.parse(await dataToolBeforePythonFixture('write_library_files', { files: [{ name: 'computed.md', content: 'Controlled Python dispatch fixture; numeric execution is tested separately.' }] }, conversationId, workspace));
+        return JSON.stringify({ ...saved, exitCode: 0 });
+      };
+      try {
+        const pythonEOF = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Python EOF recovery boundary: read the attached source, execute Python, and save computed.md in OUTPUT_DIR.' });
+        if (serverError) throw serverError;
+        assert.equal(pythonEOFRequests.get(model).length, 4);
+        assert.equal(pythonDispatches, 1);
+        assert.ok(pythonEOF.conversation.artifacts.some(a => a.name === 'computed.md'));
+      } finally { runtime.executeDataTool = dataToolBeforePythonFixture; }
+      const savedReport = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Saved output boundary: read the attached source, then save inspected-report.md describing its verified source value.' });
+      if (serverError) throw serverError;
+      assert.equal(saveRequests.get(model).length, 4);
+      assert.equal(readFileSync(savedReport.conversation.artifacts.find(file => file.name === 'inspected-report.md').path, 'utf8'), 'Verified source: current chat.');
+      assert.equal(savedReport.conversation.messages.filter(m => m.toolName === 'write_library_files').length, 1);
+      denyWrite = true;
+      const priorDenials = deniedApprovals;
+      try {
+        const denied = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Denied output boundary: read the attached source, then save denied-report.md describing its verified source value.' });
+        if (serverError) throw serverError;
+        assert.equal(deniedRequests.get(model).length, 4);
+        assert.equal(deniedApprovals - priorDenials, 1, 'Write denial was asked again');
+        assert.ok(!denied.conversation.artifacts?.some(file => file.name === 'denied-report.md'));
+        assert.match(denied.conversation.messages.find(m => m.toolName === 'write_library_files').content, /^User denied/);
+      } finally { denyWrite = false; }
+      const originalDataTool = runtime.executeDataTool.bind(runtime);
+      // Inject two controlled Python path failures; exercise the real recovery
+      // context and persistence without installing an interpreter in this test.
+      runtime.executeDataTool = async (name, ...args) => name === 'run_python'
+        ? 'Error: Python execution failed. FileNotFoundError: missing-source.json'
+        : originalDataTool(name, ...args);
+      try {
+        const repaired = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, attachmentIds: [source.id], prompt: 'Source mapping boundary: save source-repair.md containing Input lookup repaired. Use the attached scope-source.json; do not use other Library files. For Python inputs if needed, use INPUT_FILES by itemId.' });
+        if (serverError) throw serverError;
+        assert.equal(sourceRequests.get(model).length, 4);
+        assert.equal(readFileSync(repaired.conversation.artifacts.find(file => file.name === 'source-repair.md').path, 'utf8'), 'Input lookup repaired.');
+      } finally { runtime.executeDataTool = originalDataTool; }
+      // Only computation is controlled here. The actual runtime chooses its
+      // native/JSON tool catalog and persists the resulting tool evidence.
+      runtime.executeDataTool = async (name, ...args) => name === 'run_python'
+        ? JSON.stringify({ exitCode: 0, stdout: 'Controlled computation', stderr: '', artifacts: [] })
+        : originalDataTool(name, ...args);
+      try {
+        for (const [mode, prompt] of [
+          ['mixed', 'Mixed creative boundary: Finish five complete generated ads. Use managed Python to assemble the campaign assets.'],
+          ['numeric', 'Numeric output boundary: Plot the measured sales dataset with Python.'],
+        ]) {
+          const result = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, prompt });
+          if (serverError) throw serverError;
+          assert.equal(mixedRequests.get(model + ':' + mode).length, 2);
+          assert.equal(result.conversation.messages.filter(message => message.toolName === 'run_python').length, 1);
+        }
+      } finally { runtime.executeDataTool = originalDataTool; }
+      // Stub image computation only; the actual scoped generation tool, Library
+      // persistence, read tool and native/JSON model requests run unchanged.
+      const originalGenerate = runtime.imageManager.generate.bind(runtime.imageManager);
+      const originalTool = runtime.executeTool.bind(runtime);
+      const fixturePath = join(directory, 'controlled-image.png');
+      writeFileSync(fixturePath, visualBytes);
+      runtime.imageManager.generate = async (prompt, modelId, options) => {
+        if (failImage) throw new Error('Controlled image generation failure');
+        assert.equal(prompt, 'Controlled fixture background');
+        assert.equal(options.negativePrompt, 'text, logos');
+        return { path: fixturePath, modelId: 'fixture.gguf' };
+      };
+      runtime.executeTool = async (name, ...args) => {
+        const result = await originalTool(name, ...args);
+        if (name === 'generate_image' && !result.startsWith('Error:')) visualArtifactId = JSON.parse(result).artifactId;
+        return result;
+      };
+      try {
+        runtime.executeDataTool = async (name, ...args) => name === 'run_python'
+          ? JSON.stringify({ exitCode: 0, stdout: '40', stderr: '', artifacts: [] })
+          : originalDataTool(name, ...args);
+        for (const failed of [false, true]) {
+          failImage = failed;
+          const mixed = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, prompt: 'Native image completion boundary: create an illustration using generate_image. Separately calculate the mean of the dataset with Python and report the value in chat.' });
+          if (serverError) throw serverError;
+          assert.equal(nativeImageRequests.get(model + ':' + (failed ? 'failed' : 'saved')).length, 4);
+          const image = mixed.conversation.messages.find(m => m.toolName === 'generate_image');
+          assert.ok(image, 'A final answer skipped the explicitly requested image tool');
+          if (failed) {
+            assert.match(image.content, /^Error: Controlled image generation failure/);
+            assert.equal(mixed.conversation.messages.filter(m => m.toolName === 'generate_image').length, 1, 'Failed generation was retried without a changed approach');
+            assert.equal(mixed.conversation.artifacts?.length ?? 0, 0);
+          } else {
+            const receipt = JSON.parse(image.content);
+            assert.ok(mixed.conversation.artifacts.some(a => a.id === receipt.artifactId));
+          }
+        }
+        failImage = false;
+        runtime.executeDataTool = originalDataTool;
+        const visual = await runtime.sendMessage({ agentId: agent.id, workspaceRoot: null, knowledgeMode: 'off', webSearchEnabled: false, prompt: 'Visual tool boundary: generate a fixture image, read that exact saved image, then save visual-check.md containing Controlled image context verified.' });
+        if (serverError) throw serverError;
+        assert.equal(visualRequests.get(model).length, 4);
+        const imageRead = JSON.parse(await runtime.executeTool('read_library_item', { itemId: visualArtifactId, offset: 5000 }, undefined, visual.conversation.id));
+        assert.equal(imageRead.readMode, 'image_metadata');
+        assert.equal(imageRead.pixelContentReturned, false);
+        assert.equal(imageRead.content, undefined, 'Image placeholder must not be presented as document text');
+        assert.equal(imageRead.nextOffset, undefined);
+        const imageSearch = JSON.parse(await runtime.executeTool('search_library_item', { itemId: visualArtifactId, query: 'logo' }, undefined, visual.conversation.id));
+        assert.deepEqual(imageSearch.matches, []);
+        assert.match(imageSearch.hint, /not a text document/);
+
+        assert.equal(readFileSync(visual.conversation.artifacts.find(file => file.name === 'visual-check.md').path, 'utf8'), 'Controlled image context verified.');
+        assert.ok(!JSON.stringify(visual.conversation).includes(visualBytes.toString('base64')), 'Image bytes persisted in the conversation');
+      } finally {
+        failImage = false;
+        runtime.executeDataTool = originalDataTool;
+        runtime.imageManager.generate = originalGenerate;
+        runtime.executeTool = originalTool;
+      }
+
+    }
+    console.log(`Local malformed-write recovery passed on ${process.platform}-${process.arch}; original diagnostics, saved bytes, archive/member distinction and scoped template copies and transient vision/text-only tool image context verified.`);
+  } finally {
+    runtime?.close();
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    rmSync(directory, { recursive: true, force: true });
+  }
+
+}
+
+// Use the actual Electron process so safeStorage and account persistence behave
+// identically on Linux, Windows and macOS, without replacing Electron APIs.
+const worker = join(output, 'verify.cjs');
+writeFileSync(worker, `const { app } = require('electron');
+const assert = require('node:assert/strict');
+const { createServer } = require('node:http');
+const { mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
+const { tmpdir } = require('node:os');
+const { join } = require('node:path');
+${verifyRuntime.toString()}
+app.whenReady().then(() => verifyRuntime(${JSON.stringify(join(output, 'runtime.cjs'))})).then(() => app.exit(0)).catch(error => { console.error(error); app.exit(1); });
+`);
+const environment = { ...process.env };
+delete environment.ELECTRON_RUN_AS_NODE;
+const result = spawnSync(createRequire(import.meta.url)('electron'), [worker], { env: environment, encoding: 'utf8', timeout: 120_000 });
+if (result.stdout) process.stdout.write(result.stdout);
+if (result.stderr) process.stderr.write(result.stderr);
+if (result.error) throw result.error;
+assert.equal(result.status, 0, 'Electron runtime tool recovery failed');

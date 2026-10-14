@@ -25,7 +25,7 @@ import {
 import { useAgentContext } from "@/context/AgentContext";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
-import { BRAVE_SEARCH_BASE_URL, hasConfiguredLocalWebSearch, type LocalSettings } from "@agent-commons/desktop-contract";
+import { BRAVE_SEARCH_BASE_URL, DEFAULT_LOCAL_WEB_SEARCH_URL, isManagedLocalWebSearchUrl, hasConfiguredLocalWebSearch, type LocalSettings, type LocalConnectedApp } from "@agent-commons/desktop-contract";
 import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 import { useSessionRunStore } from "@/stores/session-run-store";
 import { VoiceRecorderPanel } from "./voice-recorder";
@@ -115,6 +115,7 @@ export type ComposerLaunch = {
     previewUrl?: string;
   }>;
   knowledgeSpaceIds: string[];
+  knowledgeMode?: "auto" | "selected" | "off";
   reasoningEffort?: "low" | "medium" | "high" | "xhigh";
   webSearchEnabled?: boolean;
   mcpServerIds?: string[];
@@ -159,6 +160,7 @@ export default function ChatInputBox({
   onSent,
   localContext,
   hideThinking = false,
+  variant = "default",
 }: {
   agentId: string;
   sessionId: string;
@@ -200,6 +202,12 @@ export default function ChatInputBox({
    */
   localContext?: string;
   hideThinking?: boolean;
+  /**
+   * `compact` is the one-line chat-app composer: the add menu, the message
+   * and send in a single row. Computer, thinking and folder choices move into
+   * the add menu and show as chips while they are on.
+   */
+  variant?: "default" | "compact";
 }) {
   const { mode } = useWorkspaceMode();
   const local = mode === "private-local";
@@ -220,6 +228,7 @@ export default function ChatInputBox({
     KnowledgeSpaceOption[]
   >([]);
   const [knowledgeSpaceIds, setKnowledgeSpaceIds] = useState<string[]>([]);
+  const [knowledgeMode, setKnowledgeMode] = useState<"auto" | "selected" | "off">("auto");
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("auto");
@@ -314,38 +323,79 @@ export default function ChatInputBox({
   const [webSearchConfigured, setWebSearchConfigured] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [webSearchDialogOpen, setWebSearchDialogOpen] = useState(false);
-  const [webSearchProvider, setWebSearchProvider] = useState<"brave" | "searxng">("brave");
+  const [managedSearchUrl, setManagedSearchUrl] = useState(DEFAULT_LOCAL_WEB_SEARCH_URL);
+  const [webSearchProvider, setWebSearchProvider] = useState<"managed" | "brave" | "searxng">("managed");
   const [webSearchUrl, setWebSearchUrl] = useState("");
   const [webSearchApiKey, setWebSearchApiKey] = useState("");
   const [webSearchSaving, setWebSearchSaving] = useState(false);
   const [webSearchError, setWebSearchError] = useState("");
   const [mcpServers, setMcpServers] = useState<NonNullable<LocalSettings["mcpServers"]>>([]);
+  const [connectedApps, setConnectedApps] = useState<LocalConnectedApp[]>([]);
+  useEffect(() => {
+    if (!local) return;
+    let active = true;
+    const refresh = () => { void window.agentCommonsLocal?.getConnectedApps().then((result) => { if (active) setConnectedApps(result.apps); }).catch(() => undefined); };
+    refresh(); window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("focus", refresh); };
+  }, [local]);
   const [mcpServerIds, setMcpServerIds] = useState<string[]>([]);
   const [workspaceRemoved, setWorkspaceRemoved] = useState(false);
+  const workspaceRevision = useRef(0);
+  const contextRevision = useRef(0);
   useEffect(() => {
     if (!local || !initialLaunch || initialLaunch.workspaceRoot === undefined) return;
     setDesktopWorkspace(initialLaunch.workspaceRoot);
     setWorkspaceRemoved(initialLaunch.workspaceRoot === null);
   }, [initialLaunch, local]);
   useEffect(() => {
+    let cancelled = false;
+    const revision = workspaceRevision.current;
+    const contextVersion = contextRevision.current;
     if (local) {
       const bridge = window.agentCommonsLocal;
       void bridge?.getState().then((state) => {
+        if (cancelled || revision !== workspaceRevision.current) return;
         const conversation = state.conversations.find((item) => item.id === sessionId);
-        if (initialLaunch?.workspaceRoot === undefined) setDesktopWorkspace(conversation?.workspaceRoot ?? null);
+        if (initialLaunch?.workspaceRoot === undefined) {
+          setDesktopWorkspace(conversation?.workspaceRoot ?? null);
+          setWorkspaceRemoved(!conversation?.workspaceRoot);
+        }
+        if (contextVersion === contextRevision.current) {
+          setKnowledgeMode(conversation?.knowledgeMode ?? initialLaunch?.knowledgeMode ?? "auto");
+          setKnowledgeSpaceIds(conversation?.spaceIds ?? initialLaunch?.knowledgeSpaceIds ?? []);
+          setMcpServerIds(conversation?.mcpServerIds ?? initialLaunch?.mcpServerIds ?? []);
+        }
         setWebSearchConfigured(hasConfiguredLocalWebSearch(state.settings));
-        setWebSearchEnabled(Boolean(hasConfiguredLocalWebSearch(state.settings) && (conversation?.webSearchEnabled ?? initialLaunch?.webSearchEnabled)));
+        setWebSearchEnabled(Boolean(hasConfiguredLocalWebSearch(state.settings) && (conversation ? Boolean(conversation.webSearchEnabled) : initialLaunch?.webSearchEnabled ?? state.settings.webSearchDefaultEnabled ?? true)));
         setMcpServers(state.settings.mcpServers ?? []);
       }).catch(() => undefined);
-      return bridge?.onEvent((event) => {
+      const unsubscribe = bridge?.onEvent((event) => {
+        if (cancelled) return;
         if (event.type === "state") {
           setWebSearchConfigured(hasConfiguredLocalWebSearch(event.state.settings));
           if (!hasConfiguredLocalWebSearch(event.state.settings)) setWebSearchEnabled(false);
           setMcpServers(event.state.settings.mcpServers ?? []);
         }
       });
+      return () => { cancelled = true; unsubscribe?.(); };
     } else {
-      void window.agentCommonsDesktop?.getWorkspace().then(setDesktopWorkspace).catch(() => undefined);
+      setKnowledgeMode(initialLaunch?.knowledgeMode ?? "auto");
+      setKnowledgeSpaceIds(initialLaunch?.knowledgeSpaceIds ?? []);
+      const saved = sessionId ? localStorage.getItem(`commons-chat-context:${sessionId}`) : null;
+      if (saved) {
+        try { const context = JSON.parse(saved); setDesktopWorkspace(context.workspaceRoot ?? null); setWorkspaceRemoved(!context.workspaceRoot); setKnowledgeMode(context.knowledgeMode ?? "auto"); setKnowledgeSpaceIds(context.spaceIds ?? []); } catch { /* old context */ }
+      } else {
+        void window.agentCommonsDesktop?.getWorkspace().then((folder) => { if (!cancelled && revision === workspaceRevision.current) { setDesktopWorkspace(folder); setWorkspaceRemoved(!folder); } }).catch(() => undefined);
+      }
+      if (sessionId) void fetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
+        .then((response) => response.ok ? response.json() : null)
+        .then((result) => {
+          if (cancelled || contextVersion !== contextRevision.current || !result?.data?.runContext) return;
+          const context = result.data.runContext;
+          setKnowledgeMode(context.knowledgeMode ?? "auto");
+          setKnowledgeSpaceIds(context.knowledgeSpaceIds ?? []);
+        }).catch(() => undefined);
+      return () => { cancelled = true; };
     }
   }, [local, sessionId, initialLaunch?.webSearchEnabled]);
   const setChatWebSearch = async (enabled: boolean) => {
@@ -370,7 +420,8 @@ export default function ChatInputBox({
     setWebSearchError("");
     setWebSearchDialogOpen(true);
     void window.agentCommonsLocal?.getState().then((state) => {
-      setWebSearchProvider(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL || !state.settings.webSearchUrl ? "brave" : "searxng");
+      setManagedSearchUrl(state.settings.managedWebSearchUrl || DEFAULT_LOCAL_WEB_SEARCH_URL);
+      setWebSearchProvider(!state.settings.webSearchUrl || isManagedLocalWebSearchUrl(state.settings.webSearchUrl) ? "managed" : state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "brave" : "searxng");
       setWebSearchUrl(state.settings.webSearchUrl === BRAVE_SEARCH_BASE_URL ? "" : state.settings.webSearchUrl ?? "");
       setWebSearchApiKey(state.settings.webSearchApiKey ?? "");
     }).catch((cause) => setWebSearchError(cause instanceof Error ? cause.message : "Could not load web search settings."));
@@ -382,7 +433,7 @@ export default function ChatInputBox({
     setWebSearchError("");
     try {
       if (webSearchProvider === "brave" && !webSearchApiKey.trim()) throw new Error("Enter your Brave Search API key.");
-      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl: webSearchProvider === "brave" ? BRAVE_SEARCH_BASE_URL : webSearchUrl, webSearchApiKey });
+      const state = await window.agentCommonsLocal.updateSettings({ webSearchUrl: webSearchProvider === "managed" ? managedSearchUrl : webSearchProvider === "brave" ? BRAVE_SEARCH_BASE_URL : webSearchUrl, webSearchApiKey: webSearchProvider === "managed" ? "" : webSearchApiKey });
       const configured = hasConfiguredLocalWebSearch(state.settings);
       if (configured && state.conversations.some((conversation) => conversation.id === sessionId)) {
         await window.agentCommonsLocal.setConversationWebSearch(sessionId, true);
@@ -645,6 +696,7 @@ export default function ChatInputBox({
 
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const voice = useVoiceRecorder({
+    agentId,
     onTranscribed: (text) => {
       setInputText((current) =>
         current.trim() ? `${current.trimEnd()} ${text}` : text,
@@ -664,6 +716,15 @@ export default function ChatInputBox({
   const uploadedAttachments = attachments.filter(
     (attachment) => attachment.status === "uploaded" && attachment.fileId,
   );
+
+  // The compact composer grows with its text, up to a few lines.
+  useEffect(() => {
+    if (variant !== "compact") return;
+    const node = composerInputRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${Math.min(node.scrollHeight, 160)}px`;
+  }, [variant, inputText]);
 
   useEffect(() => {
     if (!isLoading && restoreComposerFocusRef.current) {
@@ -773,6 +834,7 @@ export default function ChatInputBox({
         text: userMessage,
         attachments: sendAttachments,
         knowledgeSpaceIds: [...knowledgeSpaceIds],
+        knowledgeMode,
         reasoningEffort: thinkingLevel === "auto" ? undefined : thinkingLevel,
         webSearchEnabled,
         mcpServerIds,
@@ -780,7 +842,6 @@ export default function ChatInputBox({
       });
       setInputText("");
       setAttachments([]);
-      setKnowledgeSpaceIds([]);
       onSent?.();
       return;
     }
@@ -805,7 +866,6 @@ export default function ChatInputBox({
     );
     previewUrlsRef.current.clear();
     setAttachments([]);
-    setKnowledgeSpaceIds([]);
     accumulatedRef.current = "";
     runningToolActivitiesRef.current.clear();
     activityArgsRef.current.clear();
@@ -833,10 +893,13 @@ export default function ChatInputBox({
       isStreaming: true,
     }, sessionId);
 
-    const cliContext = !local && desktopWorkspace
-      ? await window.agentCommonsDesktop?.getToolContext().catch(() => null)
-      : null;
+    const runWorkspace = launched?.workspaceRoot !== undefined ? launched.workspaceRoot : workspaceRemoved ? null : desktopWorkspace;
+    const runKnowledgeMode = launched?.knowledgeMode ?? knowledgeMode;
+    if (!local && sessionId) localStorage.setItem(`commons-chat-context:${sessionId}`, JSON.stringify({ workspaceRoot: runWorkspace, knowledgeMode: runKnowledgeMode, spaceIds: selectedKnowledgeSpaceIds }));
     try {
+      const cliContext = !local
+        ? await window.agentCommonsDesktop?.getToolContext(runWorkspace, sessionId)
+        : null;
       await stream({
         agentId,
         sessionId,
@@ -850,12 +913,13 @@ export default function ChatInputBox({
         attachments: messageAttachments.map((attachment) => ({ fileId: attachment.fileId })),
         computerRequest,
         knowledgeSpaceIds: selectedKnowledgeSpaceIds,
+        knowledgeMode: runKnowledgeMode,
         reasoningEffort: effort,
         webSearchEnabled: launched?.webSearchEnabled ?? webSearchEnabled,
         mcpServerIds: launched?.mcpServerIds ?? mcpServerIds,
         provenance,
         cliContext: cliContext ?? undefined,
-        localWorkspaceRoot: local ? (launched?.workspaceRoot !== undefined ? launched.workspaceRoot : workspaceRemoved ? null : desktopWorkspace ?? undefined) : undefined,
+        localWorkspaceRoot: runWorkspace,
         projectId: sessionId ? undefined : projectId,
       });
     } finally {
@@ -1061,11 +1125,187 @@ export default function ChatInputBox({
     };
   }, []);
 
+  const compact = variant === "compact";
+  const desktopAvailable = typeof window !== "undefined" && Boolean(window.agentCommonsDesktop);
+  const thinkingLabel = THINKING_LEVELS.find((level) => level.key === thinkingLevel)?.label ?? "Auto";
+  const chooseWorkspace = () =>
+    void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then((folder) => {
+      if (folder) {
+        workspaceRevision.current += 1;
+        setDesktopWorkspace(folder);
+        setWorkspaceRemoved(false);
+      }
+    });
+  const clearWorkspace = () => {
+    workspaceRevision.current += 1;
+    setDesktopWorkspace(null);
+    setWorkspaceRemoved(true);
+  };
+
+  const attachMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={!!isLoading}
+          title="Add photos & files"
+          aria-label="Add photos & files"
+          className={cn(
+            "text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40",
+            compact ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-full" : "rounded-lg p-1.5",
+          )}
+        >
+          <Plus className={compact ? "h-5 w-5" : "h-4 w-4"} strokeWidth={compact ? 1.75 : 2} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        side="top"
+        className="w-72"
+      >
+        <DropdownMenuItem onSelect={openFilePicker}>
+          <HardDriveUpload className="mr-2 h-4 w-4" />
+          Upload from device
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
+          <LibraryBig className="mr-2 h-4 w-4" />
+          Choose from Library
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Brain className="mr-2 h-4 w-4" />
+            Reference Knowledge
+            <span className="ml-auto mr-1 text-xs text-muted-foreground">
+              {knowledgeMode === "off" ? "Off" : knowledgeMode === "selected" ? `${knowledgeSpaceIds.length} selected` : "Auto"}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-64">
+            <DropdownMenuLabel>
+              <span className="block text-sm">
+                Knowledge Spaces
+              </span>
+              <span className="block text-[11px] font-normal text-muted-foreground">
+                Choose how this chat uses indexed knowledge
+              </span>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {(["auto", "selected", "off"] as const).map((mode) => <DropdownMenuCheckboxItem key={mode} checked={knowledgeMode === mode} onCheckedChange={() => { contextRevision.current += 1; setKnowledgeMode(mode); }}>{mode === "auto" ? "Automatic" : mode === "selected" ? "Selected spaces" : "Off"}</DropdownMenuCheckboxItem>)}
+            <DropdownMenuSeparator />
+            {knowledgeSpaces.map((space) => (
+              <DropdownMenuCheckboxItem
+                key={space.spaceId}
+                checked={knowledgeSpaceIds.includes(space.spaceId)}
+                onCheckedChange={(checked) =>
+                  (contextRevision.current += 1, setKnowledgeMode("selected"), setKnowledgeSpaceIds((current) =>
+                    checked
+                      ? [...new Set([...current, space.spaceId])]
+                      : current.filter(
+                          (id) => id !== space.spaceId,
+                        ),
+                  ))
+                }
+              >
+                <span className="min-w-0">
+                  <span className="block truncate">
+                    {space.name}
+                  </span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    {space.counts?.documents || 0} notes
+                  </span>
+                </span>
+              </DropdownMenuCheckboxItem>
+            ))}
+            {knowledgeLoading && (
+              <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading spaces
+              </div>
+            )}
+            {!knowledgeLoading && !knowledgeSpaces.length && (
+              <p className="px-2 py-3 text-xs text-muted-foreground">
+                No Knowledge Spaces available
+              </p>
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        {local && <DropdownMenuCheckboxItem checked={webSearchEnabled} onCheckedChange={(checked) => { void setChatWebSearch(checked === true); }}>
+          <Globe2 className="mr-2 h-4 w-4" />
+          <span>Web search</span>
+        </DropdownMenuCheckboxItem>}
+        {local && webSearchConfigured && <DropdownMenuItem onSelect={() => { setTimeout(openWebSearchSettings, 0); }} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
+        {local && <DropdownMenuSub>
+          <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />Connected tools</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-56">
+            <DropdownMenuLabel>Use in this chat</DropdownMenuLabel>
+            {mcpServers.filter((server) => server.enabled).map((server) => <DropdownMenuCheckboxItem key={server.id} checked={mcpServerIds.includes(server.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, server.id])] : current.filter((id) => id !== server.id))}>{server.name} · {server.mode === "read" ? "Read" : "Write"}</DropdownMenuCheckboxItem>)}
+            {connectedApps.map((app) => <DropdownMenuCheckboxItem key={app.id} disabled={!app.connected && !mcpServerIds.includes(app.id)} checked={mcpServerIds.includes(app.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, app.id])] : current.filter((id) => id !== app.id))}>{app.name}{!app.connected ? " · Not connected" : ""}</DropdownMenuCheckboxItem>)}
+            {!connectedApps.length && !mcpServers.some((server) => server.enabled) && <p className="px-2 py-2 text-xs text-muted-foreground">Set up a connector in Settings.</p>}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>}
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ShieldCheck className="mr-2 h-4 w-4" />
+            Provenance
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-72">
+            <DropdownMenuLabel>Provenance for new runs</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={provenance.mode} onValueChange={(mode) => updateProvenance({ ...provenance, mode: mode as ProvenancePreferences["mode"] })}>
+              <DropdownMenuRadioItem value="metadata">Metadata only</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="full">Full disclosure</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="off">Off</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem checked={provenance.onchain} disabled={provenance.mode === "off"} onCheckedChange={(checked) => updateProvenance({ ...provenance, onchain: checked === true })}>
+              Request on-chain anchor
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        {compact && (canUseComputer || !hideThinking || desktopAvailable) && <DropdownMenuSeparator />}
+        {compact && canUseComputer && (
+          <DropdownMenuCheckboxItem checked={computerEnabled} onCheckedChange={(checked) => setComputerEnabled(checked === true)}>
+            <Monitor className="mr-2 h-4 w-4" />
+            Use agent&rsquo;s computer
+          </DropdownMenuCheckboxItem>
+        )}
+        {compact && !hideThinking && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Gauge className="mr-2 h-4 w-4" />
+              Thinking
+              <span className="ml-auto mr-1 text-xs text-muted-foreground">{thinkingLabel}</span>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-56">
+              <DropdownMenuRadioGroup value={thinkingLevel} onValueChange={(level) => setThinkingLevel(level as ThinkingLevel)}>
+                {THINKING_LEVELS.map((level) => (
+                  <DropdownMenuRadioItem key={level.key} value={level.key}>
+                    <span className="min-w-0">
+                      <span className="block leading-tight">{level.label}</span>
+                      <span className="block text-xs text-muted-foreground">{level.detail}</span>
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
+        {compact && desktopAvailable && (
+          <DropdownMenuItem onSelect={chooseWorkspace}>
+            <FolderOpen className="mr-2 h-4 w-4" />
+            {desktopWorkspace ? "Change folder" : "Work in a folder"}
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
     <ComposerSurface
       ref={containerRef}
       className={cn(
         "relative rounded-2xl bg-white border border-stone-300 shadow-composer transition-colors",
+        compact && "rounded-[22px] border-stone-200 shadow-card",
         isDragging && "border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20",
       )}
       onDragOver={(event) => {
@@ -1112,7 +1352,8 @@ export default function ChatInputBox({
           <form onSubmit={saveWebSearchSettings} className="space-y-4">
             <label className="block space-y-1.5 text-sm">
               <span>Provider</span>
-              <select value={webSearchProvider} onChange={(event) => { setWebSearchProvider(event.target.value as "brave" | "searxng"); setWebSearchApiKey(""); }} className="w-full rounded-md border border-border bg-background px-3 py-2">
+              <select value={webSearchProvider} onChange={(event) => { setWebSearchProvider(event.target.value as "managed" | "brave" | "searxng"); setWebSearchApiKey(""); }} className="w-full rounded-md border border-border bg-background px-3 py-2">
+                <option value="managed">Agent Commons · ready to use</option>
                 <option value="brave">Brave Search · API key</option>
                 <option value="searxng">SearXNG · your endpoint</option>
               </select>
@@ -1121,10 +1362,11 @@ export default function ChatInputBox({
               <span>Search endpoint</span>
               <input type="url" required placeholder="https://search.example.com" value={webSearchUrl} onChange={(event) => setWebSearchUrl(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
             </label>}
-            <label className="block space-y-1.5 text-sm">
+            {webSearchProvider !== "managed" && <label className="block space-y-1.5 text-sm">
               <span>API key {webSearchProvider === "searxng" && <span className="text-muted-foreground">(if required)</span>}</span>
               <input type="password" required={webSearchProvider === "brave"} autoComplete="off" value={webSearchApiKey} onChange={(event) => setWebSearchApiKey(event.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2" />
-            </label>
+            </label>}
+            {webSearchProvider === "managed" && <p className="text-xs text-muted-foreground">No API key or account required. Approved queries go to Agent Commons Search.</p>}
             {webSearchError && <p role="alert" className="text-xs text-destructive">{webSearchError}</p>}
             <DialogFooter>
               <button type="button" onClick={() => setWebSearchDialogOpen(false)} className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted">Cancel</button>
@@ -1197,6 +1439,24 @@ export default function ChatInputBox({
           })}
         </div>
       )}
+      {compact && voice.state === "idle" && ((canUseComputer && computerEnabled) || (!hideThinking && thinkingLevel !== "auto") || desktopWorkspace) && (
+        <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+          {canUseComputer && computerEnabled && (
+            <ComposerOptionChip icon={Monitor} label="Agent computer" onRemove={() => setComputerEnabled(false)} disabled={!!isLoading} />
+          )}
+          {!hideThinking && thinkingLevel !== "auto" && (
+            <ComposerOptionChip icon={Gauge} label={thinkingLabel} onRemove={() => setThinkingLevel("auto")} disabled={!!isLoading} />
+          )}
+          {desktopWorkspace && (
+            <ComposerOptionChip
+              icon={FolderOpen}
+              label={desktopWorkspace.split(/[\\/]/).filter(Boolean).at(-1) ?? desktopWorkspace}
+              onRemove={clearWorkspace}
+              disabled={!!isLoading}
+            />
+          )}
+        </div>
+      )}
       {voice.state !== "idle" ? (
         <VoiceRecorderPanel
           state={voice.state}
@@ -1205,6 +1465,66 @@ export default function ChatInputBox({
           onCancel={voice.cancel}
           onAccept={voice.accept}
         />
+      ) : compact ? (
+        <>
+          {steerError && <p className="px-4 pt-2 text-xs text-red-500">{steerError}</p>}
+          {voiceError && <p className="px-4 pt-2 text-xs text-red-500">{voiceError}</p>}
+          <div className="flex items-end gap-1 p-1.5">
+            {attachMenu}
+            <ComposerTextArea
+              ref={composerInputRef}
+              rows={1}
+              aria-label="Message your agent"
+              autoCapitalize="sentences"
+              autoCorrect="on"
+              spellCheck
+              enterKeyHint="send"
+              placeholder={isRunning ? "Add a prompt while the agent works…" : placeholder}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing &&
+                  e.nativeEvent.keyCode !== 229
+                ) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              disabled={disabled || launching}
+              className="h-9 max-h-40 min-h-9 flex-1 rounded-none px-1.5 py-2 leading-5"
+            />
+            {footerLeft && <div className="min-w-0 self-center">{footerLeft}</div>}
+            {footerEnd}
+            <button
+              type="button"
+              onClick={() => {
+                setVoiceError(null);
+                voice.start();
+              }}
+              disabled={!!isLoading || isUploading || (!local && outOfCredits)}
+              title="Dictate a message"
+              aria-label="Dictate a message"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            >
+              <Mic className="h-[18px] w-[18px]" strokeWidth={1.75} />
+            </button>
+            <ComposerSendButton
+              onClick={() => handleSend()}
+              busy={Boolean((isLoading && !isRunning) || isUploading)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full p-0"
+              disabled={
+                (!inputText.trim() && uploadedAttachments.length === 0) ||
+                (isLoading && !isRunning) ||
+                (isRunning && !inputText.trim()) ||
+                isUploading ||
+                (!local && outOfCredits)
+              }
+            />
+          </div>
+        </>
       ) : (
         <>
           <ComposerTextArea
@@ -1236,123 +1556,7 @@ export default function ChatInputBox({
           <div className="flex justify-between items-center px-2 pb-2">
             {(
               <div className="flex min-w-0 items-center gap-1">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      disabled={!!isLoading}
-                      title="Add photos & files"
-                      aria-label="Add photos & files"
-                      className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    side="top"
-                    className="w-72"
-                  >
-                    <DropdownMenuItem onSelect={openFilePicker}>
-                      <HardDriveUpload className="mr-2 h-4 w-4" />
-                      Upload from device
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
-                      <LibraryBig className="mr-2 h-4 w-4" />
-                      Choose from Library
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <Brain className="mr-2 h-4 w-4" />
-                        Reference Knowledge
-                        {knowledgeSpaceIds.length > 0 && (
-                          <span className="ml-auto mr-1 text-xs text-teal-700">
-                            {knowledgeSpaceIds.length}
-                          </span>
-                        )}
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-64">
-                        <DropdownMenuLabel>
-                          <span className="block text-sm">
-                            Knowledge Spaces
-                          </span>
-                          <span className="block text-[11px] font-normal text-muted-foreground">
-                            Use selected spaces for this message
-                          </span>
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {knowledgeSpaces.map((space) => (
-                          <DropdownMenuCheckboxItem
-                            key={space.spaceId}
-                            checked={knowledgeSpaceIds.includes(space.spaceId)}
-                            onCheckedChange={(checked) =>
-                              setKnowledgeSpaceIds((current) =>
-                                checked
-                                  ? [...new Set([...current, space.spaceId])]
-                                  : current.filter(
-                                      (id) => id !== space.spaceId,
-                                    ),
-                              )
-                            }
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate">
-                                {space.name}
-                              </span>
-                              <span className="block text-[11px] text-muted-foreground">
-                                {space.counts?.documents || 0} notes
-                              </span>
-                            </span>
-                          </DropdownMenuCheckboxItem>
-                        ))}
-                        {knowledgeLoading && (
-                          <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Loading spaces
-                          </div>
-                        )}
-                        {!knowledgeLoading && !knowledgeSpaces.length && (
-                          <p className="px-2 py-3 text-xs text-muted-foreground">
-                            No Knowledge Spaces available
-                          </p>
-                        )}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                    {local && <DropdownMenuCheckboxItem checked={webSearchEnabled} onCheckedChange={(checked) => { void setChatWebSearch(checked === true); }}>
-                      <Globe2 className="mr-2 h-4 w-4" />
-                      <span>Web search</span>
-                    </DropdownMenuCheckboxItem>}
-                    {local && webSearchConfigured && <DropdownMenuItem onSelect={openWebSearchSettings} className="pl-8 text-xs text-muted-foreground">Configure web search…</DropdownMenuItem>}
-                    {local && <DropdownMenuSub>
-                      <DropdownMenuSubTrigger><Plug className="mr-2 h-4 w-4" />MCP connectors</DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="min-w-56">
-                        <DropdownMenuLabel>Use in this chat</DropdownMenuLabel>
-                        {mcpServers.filter((server) => server.enabled).map((server) => <DropdownMenuCheckboxItem key={server.id} checked={mcpServerIds.includes(server.id)} onCheckedChange={(checked) => setMcpServerIds((current) => checked === true ? [...new Set([...current, server.id])] : current.filter((id) => id !== server.id))}>{server.name} · {server.mode === "read" ? "Read" : "Write"}</DropdownMenuCheckboxItem>)}
-                        {!mcpServers.some((server) => server.enabled) && <p className="px-2 py-2 text-xs text-muted-foreground">Set up a connector in Settings.</p>}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <ShieldCheck className="mr-2 h-4 w-4" />
-                        Provenance
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-72">
-                        <DropdownMenuLabel>Provenance for new runs</DropdownMenuLabel>
-                        <DropdownMenuRadioGroup value={provenance.mode} onValueChange={(mode) => updateProvenance({ ...provenance, mode: mode as ProvenancePreferences["mode"] })}>
-                          <DropdownMenuRadioItem value="metadata">Metadata only</DropdownMenuRadioItem>
-                          <DropdownMenuRadioItem value="full">Full disclosure</DropdownMenuRadioItem>
-                          <DropdownMenuRadioItem value="off">Off</DropdownMenuRadioItem>
-                        </DropdownMenuRadioGroup>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuCheckboxItem checked={provenance.onchain} disabled={provenance.mode === "off"} onCheckedChange={(checked) => updateProvenance({ ...provenance, onchain: checked === true })}>
-                          Request on-chain anchor
-                        </DropdownMenuCheckboxItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {attachMenu}
                 {canUseComputer && (
                   <button
                     type="button"
@@ -1382,7 +1586,7 @@ export default function ChatInputBox({
                   <div className="flex min-w-0 items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then((folder) => { if (folder) { setDesktopWorkspace(folder); setWorkspaceRemoved(false); } })}
+                      onClick={() => void (local ? window.agentCommonsLocal?.chooseWorkspace() : window.agentCommonsDesktop?.chooseWorkspace())?.then((folder) => { if (folder) { workspaceRevision.current += 1; setDesktopWorkspace(folder); setWorkspaceRemoved(false); } })}
                       disabled={!!isLoading}
                       title={desktopWorkspace ?? "Choose a local workspace for agent file access"}
                       aria-label="Choose local workspace"
@@ -1391,7 +1595,7 @@ export default function ChatInputBox({
                       <FolderOpen className="h-4 w-4 shrink-0" />
                       {desktopWorkspace && <span className="truncate text-xs">{desktopWorkspace.split(/[\\/]/).filter(Boolean).at(-1)}</span>}
                     </button>
-                    {desktopWorkspace && <button type="button" disabled={!!isLoading} onClick={() => { setDesktopWorkspace(null); setWorkspaceRemoved(true); }} title="Remove folder from this chat" aria-label="Remove folder from this chat" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>}
+                    {desktopWorkspace && <button type="button" disabled={!!isLoading} onClick={() => { workspaceRevision.current += 1; setDesktopWorkspace(null); setWorkspaceRemoved(true); }} title="Remove folder from this chat" aria-label="Remove folder from this chat" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>}
                   </div>
                 )}
                 {footerLeft && <div className="ml-1 min-w-0">{footerLeft}</div>}
@@ -1487,6 +1691,34 @@ export default function ChatInputBox({
         </>
       )}
     </ComposerSurface>
+  );
+}
+
+function ComposerOptionChip({
+  icon: Icon,
+  label,
+  onRemove,
+  disabled,
+}: {
+  icon: typeof Monitor;
+  label: string;
+  onRemove: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <span className="flex max-w-full items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs text-foreground/80">
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span className="max-w-40 truncate">{label}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={disabled}
+        className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-40"
+        aria-label={`Turn off ${label}`}
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </span>
   );
 }
 

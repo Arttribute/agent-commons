@@ -212,7 +212,7 @@ export default function CreateAgentPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-page">
-      <div className="flex items-center gap-2 px-6 pb-3 pt-5">
+      <div className="flex items-center gap-2 px-3 pb-3 pt-4 sm:px-6 sm:pt-5">
         <Button
           variant="ghost"
           size="icon"
@@ -222,7 +222,7 @@ export default function CreateAgentPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <PageTitle title="Create New Agent" />
+        <PageTitle title="New agent" />
       </div>
 
       <UpgradeDialog
@@ -235,7 +235,7 @@ export default function CreateAgentPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <form
           onSubmit={handleSubmit}
-          className="mx-auto grid w-full max-w-xl gap-6 px-6 pb-12 pt-4"
+          className="mx-auto grid w-full max-w-xl gap-6 px-4 pb-12 pt-4 sm:px-6"
         >
           {error && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -372,7 +372,7 @@ export default function CreateAgentPage() {
             className="mt-2 w-full gap-1.5"
           >
             {creating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {creating ? "Creating…" : "Create Agent"}
+            {creating ? "Creating…" : "Create agent"}
           </Button>
         </form>
       </div>

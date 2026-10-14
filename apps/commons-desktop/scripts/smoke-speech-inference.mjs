@@ -23,7 +23,8 @@ try {
     samples[index] = wav.readInt16LE(44 + index * 2) / 32768;
   }
   const transcript = await transcribeLocalAudio(samples, storage, "Xenova/whisper-base");
-  assert.match(transcript.toLowerCase(), /\bblue\b/, `Local transcription missed the spoken phrase: ${transcript}`);
+  assert.match(transcript.toLowerCase(), /\b(?:sky|skies)\b/, `Local transcription missed the subject: ${transcript}`);
+  assert.match(transcript.toLowerCase(), /\b(?:blue|blew)\b/, `Local transcription missed the spoken phrase: ${transcript}`);
   console.log(`Verified local voice and transcription inference on ${process.platform}-${process.arch}: ${transcript}`);
 } finally {
   rmSync(storage, { recursive: true, force: true });

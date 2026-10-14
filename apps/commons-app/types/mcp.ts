@@ -1,6 +1,6 @@
 // MCP (Model Context Protocol) types matching backend schema
 
-export type ConnectionType = "stdio" | "sse";
+export type ConnectionType = "stdio" | "sse" | "http" | "streamable-http";
 export type ServerStatus = "connected" | "disconnected" | "error";
 
 export interface StdioConfig {
@@ -11,6 +11,7 @@ export interface StdioConfig {
 
 export interface SseConfig {
   url: string;
+  apiKey?: string;
 }
 
 export type ConnectionConfig = StdioConfig | SseConfig;
@@ -90,6 +91,7 @@ export interface CreateMcpServerRequest {
     args?: string[];
     env?: Record<string, string>;
     url?: string;
+    apiKey?: string;
   };
   isPublic?: boolean;
   tags?: string[];

@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import speakerVectors from "./speaker-vectors.json";
 import { SPEECHT5_REVISION, SPEECHT5_VOCODER_REVISION, SPEECHT5_WEIGHT_FILES } from "./local-speech-model-revisions";
-import { assertSpeechDownloadFits, repairSpeechArtifacts, verifySpeechArtifacts } from "./local-speech-model-cache";
+import { assertSpeechDownloadFits, prepareSpeechArtifacts, repairSpeechArtifacts, verifySpeechArtifacts } from "./local-speech-model-cache";
 
 export const LOCAL_VOICES = [
   { id: "female", label: "SpeechT5 · female" },
@@ -119,6 +119,7 @@ export class LocalVoiceManager {
         mkdirSync(cache, { recursive: true, mode: 0o700 });
         await repairSpeechArtifacts(cache, SPEECHT5_WEIGHT_FILES);
         assertSpeechDownloadFits(cache, SPEECHT5_WEIGHT_FILES);
+        await prepareSpeechArtifacts(cache, SPEECHT5_WEIGHT_FILES);
         // The pinned weights are the 8-bit `*_quantized.onnx` files.
         const speechPipeline = await pipeline("text-to-speech", "Xenova/speecht5_tts", {
           dtype: "q8",

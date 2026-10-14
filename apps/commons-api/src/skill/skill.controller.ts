@@ -70,7 +70,7 @@ export class SkillController {
       data: await this.skillService.assignToAgent(
         id,
         agentId,
-        body.isEnabled !== false,
+        body?.isEnabled !== false,
         principalFrom(req),
       ),
     };

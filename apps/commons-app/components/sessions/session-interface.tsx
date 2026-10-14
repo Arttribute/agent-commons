@@ -66,6 +66,7 @@ interface Message {
 }
 
 interface SessionInterfaceImprovedProps {
+  hostActionUrl?: string | null;
   height?: string;
   agent: CommonAgent | null;
   session: any;
@@ -105,6 +106,18 @@ interface SessionInterfaceImprovedProps {
   /** Context appended to messages in Private Local (see ChatInputBox). */
   composerLocalContext?: string;
   composerPlaceholder?: string;
+  /** `compact` keeps the one-line composer pinned to the bottom, chat-app style. */
+  composerVariant?: "default" | "compact";
+  /** Shown just above the composer, e.g. the project picker for a new chat. */
+  composerAccessory?: React.ReactNode;
+  /**
+   * A first message still on its way (the session is being created or
+   * loaded). It shows as the opening turn with the agent thinking, exactly
+   * like a live run, so starting a chat never flashes an empty screen.
+   */
+  pendingLaunch?: ComposerLaunch | null;
+  /** Show when each agent turn finished, next to the agent's name. */
+  showResponseTimes?: boolean;
 }
 
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
@@ -142,6 +155,7 @@ function ExpandableToolCard({ tools }: { tools: Message[] }) {
 }
 
 export default function SessionInterfaceImproved({
+  hostActionUrl,
   height,
   agent,
   session,
@@ -168,8 +182,16 @@ export default function SessionInterfaceImproved({
   onComposerSent,
   composerLocalContext,
   composerPlaceholder,
+  composerVariant = "default",
+  composerAccessory,
+  pendingLaunch,
+  showResponseTimes = false,
 }: SessionInterfaceImprovedProps) {
   const { mode } = useWorkspaceMode();
+  useEffect(() => {
+    if (mode === "private-local" && agentId) void window.agentCommonsLocal?.warmModel?.(agentId).catch(() => undefined);
+  }, [mode, agentId, agent?.modelId]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -189,7 +211,7 @@ export default function SessionInterfaceImproved({
   const [openArtifact, setOpenArtifact] = useState<ArtifactRef | null>(null);
 
   // Surface width drives the empty-state layout: wide surfaces center the
-  // composer with one starter row; narrow ones (mobile, the copilot panel)
+  // composer with one starter row; narrow ones (phones, the copilot panel)
   // keep the composer at the bottom and stack starters one per row.
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [isNarrowSurface, setIsNarrowSurface] = useState(false);
@@ -198,7 +220,7 @@ export default function SessionInterfaceImproved({
     if (!node || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect?.width ?? 0;
-      setIsNarrowSurface(width > 0 && width < 480);
+      setIsNarrowSurface(width > 0 && width < 640);
     });
     observer.observe(node);
     return () => observer.disconnect();
@@ -232,6 +254,33 @@ export default function SessionInterfaceImproved({
     }
     return items;
   }, [messages]);
+
+  // When each agent turn finished: the time of its last reply, keyed by the
+  // message that shows the agent's name. Turns still streaming get none.
+  const turnFinishedAt = useMemo(() => {
+    const finished = new Map<number, string>();
+    if (!showResponseTimes) return finished;
+    let headerIndex: number | null = null;
+    let lastTimestamp: string | null = null;
+    let streaming = false;
+    const close = () => {
+      if (headerIndex !== null && lastTimestamp && !streaming) finished.set(headerIndex, lastTimestamp);
+      headerIndex = null;
+      lastTimestamp = null;
+      streaming = false;
+    };
+    groupedItems.forEach((item, index) => {
+      if (item.type !== "message") return;
+      const role = item.message.role;
+      if (role === "user" || role === "human") return close();
+      if (role !== "ai") return;
+      if (headerIndex === null) headerIndex = index;
+      lastTimestamp = item.message.timestamp;
+      streaming = streaming || Boolean(item.message.isStreaming);
+    });
+    close();
+    return finished;
+  }, [groupedItems, showResponseTimes]);
 
   // Get the last message content for tracking streaming updates
   const lastMessageContent = messages[messages.length - 1]?.content;
@@ -457,7 +506,12 @@ export default function SessionInterfaceImproved({
     });
   }, []);
 
-  const composer = (
+  const composer = hostActionUrl ? (
+    <div className="rounded-xl border border-border bg-muted p-4 text-sm">
+      <p>This conversation runs in Common Business. Review actions and continue there.</p>
+      <a href={hostActionUrl} className="mt-2 inline-block font-medium underline">Open business copilot</a>
+    </div>
+  ) : (
     <ChatInputBox
       agentId={agentId}
       sessionId={sessionId}
@@ -478,11 +532,14 @@ export default function SessionInterfaceImproved({
       onSent={onComposerSent}
       localContext={composerLocalContext}
       placeholder={composerPlaceholder}
+      variant={composerVariant}
     />
   );
 
+  const pendingFirst = messages.length === 0 ? (pendingLaunch ?? initialLaunch ?? null) : null;
+  // Chat-app surfaces keep the composer at the bottom, like any messenger.
   const showCenteredEmptyState =
-    !isNarrowSurface && !isLoadingSession && messages.length === 0;
+    composerVariant !== "compact" && !isNarrowSurface && !isLoadingSession && messages.length === 0 && !pendingFirst;
 
   return (
     <div
@@ -530,6 +587,7 @@ export default function SessionInterfaceImproved({
                     </h2>
                   )}
                 </div>
+                {composerAccessory && <div className="mb-2">{composerAccessory}</div>}
                 {composer}
                 {conversationStarters.length > 0 && (
                   <div className="mt-3 grid w-full grid-flow-col auto-cols-fr gap-2">
@@ -555,34 +613,68 @@ export default function SessionInterfaceImproved({
               className="container mx-auto max-w-[46rem] px-4 pb-6 pt-4"
               ref={scrollRef}
             >
-              {isLoadingSession && messages.length === 0 ? null : messages.length === 0 &&
-                (greeting || conversationStarters.length > 0) ? (
+              {pendingFirst ? (
+                <>
+                  <InitiatorMessage
+                    message={pendingFirst.text}
+                    timestamp={new Date().toISOString()}
+                    metadata={pendingFirst.attachments.length ? { attachments: pendingFirst.attachments } : undefined}
+                  />
+                  <AgentOutput
+                    content=""
+                    isStreaming
+                    agentName={agent?.name}
+                    agentAvatar={(agent as any)?.avatar}
+                    showAgentHeader
+                    sessionId={sessionId}
+                  />
+                  <div ref={bottomRef} />
+                </>
+              ) : isLoadingSession && messages.length === 0 ? null : messages.length === 0 &&
+                (greeting || conversationStarters.length > 0 || composerVariant === "compact") ? (
                 <div className="flex min-h-[45vh] flex-col justify-center py-8">
                   <div className="space-y-6">
-                    <div className="flex flex-col items-center gap-4 text-center">
-                      <AgentAvatar
-                        name={agent?.name}
-                        src={(agent as any)?.avatar}
-                        size={56}
-                      />
-                      {greeting && (
-                        <h2 className="text-xl font-normal tracking-tight text-foreground sm:text-2xl">
-                          {greeting}
-                        </h2>
-                      )}
-                    </div>
+                    {composerVariant === "compact" ? (
+                      // A new chat introduces the agent, like opening a contact.
+                      <div className="flex flex-col items-center gap-3 text-center">
+                        <AgentAvatar name={agent?.name} src={(agent as any)?.avatar} size={64} />
+                        <div className="max-w-sm">
+                          <p className="text-base font-medium">{agent?.name}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {greeting || (agent as any)?.description || "Send a message to start."}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-4 text-center">
+                        <AgentAvatar
+                          name={agent?.name}
+                          src={(agent as any)?.avatar}
+                          size={56}
+                        />
+                        {greeting && (
+                          <h2 className="text-xl font-normal tracking-tight text-foreground sm:text-2xl">
+                            {greeting}
+                          </h2>
+                        )}
+                      </div>
+                    )}
                     {conversationStarters.length > 0 && (
                       <div
-                        // Narrow surfaces stack starters one per row; wide
-                        // surfaces use the centered layout above instead.
-                        className="grid w-full grid-cols-1 gap-2"
+                        // Narrow surfaces stack starters one per row; chat
+                        // surfaces wrap them as pills; wide surfaces use the
+                        // centered layout above instead.
+                        className={composerVariant === "compact" ? "flex flex-wrap justify-center gap-2" : "grid w-full grid-cols-1 gap-2"}
                       >
                         {conversationStarters.map((starter) => (
                           <button
                             key={starter.label}
                             type="button"
                             title={starter.prompt}
-                            className="min-w-0 rounded-xl border border-border bg-white px-3 py-2.5 text-center text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground"
+                            className={cn(
+                              "min-w-0 border border-border bg-white text-center text-sm text-muted-foreground shadow-card transition-colors hover:bg-muted hover:text-foreground",
+                              composerVariant === "compact" ? "max-w-[16rem] rounded-full px-3.5 py-1.5" : "rounded-xl px-3 py-2.5",
+                            )}
                             onClick={() => setInputText(starter.prompt)}
                           >
                             <span className="block truncate">
@@ -647,6 +739,7 @@ export default function SessionInterfaceImproved({
                               agentName={agent?.name}
                               agentAvatar={(agent as any)?.avatar}
                               showAgentHeader={showAgentHeader}
+                              respondedAt={showAgentHeader ? turnFinishedAt.get(index) : undefined}
                               onOpenArtifact={(artifact) => {
                                 if (mode === "private-local") {
                                   const localConversationId = message.metadata?.localConversationId ?? sessionId;
@@ -659,6 +752,7 @@ export default function SessionInterfaceImproved({
                               }}
                               sessionId={sessionId}
                               onAppRespond={sendAppResponse}
+                              onResourcesApproved={() => setComposerPrompt({ id: `resource-approval:${Date.now()}`, text: "I approved the temporary computer resources. Continue the task, wait for the computer to be ready and verify available hardware before using it. Release the temporary resources when finished.", mode: "send" })}
                             />
                           );
                         }
@@ -680,7 +774,8 @@ export default function SessionInterfaceImproved({
         )}
 
         {!showCenteredEmptyState && (
-          <div className="container mx-auto w-full max-w-[46rem] shrink-0 px-4 pb-4">
+          <div className="container mx-auto w-full max-w-[46rem] shrink-0 px-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:px-4 sm:pb-4">
+            {composerAccessory && <div className="mb-2">{composerAccessory}</div>}
             {composer}
           </div>
         )}

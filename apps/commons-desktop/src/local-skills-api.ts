@@ -9,7 +9,7 @@ function skillView(skill: LocalSkill, runtime: PrivateLocalRuntime) {
   const agents = runtime.state().agents;
   return {
     skillId: skill.id, slug: skill.slug, name: skill.name, description: skill.description,
-    instructions: skill.instructions, tools: [], triggers: skill.triggers,
+    instructions: skill.instructions, tools: skill.tools ?? [], triggers: skill.triggers,
     ownerId: runtime.state().account?.userId ?? "local-workspace", ownerType: "user",
     isPublic: false, isActive: true, version: "1.0.0", tags: skill.tags,
     icon: null, usageCount: 0, source: "local", sourceUrl: null,
@@ -32,6 +32,7 @@ export function handleLocalSkillsApi(runtime: PrivateLocalRuntime, url: URL, met
         const state = runtime.saveSkill({
           slug: String(body.slug ?? ""), name: String(body.name ?? ""), description: String(body.description ?? ""),
           instructions: String(body.instructions ?? ""),
+          tools: Array.isArray(body.tools) ? body.tools.map(String) : [],
           triggers: Array.isArray(body.triggers) ? body.triggers.map(String) : [],
           tags: Array.isArray(body.tags) ? body.tags.map(String) : [],
         });
@@ -62,6 +63,7 @@ export function handleLocalSkillsApi(runtime: PrivateLocalRuntime, url: URL, met
           description: String(body.description ?? skill.description), instructions: String(body.instructions ?? skill.instructions),
           triggers: Array.isArray(body.triggers) ? body.triggers.map(String) : skill.triggers,
           tags: Array.isArray(body.tags) ? body.tags.map(String) : skill.tags,
+          tools: Array.isArray(body.tools) ? body.tools.map(String) : skill.tools,
         });
         return ok(skillView(state.skills!.find((entry) => entry.id === skill.id)!, runtime));
       }

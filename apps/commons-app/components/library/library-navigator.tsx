@@ -11,6 +11,7 @@ import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { useCanvasStore } from "@/stores/canvas-store";
 import { useSecondaryNav } from "@/stores/secondary-nav-store";
 import { cn } from "@/lib/utils";
+import { secondaryPaneWidth } from "@/components/layout/secondary-pane";
 
 type Item = {
   itemId: string;
@@ -65,7 +66,7 @@ export function LibraryNavigator() {
   return (
     <nav
       aria-label="Library files"
-      className="hidden h-screen w-[260px] shrink-0 flex-col border-r border-border bg-white md:flex"
+      className={cn("hidden h-full shrink-0 flex-col border-r border-border bg-white md:flex", secondaryPaneWidth)}
     >
       <div className="flex h-14 shrink-0 items-center gap-1 px-3">
         <Link

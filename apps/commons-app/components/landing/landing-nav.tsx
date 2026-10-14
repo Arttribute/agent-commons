@@ -48,7 +48,7 @@ export function LandingNav() {
         <div className="flex items-center gap-2.5">
           {signedIn ? (
             <Link
-              href="/studio/agents"
+              href="/new"
               className="flex items-center gap-1.5 rounded-lg bg-stone-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-700"
             >
               Open studio

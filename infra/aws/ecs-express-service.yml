@@ -43,6 +43,16 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: Inject Google OAuth app credentials after both keys exist in the runtime secret.
+  HubSpotMcpEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject HubSpot MCP connector credentials after both keys exist in the runtime secret.
+  HubSpotOAuthEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject HubSpot OAuth app credentials after both keys exist in the runtime secret.
   GitHubOAuthEnabled:
     Type: String
     Default: "false"
@@ -63,6 +73,26 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: Inject the X OAuth app credentials after both keys exist in the runtime secret.
+  AnthropicModelsEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject ANTHROPIC_API_KEY when it exists in the runtime secret.
+  GoogleModelsEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject GOOGLE_API_KEY when it exists in the runtime secret.
+  GroqModelsEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject GROQ_API_KEY when it exists in the runtime secret.
+  MistralModelsEnabled:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Inject MISTRAL_API_KEY when it exists in the runtime secret.
   GoogleMediaEnabled:
     Type: String
     Default: "false"
@@ -175,10 +205,17 @@ Parameters:
 Conditions:
   IsProduction: !Equals [!Ref Environment, production]
   IsGoogleOAuthEnabled: !Equals [!Ref GoogleOAuthEnabled, "true"]
+  IsHubSpotMcpEnabled: !Equals [!Ref HubSpotMcpEnabled, "true"]
+  IsHubSpotOAuthEnabled: !Equals [!Ref HubSpotOAuthEnabled, "true"]
   IsGitHubOAuthEnabled: !Equals [!Ref GitHubOAuthEnabled, "true"]
   IsSlackOAuthEnabled: !Equals [!Ref SlackOAuthEnabled, "true"]
   IsCanvaOAuthEnabled: !Equals [!Ref CanvaOAuthEnabled, "true"]
   IsXOAuthEnabled: !Equals [!Ref XOAuthEnabled, "true"]
+  IsAnthropicModelsEnabled: !Equals [!Ref AnthropicModelsEnabled, "true"]
+  IsGoogleModelsEnabled: !Equals [!Ref GoogleModelsEnabled, "true"]
+  IsGroqModelsEnabled: !Equals [!Ref GroqModelsEnabled, "true"]
+  IsMistralModelsEnabled: !Equals [!Ref MistralModelsEnabled, "true"]
+  IsGoogleApiEnabled: !Or [!Condition IsGoogleModelsEnabled, !Condition IsGoogleMediaEnabled]
   IsGoogleMediaEnabled: !Equals [!Ref GoogleMediaEnabled, "true"]
   IsKlingMediaEnabled: !Equals [!Ref KlingMediaEnabled, "true"]
   IsBytePlusMediaEnabled: !Equals [!Ref BytePlusMediaEnabled, "true"]
@@ -237,6 +274,10 @@ Resources:
             Value: production
           - Name: APP_ENV
             Value: !Ref Environment
+          - Name: COMMON_OS_GPU_RUNTIME_CLASS
+            Value: !If [IsProduction, '', commons-staging-gpu]
+          - Name: COMMON_OS_PERFORMANCE_RUNTIME_CLASS
+            Value: !If [IsProduction, '', commons-staging-performance]
           - Name: HOST
             Value: 0.0.0.0
           - Name: LOG_LEVEL
@@ -355,7 +396,22 @@ Resources:
           - Name: OPENAI_API_KEY
             ValueFrom: !Sub "${RuntimeSecretArn}:OPENAI_API_KEY::"
           - !If
-            - IsGoogleMediaEnabled
+            - IsAnthropicModelsEnabled
+            - Name: ANTHROPIC_API_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:ANTHROPIC_API_KEY::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsGroqModelsEnabled
+            - Name: GROQ_API_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:GROQ_API_KEY::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsMistralModelsEnabled
+            - Name: MISTRAL_API_KEY
+              ValueFrom: !Sub "${RuntimeSecretArn}:MISTRAL_API_KEY::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsGoogleApiEnabled
             - Name: GOOGLE_API_KEY
               ValueFrom: !Sub "${RuntimeSecretArn}:GOOGLE_API_KEY::"
             - !Ref AWS::NoValue
@@ -453,6 +509,26 @@ Resources:
             - IsGoogleOAuthEnabled
             - Name: GOOGLE_OAUTH_CLIENT_SECRET
               ValueFrom: !Sub "${RuntimeSecretArn}:GOOGLE_OAUTH_CLIENT_SECRET::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsHubSpotMcpEnabled
+            - Name: HUBSPOT_MCP_CLIENT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:HUBSPOT_MCP_CLIENT_ID::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsHubSpotMcpEnabled
+            - Name: HUBSPOT_MCP_CLIENT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:HUBSPOT_MCP_CLIENT_SECRET::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsHubSpotOAuthEnabled
+            - Name: HUBSPOT_OAUTH_CLIENT_ID
+              ValueFrom: !Sub "${RuntimeSecretArn}:HUBSPOT_OAUTH_CLIENT_ID::"
+            - !Ref AWS::NoValue
+          - !If
+            - IsHubSpotOAuthEnabled
+            - Name: HUBSPOT_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${RuntimeSecretArn}:HUBSPOT_OAUTH_CLIENT_SECRET::"
             - !Ref AWS::NoValue
           - !If
             - IsGitHubOAuthEnabled

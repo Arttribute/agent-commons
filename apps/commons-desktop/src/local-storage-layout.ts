@@ -95,6 +95,7 @@ export class LocalStorageLayout {
         `name: ${JSON.stringify(skill.name)}`,
         `description: ${JSON.stringify(skill.description)}`,
         `triggers: ${JSON.stringify(skill.triggers)}`,
+        `tools: ${JSON.stringify(skill.tools ?? [])}`,
         `tags: ${JSON.stringify(skill.tags)}`,
         `assignedAgentIds: ${JSON.stringify(skill.assignedAgentIds ?? null)}`,
         "---",

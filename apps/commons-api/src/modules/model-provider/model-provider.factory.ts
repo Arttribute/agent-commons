@@ -74,7 +74,7 @@ export class ModelProviderFactory {
     sessionModel: Record<string, any> | null | undefined,
     agentConfig?: Partial<ModelConfig>,
   ): ModelConfig {
-    if (!sessionModel) {
+    if (!sessionModel || sessionModel.source === "agent") {
       return { ...DEFAULT_MODEL_CONFIG, ...agentConfig };
     }
 
@@ -89,8 +89,8 @@ export class ModelProviderFactory {
     return {
       provider,
       modelId,
-      apiKey: sessionModel.apiKey ?? agentConfig?.apiKey,
-      baseUrl: sessionModel.baseUrl ?? agentConfig?.baseUrl,
+      apiKey: sessionModel.apiKey ?? (provider === agentConfig?.provider ? agentConfig?.apiKey : undefined),
+      baseUrl: sessionModel.baseUrl ?? (provider === agentConfig?.provider ? agentConfig?.baseUrl : undefined),
       temperature: sessionModel.temperature ?? agentConfig?.temperature,
       maxTokens: sessionModel.maxTokens ?? agentConfig?.maxTokens,
       topP: sessionModel.topP ?? agentConfig?.topP,

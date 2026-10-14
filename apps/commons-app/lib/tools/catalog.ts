@@ -326,6 +326,24 @@ const oauthAppSeed = [
     tags: ["design", "content", "oauth"],
   },
   {
+    id: "oauth:hubspot-mcp",
+    displayName: "HubSpot MCP",
+    description: "Connect HubSpot’s official remote MCP server using browser approval. Available tools follow your HubSpot permissions.",
+    icon: "Users", providerKeys: ["hubspot_mcp"], scopes: [],
+    docs: "https://developers.hubspot.com/docs/apps/developer-platform/build-apps/integrate-with-the-remote-hubspot-mcp-server",
+    tags: ["crm", "hubspot", "mcp", "oauth"],
+  },
+  {
+    id: "oauth:hubspot",
+    displayName: "HubSpot",
+    description: "Find CRM contacts and create approved contacts and notes using your connected HubSpot account.",
+    icon: "Users",
+    providerKeys: ["hubspot"],
+    scopes: ["oauth", "crm.objects.contacts.read", "crm.objects.contacts.write"],
+    docs: "https://developers.hubspot.com/docs/api-reference/latest/authentication/manage-oauth-tokens",
+    tags: ["crm", "contacts", "sales", "oauth"],
+  },
+  {
     id: "oauth:github",
     displayName: "GitHub",
     description:

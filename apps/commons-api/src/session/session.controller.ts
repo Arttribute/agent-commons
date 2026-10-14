@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { SessionService } from './session.service';
+import { SessionSuggestionsService } from './session-suggestions.service';
 import { ProjectService } from '~/project/project.service';
 import { resolveCallerId } from '~/modules/auth';
 
@@ -20,6 +21,7 @@ export class SessionController {
   constructor(
     private readonly sessionService: SessionService,
     private readonly projects: ProjectService,
+    private readonly suggestions: SessionSuggestionsService,
   ) {}
 
   /**
@@ -98,6 +100,38 @@ export class SessionController {
       initiator,
     });
     return { data: sessions };
+  }
+
+  /**
+   * The last message of the person's latest chat with each agent, for the
+   * agents list. GET /v1/sessions/user/:initiator/previews
+   */
+  @Get('user/:initiator/previews')
+  async getLatestMessagePerAgent(
+    @Param('initiator') initiator: string,
+    @Req() req: Request,
+  ) {
+    this.assertInitiatorAccess(initiator, req);
+    return {
+      data: await this.sessionService.getLatestMessagePerAgent({ initiator }),
+    };
+  }
+
+  /**
+   * Ideas for what to ask next, written from the person's recent chats.
+   * POST /v1/sessions/user/:initiator/suggestions
+   */
+  @Post('user/:initiator/suggestions')
+  async getStartSuggestions(
+    @Param('initiator') initiator: string,
+    @Body() body: { connectedApps?: unknown },
+    @Req() req: Request,
+  ) {
+    this.assertInitiatorAccess(initiator, req);
+    const connectedApps = Array.isArray(body?.connectedApps)
+      ? body.connectedApps.filter((app): app is string => typeof app === 'string')
+      : [];
+    return { data: await this.suggestions.suggest(initiator, connectedApps) };
   }
 
   @Get('list/:agentId/:initiator/')

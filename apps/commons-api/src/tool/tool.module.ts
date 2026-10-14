@@ -1,6 +1,8 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AgentModule } from '../agent';
 import { ToolController } from './tool.controller';
+import { DesktopSearchController } from './desktop-search.controller';
+import { ConnectedAppsController } from './connected-apps.controller';
 import { WorkflowController } from './workflow.controller';
 import { ToolKeyController } from './tool-key.controller';
 import { ToolPermissionController } from './tool-permission.controller';
@@ -54,6 +56,8 @@ import { WalletModule } from '~/wallet/wallet.module';
     WalletModule,
   ],
   controllers: [
+    DesktopSearchController,
+    ConnectedAppsController,
     ToolController,
     WorkflowController,
     ToolKeyController,

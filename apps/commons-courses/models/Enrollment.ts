@@ -23,6 +23,7 @@ export interface IEnrollment extends Document {
   paymentGraceEndsAt?: Date;
   enrolledAt: Date;
   completedAt?: Date;
+  completionSource?: "certificate";
   progress: number;
   completedLessons: string[];
   points: number;
@@ -75,6 +76,7 @@ const EnrollmentSchema = new Schema<IEnrollment>(
     paymentGraceEndsAt: Date,
     enrolledAt: { type: Date, default: Date.now },
     completedAt: Date,
+    completionSource: { type: String, enum: ["certificate"] },
     progress: { type: Number, default: 0 },
     completedLessons: [String],
     points: { type: Number, default: 0, min: 0 },

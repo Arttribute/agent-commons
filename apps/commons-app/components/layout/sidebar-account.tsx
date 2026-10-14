@@ -71,16 +71,6 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
     setMenuOpen(false);
     router.push(href);
   };
-  useEffect(() => {
-    if (mode === "cloud" && isAuthenticated && principalId && window.agentCommonsDesktop) {
-      void window.agentCommonsDesktop.syncAccount({
-        userId: principalId,
-        displayName,
-        email: authState.email,
-        profileImage: authState.profileImage,
-      });
-    }
-  }, [mode, isAuthenticated, principalId, displayName, authState.email, authState.profileImage]);
 
   const openSettings = (section: SettingsSection) => {
     setSettingsSection(section);
@@ -129,7 +119,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
             }
           >
             <div className="rounded-full overflow-hidden shrink-0 ring-1 ring-border">
-              <UserAvatar image={authState.profileImage} seed={principalId || displayName} size={28} />
+              <UserAvatar image={authState.profileImage} seed={principalId || displayName} name={username} size={28} />
             </div>
             {!collapsed && (
               <>

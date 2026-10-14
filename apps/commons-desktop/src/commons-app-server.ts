@@ -61,6 +61,8 @@ function desktopAuthSecret(userDataDirectory: string) {
 
 export type CommonsAppServer = {
   origin: string;
+  /** Main-process capability; never expose this to the renderer. */
+  requestToken: string;
   stop: () => void;
 };
 
@@ -90,6 +92,7 @@ export async function startCommonsAppServer(
   }
   const port = await freeLoopbackPort();
   const origin = `http://localhost:${port}`;
+  const requestToken = randomBytes(32).toString("hex");
   const child: ChildProcess = spawn(electronExecutable, [entry], {
     cwd: appDirectory,
     stdio: ["ignore", "pipe", "pipe"],
@@ -98,6 +101,7 @@ export async function startCommonsAppServer(
       ELECTRON_RUN_AS_NODE: "1",
       NODE_ENV: "production",
       COMMONS_DESKTOP_SERVER: "1",
+      COMMONS_DESKTOP_MAIN_TOKEN: requestToken,
       PORT: String(port),
       HOSTNAME: "localhost",
       AUTH_URL: origin,
@@ -120,6 +124,7 @@ export async function startCommonsAppServer(
       const response = await fetch(`${origin}/desktop/auth`, { signal: AbortSignal.timeout(1_000) });
       if (response.ok) return {
         origin,
+        requestToken,
         stop: () => { if (child.exitCode === null) child.kill(); },
       };
     } catch {

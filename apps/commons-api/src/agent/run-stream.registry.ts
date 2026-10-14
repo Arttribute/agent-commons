@@ -3,6 +3,7 @@ import { Observable, ReplaySubject, Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { sql } from 'drizzle-orm';
 import { DatabaseService } from '~/modules/database/database.service';
+import { optionalContext } from './optional-context';
 
 export interface RunStreamEvent {
   type: string;
@@ -34,6 +35,7 @@ export interface RunSummary {
   state: RunState;
   /** Short, human-readable description of the latest step. */
   activity?: string;
+  actionUrl?: string;
   startedAt: string;
   updatedAt: string;
 }
@@ -45,9 +47,10 @@ interface RunStreamEntry {
   terminal: boolean;
   subscription?: Subscription;
   cleanupTimer?: NodeJS.Timeout;
-  meta?: RunMeta & { state: RunState; activity?: string; startedAt: number; updatedAt: number };
+  meta?: RunMeta & { state: RunState; actionUrl?: string; activity?: string; startedAt: number; updatedAt: number };
   steering: string[];
   steeringClosed: boolean;
+  registration?: Promise<void>;
   persistQueue?: Promise<void>;
   completedPersist?: Promise<void>;
   pendingEvents: RunStreamEvent[];
@@ -130,6 +133,7 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
         VALUES (${runId}::uuid, ${entry.meta.initiator}, ${entry.meta.agentId}, ${entry.meta.sessionId ?? null}, ${!entry.steeringClosed})
       `).then(() => undefined).catch((error) => this.logger.error(`Could not persist run ${runId}: ${error.message}`));
     }
+    entry.registration = entry.persistQueue;
     this.scheduleCleanup(runId, entry, MAX_RUN_LIFETIME_MS);
 
     this.emit(entry, runId, { type: 'run_started', ...(meta?.prompt ? { prompt: meta.prompt } : {}) });
@@ -309,10 +313,7 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
 
   async closeSteeringShared(runId: string) {
     this.closeSteering(runId);
-    const entry = this.runs.get(runId);
-    if (this.db && entry?.persistQueue) await entry.persistQueue.then(() => this.db!.execute(sql`
-      UPDATE agent_run_stream SET steering_ready = false WHERE run_id = ${runId}::uuid
-    `)).catch((error) => this.logger.warn(`Could not close shared steering for ${runId}: ${error.message}`));
+    await this.writeSteeringReady(runId, false);
   }
 
   openSteering(runId: string) {
@@ -321,11 +322,27 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
   }
 
   async openSteeringShared(runId: string) {
-    this.openSteering(runId);
     const entry = this.runs.get(runId);
-    if (this.db && entry?.persistQueue) await entry.persistQueue.then(() => this.db!.execute(sql`
-      UPDATE agent_run_stream SET steering_ready = true WHERE run_id = ${runId}::uuid AND done = false
-    `)).catch((error) => this.logger.warn(`Could not open shared steering for ${runId}: ${error.message}`));
+    if (!entry || entry.done || entry.terminal) return;
+    this.openSteering(runId);
+    await this.writeSteeringReady(runId, true);
+  }
+
+  private async writeSteeringReady(runId: string, ready: boolean) {
+    const entry = this.runs.get(runId);
+    if (!this.db || !entry?.registration) return;
+    // The initial row must exist, but a delayed token batch must not hold
+    // model execution or terminal delivery open. Future batches use the live
+    // steeringClosed flag, so they cannot restore a stale readiness value.
+    await optionalContext(
+      entry.registration.then(() => this.db!.execute(sql`
+        UPDATE agent_run_stream SET steering_ready = ${ready}
+        WHERE run_id = ${runId}::uuid AND (${!ready} OR done = false)
+      `)).then(() => undefined),
+      undefined,
+      (reason) => this.logger.warn(`Could not ${ready ? 'open' : 'close'} shared steering for ${runId}: ${reason}`),
+      3_000,
+    );
   }
 
   /**
@@ -343,6 +360,7 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
               sessionId: entry.meta.sessionId,
               state: entry.meta.state,
               activity: entry.meta.activity,
+              actionUrl: entry.meta.actionUrl,
               startedAt: new Date(entry.meta.startedAt).toISOString(),
               updatedAt: new Date(entry.meta.updatedAt).toISOString(),
             }]
@@ -356,7 +374,11 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
     const local = this.listForInitiator(initiator, limit);
     if (!this.db) return local;
     const rows = (await this.db.execute(sql`
-      SELECT run_id, agent_id, session_id, state, activity, done, started_at, updated_at
+      SELECT run_id, agent_id, session_id, state, activity, done, started_at, updated_at,
+        (SELECT event->'hostApplication'->>'url' FROM agent_run_stream_event
+          WHERE agent_run_stream_event.run_id = agent_run_stream.run_id
+            AND event->>'type' = 'cli_tool_request' AND event->'hostApplication'->>'url' IS NOT NULL
+          ORDER BY seq DESC LIMIT 1) AS action_url
       FROM agent_run_stream WHERE initiator = ${initiator.toLowerCase()}
         AND started_at > now() - interval '6 hours'
         AND (done = false OR updated_at > now() - interval '15 minutes')
@@ -370,6 +392,9 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
         agentId: String(row.agent_id),
         sessionId: row.session_id ? String(row.session_id) : undefined,
         state: !row.done && Date.now() - new Date(row.updated_at).getTime() > STALE_RUN_MS ? 'failed' : row.state as RunState,
+        actionUrl: row.action_url && row.state !== 'awaiting_approval' &&
+          (row.state !== 'awaiting_input' || String(row.activity ?? '').startsWith('Continue in '))
+          ? String(row.action_url) : undefined,
         activity: !row.done && Date.now() - new Date(row.updated_at).getTime() > STALE_RUN_MS
           ? 'The agent run was interrupted by a server restart.'
           : row.activity ? String(row.activity) : undefined,
@@ -388,6 +413,12 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
     meta.updatedAt = Date.now();
     switch (event.type) {
       case 'cli_tool_request':
+        if (event.hostApplication?.url) {
+          meta.state = 'awaiting_input';
+          meta.actionUrl = event.hostApplication.url;
+          meta.activity = `Continue in ${String(event.hostApplication.name || 'the originating app')}`;
+          return;
+        }
         meta.state = 'awaiting_approval';
         meta.activity = `Waiting for approval: ${String(event.tool ?? event.toolName ?? 'computer action').replace(/^cli_/, '').replaceAll('_', ' ')}`;
         return;
@@ -401,11 +432,13 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
         const output = event.output ?? event.result ?? event.payload;
         if (name === 'showCommonsApp' && event.status !== 'error') {
           meta.state = 'awaiting_input';
+          meta.actionUrl = undefined;
           meta.activity = 'Waiting for your response in an app';
           return;
         }
         if (output?.requiresConfirmation || output?.data?.requiresConfirmation) {
           meta.state = 'awaiting_approval';
+          meta.actionUrl = undefined;
           meta.activity = 'A change is waiting for your review';
           return;
         }
@@ -413,7 +446,7 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
         return;
       }
       case 'status':
-        if (meta.state === 'awaiting_approval' && event.stage !== 'tool') return;
+        if ((meta.state === 'awaiting_approval' || (meta.state === 'awaiting_input' && meta.actionUrl)) && event.stage !== 'tool') return;
         meta.state = 'running';
         if (typeof event.message === 'string' && !['request', 'agent', 'session', 'tools', 'context', 'model'].includes(event.stage)) {
           meta.activity = event.message.slice(0, 120);
@@ -421,7 +454,7 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
         return;
       case 'final':
       case 'completed':
-        if (meta.state !== 'awaiting_approval' && meta.state !== 'awaiting_input') meta.state = 'completed';
+        if (meta.actionUrl || (meta.state !== 'awaiting_approval' && meta.state !== 'awaiting_input')) meta.state = 'completed';
         return;
       case 'error':
       case 'failed':
@@ -488,7 +521,7 @@ export class RunStreamRegistry implements OnModuleDestroy, OnModuleInit {
   private finish(runId: string, entry: RunStreamEntry) {
     entry.done = true;
     if (entry.heartbeatTimer) clearInterval(entry.heartbeatTimer);
-    if (entry.meta && entry.meta.state === 'running') {
+    if (entry.meta && (entry.meta.state === 'running' || (entry.meta.actionUrl && entry.meta.state === 'awaiting_input'))) {
       entry.meta.state = 'completed';
       entry.meta.updatedAt = Date.now();
     }

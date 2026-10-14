@@ -17,11 +17,11 @@ export default function LibraryLayout({ children }: { children: React.ReactNode 
   const userAddress = normalizePrincipalId(authState.walletAddress);
   if (!/^\/library\/[^/]+/.test(pathname)) return <>{children}</>;
   return (
-    <div className="h-screen overflow-hidden bg-page">
-      <div className="flex h-screen">
+    <div className="h-app overflow-hidden bg-page">
+      <div className="flex h-app flex-col md:flex-row">
         <DashboardSideBar username={userAddress} />
         <LibraryNavigator />
-        <main className="relative h-screen min-w-0 flex-1 overflow-hidden">{children}</main>
+        <main className="min-h-0 relative min-w-0 flex-1 overflow-hidden">{children}</main>
       </div>
       <CanvasChat />
     </div>

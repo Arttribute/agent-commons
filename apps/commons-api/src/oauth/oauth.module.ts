@@ -7,6 +7,7 @@ import { OAuthConnectionService } from './oauth-connection.service';
 import { OAuthStateService } from './oauth-state.service';
 import { OAuthFlowService } from './oauth-flow.service';
 import { OAuthTokenInjectionService } from './oauth-token-injection.service';
+import { ManagedMcpService } from './managed-mcp.service';
 
 /**
  * OAuthModule
@@ -25,6 +26,7 @@ import { OAuthTokenInjectionService } from './oauth-token-injection.service';
   imports: [],
   controllers: [OAuthController],
   providers: [
+    ManagedMcpService,
     OAuthProviderService,
     OAuthConnectionService,
     OAuthStateService,
@@ -32,6 +34,7 @@ import { OAuthTokenInjectionService } from './oauth-token-injection.service';
     OAuthTokenInjectionService,
   ],
   exports: [
+    ManagedMcpService,
     OAuthProviderService,
     OAuthConnectionService,
     OAuthFlowService,

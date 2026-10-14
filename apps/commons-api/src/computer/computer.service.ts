@@ -20,6 +20,8 @@ import {
   agentRunProgress,
   type AgentRunProgressEvent,
 } from '~/agent/run-progress';
+import { computerFileWriteCommands } from './computer-file-writes';
+import { resourceUpgradePolicy } from './resource-upgrade-policy';
 import { CapabilityProviderService } from '~/provider';
 
 /** @deprecated Input compatibility only. All assigned computers are persistent. */
@@ -156,7 +158,7 @@ const COMPUTER_RESOURCE_PROFILES: Record<
     memoryRequest: '8Gi',
     memoryLimit: '32Gi',
     storageLimit: '100Gi',
-    gpuType: 'nvidia-l4',
+    gpuType: 'nvidia',
     gpuCount: 1,
   },
 };
@@ -259,6 +261,19 @@ export class ComputerService {
     }
   }
 
+  async assertTemporaryResourceProfile(agentId: string, profile: string) {
+    const agent = await this.assertAgent(agentId);
+    await this.assertComputeEntitlement(agent, profile, false);
+  }
+
+  async allowedResourceProfiles(agentId: string): Promise<ComputeProfile[]> {
+    const agent = await this.assertAgent(agentId);
+    const ownerId = agent.ownerUserId ?? agent.owner;
+    if (process.env.BILLING_ENFORCEMENT === 'false' || !ownerId)
+      return ['starter', 'standard', 'performance', 'gpu'];
+    return (await this.entitlements.getEntitlements(ownerId)).allowedProfiles;
+  }
+
   private async countRunningComputersForOwner(
     ownerId: string,
     excludeAgentId?: string,
@@ -306,6 +321,8 @@ export class ComputerService {
       autoWake: config.autoStart,
       allowAgentUse: config.allowAgentStart,
       resources: this.publicResources(config),
+      resourceUpgradePolicy: resourceUpgradePolicy((config.metadata as any)?.resourceUpgradePolicy),
+      resourceUpgradeLease: (config.metadata as any)?.resourceUpgradeLease ?? null,
     };
   }
 
@@ -332,11 +349,22 @@ export class ComputerService {
   async updateConfig(
     agentId: string,
     patch: Partial<typeof schema.agentComputerConfig.$inferInsert>,
+    resourceLeaseId?: string,
   ) {
     const agent = await this.assertAgent(agentId);
     const current = await this.getConfig(agentId);
     const next = this.normalizeConfigPatch(patch, current);
-    if (next.enabled) {
+    if (resourceLeaseId) {
+      for (const key of ['cpuRequest', 'cpuLimit', 'memoryRequest', 'memoryLimit', 'gpuType', 'gpuCount']) {
+        if ((patch as any)[key] !== undefined) next[key] = (patch as any)[key];
+      }
+    }
+    const lease = (current.metadata as any)?.resourceUpgradeLease;
+    const resourceFields = ['resourceProfile', 'resourceMode', 'cpuRequest', 'cpuLimit', 'memoryRequest', 'memoryLimit', 'storageLimit', 'gpuType', 'gpuCount'];
+    if (lease && lease.leaseId !== resourceLeaseId && resourceFields.some((key) => next[key] !== undefined && next[key] !== (current as any)[key])) {
+      throw new BadRequestException('Release temporary resources before changing the computer profile.');
+    }
+    if ((next.enabled ?? current.enabled) && (next.enabled !== undefined || resourceFields.some((key) => next[key] !== undefined && next[key] !== (current as any)[key]))) {
       // A plain enable toggle (`{ enabled: true }`) carries no resourceProfile,
       // so validate against the effective profile — the one the computer will
       // actually run with — not the (possibly absent) patched value. Otherwise
@@ -356,8 +384,10 @@ export class ComputerService {
         ...next,
         updatedAt: new Date(),
       })
-      .where(eq(schema.agentComputerConfig.configId, current.configId))
+      .where(and(eq(schema.agentComputerConfig.configId, current.configId), sql`date_trunc('milliseconds', ${schema.agentComputerConfig.updatedAt}) = ${current.updatedAt.toISOString()}::timestamptz`, sql`coalesce(${schema.agentComputerConfig.metadata}->'resourceUpgradeLease'->>'leaseId', '') = ${lease?.leaseId ?? ''}`))
       .returning();
+
+    if (!updated) throw new BadRequestException('Computer settings changed while saving. Reload and try again.');
 
     const computer = await this.getAssignedComputer(agentId);
     if (computer) {
@@ -764,6 +794,25 @@ export class ComputerService {
     });
   }
 
+  /** Model tool steps must wait for a usable runtime after an asynchronous wake. */
+  async waitUntilReady(agentId: string, computerId: string, runId?: string, toolCallId?: string) {
+    const deadline = Date.now() + 180_000;
+    while (Date.now() < deadline) {
+      const computer = await this.refreshForAgent(agentId, computerId);
+      if (['running', 'idle'].includes(computer.status)) return computer;
+      if (!['provisioning', 'starting', 'restarting', 'resizing'].includes(computer.status)) {
+        throw new ServiceUnavailableException(`Agent computer is ${computer.status}: ${computer.errorMessage ?? 'The runtime could not become ready.'}`);
+      }
+      this.emitComputerToolProgress(runId, {
+        toolName: 'startAgentComputer', stage: 'computer', status: 'running',
+        message: 'Waiting for the agent computer to become ready',
+        payload: { computerId, toolCallId },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    throw new ServiceUnavailableException('The agent computer is still starting. Retry after it becomes ready.');
+  }
+
   async runtimeChannelAction(args: {
     agentId: string;
     channel: 'telegram' | 'whatsapp' | 'slack' | 'discord';
@@ -877,6 +926,9 @@ export class ComputerService {
           !Number.isNaN(new Date(commonOs.startedAt).getTime())
             ? new Date(commonOs.startedAt)
             : computer.startedAt,
+        ...(['running', 'idle'].includes(status) && Number.isFinite(runtimeStartedAt) && runtimeStartedAt > (computer.startedAt?.getTime() ?? 0)
+          ? { meteredThroughAt: new Date(Math.max(runtimeStartedAt, computer.meteredThroughAt?.getTime() ?? 0)) }
+          : {}),
         errorMessage: activeRuntimeIsStale
           ? 'The agent computer stopped responding and will be recovered when it is next started.'
           : commonOs.pod?.lastError ?? null,
@@ -975,25 +1027,25 @@ export class ComputerService {
       computerId: args.computerId,
       sessionId: args.sessionId,
     });
-    const result = await this.sendInstruction({
-      agentId: args.agentId,
-      computerId: computer.computerId,
-      sessionId: args.sessionId,
-      eventType: 'workspace.write',
-      summary: `Write ${files.length} file${files.length === 1 ? '' : 's'}`,
-      instruction: [
-        'Use cli_write_file to write every file below exactly as provided.',
-        'Create parent directories as needed. Do not abbreviate, summarize, or replace file content with placeholders.',
-        'After all writes, verify the paths with cli_list_directory and report any failure.',
-        '',
-        JSON.stringify(files),
-      ].join('\n'),
-      waitMs: 300_000,
-      actorId: args.actorId,
-      actorType: args.actorType,
-      runId: args.runId,
-      toolCallId: args.toolCallId,
-    });
+    let result: Awaited<ReturnType<ComputerService['sendInstruction']>> | undefined;
+    for (const batch of computerFileWriteCommands(files)) {
+      result = await this.sendInstruction({
+        agentId: args.agentId, computerId: computer.computerId, sessionId: args.sessionId,
+        eventType: 'workspace.write', summary: `Write and verify ${files.length} file${files.length === 1 ? '' : 's'}`,
+        instruction: [
+          'Use the CommonOS pod terminal for this computer.',
+          'Run exactly this shell command and return stdout, stderr, and exit code.',
+          'Working directory: /mnt/shared', 'Timeout seconds: 120', '',
+          '```sh', batch.command, '```',
+        ].join('\n'),
+        waitMs: 180_000, actorId: args.actorId, actorType: args.actorType,
+        runId: args.runId, toolCallId: args.toolCallId,
+      });
+      if (result.error || !result.response?.includes(batch.marker)) {
+        throw new BadRequestException('The computer did not verify the requested file writes. ' + (result.error ?? result.response ?? '').slice(0, 1000));
+      }
+    }
+
     return {
       ...result,
       computerId: computer.computerId,
@@ -1406,15 +1458,14 @@ export class ComputerService {
   async buildComputerPrompt(agentId: string, sessionId?: string) {
     const config = await this.getConfig(agentId).catch(() => null);
     if (!config?.enabled) return '';
+    const allowedProfiles = await this.allowedResourceProfiles(agentId);
 
-    const computers = await this.listInstances({
-      agentId,
-      sessionId,
-      includeTerminated: false,
-    }).catch(() => []);
-    const computer = computers[0];
+    // Prompt enrichment must not poll the remote runtime. Wake/execute tools
+    // verify live state; this summary is explicitly the last recorded state.
+    const assigned = await this.getAssignedComputer(agentId).catch(() => null);
+    const computer = assigned?.status === 'terminated' ? null : assigned;
     const line = computer
-      ? `- ${computer.name} (${computer.computerId}) persistent/${
+      ? `- ${computer.name} (${computer.computerId}) persistent/last-recorded-${
           computer.status
         }${computer.browser?.url ? ` browser=${computer.browser.url}` : ''}`
       : '- The persistent computer has not been provisioned yet.';
@@ -1426,6 +1477,8 @@ export class ComputerService {
         config.allowAgentStart ? 'agent-wakeable' : 'user-wake only'
       }; resource profile is ${config.resourceProfile}/${config.resourceMode}.`,
       'Use startAgentComputer to wake or attach the assigned computer before computer work. It is idempotent and never creates an extra computer. Use writeComputerFiles for complete source files, runComputerCommand for finite terminal work, readComputerFile for files, and testComputerBrowser for application verification.',
+      `Temporary resource access: ${JSON.stringify(resourceUpgradePolicy((config.metadata as any)?.resourceUpgradePolicy))}. Use requestComputerResources when a task needs larger CPU/RAM or a GPU. A pending owner approval activates nothing. Automatic access only follows the saved policy. Verify actual hardware/CUDA after the computer becomes ready. Use releaseComputerResources when finished.`,
+      `Profiles included in the owner's current plan: ${allowedProfiles.join(', ') || 'none'}. Request only an included profile. A resource approval does not upgrade the subscription or override its limits.`,
       'Never encode source files in shell heredocs or long commands. writeComputerFiles is the reliable structured file-writing path.',
       'Always keep commands scoped to the task, avoid secrets exfiltration, and summarize created files/screenshots/results for the user.',
       'Assigned computer:',
@@ -2030,6 +2083,7 @@ export class ComputerService {
     const url = `${apiUrl}${basePath}${path}`;
     const response = await fetch(url, {
       method,
+      signal: AbortSignal.timeout(60_000),
       headers: {
         Authorization: `Bearer ${apiKey}`,
         ...(agentCommonsId
@@ -2162,6 +2216,15 @@ export class ComputerService {
       if (source[key] !== undefined) normalized[key] = source[key];
     }
 
+    if (source.metadata !== undefined || source.resourceUpgradePolicy !== undefined) {
+      const metadata = { ...(current?.metadata as any ?? {}), ...(source.metadata ?? {}) };
+      // A browser config save cannot forge or clear the server-owned resource lease.
+      if ((current?.metadata as any)?.resourceUpgradeLease) metadata.resourceUpgradeLease = (current?.metadata as any).resourceUpgradeLease;
+      else delete metadata.resourceUpgradeLease;
+      metadata.resourceUpgradePolicy = resourceUpgradePolicy(source.resourceUpgradePolicy ?? metadata.resourceUpgradePolicy);
+      normalized.metadata = metadata;
+    }
+
     normalized.defaultMode = 'persistent';
     normalized.maxPersistentComputers = 1;
     normalized.maxEphemeralComputers = 0;
@@ -2226,7 +2289,7 @@ export class ComputerService {
         }
         normalized.gpuCount = count;
         normalized.gpuType =
-          count > 0 ? resources.gpu?.type ?? 'nvidia-l4' : null;
+          count > 0 ? resources.gpu?.type ?? 'nvidia' : null;
       }
     }
 
@@ -2281,7 +2344,11 @@ export class ComputerService {
   }
 
   private commonOsResources(config: ComputerConfig) {
+    const lease = (config.metadata as any)?.resourceUpgradeLease;
+    const temporaryCpu = lease && lease.profile === config.resourceProfile && ['applying', 'active'].includes(lease.state);
+    const runtimeClassName = Number(config.gpuCount ?? 0) > 0 ? process.env.COMMON_OS_GPU_RUNTIME_CLASS : (temporaryCpu || config.resourceProfile === 'performance') ? process.env.COMMON_OS_PERFORMANCE_RUNTIME_CLASS : undefined;
     return {
+      runtimeClassName: runtimeClassName || null,
       vcpu: this.cpuCores(config.cpuLimit),
       memoryGiB: this.gibibytes(config.memoryLimit),
       storageGiB: this.gibibytes(config.storageLimit),
@@ -2371,6 +2438,7 @@ export class ComputerService {
       .set({
         resourceProfile: config.resourceProfile,
         resourceMode: config.resourceMode,
+        ...(commonOs?.status ? { status: this.mapStatus(commonOs.status) } : {}),
         cpuRequest: config.cpuRequest,
         cpuLimit: config.cpuLimit,
         memoryRequest: config.memoryRequest,
@@ -2549,7 +2617,13 @@ function normalizeWorkspacePath(path: string) {
   if (!trimmed || trimmed.includes('\0')) {
     throw new BadRequestException('path is required');
   }
-  const parts = trimmed.replace(/\\/g, '/').split('/').filter(Boolean);
+  // CommonOS reads workspace-relative paths; terminal tools use /mnt/shared.
+  // Strip only the exact workspace prefix so both address the same file.
+  const normalized = trimmed.replace(/\\/g, '/');
+  const relative = normalized === '/mnt/shared' ? ''
+    : normalized.startsWith('/mnt/shared/') ? normalized.slice('/mnt/shared/'.length)
+    : normalized;
+  const parts = relative.split('/').filter(Boolean);
   if (parts.some((part) => part === '.' || part === '..')) {
     throw new BadRequestException('path escapes workspace');
   }

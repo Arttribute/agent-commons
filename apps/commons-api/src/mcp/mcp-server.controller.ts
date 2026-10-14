@@ -10,10 +10,13 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import { McpServerService } from './mcp-server.service';
 import { McpConnectionService } from './mcp-connection.service';
 import { McpToolDiscoveryService } from './mcp-tool-discovery.service';
+import { McpOwnerGuard, PublicMcpCatalog, type McpRequest } from './mcp-owner.guard';
 import {
   CreateMcpServerDto,
   UpdateMcpServerDto,
@@ -25,6 +28,7 @@ import {
 } from './dto/mcp.dto';
 
 @Controller({ version: '1', path: 'mcp/servers' })
+@UseGuards(McpOwnerGuard)
 export class McpServerController {
   constructor(
     private readonly serverService: McpServerService,
@@ -38,12 +42,10 @@ export class McpServerController {
   @Post()
   async createServer(
     @Body() dto: CreateMcpServerDto,
-    @Query('ownerId') ownerId: string,
-    @Query('ownerType') ownerType: 'user' | 'agent' = 'user',
+    @Req() req: McpRequest,
   ): Promise<McpServerResponseDto> {
     return await this.serverService.createServer({
-      ownerId,
-      ownerType,
+      ...req.mcpOwner!,
       dto,
     });
   }
@@ -53,12 +55,10 @@ export class McpServerController {
    */
   @Get()
   async listServers(
-    @Query('ownerId') ownerId: string,
-    @Query('ownerType') ownerType: 'user' | 'agent' = 'user',
+    @Req() req: McpRequest,
   ): Promise<McpServerListResponseDto> {
     const servers = await this.serverService.listServers({
-      ownerId,
-      ownerType,
+      ...req.mcpOwner!,
     });
 
     return {
@@ -71,11 +71,12 @@ export class McpServerController {
    * Get public MCP servers (marketplace)
    */
   @Get('marketplace')
+  @PublicMcpCatalog()
   async getMarketplace(): Promise<McpServerListResponseDto> {
     const servers = await this.serverService.listPublicServers();
 
     return {
-      servers,
+      servers: servers.map((server) => ({ ...server, connectionConfig: {} })),
       total: servers.length,
     };
   }

@@ -168,6 +168,13 @@ export class ToolInvocationService {
    */
   applyBodyTransform(transform: string, args: Record<string, any>): any {
     switch (transform) {
+      case 'hubspotContactNote': {
+        const contactId = String(args.contactId ?? '');
+        const note = String(args.note ?? '');
+        if (!/^\d+$/.test(contactId) || !note.trim() || note.length > 8000) throw new BadRequestException('Provide a valid HubSpot contact ID and a note between 1 and 8,000 characters.');
+        const escaped = note.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+        return { properties: { hs_timestamp: new Date().toISOString(), hs_note_body: escaped }, associations: [{ to: { id: contactId }, types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 202 }] }] };
+      }
       case 'gmailRawMessage': {
         const to = String(args.to ?? '').trim();
         const subject = String(args.subject ?? '');

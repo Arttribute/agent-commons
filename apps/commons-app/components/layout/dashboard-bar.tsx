@@ -5,7 +5,7 @@ import { FC, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { SearchTrigger } from "@/components/search/search-trigger";
+import { NewChatButton } from "./new-chat-button";
 import { SidebarMoreMenu } from "./sidebar-more-menu";
 import { WorkspaceNavigation } from "./workspace-navigation";
 
@@ -25,7 +25,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({
     <WorkspaceNavigation
       activeTab={activeTab}
       navigate={(path) => router.push(path)}
-      brand={<Link href="/studio/agents" className="flex items-center" aria-label="Agent Commons">
+      brand={<Link href="/new" className="flex items-center" aria-label="Agent Commons">
           <Image
             src="/logo.jpg"
             alt="Agent Commons"
@@ -36,7 +36,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({
           />
         </Link>}
       rightSlot={rightSlot}
-      search={<SearchTrigger />}
+      lead={<NewChatButton active={activeTab === "new"} />}
       more={<SidebarMoreMenu activeSection={activeTab} />}
     />
   );

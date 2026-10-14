@@ -22,6 +22,9 @@ const GOOGLE_SCOPES: Record<string, string> = {
 
 /** Plain-language text for an OAuth scope, with a readable fallback. */
 export function describeOAuthScope(scope: string) {
+  if (scope === "oauth") return "Connect your HubSpot account";
+  if (scope === "crm.objects.contacts.read") return "Read CRM contacts and notes";
+  if (scope === "crm.objects.contacts.write") return "Create and update CRM contacts and notes";
   if (scope === "openid") return "Confirm who you are";
   if (scope === "email") return "See your email address";
   if (scope === "profile") return "See your basic profile";

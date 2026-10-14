@@ -10,10 +10,10 @@ export default function BillingPage() {
   const walletAddress = normalizePrincipalId(authState.walletAddress);
 
   return (
-    <div className="h-screen overflow-hidden bg-page">
-      <div className="flex h-screen">
+    <div className="h-app overflow-hidden bg-page">
+      <div className="flex h-app flex-col md:flex-row">
         <DashboardSideBar username={walletAddress} />
-        <div className="flex-1 min-w-0 overflow-y-auto px-6 py-10">
+        <div className="min-h-0 flex-1 min-w-0 overflow-y-auto px-6 py-10">
           <BillingPanel />
         </div>
       </div>

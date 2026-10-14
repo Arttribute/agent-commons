@@ -62,6 +62,7 @@ describe('canvasContextRequest', () => {
     });
     expect(request).toEqual({
       projectId,
+      revisionId: undefined,
       annotationIds: [noteId, otherNoteId],
       viewer: {
         view: undefined,
@@ -143,7 +144,7 @@ describe('formatCanvasContext', () => {
     expect(text).toContain('"…In Q3, [selection] year over year.…"');
     expect(text).toContain('Location: page 4, region x 10% y 20% w 30% h 5%');
     expect(text).toContain('### Other open notes on this version (1)');
-    expect(text).toContain(`${otherNoteId}: "Logo looks blurry" (page 1, point x 50% y 50%)`);
+    expect(text).toContain(`${otherNoteId}: "Logo looks blurry" (page 1, point x 50% y 50% (normalized x 0.5, y 0.5))`);
   });
 
   it('gives media edit guidance and creative preferences', () => {
@@ -237,7 +238,7 @@ describe('noteLocation', () => {
         metadata: { intrinsicSize: { width: 1000, height: 800 } },
       }),
     ).toBe(
-      'region x 25% y 50% w 50% h 25% (pixels 250,400 to 750,600 of 1000x800)',
+      'region x 25% y 50% w 50% h 25% (pixels 250,400 to 750,600 of 1000x800) (normalized x 0.25, y 0.5, width 0.5, height 0.25)',
     );
   });
 
@@ -254,4 +255,33 @@ describe('noteLocation', () => {
       }),
     ).toBe('1:02.5-1:05');
   });
+});
+
+
+describe('exact canvas targets across runtimes', () => {
+  it('captures a viewed revision separately from the mutable project active version', () => {
+    expect(canvasContextRequest({ resourceType: 'canvas', resourceId: projectId, canvasRevisionId: revisionId })?.revisionId).toBe(revisionId);
+  });
+
+  it('keeps precise coordinates, offsets and source version in local context', () => {
+    const formatted = formatCanvasContext(input({ local: true, attachedIds: [noteId], annotations: [{ annotationId: noteId, revisionId, kind: 'comment', body: 'Exact selection', status: 'open', geometry: { x: .123456, y: .456789 }, metadata: { target: { type: 'text', quote: 'Selected words', start: 12, end: 26, lineStart: 3, lineEnd: 4 } } }] }));
+    expect(formatted).toContain('Character offsets: 12-26');
+    expect(formatted).toContain('Text lines: 3-4');
+    expect(formatted).toContain('normalized x 0.123456, y 0.456789');
+    expect(formatted).toContain('Library fileId item-1');
+    expect(formatted).toContain('read_library_item');
+    expect(formatted).toContain('update_canvas_notes');
+    expect(formatted).not.toContain('call updateCanvasNotes');
+  });
+
+  it('uses a captured video frame time when there is no separate annotation start time', () => {
+    expect(noteLocation({ annotationId: noteId, revisionId, kind: 'point', body: 'Frame', status: 'open', metadata: { target: { type: 'point', frameTimeMs: 1234 } }, geometry: { x: .5, y: .5 } })).toContain('0:01.2');
+  });
+});
+
+
+it('maps A1 cell references to exact CSV positions without guessing column names', () => {
+  const context = input({ artifact: { itemId: 'item-1', name: 'Sales.csv', kind: 'spreadsheet', mimeType: 'text/csv' }, attachedIds: [noteId], annotations: [{ annotationId: noteId, revisionId, kind: 'comment', body: 'Total selected cells', status: 'open', metadata: { target: { type: 'cells', sheet: 'Sales', range: 'B2:B3', values: [['20'], ['40']] } } }] });
+  expect(formatCanvasContext(context)).toContain('pd.read_csv(INPUT_FILES["item-1"], header=None).iloc[1:3, 1:2]');
+  expect(formatCanvasContext(context)).toContain('Cell references are positions, not column names.');
 });

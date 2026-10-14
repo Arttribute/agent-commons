@@ -68,6 +68,9 @@ jobs:
       - name: Test packages
         run: pnpm --filter './packages/*' run test --passWithNoTests
 
+      - name: Test Common Courses certificate delivery and course policies
+        run: pnpm --filter commons-courses test
+
       # The gateway fronts every /v1/* request and decides what is reachable
       # without a credential, but nothing here used to exercise it — a broken
       # public-route list reached production unnoticed. Staging cannot catch
@@ -90,10 +93,16 @@ jobs:
       # /login must keep identity's messages ("check your email", errors) when
       # it restarts sign-in, and sign people in after they verify their email.
       - name: Test login flow
-        run: node --experimental-strip-types --test apps/commons-app/lib/login-flow.test.mjs
+        run: node --experimental-strip-types --test apps/commons-app/lib/login-flow.test.mjs apps/commons-app/lib/desktop-request-policy.test.mjs apps/commons-app/lib/desktop-session.test.mjs
 
       # A failed token refresh must back off instead of retrying on every
       # request; retry storms exhausted identity's rate limit for everyone.
+      - name: Test signed-in agent proxy authentication and ownership
+        run: node --experimental-vm-modules --test apps/commons-app/lib/agents-proxy.test.mjs
+
+      - name: Test workspace navigation and new chat suggestions
+        run: node --experimental-strip-types --test apps/commons-app/lib/workspace-routes.test.mjs apps/commons-app/lib/start-suggestions.test.mjs apps/commons-app/lib/message-preview.test.mjs apps/commons-app/lib/short-time.test.mjs
+
       - name: Test session token refresh backoff
         run: node --experimental-strip-types --test apps/commons-app/lib/token-refresh.test.mjs
 
@@ -111,8 +120,39 @@ jobs:
       - name: Test shared agent checkpoint pool
         run: pnpm --filter commons-api exec jest --runInBand agent/checkpoint-store.spec.ts
 
+      - name: Test compute metering and database pool isolation
+        env:
+          NODE_OPTIONS: --experimental-vm-modules --max-old-space-size=4096
+          PAYMENT_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
+        run: pnpm --filter commons-api exec jest --runInBand computer/compute-metering
+
       - name: Test Arcade skill assignment contract
         run: pnpm --filter commons-api exec jest --runInBand skill/skill.controller.spec.ts skill/skill.service.spec.ts
 
       - name: Test Commons app grants, gateway, data and network guards
         run: pnpm --filter commons-api exec jest --runInBand ui-plugin
+
+      - name: Install video extraction tools for real recording checks
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg
+
+      - name: Test migrated computer approval proposals in PostgreSQL
+        env:
+          RESOURCE_UPGRADE_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
+        run: pnpm --filter commons-api exec jest --runInBand src/computer/resource-upgrade.integration.spec.ts
+
+
+      - name: Build API and test session context, model and Python contracts
+        run: |
+          node apps/commons-desktop/scripts/cloud-python-reliability.mjs
+          node apps/commons-desktop/scripts/cloud-python-alpine-reliability.mjs
+          pnpm --filter commons-api build
+          pnpm --filter commons-api exec jest --runInBand src/modules/auth/rate-limit.guard.spec.ts src/agent/optional-context.spec.ts src/agent/live-turn-steering.spec.ts src/agent/tool-image-context.spec.ts src/agent/blocking-model-callbacks.spec.ts src/agent/run-stream.registry.spec.ts src/agent/run-stream.registry.shared.spec.ts
+          pnpm --filter commons-api exec jest --runInBand src/modules/auth/dto/api-key.dto.spec.ts
+          NODE_OPTIONS='--experimental-vm-modules --max-old-space-size=4096' pnpm --filter commons-api exec jest --runInBand src/session/session-model-inheritance.spec.ts src/task/task-execution.service.spec.ts src/agent/run-stream.registry.integration.spec.ts
+          node apps/commons-api/scripts/video-sampling-reliability.mjs
+          node apps/commons-api/scripts/copilot-runtime-reliability.mjs
+          pnpm --filter commons-api exec jest --runInBand src/computer/resource-upgrade-policy.spec.ts src/computer/resource-upgrade.service.spec.ts src/computer/computer-upgrade.controller.spec.ts src/computer/compute-metering.service.spec.ts
+          node apps/commons-api/scripts/google-tool-transport.mjs
+          pnpm --filter commons-api exec jest --runInBand src/modules/model-provider/model-provider.factory.spec.ts src/modules/model-provider/providers/google.provider.spec.ts src/tool/tools/python-analysis.spec.ts src/media/media-model.registry.spec.ts src/media/providers/openai-media.provider.spec.ts src/computer/computer-file-writes.spec.ts src/computer/computer.service.spec.ts src/agent/model-tool-selection.spec.ts src/agent/computed-artifact-completion.spec.ts src/agent/tool-request-timeout.spec.ts src/agent/agent-tools.controller.spec.ts src/files/video-sampling.spec.ts src/audio/audio.service.spec.ts src/oauth/oauth-flow.service.spec.ts src/oauth/oauth-provider.service.spec.ts src/oauth/oauth.controller.spec.ts src/oauth/managed-mcp.service.spec.ts src/tool/connected-apps.controller.spec.ts src/tool/desktop-search.controller.spec.ts src/tool/tool-invocation.service.spec.ts src/media/canvas-context.spec.ts src/media/canvas-viewed-revision.spec.ts

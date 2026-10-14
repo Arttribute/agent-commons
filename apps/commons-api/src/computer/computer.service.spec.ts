@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, HttpException } from '@nestjs/common';
 import { ComputerService } from './computer.service';
 
 function dbMock() {
@@ -67,6 +67,56 @@ describe('ComputerService', () => {
     );
   });
 
+  it('builds a last-recorded computer summary even when remote polling never responds', async () => {
+    jest.spyOn(service, 'getConfig').mockResolvedValue({ enabled: true, allowAgentStart: true, resourceProfile: 'starter', resourceMode: 'fixed', metadata: {} } as any);
+    jest.spyOn(service, 'allowedResourceProfiles').mockResolvedValue(['starter']);
+    jest.spyOn(service, 'getAssignedComputer').mockResolvedValue({ computerId: 'owned-computer', name: 'Saved computer', status: 'running' } as any);
+    const remote = jest.spyOn(service as any, 'commonOsComputerRequest').mockImplementation(() => new Promise(() => {}));
+    const prompt = await service.buildComputerPrompt('agent_1', 'captured-session');
+    expect(prompt).toContain('owned-computer');
+    expect(prompt).toContain('last-recorded-running');
+    expect(prompt).toContain('startAgentComputer');
+    expect(remote).not.toHaveBeenCalled();
+  });
+
+  it('rejects a narrative file-write acknowledgement without execution evidence', async () => {
+    jest.spyOn(service, 'listInstances').mockResolvedValue([{ computerId: 'computer', agentId: 'agent_1', status: 'running', commonOsAgentId: 'runtime' }] as any);
+    const send = jest.spyOn(service, 'sendInstruction').mockResolvedValue({ status: 'responded', response: 'I wrote all requested files.' } as any);
+    await expect(service.writeFiles({ agentId: 'agent_1', files: [{ path: 'analysis.py', content: 'print(1)' }] })).rejects.toThrow(/did not verify/);
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ instruction: expect.stringMatching(/^Use the CommonOS pod terminal for this computer\./) }));
+  });
+
+  it.each(['analysis.py', '/analysis.py', '/mnt/shared/analysis.py'])(
+    'writes %s to the same workspace file used by terminal commands', async (path) => {
+      jest.spyOn(service, 'listInstances').mockResolvedValue([{ computerId: 'computer', agentId: 'agent_1', status: 'running', commonOsAgentId: 'runtime' }] as any);
+      jest.spyOn(service, 'sendInstruction').mockImplementation(async (args) => {
+        const command = args.instruction.split('```sh\n')[1].split('\n```')[0];
+        const payload = JSON.parse(Buffer.from(command.split("' '")[1].slice(0, -1), 'base64').toString());
+        expect(payload.parts.map((part: any) => part.path)).toEqual(['analysis.py']);
+        return { status: 'completed', response: payload.marker } as any;
+      });
+      expect((await service.writeFiles({ agentId: 'agent_1', files: [{ path, content: 'print(1)' }] })).files).toEqual(['analysis.py']);
+    },
+  );
+
+  it.each(['analysis.py', '/analysis.py', '/mnt/shared/analysis.py'])(
+    'reads %s through the same workspace-relative endpoint', async (path) => {
+      jest.spyOn(service, 'listInstances').mockResolvedValue([{ computerId: 'computer', agentId: 'agent_1', status: 'running', commonOsAgentId: 'runtime' }] as any);
+      const request = jest.spyOn(service as any, 'commonOsComputerRequest').mockResolvedValue({ content: 'print(1)' });
+      jest.spyOn(service as any, 'touchComputer').mockResolvedValue(undefined);
+      expect(await service.readFile({ agentId: 'agent_1', path })).toEqual({ path: '/analysis.py', content: 'print(1)' });
+      expect(request.mock.calls[0][1]).toBe('/computers/runtime/workspace/read?path=%2Fanalysis.py');
+    },
+  );
+
+  it.each(['/mnt/shared/../outside.py', '/mnt/shared/sub/../../outside.py', '/mnt/shared/./file.py', '/mnt/shared/invalid\0.py'])(
+    'rejects invalid workspace paths before issuing a write: %s', async (path) => {
+      const send = jest.spyOn(service, 'sendInstruction');
+      await expect(service.writeFiles({ agentId: 'agent_1', files: [{ path, content: 'replacement' }] })).rejects.toBeInstanceOf(BadRequestException);
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
+
   it('returns a clear error when no active computer can be resolved', async () => {
     jest.spyOn(service, 'listInstances').mockResolvedValue([] as any);
 
@@ -77,6 +127,18 @@ describe('ComputerService', () => {
         command: 'pwd',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('waits for observed runtime readiness before the next agent tool step', async () => {
+    const ready = { computerId: 'computer', status: 'running' };
+    jest.spyOn(service, 'refreshForAgent').mockResolvedValue(ready as any);
+    expect(await service.waitUntilReady('agent_1', 'computer')).toBe(ready);
+    expect(service.refreshForAgent).toHaveBeenCalledWith('agent_1', 'computer');
+  });
+
+  it('reports a failed wake without allowing follow-up tools to proceed', async () => {
+    jest.spyOn(service, 'refreshForAgent').mockResolvedValue({ status: 'failed', errorMessage: 'Capacity unavailable' } as any);
+    await expect(service.waitUntilReady('agent_1', 'computer')).rejects.toThrow(/Capacity unavailable/);
   });
 
   it('allows the same persistent computer to continue across chat sessions', async () => {
@@ -213,6 +275,35 @@ describe('ComputerService', () => {
     );
   });
 
+  it('checks temporary resource plans without counting the already running computer as a new slot', async () => {
+    const previous = process.env.BILLING_ENFORCEMENT;
+    process.env.BILLING_ENFORCEMENT = 'true';
+    try {
+      jest
+        .spyOn(service as any, 'assertAgent')
+        .mockResolvedValue({ agentId: 'agent_1', ownerUserId: 'owner' });
+      (service as any).entitlements.getEntitlements.mockResolvedValue({
+        computerUse: true,
+        allowedProfiles: ['starter', 'standard'],
+        maxConcurrentComputers: 1,
+      });
+      const slots = jest.spyOn(service as any, 'countRunningComputersForOwner');
+      await expect(
+        service.assertTemporaryResourceProfile('agent_1', 'standard'),
+      ).resolves.toBeUndefined();
+      await expect(
+        service.assertTemporaryResourceProfile('agent_1', 'gpu'),
+      ).rejects.toBeInstanceOf(HttpException);
+      expect(slots).not.toHaveBeenCalled();
+      await expect(service.allowedResourceProfiles('agent_1')).resolves.toEqual(
+        ['starter', 'standard'],
+      );
+    } finally {
+      if (previous === undefined) delete process.env.BILLING_ENFORCEMENT;
+      else process.env.BILLING_ENFORCEMENT = previous;
+    }
+  });
+
   it('keeps persistent storage when moving to a smaller compute profile', () => {
     expect(
       (service as any).normalizeConfigPatch(
@@ -250,6 +341,7 @@ describe('ComputerService', () => {
     jest.spyOn(service, 'getConfig').mockResolvedValue({
       configId: 'cfg_1',
       agentId: 'agent_1',
+      updatedAt: new Date(),
       enabled: false,
       resourceProfile: 'standard',
       resourceMode: 'elastic',
@@ -278,6 +370,16 @@ describe('ComputerService', () => {
     );
     // Enforcement still ran — the paid plan was actually consulted.
     expect(getEntitlements).toHaveBeenCalledWith('user_1');
+  });
+
+  it('keeps the active compute lease server-owned when saving access settings', () => {
+    const lease = { leaseId: 'actual-lease', profile: 'gpu' };
+    const config = { metadata: { resourceUpgradeLease: lease }, resourceProfile: 'gpu' };
+    const next = (service as any).normalizeConfigPatch({ resourceUpgradePolicy: { cpuAccess: 'auto', gpuAccess: 'ask', maxMinutes: 15 }, metadata: { resourceUpgradeLease: { leaseId: 'forged' } } }, config);
+    expect(next.metadata.resourceUpgradeLease).toEqual(lease);
+    expect(next.metadata.resourceUpgradePolicy.gpuAccess).toBe('ask');
+    const empty = (service as any).normalizeConfigPatch({ metadata: { resourceUpgradeLease: { leaseId: 'forged' } } }, { metadata: null });
+    expect(empty.metadata.resourceUpgradeLease).toBeUndefined();
   });
 
   it('persists stop intent and supplies the legacy fleet fallback', async () => {

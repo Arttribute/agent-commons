@@ -5,11 +5,13 @@ import { McpConnectionService } from './mcp-connection.service';
 import { McpToolDiscoveryService } from './mcp-tool-discovery.service';
 import { McpServerController } from './mcp-server.controller';
 import { McpToolController } from './mcp-tool.controller';
+import { McpOwnerGuard } from './mcp-owner.guard';
 
 @Module({
   imports: [DatabaseModule],
   controllers: [McpServerController, McpToolController],
   providers: [
+    McpOwnerGuard,
     McpServerService,
     McpConnectionService,
     McpToolDiscoveryService,

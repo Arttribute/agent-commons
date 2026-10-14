@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BRAVE_SEARCH_BASE_URL, hasConfiguredLocalWebSearch } from "@agent-commons/desktop-contract";
+import { BRAVE_SEARCH_BASE_URL, DEFAULT_LOCAL_WEB_SEARCH_URL, hasConfiguredLocalWebSearch, STAGING_LOCAL_WEB_SEARCH_URL, managedLocalWebSearchUrl, isManagedLocalWebSearchUrl } from "@agent-commons/desktop-contract";
 import { localWebSearchRequest, localWebSearchResults } from "./local-web-search.ts";
 
 test("Brave requires a key and sends it in the documented header, never the URL", () => {
@@ -22,4 +22,25 @@ test("SearXNG keeps a configured path and uses its JSON result shape", () => {
   assert.deepEqual(localWebSearchResults({ results: [{ title: "Mango", url: "https://example.org", content: "Research finding" }] }, false), [
     { title: "Mango", url: "https://example.org", snippet: "Research finding" },
   ]);
+});
+
+
+test("a fresh Local workspace can search without a key and never sends a custom key to the managed default", () => {
+  assert.equal(hasConfiguredLocalWebSearch({}), true);
+  const request = localWebSearchRequest({ webSearchApiKey: 'old-provider-secret' }, 'pandas documentation');
+  assert.equal(request.url.origin, new URL(DEFAULT_LOCAL_WEB_SEARCH_URL).origin);
+  assert.equal(request.url.pathname, '/v1/desktop-search/search');
+  assert.equal(request.url.searchParams.get('q'), 'pandas documentation');
+  assert.deepEqual(request.headers, { Accept: 'application/json' });
+});
+
+
+test("staging defaults stay on staging and never send a saved provider key", () => {
+  assert.equal(managedLocalWebSearchUrl('https://staging.agentcommons.io'), STAGING_LOCAL_WEB_SEARCH_URL);
+  assert.equal(managedLocalWebSearchUrl('https://staging.agentcommons.io.evil.example'), DEFAULT_LOCAL_WEB_SEARCH_URL);
+  assert.equal(isManagedLocalWebSearchUrl(STAGING_LOCAL_WEB_SEARCH_URL), true);
+  const request = localWebSearchRequest({ managedWebSearchUrl: STAGING_LOCAL_WEB_SEARCH_URL, webSearchApiKey: 'previous-provider-key' }, 'pandas documentation');
+  assert.equal(request.url.origin, 'https://staging.agentcommons.io');
+  assert.equal(request.url.pathname, '/api/desktop-search/search');
+  assert.deepEqual(request.headers, { Accept: 'application/json' });
 });

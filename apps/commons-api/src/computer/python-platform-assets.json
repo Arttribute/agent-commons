@@ -1,0 +1,72 @@
+[
+  {
+    "architecture": "x86_64",
+    "type": "libc",
+    "url": "https://deb.debian.org/debian/pool/main/g/glibc/libc6_2.41-12+deb13u4_amd64.deb",
+    "size": 2846580,
+    "sha256": "967aa62605721081c3eb2a17650611a792aa802d76a6511d1840242623d204c9"
+  },
+  {
+    "architecture": "x86_64",
+    "type": "libgcc-s1",
+    "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libgcc-s1_14.2.0-19_amd64.deb",
+    "size": 72772,
+    "sha256": "3c71917b490d1a17aed43196a2787a256ecf060526cdb20216a74bedc061b150"
+  },
+  {
+    "architecture": "x86_64",
+    "type": "libstdc++6",
+    "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libstdc++6_14.2.0-19_amd64.deb",
+    "size": 713628,
+    "sha256": "ab1fa05837aa7a92aae748fd07a18a35f7d18bb4a71c4724fe2bbf0e32089de0"
+  },
+  {
+    "architecture": "x86_64",
+    "type": "libgomp1",
+    "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libgomp1_14.2.0-19_amd64.deb",
+    "size": 137148,
+    "sha256": "72b7a1a33c48f3195efeb044111b34ae684b1e640bb6495c832443b798601cd5"
+  },
+  {
+    "architecture": "x86_64",
+    "type": "patchelf",
+    "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/patchelf-0.18.0-r3.apk",
+    "size": 72721,
+    "sha256": "76231dd6886d9ad1b885340b41327ce74f840fd70c6b7b8ee013d4191314012d"
+  },
+  {
+    "architecture": "aarch64",
+    "type": "libc",
+    "url": "https://deb.debian.org/debian/pool/main/g/glibc/libc6_2.41-12+deb13u4_arm64.deb",
+    "size": 2483572,
+    "sha256": "8784eda966b189c777a384dac5ce009e8fc9b52d006926c5a013e7fa8aa688cc"
+  },
+  {
+    "architecture": "aarch64",
+    "type": "libgcc-s1",
+    "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libgcc-s1_14.2.0-19_arm64.deb",
+    "size": 54104,
+    "sha256": "1108bc87879833d6d9a145f22a4a15cddb34e065b4b5f4b97bee586adbac2851"
+  },
+  {
+    "architecture": "aarch64",
+    "type": "libstdc++6",
+    "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libstdc++6_14.2.0-19_arm64.deb",
+    "size": 637536,
+    "sha256": "6669b0c52a2e7c6af9adfdabce3ff6e286065cdfbc7b85280862b5f799daebee"
+  },
+  {
+    "architecture": "aarch64",
+    "type": "libgomp1",
+    "url": "https://deb.debian.org/debian/pool/main/g/gcc-14/libgomp1_14.2.0-19_arm64.deb",
+    "size": 123520,
+    "sha256": "43e84cb7971d8a4d8870cab6204e998ea4f23ee1339bb0ff556dd881bac82d25"
+  },
+  {
+    "architecture": "aarch64",
+    "type": "patchelf",
+    "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/patchelf-0.18.0-r3.apk",
+    "size": 73962,
+    "sha256": "e7af9728c48ab77f0dc49bb58f5cc04a245537a70ec5581ede4007143137f325"
+  }
+]

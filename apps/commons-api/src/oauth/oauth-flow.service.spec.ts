@@ -345,3 +345,37 @@ describe('OAuthFlowService token recovery', () => {
     );
   });
 });
+
+
+describe('HubSpot MCP approval and token privacy', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => { global.fetch = originalFetch; });
+  it('binds approval to PKCE and stores granted identity without introspection tokens', async () => {
+    const provider = { providerId: 'hubspot-mcp-provider', providerKey: 'hubspot_mcp', isActive: true, clientId: 'client', authUrl: 'https://mcp.hubspot.com/oauth/authorize/user', tokenUrl: 'https://mcp.hubspot.com/oauth/v3/token', userInfoUrl: 'https://mcp.hubspot.com/oauth/v3/token/introspect', scopes: { default: [] }, authorizationParams: { resource: 'https://mcp.hubspot.com' } };
+    const providers = { getProvider: jest.fn().mockResolvedValue(provider), getProviderById: jest.fn().mockResolvedValue(provider), getDecryptedClientSecret: jest.fn().mockResolvedValue('secret') };
+    const connections = { createConnection: jest.fn().mockResolvedValue({ connectionId: 'connection' }) };
+    const states = { generateCodeVerifier: jest.fn().mockReturnValue('verifier'), generateCodeChallenge: jest.fn().mockResolvedValue('challenge'), createState: jest.fn().mockResolvedValue({ stateId: 'state' }), consumeState: jest.fn().mockResolvedValue({ providerId: provider.providerId, ownerId: 'user-1', requestedScopes: [], redirectUri: 'https://staging.agentcommons.io/api/oauth/callback/hubspot_mcp', codeVerifier: 'verifier' }) };
+    const service = new OAuthFlowService(providers as any, connections as any, states as any);
+    const approval = await service.initiateFlow({ userId: 'user-1', providerKey: 'hubspot_mcp', redirectUri: 'https://staging.agentcommons.io/api/oauth/callback/hubspot_mcp' });
+    const url = new URL(approval.authorizationUrl);
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('code_challenge')).toBe('challenge');
+    expect(url.searchParams.get('resource')).toBe('https://mcp.hubspot.com');
+    expect(url.searchParams.has('client_secret')).toBe(false);
+    const requests: Array<{ url: string; body: URLSearchParams }> = [];
+    global.fetch = jest.fn(async (url: any, options: any) => {
+      requests.push({ url: String(url), body: new URLSearchParams(options.body) });
+      return { ok: true, json: async () => String(url).endsWith('/introspect') ? { active: true, hub_id: 12, user_id: 34, user: 'test@example.invalid', scopes: ['crm.objects.contacts.read'], token: 'must-stay-private', signed_access_token: { secret: 'also-private' } } : { access_token: 'access', refresh_token: 'refresh', expires_in: 1800, scopes: ['crm.objects.contacts.read'], hub_id: 12 } } as any;
+    }) as any;
+    await service.handleCallback({ code: 'code', state: 'state', redirectUri: 'https://ignored.example', expectedProviderKey: 'hubspot_mcp' });
+    expect(requests[0].body.get('code_verifier')).toBe('verifier');
+    expect(requests[0].body.get('client_secret')).toBe('secret');
+    expect(requests[1].body.get('access_token')).toBe('access');
+    expect(requests.every((request) => !request.url.includes('access') && !request.url.includes('secret'))).toBe(true);
+    const stored = connections.createConnection.mock.calls[0][0];
+    expect(stored.scopes).toEqual(['crm.objects.contacts.read']);
+    expect(stored.providerUserEmail).toBe('test@example.invalid');
+    expect(stored.providerMetadata).not.toHaveProperty('token');
+    expect(stored.providerMetadata).not.toHaveProperty('signed_access_token');
+  });
+});

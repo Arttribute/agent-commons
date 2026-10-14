@@ -1,13 +1,13 @@
 import { Injectable, Logger, BadRequestException, OnModuleDestroy } from '@nestjs/common';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { McpServerService } from './mcp-server.service';
+import { requireCloudMcpTransport } from './mcp-cloud-transport';
 import { InferSelectModel } from 'drizzle-orm';
 import * as schema from '#/models/schema';
 
-type AnyTransport = StdioClientTransport | SSEClientTransport | StreamableHTTPClientTransport;
+type AnyTransport = SSEClientTransport | StreamableHTTPClientTransport;
 
 interface McpConnection {
   client: Client;
@@ -22,7 +22,6 @@ interface McpConnection {
  * Manages a pool of MCP client connections.
  *
  * Supported transports:
- *   stdio          — subprocess via stdin/stdout (local tools)
  *   sse            — legacy SSE transport (MCP pre-2025-03-26 spec)
  *   http / streamable-http — StreamableHTTP (MCP 2025-03-26 spec, production default)
  */
@@ -48,6 +47,7 @@ export class McpConnectionService implements OnModuleDestroy {
    * Idempotent — returns an existing connection if one is alive.
    */
   async connect(server: InferSelectModel<typeof schema.mcpServer>): Promise<Client> {
+    requireCloudMcpTransport(server.connectionType);
     const existing = this.pool.get(server.serverId);
     if (existing) {
       existing.lastUsedAt = new Date();
@@ -80,6 +80,7 @@ export class McpConnectionService implements OnModuleDestroy {
 
   /** Get client for a server, connecting lazily on first call. */
   async getConnection(server: InferSelectModel<typeof schema.mcpServer>): Promise<Client> {
+    requireCloudMcpTransport(server.connectionType);
     const existing = this.pool.get(server.serverId);
     if (existing) {
       existing.lastUsedAt = new Date();
@@ -127,14 +128,8 @@ export class McpConnectionService implements OnModuleDestroy {
 
     let transport: AnyTransport;
 
-    if (type === 'stdio') {
-      if (!config.command) throw new Error('stdio connection requires a "command" field');
-      transport = new StdioClientTransport({
-        command: config.command,
-        args: config.args ?? [],
-        env: config.env ?? {},
-      });
-    } else if (type === 'sse') {
+    requireCloudMcpTransport(type);
+    if (type === 'sse') {
       // Legacy SSE transport — MCP spec prior to 2025-03-26
       if (!config.url) throw new Error('sse connection requires a "url" field');
       const headers: Record<string, string> = config.headers ?? {};
@@ -150,7 +145,7 @@ export class McpConnectionService implements OnModuleDestroy {
       });
     } else {
       throw new BadRequestException(
-        `Unsupported MCP connection type "${type}". Use: stdio | sse | http`,
+        `Unsupported MCP connection type "${type}". Use: sse | http | streamable-http`,
       );
     }
 
@@ -163,17 +158,6 @@ export class McpConnectionService implements OnModuleDestroy {
       this.logger.error(`MCP client error [${server.name}]: ${error.message}`);
       this.handleDisconnect(server.serverId, error.message).catch(() => undefined);
     };
-
-    if (transport instanceof StdioClientTransport) {
-      transport.onerror = (error) => {
-        this.logger.error(`MCP transport error [${server.name}]: ${error}`);
-        this.handleDisconnect(server.serverId, String(error)).catch(() => undefined);
-      };
-      transport.onclose = () => {
-        this.logger.warn(`MCP transport closed [${server.name}]`);
-        this.handleDisconnect(server.serverId, 'Transport closed').catch(() => undefined);
-      };
-    }
 
     await client.connect(transport);
     return { client, transport };

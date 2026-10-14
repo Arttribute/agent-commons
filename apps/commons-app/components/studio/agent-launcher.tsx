@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ChatInputBox, { type ComposerLaunch } from "@/components/sessions/chat/chat-input-box";
-import { startChat } from "@/lib/start-chat";
-import { useToast } from "@/hooks/use-toast";
+import { beginChat } from "@/lib/start-chat";
 import { AgentSidebarSwitcher } from "@/components/studio/agent-sidebar-switcher";
 import { useAgentContext } from "@/context/AgentContext";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
 import { normalizeConversationStarters } from "@/lib/conversation-starters";
+import { ProjectChip } from "@/components/projects/project-chip";
+import { useProjects } from "@/hooks/use-projects";
 
 type LauncherAgent = {
   agentId: string;
@@ -20,9 +21,9 @@ type LauncherAgent = {
 };
 
 /**
- * The agents-overview composer: type a message, add files or knowledge, pick
- * an agent, and send. The chat opens in its own session view and streams
- * there. Reuses {@link ChatInputBox} in launch mode and the
+ * The composer on /new and project pages: type a message, add files or
+ * knowledge, pick an agent, and send. The chat opens at once in its session
+ * view and streams there. Reuses {@link ChatInputBox} in launch mode and the
  * {@link AgentSidebarSwitcher} as a compact picker.
  */
 export function StudioAgentLauncher({
@@ -33,6 +34,8 @@ export function StudioAgentLauncher({
   onAgentChange,
   placeholder,
   hideStarters = false,
+  projectPicker = false,
+  requestedAgent,
 }: {
   agents: LauncherAgent[];
   userAddress: string;
@@ -43,13 +46,17 @@ export function StudioAgentLauncher({
   onAgentChange?: (agentId: string) => void;
   placeholder?: string;
   hideStarters?: boolean;
+  /** Let the person choose a project for the chat when none is fixed. */
+  projectPicker?: boolean;
+  /** Switch to this agent, e.g. when a suggestion names one. `key` repeats a request. */
+  requestedAgent?: { agentId: string; key: number } | null;
 }) {
   const router = useRouter();
-  const { toast } = useToast();
   const { setInputText } = useAgentContext();
-  const [launching, setLaunching] = useState(false);
-  const [pendingLaunch, setPendingLaunch] = useState<ComposerLaunch | null>(null);
   const { isLoading: sessionsLoading } = useUserSessions(userAddress);
+  const showProjectPicker = projectPicker && !projectId;
+  const { projects } = useProjects(showProjectPicker && Boolean(userAddress));
+  const [chosenProjectId, setChosenProjectId] = useState<string | null>(null);
 
   const defaultAgentId = useMemo(
     () =>
@@ -83,6 +90,17 @@ export function StudioAgentLauncher({
     if (defaultAgentId) setSelectedAgentId(defaultAgentId);
   }, [sessionsLoading, defaultAgentId]);
 
+  const appliedRequestRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!requestedAgent || appliedRequestRef.current === requestedAgent.key) return;
+    if (!agents.some((agent) => agent.agentId === requestedAgent.agentId)) return;
+    appliedRequestRef.current = requestedAgent.key;
+    manualPickRef.current = true;
+    setSelectedAgentId(requestedAgent.agentId);
+    onAgentChange?.(requestedAgent.agentId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedAgent?.key, agents]);
+
   const handleSelect = (id: string) => {
     manualPickRef.current = true;
     setSelectedAgentId(id);
@@ -101,48 +119,26 @@ export function StudioAgentLauncher({
     [selectedAgent],
   );
 
-  const handleLaunch = async (launch: ComposerLaunch) => {
-    if (!selectedAgentId || launching) return;
-    setPendingLaunch(launch);
-    setLaunching(true);
-    try {
-      router.push(await startChat({ agentId: selectedAgentId, projectId, launch }));
-    } catch (cause) {
-      setInputText(launch.text);
-      toast({
-        title: "Could not start the chat",
-        description: cause instanceof Error ? cause.message : undefined,
-        variant: "destructive",
-      });
-      setPendingLaunch(null);
-      setLaunching(false);
-    }
+  // Open the chat right away; it shows the message and the agent thinking
+  // while the session is created in the background.
+  const handleLaunch = (launch: ComposerLaunch) => {
+    if (!selectedAgent) return;
+    router.push(
+      beginChat({
+        agent: { agentId: selectedAgent.agentId, name: selectedAgent.name, avatar: selectedAgent.avatar },
+        projectId: projectId ?? chosenProjectId ?? undefined,
+        launch,
+      }),
+    );
   };
 
   return (
-    <div className="w-full">
-      {pendingLaunch && (
-        <div aria-live="polite" className="mx-auto mb-5 flex max-w-3xl flex-col gap-4">
-          <div className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-2xl bg-muted px-4 py-3 text-sm text-foreground">
-            {pendingLaunch.text}
-            {pendingLaunch.attachments.length > 0 && (
-              <div className="mt-2 text-xs text-muted-foreground">
-                {pendingLaunch.attachments.map((attachment) => attachment.name).join(", ")}
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
-            {selectedAgent?.name ?? "Agent"} is working…
-          </div>
-        </div>
-      )}
+    <div className="flex w-full flex-col">
       <ChatInputBox
         agentId={selectedAgentId}
         sessionId=""
         userId={userAddress}
-        onLaunch={(launch) => void handleLaunch(launch)}
-        launching={launching}
+        onLaunch={handleLaunch}
         placeholder={
           placeholder ??
           (selectedAgent
@@ -168,6 +164,19 @@ export function StudioAgentLauncher({
           />
         }
       />
+      {showProjectPicker && (
+        // Above the composer on phones, where it sits at the bottom of the
+        // screen; below it on larger screens.
+        <div className="order-first mb-1.5 flex items-center md:order-none md:mb-0 md:mt-2">
+          <ProjectChip
+            variant="quiet"
+            side="bottom"
+            projects={projects.map(({ projectId: id, name }) => ({ projectId: id, name }))}
+            projectId={chosenProjectId}
+            onChange={setChosenProjectId}
+          />
+        </div>
+      )}
       {!hideStarters && starters.length > 0 && (
         <div className="mt-3 flex flex-nowrap justify-center gap-2">
           {starters.map((starter) => (

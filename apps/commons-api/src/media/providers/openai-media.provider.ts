@@ -30,7 +30,7 @@ export class OpenAIMediaProvider implements MediaProviderAdapter {
 
   private async image(client: OpenAI, input: MediaGenerateRequest): Promise<MediaProviderOutput> {
     const ratio = String(input.settings.aspectRatio ?? '1:1');
-    const size = ratio === '3:2' ? '1536x1024' : ratio === '2:3' ? '1024x1536' : '1024x1024';
+    const size = ratio === 'auto' ? 'auto' : ratio === '3:2' ? '1536x1024' : ratio === '2:3' ? '1024x1536' : '1024x1024';
     const common = {
       model: input.model.modelId,
       prompt: input.prompt,

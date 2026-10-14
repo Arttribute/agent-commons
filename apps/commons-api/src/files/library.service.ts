@@ -50,6 +50,29 @@ export class LibraryService {
     private readonly codeBuilder: CodeProjectBuilder,
   ) {}
 
+  /** Internal runtime inputs: never scan another owner, agent or chat. */
+  async generatedSessionFileIds(input: { ownerId: string; agentId: string; sessionId: string; limit: number }) {
+    const items = await this.db.query.libraryItem.findMany({
+      columns: { itemId: true, name: true },
+      where: and(
+        eq(schema.libraryItem.ownerUserId, input.ownerId),
+        eq(schema.libraryItem.sourceAgentId, input.agentId),
+        eq(schema.libraryItem.sourceSessionId, input.sessionId),
+        eq(schema.libraryItem.source, 'agent_generated'),
+        isNull(schema.libraryItem.deletedAt),
+        or(eq(schema.libraryItem.status, 'ready'), eq(schema.libraryItem.status, 'partial')),
+      ),
+      orderBy: (table) => desc(table.updatedAt),
+      limit: 100,
+    });
+    const names = new Set<string>();
+    return items.filter((item) => {
+      if (names.has(item.name)) return false;
+      names.add(item.name);
+      return true;
+    }).slice(0, clamp(input.limit, 1, 20)).map((item) => item.itemId);
+  }
+
   async list(
     principal: LibraryPrincipal,
     filters: {

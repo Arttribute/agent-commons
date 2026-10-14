@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   Search,
   Settings2,
+  SquarePen,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -33,7 +34,7 @@ export function LandingSidebar() {
   return (
     <aside className="hidden h-screen w-[290px] min-w-[290px] flex-col border-r border-border bg-white md:flex">
       <div className="px-3 pt-4">
-        <div className="mb-3 flex h-8 items-center px-1">
+        <div className="mb-3 flex h-8 items-center justify-between px-1">
           <Link href="/" className="flex items-center" aria-label="Agent Commons">
             <Image
               src="/logo.jpg"
@@ -44,15 +45,23 @@ export function LandingSidebar() {
               className="h-8 w-auto rounded-md object-contain"
             />
           </Link>
+          <Link
+            href={signInTo("/new")}
+            aria-label="Search"
+            title="Search"
+            className="rounded-md p-1.5 text-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Search className="h-4 w-4" strokeWidth={1.75} />
+          </Link>
         </div>
 
         <div className="flex flex-col gap-1">
           <Link
-            href={signInTo("/studio/agents")}
+            href={signInTo("/new")}
             className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
           >
-            <Search className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-            <span className="min-w-0 flex-1 truncate text-left">Search</span>
+            <SquarePen className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+            <span className="min-w-0 flex-1 truncate text-left">New chat</span>
           </Link>
 
           {NAV_ITEMS.map(({ label, icon: Icon, target }) => (
@@ -80,7 +89,7 @@ export function LandingSidebar() {
 
       <div className="mt-auto border-t border-border p-2">
         <Link
-          href={signInTo("/studio/agents")}
+          href={signInTo("/new")}
           className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-neutral-900 text-sm font-medium text-white transition-colors hover:bg-neutral-700"
         >
           Sign in

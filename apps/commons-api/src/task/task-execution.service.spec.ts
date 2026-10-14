@@ -64,11 +64,13 @@ describe('TaskExecutionService', () => {
   let db: ReturnType<typeof makeDb>;
   let scheduler: ReturnType<typeof makeScheduler>;
   let agentService: ReturnType<typeof makeAgentService>;
+  let sessionService: { createSession: jest.Mock };
 
   beforeEach(async () => {
     db = makeDb();
     scheduler = makeScheduler();
     agentService = makeAgentService();
+    sessionService = { createSession: jest.fn().mockResolvedValue({ sessionId: 'new-sess' }) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -76,7 +78,7 @@ describe('TaskExecutionService', () => {
         { provide: DatabaseService,        useValue: db },
         { provide: WorkflowService,        useValue: { getWorkflow: jest.fn().mockResolvedValue({}) } },
         { provide: WorkflowExecutorService, useValue: {} },
-        { provide: SessionService,         useValue: { createSession: jest.fn().mockResolvedValue({ sessionId: 'new-sess' }) } },
+        { provide: SessionService,         useValue: sessionService },
         { provide: TaskSchedulerService,   useValue: scheduler },
         { provide: AgentService,           useValue: agentService },
       ],
@@ -164,6 +166,21 @@ describe('TaskExecutionService', () => {
       const msg = agentService.runAgent.mock.calls[0][0].messages[0].content as string;
       expect(msg).toContain('Do something');
       expect(msg).toContain('⫷⫷TASK_EXECUTION⫸⫸');
+    });
+
+    it('lets a fresh recurring session follow the current agent model', async () => {
+      db.query.task.findFirst.mockResolvedValue({
+        ...pendingTask, isRecurring: true, cronExpression: '0 * * * *', recurringSessionMode: 'new',
+      });
+      const result = await service.executeTask('task-1');
+      expect(result.status).toBe('completed');
+      expect(sessionService.createSession).toHaveBeenCalledWith({
+        value: {
+          agentId: 'agent-1', initiator: 'user-1', title: 'Recurring: Do something',
+          model: { source: 'agent' },
+        },
+      });
+      expect(db.update().set).toHaveBeenCalledWith({ sessionId: 'new-sess' });
     });
 
     it('marks task as failed when runAgent throws', async () => {

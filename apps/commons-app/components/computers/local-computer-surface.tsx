@@ -50,7 +50,7 @@ export function LocalComputerSurface({ agentId, conversationId, activeTab, embed
       {onClose && <Button variant="ghost" size="icon" aria-label="Close computer" onClick={onClose}><X className="h-4 w-4" /></Button>}
     </div>
     <div className="space-y-5 overflow-y-auto p-4">
-      <p className="break-all text-sm text-muted-foreground">{conversation?.workspaceRoot || "Your home folder"}</p>
+      <p className="break-all text-sm text-muted-foreground">{conversation?.workspaceRoot || "No folder selected"}</p>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" onClick={() => void open("files")}><FolderOpen className="mr-2 h-4 w-4" />Open folder</Button>
         <Button variant="outline" onClick={() => void open("terminal")}><SquareTerminal className="mr-2 h-4 w-4" />Open terminal</Button>

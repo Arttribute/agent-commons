@@ -99,13 +99,24 @@ function delay(milliseconds: number) {
 export class LocalModelManager {
   private status: LocalModelStatus = { state: "checking", label: "Checking local AI" };
   private preparation?: Promise<void>;
+  private stopped = false;
   private server?: ChildProcess;
 
   constructor(
     private readonly directory: string,
-    private readonly model: string,
+    private model: string,
     private readonly onStatus: (status: LocalModelStatus) => void,
   ) {}
+
+  ownsServer(endpoint = "http://127.0.0.1:11434") {
+    try {
+      const url = new URL(endpoint);
+      return Boolean(this.server && !this.server.killed && this.server.exitCode === null)
+        && url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname)
+        && url.port === "11434" && url.pathname === "/" && !url.search
+        && !url.username && !url.password;
+    } catch { return false; }
+  }
 
   currentStatus() {
     return { ...this.status };
@@ -116,8 +127,9 @@ export class LocalModelManager {
     assertReviewedModelDigest(model, installed?.digest);
   }
 
-  prepare() {
-    this.preparation ??= this.prepareOnce().catch((error) => {
+  prepare(model = this.model): Promise<void> {
+    if (this.preparation) return this.preparation.then(() => this.prepare(model));
+    this.preparation = this.prepareOnce(model).catch((error) => {
       const rawMessage = error instanceof Error ? error.message : "Local AI could not be prepared";
       const storageMessage = "Agent Commons needs about 5 GB of free space to prepare Local AI on this computer.";
       const label = /no space left|not enough space|disk full/i.test(rawMessage) ? storageMessage : rawMessage;
@@ -131,6 +143,7 @@ export class LocalModelManager {
   }
 
   stop() {
+    this.stopped = true;
     if (this.server && !this.server.killed) this.server.kill();
     this.server = undefined;
   }
@@ -140,24 +153,27 @@ export class LocalModelManager {
     this.onStatus({ ...status });
   }
 
-  private async prepareOnce() {
+  private async prepareOnce(model: string) {
+    if (this.stopped) throw new Error("The local account changed.");
     this.update({ state: "checking", label: "Checking local AI" });
     if (!(await this.serverReady())) {
       const executable = this.findInstalledRuntime() ?? (await this.installRuntime());
+      if (this.stopped) throw new Error("The local account changed.");
       await this.startServer(executable);
     }
 
+    if (this.stopped) throw new Error("The local account changed.");
     let models = await this.listModels();
-    let selected = models.find((candidate) => candidate.name === this.model || candidate.name === `${this.model}:latest`);
+    let selected = models.find((candidate) => candidate.name === model || candidate.name === `${model}:latest`);
     if (!selected) {
-      await this.pullModel();
+      await this.pullModel(model);
       models = await this.listModels();
-      selected = models.find((candidate) => candidate.name === this.model || candidate.name === `${this.model}:latest`);
+      selected = models.find((candidate) => candidate.name === model || candidate.name === `${model}:latest`);
       if (!selected) {
         throw new Error("The local model download did not complete. Try again from Local settings.");
       }
     }
-    assertReviewedModelDigest(this.model, selected.digest);
+    assertReviewedModelDigest(model, selected.digest);
     this.update({ state: "ready", label: "Local AI ready", progress: 1 });
   }
 
@@ -290,6 +306,11 @@ export class LocalModelManager {
         OLLAMA_HOST: "127.0.0.1:11434",
         ...(managedRuntime ? { OLLAMA_MODELS: join(this.directory, "models") } : {}),
         OLLAMA_NO_CLOUD: "1",
+        // llama.cpp's multi-prompt cache otherwise defaults to up to 8 GiB.
+        // Keep app-owned inference within a modest host-memory budget.
+        LLAMA_ARG_CACHE_RAM: process.env.LLAMA_ARG_CACHE_RAM ?? "256",
+        OLLAMA_MAX_LOADED_MODELS: process.env.OLLAMA_MAX_LOADED_MODELS ?? "1",
+        OLLAMA_NUM_PARALLEL: process.env.OLLAMA_NUM_PARALLEL ?? "1",
       },
       stdio: "ignore",
       windowsHide: true,
@@ -303,12 +324,12 @@ export class LocalModelManager {
     throw new Error("Local AI did not start. Restart Agent Commons to try again.");
   }
 
-  private async pullModel() {
+  private async pullModel(model: string) {
     this.update({ state: "downloading-model", label: "Downloading the private local model", progress: 0 });
     const response = await fetch(`${OLLAMA_ORIGIN}/api/pull`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, stream: true }),
+      body: JSON.stringify({ model, stream: true }),
       signal: AbortSignal.timeout(60 * 60_000),
     });
     if (!response.ok || !response.body) throw new Error(`Could not download the local model (${response.status})`);

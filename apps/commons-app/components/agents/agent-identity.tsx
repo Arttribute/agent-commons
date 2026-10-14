@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { Separator } from "@/components/ui/separator";
 
 const MODEL_PLACEHOLDERS: Record<string, string> = {
@@ -49,6 +50,32 @@ export default function AgentIdentity({
   isOwner: boolean;
   onUpdate: (data: any) => void;
 }) {
+  const { mode } = useWorkspaceMode();
+  const local = mode === "private-local";
+  const [modelLoadError, setModelLoadError] = useState("");
+  const [localModels, setLocalModels] = useState<string[]>([]);
+  const [mediaOptions, setMediaOptions] = useState<Record<string, Array<{ id: string; name: string }>>>({});
+  useEffect(() => {
+    let cancelled = false;
+    if (local) {
+      const bridge = window.agentCommonsLocal;
+      void Promise.all([bridge?.listModels(), bridge?.listImageModels()]).then(([models, images]) => {
+        if (cancelled) return;
+        setLocalModels(models ?? []);
+        setMediaOptions({ imageModel: images ?? [], voiceModel: [{ id: "female", name: "Female" }, { id: "male", name: "Male" }, ...["heart", "bella", "michael", "george"].map((name) => ({ id: `kokoro-${name}`, name: `Kokoro ${name}` }))], transcriptionModel: ["tiny", "base", "small"].map((name) => ({ id: `Xenova/whisper-${name}`, name: `Whisper ${name}` })) });
+      }).catch((cause) => { if (!cancelled) setModelLoadError(cause instanceof Error ? cause.message : "Local models could not be loaded"); });
+    } else {
+      void fetch("/api/canvas/models", { cache: "no-store" }).then((response) => response.json()).then((payload) => {
+        if (cancelled) return;
+        const catalog = payload.data ?? payload;
+        const options: Record<string, Array<{ id: string; name: string }>> = {};
+        for (const kind of ["image", "video", "audio", "music"]) options[`${kind}Model`] = (catalog.models ?? []).filter((model: any) => model.kind === kind && model.available).map((model: any) => ({ id: model.modelKey, name: model.displayName }));
+        options.transcriptionModel = ['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'whisper-1'].map((id) => ({ id, name: id }));
+        setMediaOptions(options);
+      }).catch(() => undefined);
+    }
+    return () => { cancelled = true; };
+  }, [local]);
   const [copied, setCopied] = useState(false);
   const [editData, setEditData] = useState({
     name: agent?.name || "",
@@ -62,7 +89,8 @@ export default function AgentIdentity({
       "openai",
     ttsVoice: (agent?.ttsVoice as string) || (agent?.tts_voice as string) || "",
     modelProvider: (agent?.modelProvider as string) || "openai",
-    modelId: agent?.modelId || "",
+    modelId: agent?.modelId ?? "",
+    mediaModels: (agent?.mediaModels ?? {}) as Record<string, string>,
     modelApiKey: agent?.modelApiKey || "",
     modelBaseUrl: agent?.modelBaseUrl || "",
     temperature: agent?.temperature ?? 0.7,
@@ -116,7 +144,8 @@ export default function AgentIdentity({
         prev.ttsVoice ||
         "",
       modelProvider: (agent?.modelProvider as string) || prev.modelProvider || "openai",
-      modelId: agent?.modelId || prev.modelId || "",
+      modelId: agent?.modelId ?? "",
+      mediaModels: agent?.mediaModels ?? {},
       modelApiKey: agent?.modelApiKey || prev.modelApiKey || "",
       modelBaseUrl: agent?.modelBaseUrl || prev.modelBaseUrl || "",
       temperature: agent?.temperature ?? prev.temperature ?? 0.7,
@@ -138,12 +167,16 @@ export default function AgentIdentity({
           "alloy",
           "ash",
           "ballad",
-          "verse",
-          "aria",
           "coral",
+          "echo",
+          "fable",
+          "nova",
+          "onyx",
           "sage",
-          "ember",
-          "vibe",
+          "shimmer",
+          "verse",
+          "marin",
+          "cedar",
         ];
         const list = (env.length ? env : fallbacks).map((v) => ({
           id: v,
@@ -151,7 +184,7 @@ export default function AgentIdentity({
         }));
         const local = list;
         setVoices(local);
-        if (!local.find((v) => v.id === editData.ttsVoice)) {
+        if (!editData.ttsVoice) {
           setEditData((p) => ({ ...p, ttsVoice: local[0]?.id || "" }));
         }
       } else {
@@ -160,7 +193,7 @@ export default function AgentIdentity({
         const list: Array<{ id: string; name: string; provider: string }> =
           json.data || [];
         setVoices(list.map((v) => ({ id: v.id, name: v.name })));
-        if (!list.find((v: any) => v.id === editData.ttsVoice)) {
+        if (!editData.ttsVoice) {
           setEditData((p) => ({ ...p, ttsVoice: list[0]?.id || "" }));
         }
       }
@@ -173,9 +206,9 @@ export default function AgentIdentity({
   };
 
   useEffect(() => {
-    loadVoices(editData.ttsProvider);
+    if (!local) loadVoices(editData.ttsProvider);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editData.ttsProvider]);
+  }, [editData.ttsProvider, local]);
 
   return (
     <Dialog>
@@ -284,7 +317,7 @@ export default function AgentIdentity({
           />
 
           {/* Voice Settings */}
-          <div className="grid grid-cols-2 gap-2">
+          {!local && <div className="grid grid-cols-2 gap-2">
             <div className="col-span-1">
               <Label className="text-sm font-semibold">TTS Provider</Label>
               <Select
@@ -354,7 +387,7 @@ export default function AgentIdentity({
                 </div>
               )}
             </div>
-          </div>
+          </div>}
 
           <Label className="text-sm font-semibold">Description</Label>
           <Textarea
@@ -373,7 +406,7 @@ export default function AgentIdentity({
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <div className="col-span-1">
+            {!local && <div className="col-span-1">
               <Label className="text-sm font-semibold">Provider</Label>
               <Select
                 value={editData.modelProvider}
@@ -394,21 +427,21 @@ export default function AgentIdentity({
                   <SelectItem value="ollama">Ollama</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="col-span-1">
+            </div>}
+            <div className={local ? "col-span-2" : "col-span-1"}>
               <Label className="text-sm font-semibold">Model ID</Label>
-              <Input
+              {local ? <select className="mt-1 w-full rounded-md border bg-background p-2 text-sm" value={editData.modelId} onChange={(event) => handleChange("modelId", event.target.value)}><option value="">Use workspace default</option>{editData.modelId && !localModels.includes(editData.modelId) && <option value={editData.modelId}>{editData.modelId} (unavailable)</option>}{localModels.map((model) => <option key={model} value={model}>{model}</option>)}</select> : <Input
                 className="mt-1"
                 placeholder={
                   MODEL_PLACEHOLDERS[editData.modelProvider] || "Enter model ID"
                 }
                 value={editData.modelId}
                 onChange={(e) => handleChange("modelId", e.target.value)}
-              />
+              />}
             </div>
           </div>
 
-          {editData.modelProvider !== "ollama" && (
+          {!local && editData.modelProvider !== "ollama" && (
             <div>
               <Label className="text-sm font-semibold">API Key (BYOK)</Label>
               <div className="relative mt-1">
@@ -431,7 +464,7 @@ export default function AgentIdentity({
             </div>
           )}
 
-          {(editData.modelProvider === "ollama" || editData.modelProvider === "custom") && (
+          {!local && (editData.modelProvider === "ollama" || editData.modelProvider === "custom") && (
             <div>
               <Label className="text-sm font-semibold">Base URL</Label>
               <Input
@@ -443,6 +476,8 @@ export default function AgentIdentity({
             </div>
           )}
 
+          {modelLoadError && <p role="alert" className="text-xs text-destructive">{modelLoadError}</p>}
+          {Object.entries(mediaOptions).map(([key, options]) => <div key={key}><Label>{key.replace(/Model$/, "").replace(/^./, (letter) => letter.toUpperCase())} model</Label><select className="mt-1 w-full rounded-md border bg-background p-2 text-sm" value={editData.mediaModels[key] ?? ""} onChange={(event) => setEditData((current) => ({ ...current, mediaModels: { ...current.mediaModels, [key]: event.target.value } }))}><option value="">{local ? "Use workspace default" : "Let the agent choose"}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></div>)}
           <div className="grid grid-cols-2 gap-2">
             <div className="col-span-1">
               <Label className="text-sm font-semibold">Temperature</Label>

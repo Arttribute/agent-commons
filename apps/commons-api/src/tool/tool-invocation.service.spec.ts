@@ -21,6 +21,15 @@ describe('ToolInvocationService', () => {
     global.fetch = originalFetch;
   });
 
+  it('creates a timestamped HubSpot note associated with the selected contact and preserves plain text', () => {
+    const body = service.applyBodyTransform('hubspotContactNote', { contactId: '731', note: 'A <test> & a note' });
+    expect(body.properties.hs_note_body).toBe('A &lt;test&gt; &amp; a note');
+    expect(body.associations[0].to.id).toBe('731');
+    expect(body.associations[0].types[0].associationTypeId).toBe(202);
+    expect(Number.isFinite(Date.parse(body.properties.hs_timestamp))).toBe(true);
+    expect(() => service.applyBodyTransform('hubspotContactNote', { contactId: '../other', note: 'No' })).toThrow(/valid HubSpot contact/);
+  });
+
   describe('query param encoding', () => {
     it('sends RFC3339 timestamps unmangled (no double encoding)', async () => {
       let requestedUrl = '';

@@ -6,6 +6,7 @@ import { isLocalDesktopMode } from "@/lib/desktop-api-fetch";
 export type VoiceRecorderState = "idle" | "recording" | "transcribing";
 
 interface UseVoiceRecorderOptions {
+  agentId?: string;
   /** Receives the final transcription text after the user accepts a recording. */
   onTranscribed: (text: string) => void;
   onError?: (message: string) => void;
@@ -19,15 +20,16 @@ interface UseVoiceRecorderOptions {
  * back to "idle". All media resources are released on stop and on unmount.
  */
 export function useVoiceRecorder({
+  agentId,
   onTranscribed,
   onError,
 }: UseVoiceRecorderOptions) {
   const [state, setState] = useState<VoiceRecorderState>("idle");
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  const callbacksRef = useRef({ onTranscribed, onError });
+  const callbacksRef = useRef({ onTranscribed, onError, agentId });
   useEffect(() => {
-    callbacksRef.current = { onTranscribed, onError };
+    callbacksRef.current = { onTranscribed, onError, agentId };
   });
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -128,6 +130,7 @@ export function useVoiceRecorder({
           blob,
           type,
           Date.now() - startedAt,
+          callbacksRef.current.agentId,
         );
         if (text) callbacksRef.current.onTranscribed(text);
         else
@@ -187,6 +190,7 @@ async function requestTranscription(
   blob: Blob,
   mimeType: string,
   durationMs: number,
+  agentId?: string,
 ): Promise<string> {
   if (isLocalDesktopMode() && window.agentCommonsLocal) {
     const context = new AudioContext();
@@ -199,7 +203,7 @@ async function requestTranscription(
       source.connect(offline.destination);
       source.start();
       const rendered = await offline.startRendering();
-      return await window.agentCommonsLocal.transcribeAudio(new Float32Array(rendered.getChannelData(0)));
+      return await window.agentCommonsLocal.transcribeAudio(new Float32Array(rendered.getChannelData(0)), agentId);
     } finally {
       await context.close();
     }
@@ -214,6 +218,13 @@ async function requestTranscription(
   const formData = new FormData();
   formData.set("file", blob, `recording.${extension}`);
   formData.set("durationMs", String(Math.max(0, Math.round(durationMs))));
+  if (agentId) {
+    const preference = await fetch(`/api/agents/${encodeURIComponent(agentId)}`, { cache: "no-store" });
+    if (!preference.ok) throw new Error("The agent's transcription preference could not be loaded. Try recording again.");
+    const payload = await preference.json();
+    const model = payload.data?.mediaModels?.transcriptionModel;
+    if (model) formData.set("model", model);
+  }
 
   const response = await fetch("/api/audio/transcribe", {
     method: "POST",

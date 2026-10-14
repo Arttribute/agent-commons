@@ -1,3 +1,4 @@
+import { extractSampledVideoFrames } from "./video-sampling";
 import * as schema from '#/models/schema';
 import {
   BadRequestException,
@@ -2104,34 +2105,9 @@ export class FilesService {
     const inputPath = path.join(directory, `input${extension}`);
     try {
       await writeFile(inputPath, buffer);
-      const framePattern = path.join(directory, 'frame-%02d.jpg');
-      const maxFrames = Math.max(
-        3,
-        Math.min(12, Number(process.env.AGENT_FILE_VIDEO_MAX_FRAMES ?? 8)),
+      const { frames: sampledFrames, durationMs } = await extractSampledVideoFrames(
+        inputPath, directory, Number(process.env.AGENT_FILE_VIDEO_MAX_FRAMES ?? 8),
       );
-      await execFileAsync(
-        process.env.FFMPEG_PATH || 'ffmpeg',
-        [
-          '-hide_banner',
-          '-loglevel',
-          'error',
-          '-i',
-          inputPath,
-          '-vf',
-          "fps=1/8,scale='min(1280,iw)':-2",
-          '-frames:v',
-          String(maxFrames),
-          '-q:v',
-          '3',
-          framePattern,
-        ],
-        { maxBuffer: 4 * 1024 * 1024 },
-      );
-      const frameNames = (await readdir(directory))
-        .filter((name) => /^frame-\d+\.jpg$/.test(name))
-        .sort()
-        .slice(0, maxFrames);
-      if (!frameNames.length) throw new Error('No video frames were decoded');
 
       let transcript = '';
       const audioPath = path.join(directory, 'audio.mp3');
@@ -2174,13 +2150,13 @@ export class FilesService {
       }
 
       const frames = await Promise.all(
-        frameNames.map(async (name) => ({
+        sampledFrames.map(async ({ name }) => ({
           type: 'image_url' as const,
           image_url: {
             url: `data:image/jpeg;base64,${(
               await readFile(path.join(directory, name))
             ).toString('base64')}`,
-            detail: 'low' as const,
+            detail: 'high' as const,
           },
         })),
       );
@@ -2199,7 +2175,7 @@ export class FilesService {
             content: [
               {
                 type: 'text',
-                text: `Video: ${originalName}\nSampled frames are chronological.${
+                text: `Video: ${originalName}\nSampled frames span the whole clip, in chronological order at ${sampledFrames.map((frame) => `${frame.timestampMs} ms`).join(", ")}.${
                   transcript ? `\nAudio transcript:\n${transcript}` : ''
                 }`,
               },
@@ -2220,7 +2196,9 @@ export class FilesService {
         metadata: {
           mediaKind: 'video',
           videoUnderstandingModel: model,
-          sampledFrames: frameNames.length,
+          sampledFrames: sampledFrames.length,
+          sampledFrameTimesMs: sampledFrames.map((frame) => frame.timestampMs),
+          durationMs,
           hasTranscript: Boolean(transcript),
         },
         artifacts: [],

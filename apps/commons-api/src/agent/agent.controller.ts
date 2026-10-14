@@ -52,6 +52,7 @@ interface RunBody {
   uiContext?: CopilotUiContext;
   /** Knowledge Spaces explicitly selected by the user for this turn. */
   knowledgeSpaceIds?: string[];
+  knowledgeMode?: "auto" | "selected" | "off";
   /** Project for a new session; existing sessions keep their project. */
   projectId?: string;
   cliTools?: Array<{

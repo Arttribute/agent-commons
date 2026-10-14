@@ -4,9 +4,6 @@ import { useParams, usePathname } from "next/navigation";
 import type { NextPage } from "next";
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import AgentsShowcase from "@/components/agents/AgentsShowcase";
-import { AgentsWorkspaceView } from "@/components/studio/agents-workspace-view";
-import { StudioAgentLauncher } from "@/components/studio/agent-launcher";
-import { LauncherGreeting } from "@/components/studio/launcher-greeting";
 import { CommonsAppsBar } from "@/components/plugins/apps-bar";
 import { ToolsManagementView } from "@/components/tools/management/tools-management-view";
 import { WorkflowsListView } from "@/components/workflows/workflows-list-view";
@@ -15,7 +12,7 @@ import { CreateToolDialog } from "@/components/tools/create-tool-dialog";
 import { TaskManagementView } from "@/components/tasks/task-management-view";
 import { SkillsMarketplaceView } from "@/components/skills/skills-marketplace-view";
 import { UiPluginsView } from "@/components/plugins/ui-plugins-view";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { CreateButton, PageHeader } from "@/components/layout/page-header";
 import { useRouter } from "next/navigation";
@@ -27,8 +24,6 @@ import {
   openUiPluginCreator,
 } from "@/lib/commons-copilot-events";
 import { CustomizeTabs } from "@/components/customize/customize-tabs";
-import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
-import { useAgentActivity } from "@/hooks/use-agent-activity";
 
 const StudioPage: NextPage = () => {
   const { tab } = useParams() as { tab: string };
@@ -66,14 +61,10 @@ const StudioPage: NextPage = () => {
     taskCreateRef.current = fn;
   }, []);
 
-  const {
-    agents,
-    loading: loadingAgents,
-    error: agentsError,
-    refresh: refreshAgents,
-  } = useAgents(activeTab === "agents" ? userAddress : undefined);
-  const { sessions } = useUserSessions(activeTab === "agents" ? userAddress : "");
-  const activity = useAgentActivity(sessions);
+  // Unknown /studio/<x> segments fall back to a plain agent showcase. The
+  // agents chat app lives at /studio/agents with its own layout.
+  const knownTab = ["tools", "tasks", "workflows", "skills", "apps"].includes(activeTab);
+  const { agents, loading: loadingAgents } = useAgents(knownTab ? undefined : userAddress);
 
   const mainContent = useMemo(() => {
     switch (activeTab) {
@@ -115,32 +106,6 @@ const StudioPage: NextPage = () => {
             <UiPluginsView />
           </div>
         );
-      // Only the real /studio/agents route mounts the launcher — it depends on
-      // the AgentProvider from that route's layout. The default fallback (for
-      // unknown /studio/<x> segments served without that provider) renders just
-      // the plain showcase.
-      case "agents":
-        return (
-          <AgentsWorkspaceView
-            agents={agents}
-            loading={loadingAgents}
-            error={Boolean(agentsError)}
-            onRetry={refreshAgents}
-            onAgentClick={(id) => router.push(`/studio/agents/${id}`)}
-            activity={activity}
-            launcher={<StudioAgentLauncher
-              agents={agents.map((a) => ({
-                agentId: a.agentId,
-                name: a.name,
-                avatar: (a as any).avatar,
-                modelId: (a as any).modelId,
-                isDefault: Boolean((a as any).isDefault),
-                conversationStarters: (a as any).conversationStarters,
-              }))}
-              userAddress={userAddress}
-            />}
-          />
-        );
       default:
         return (
           <div className="p-4 sm:p-6">
@@ -159,13 +124,11 @@ const StudioPage: NextPage = () => {
   }, [
     activeTab,
     loadingAgents,
-    agentsError,
     agents,
     userAddress,
     registerSkillCreate,
     registerTaskCreate,
-    refreshAgents,
-    activity,
+    router,
   ]);
 
   const createLabel = useMemo(() => {

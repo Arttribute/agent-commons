@@ -19,6 +19,25 @@ type PlatformProviderDefinition = Omit<
 
 const PLATFORM_PROVIDER_DEFINITIONS: PlatformProviderDefinition[] = [
   {
+    providerKey: 'hubspot_mcp', displayName: 'HubSpot MCP',
+    description: 'Use HubSpot’s official remote MCP tools with browser approval.',
+    authUrl: 'https://mcp.hubspot.com/oauth/authorize/user', tokenUrl: 'https://mcp.hubspot.com/oauth/v3/token',
+    userInfoUrl: 'https://mcp.hubspot.com/oauth/v3/token/introspect',
+    clientIdEnv: 'HUBSPOT_MCP_CLIENT_ID', clientSecretEnv: 'HUBSPOT_MCP_CLIENT_SECRET',
+    scopes: { default: [] }, authorizationParams: { resource: 'https://mcp.hubspot.com' }, tokenParams: { resource: 'https://mcp.hubspot.com' }, isPlatform: true,
+  },
+  {
+    providerKey: 'hubspot', displayName: 'HubSpot',
+    description: 'Connect your HubSpot account to find CRM contacts and create approved contact records and notes.',
+    authUrl: 'https://app.hubspot.com/oauth/authorize',
+    tokenUrl: 'https://api.hubapi.com/oauth/2026-03/token',
+    revokeUrl: 'https://api.hubapi.com/oauth/2026-03/token/revoke',
+    userInfoUrl: 'https://api.hubapi.com/oauth/2026-03/token/introspect',
+    clientIdEnv: 'HUBSPOT_OAUTH_CLIENT_ID', clientSecretEnv: 'HUBSPOT_OAUTH_CLIENT_SECRET',
+    scopes: { default: ['oauth', 'crm.objects.contacts.read'], contacts: ['crm.objects.contacts.read', 'crm.objects.contacts.write'] },
+    authorizationParams: {}, tokenParams: {}, isPlatform: true,
+  },
+  {
     providerKey: 'google_workspace',
     displayName: 'Google Workspace',
     description:

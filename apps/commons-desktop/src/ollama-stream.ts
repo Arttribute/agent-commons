@@ -2,6 +2,7 @@ export type OllamaMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
   thinking?: string;
+  images?: string[];
   tool_name?: string;
   tool_calls?: Array<{ function: { name: string; arguments: unknown } }>;
 };

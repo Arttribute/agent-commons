@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
+import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 import {
   AudioLines,
   Check,
@@ -300,9 +302,9 @@ const KINDS: Array<{ kind: MediaKind; label: string; icon: typeof ImageIcon }> =
 
 const DEFAULTS_KEY = "commons.canvas.creativeDefaults";
 
-export function rememberedCreativeDefaults(): CreativeDefaults | null {
+export function rememberedCreativeDefaults(mode = "cloud"): CreativeDefaults | null {
   try {
-    const value = window.localStorage.getItem(DEFAULTS_KEY);
+    const value = window.localStorage.getItem(mode === "private-local" ? `${DEFAULTS_KEY}.private-local` : DEFAULTS_KEY);
     return value ? (JSON.parse(value) as CreativeDefaults) : null;
   } catch {
     return null;
@@ -318,6 +320,7 @@ export function CreativeTools({
   focusKind?: MediaKind | null;
   onSave: (next: CreativeDefaults) => Promise<void>;
 }) {
+  const { mode } = useWorkspaceMode();
   const [catalog, setCatalog] = useState<MediaCatalog | null>(null);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<CreativeDefaults>(value);
@@ -327,7 +330,9 @@ export function CreativeTools({
   useEffect(() => setDraft(value), [value]);
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/canvas/models", { cache: "no-store" })
+    setCatalog(null);
+    setError("");
+    desktopApiFetch("/api/canvas/models", { cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json().catch(() => null);
         if (!response.ok) throw new Error(apiErrorMessage(payload, "Creative models could not be loaded"));
@@ -339,7 +344,7 @@ export function CreativeTools({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [mode]);
 
   const kinds = useMemo(
     () => [...KINDS].sort((a, b) => Number(b.kind === focusKind) - Number(a.kind === focusKind)),
@@ -452,7 +457,7 @@ export function CreativeTools({
             try {
               await onSave(draft);
               try {
-                window.localStorage.setItem(DEFAULTS_KEY, JSON.stringify(draft));
+                window.localStorage.setItem(mode === "private-local" ? `${DEFAULTS_KEY}.private-local` : DEFAULTS_KEY, JSON.stringify(draft));
               } catch {
                 // Remembering defaults for new canvases is a convenience only.
               }
@@ -481,6 +486,7 @@ function ModelInfo({ model }: { model: MediaModel }) {
 }
 
 function priceLabel(model: MediaModel) {
+  if (model.provider === "local") return "Runs on this device without Commons credits.";
   const usd = model.pricing.usd;
   const amount = usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
   const unit =

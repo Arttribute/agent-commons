@@ -1,4 +1,4 @@
-export const DEFAULT_AUTH_CALLBACK = "/studio/agents";
+export const DEFAULT_AUTH_CALLBACK = "/new";
 
 /**
  * Keep post-auth navigation on this application. Legacy links that still ask
@@ -21,7 +21,7 @@ export function safeAuthCallback(value: unknown): string {
       return DEFAULT_AUTH_CALLBACK;
     }
     if (parsed.pathname === "/agents") {
-      return `${DEFAULT_AUTH_CALLBACK}${parsed.search}${parsed.hash}`;
+      return `/studio/agents${parsed.search}${parsed.hash}`;
     }
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {

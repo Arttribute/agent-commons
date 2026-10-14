@@ -1,4 +1,11 @@
+import { hostApplicationFromContext } from "./host-application";
+import { missingComputedArtifacts, preferManagedArtifactTools } from './computed-artifact-completion';
+import { LiveTurnSteering } from './live-turn-steering';
+import { ToolImageContext } from './tool-image-context';
+import { AIMessage } from '@langchain/core/messages';
 import * as schema from '#/models/schema';
+import { MEDIA_MODEL_REGISTRY } from "~/media/media-model.registry";
+import { TRANSCRIPTION_MODELS } from "~/audio/audio-models";
 import { CanvasService } from '~/media/canvas.service';
 import { CanvasVisualsService } from '~/media/canvas-visuals.service';
 import { canvasContextRequest } from '~/media/canvas-context';
@@ -41,7 +48,6 @@ import {
 } from 'drizzle-orm';
 import { compact, first, get, map, omit } from 'lodash';
 import {
-  ChatCompletionCreateParams,
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from 'openai/resources/chat/completions';
@@ -54,9 +60,10 @@ import { EncryptionService } from '~/modules/encryption';
 import { SessionService } from '~/session/session.service';
 import { ProjectService } from '~/project/project.service';
 import { ToolService } from '~/tool/tool.service';
+import { optionalContext } from './optional-context';
 import { CommonTool } from '../tool/tools/common-tool.service';
 import { WalletTool } from '../tool/tools/ethereum-tool.service';
-import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
+import { blockingModelCallbacks } from './blocking-model-callbacks';
 import { IChatGptSchema } from '@samchon/openapi';
 import { getPosthog } from '~/helpers/posthog';
 import { LogService } from '~/log/log.service';
@@ -73,6 +80,8 @@ import { WalletService } from '~/wallet/wallet.service';
 import { ActivityService } from '~/activity/activity.service';
 import { FilesService } from '~/files';
 import { ComputerService } from '~/computer';
+import { ResourceUpgradeService } from '~/computer/resource-upgrade.service';
+import { toolRequestTimeoutMs } from './tool-request-timeout';
 import { agentRunProgress } from './run-progress';
 import {
   RUNTIME_CAPABILITIES,
@@ -90,7 +99,7 @@ import { durableRole, restoreSessionMessages } from '~/session/session-history';
 import { filterPlatformToolsForAgent } from './copilot-tool-policy';
 import { selectModelTools } from './model-tool-selection';
 import { MAX_CONSECUTIVE_TOOL_SCHEMA_FAILURES, nextToolSchemaFailureCount } from './tool-schema-retry';
-import { AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
+import { DATA_EXECUTION_CONTRACT, requiresComputedData, shouldOfferCreativeMedia, requiresNativeImageGeneration, AUTONOMOUS_EXECUTION_CONTRACT, buildAgentIdentityPrompt, buildWorkspaceModeContext } from '@agent-commons/agent-core';
 
 const got = import('got');
 
@@ -231,6 +240,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     private activityService: ActivityService,
     private filesService: FilesService,
     private computerService: ComputerService,
+    private resourceUpgrades: ResourceUpgradeService,
     private skillService: SkillService,
     private provenanceService: ProvenanceService,
     @Inject(forwardRef(() => TaskService)) private tasks: TaskService,
@@ -537,7 +547,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       Users can attach files to chat turns. The chat history contains file IDs and compact previews, never raw file bytes or base64.
       - **searchUploadedFile** — search a large uploaded file for relevant passages and PDF page numbers before reading it. Verify page citations with readUploadedFile using pageNumber; never guess a page number.
       - **readUploadedFile** — read extracted text from an uploaded file in bounded chunks. Use offset/nextOffset for large files or pageNumber for a specific PDF page. Set includeImageUrls for images or rendered PDF pages when visual inspection is needed. For formats without native extraction, set includeDownloadUrl and use the persistent computer to inspect the signed original.
-      - **createTextFile**, **createDocumentFile**, **createPresentationFile**, **createPdfFile**, and **createSpreadsheetFile** create durable artifacts that appear in the chat and library. Use the exact format the user requested and return the fileId. Never silently substitute PDF for PPTX, DOCX for PDF, or another format. If a creation call fails, inspect and correct the arguments, retry the requested format, and report a blocker only after the requested path is genuinely unavailable.
+      - **createTextFile**, **createDocumentFile**, **createPresentationFile**, **createPdfFile**, and **createSpreadsheetFile** create durable artifacts that appear in the chat and library. Use the exact format the user requested and return the fileId. Computer file-writing tools save working files; they do not publish Library artifacts. Use these document tools for requested Library documents. Never silently substitute PDF for PPTX, DOCX for PDF, or another format. If a creation call fails, inspect and correct the arguments, retry the requested format, and report a blocker only after the requested path is genuinely unavailable.
       - A fact shared in a chat or Project is already preserved in its history. A request to remember a fact or title a chat does not authorize creating a new Library file.
       - When revising an uploaded DOCX, PPTX, PDF, or text artifact, read it first and pass its fileId as sourceFileId. Revisions are saved as recoverable new versions rather than overwriting the original.
       - PDF revisions must preserve the source document's typography, spacing, page geometry, graphics, and overall visual hierarchy. Call createPdfFile with sourceFileId and replacements (not sections). Each replacement must contain an exact find passage copied from readUploadedFile, without the "--- Page N ---" marker, plus the meaningfully revised replace text. Prefer the largest coherent same-style passage that changes, keep replacement copy concise enough for the original region, and never rebuild or redesign an uploaded PDF unless the user explicitly asks for a redesign. If a replacement reports mixed styles, overflow, or unavailable subset-font glyphs, split or rephrase it and retry.
@@ -547,6 +557,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       Each agent may have one isolated CommonOS computer with a persistent workspace, terminal, and browser. The runtime may sleep and be replaced, but files and computer identity persist across chats. Use it only when the user asks for computer-backed work or when the work materially requires a runtime, filesystem, browser, long-running process, app execution, or generated files.
       - **startAgentComputer** — idempotently wake or attach this agent's assigned computer.
       - **listAgentComputers** — inspect the assigned computer's current state.
+      - **runPythonAnalysis** — execute Python data analysis, statistics, plots and ML in the isolated managed runtime, with numpy, pandas, matplotlib, scipy, scikit-learn, seaborn, openpyxl and Pillow already provided. Start the assigned computer first. Pass explicit Library file IDs in inputItemIds to select inputs, including older generated media. When omitted, active attachments and up to 20 recent owner-scoped outputs from this exact chat are staged automatically. INPUT_FILES maps names and IDs to staged readable paths; generated images stay in the Library until staged, so do not guess computer paths for them. Save outputs using the existing OUTPUT_DIR / filename to publish verified Library artifacts. Never replace OUTPUT_DIR with a path copied from another chat. For Pillow graphics, ImageFont.truetype(FONT_FILES['sans'], size) uses a provided portable font; sans_bold, serif and mono are also available. Files persist across calls; imports and Python variables do not. Use this tool for Python analysis instead of bare system python3 or installing into the user or system environment. ZIP inputs can be inspected with zipfile.
+      - Terminal commands use the minimal operating-system Python, which does not have the managed data libraries. For Python data science, library import checks and ML, choose runPythonAnalysis directly; it prepares the separate managed environment. Do not install pip or data libraries into system Python, and do not replace requested library-based computation with an approximation.
       - **runComputerCommand** — run terminal work through the selected computer.
       - **readComputerFile** — read files from the computer workspace.
       - **writeComputerFiles** — write complete text files through a structured payload. Use this for all source-code creation and replacement; do not use shell heredocs or squeeze code into commands.
@@ -609,10 +621,17 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
   }
 
   /* ─────────────────────────  SESSION BOOTSTRAP  ───────────────────────── */
+  private optionalPromptContext<T>(label: string, work: PromiseLike<T>, fallback: T) {
+    return optionalContext(work, fallback, (reason) =>
+      this.logger.warn(`Optional conversation context ${label} unavailable (${reason})`),
+    );
+  }
+
   private async createAgentSession(
     agentId: string,
     sessionId: string,
     firstUserMessage = '',
+    useAgentMemory = true,
   ) {
     const [
       agent,
@@ -624,20 +643,14 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       appsBlock,
     ] = await Promise.all([
       this.getAgent({ agentId }),
-      this.getChildSessions(sessionId),
-      firstUserMessage
-        ? this.memoryService
-            .buildMemoryBlock(agentId, firstUserMessage)
-            .catch(() => '')
+      this.optionalPromptContext('child sessions', this.getChildSessions(sessionId), []),
+      firstUserMessage && useAgentMemory
+        ? this.optionalPromptContext('memory', this.memoryService.buildMemoryBlock(agentId, firstUserMessage), '')
         : Promise.resolve(''),
-      this.taskExecution.listSessionTasks(sessionId).catch(() => []),
-      this.computerService
-        .buildComputerPrompt(agentId, sessionId)
-        .catch(() => ''),
-      this.skillService
-        .buildPromptIndex(agentId, firstUserMessage)
-        .catch(() => ''),
-      this.uiPlugins.buildAgentPromptBlock(agentId).catch(() => ''),
+      this.optionalPromptContext('tasks', this.taskExecution.listSessionTasks(sessionId), []),
+      this.optionalPromptContext('computer summary', this.computerService.buildComputerPrompt(agentId, sessionId), 'Computer summary is unavailable. Use computer tools to verify its actual state and workspace before acting.'),
+      this.optionalPromptContext('skills', this.skillService.buildPromptIndex(agentId, firstUserMessage), ''),
+      this.optionalPromptContext('apps', this.uiPlugins.buildAgentPromptBlock(agentId), ''),
     ]);
     const childSessionsInfo =
       childSessions.length > 0
@@ -666,34 +679,10 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       },
     ];
 
-    /* build tool definitions exactly like before */
-    const storedTools = await this.toolService.getAllTools().catch(() => []);
-    const dynamicTools = storedTools.map((dbTool) => ({
-      type: 'function',
-      function: { ...dbTool.schema, name: dbTool.name },
-      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-    }));
-    const staticTools = map(app.functions, (_) => ({
-      type: 'function',
-      function: {
-        ..._,
-        parameters:
-          _?.parameters as unknown as ChatCompletionTool['function']['parameters'],
-      },
-      endpoint: `http://localhost:${process.env.PORT}/v1/agents/tools`,
-    })) as (ChatCompletionTool & { endpoint: string })[];
-
-    const completionBody: ChatCompletionCreateParams = {
-      messages,
-      tools: [
-        ...dynamicTools.map((tool) => ({ ...tool, type: 'function' as const })),
-        ...staticTools.map((tool) => ({ ...tool, type: 'function' as const })),
-      ],
-      tool_choice: 'auto',
-      parallel_tool_calls: true,
-      model: 'gpt-5.4-mini',
-    };
-    return completionBody;
+    // Tools and the selected model are already bound by the authenticated run.
+    // The caller consumes only messages; rebuilding a global tool list here
+    // adds an unrelated database scan to every new conversation.
+    return { messages };
   }
 
   /* ─────────────────────────  CHILD SESSION TRACKING  ───────────────────────── */
@@ -796,6 +785,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     uiContext?: CopilotUiContext;
     /** Knowledge Spaces explicitly selected by the user for this turn. */
     knowledgeSpaceIds?: string[];
+    knowledgeMode?: "auto" | "selected" | "off";
     /** Project for a new session. Existing sessions keep their own project. */
     projectId?: string;
     /**
@@ -831,6 +821,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       metadata?: Record<string, unknown>;
     };
   }): Observable<any> {
+    const hostApplication = hostApplicationFromContext(props.cliContext);
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
       const keepalive = setInterval(
@@ -949,6 +940,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                   initiator: initiator,
                   projectId: requestedProject?.projectId,
                   model: {
+                    source: "agent",
                     name: agent.modelId ?? 'gpt-5.4-mini', // legacy compat
                     provider: agent.modelProvider ?? 'openai',
                     modelId: agent.modelId ?? 'gpt-5.4-mini',
@@ -989,6 +981,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                   initiator,
                   parentSessionId: parentSessionId ?? undefined,
                   model: {
+                    source: "agent",
                     name: agent.modelId ?? 'gpt-5.4-mini',
                     provider: agent.modelProvider ?? 'openai',
                     modelId: agent.modelId ?? 'gpt-5.4-mini',
@@ -1028,6 +1021,9 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           const sessionRecord = await this.session.getSession({
             id: currentSessionId,
           });
+          const knowledgeMode = props.knowledgeMode ?? sessionRecord?.runContext?.knowledgeMode ?? "auto";
+          const knowledgeSpaceIds = props.knowledgeSpaceIds ?? sessionRecord?.runContext?.knowledgeSpaceIds ?? [];
+          if (props.knowledgeMode !== undefined || props.knowledgeSpaceIds !== undefined) await this.session.updateSession({ id: currentSessionId, delta: { runContext: { knowledgeMode, knowledgeSpaceIds } } });
           // Chats opened before their first message (new chats and project
           // chats) exist without history; their first run starts the
           // conversation like any new session.
@@ -1311,7 +1307,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             costUsd: 0,
           };
 
-          const callbackHandler = BaseCallbackHandler.fromMethods({
+          const callbackHandler = blockingModelCallbacks({
             handleLLMStart: async (
               _llm: any,
               _prompts: string[],
@@ -1705,8 +1701,12 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           const requestText = typeof latestUserMessage?.content === 'string'
             ? latestUserMessage.content.slice(0, 4_000)
             : '';
+          const managedArtifactTask = toolDefs.some((entry) => entry.function.name === 'runPythonAnalysis')
+            && preferManagedArtifactTools(requestText, Boolean(props.cliContext));
           const selectedTools = selectModelTools(
-            toolDefs,
+            toolDefs.filter((entry) => (knowledgeMode !== "off" || !/Knowledge/.test(entry.function.name))
+              && (shouldOfferCreativeMedia(requestText) || !["generateImage", "generateMedia"].includes(entry.function.name))
+              && (!managedArtifactTask || !['runComputerCommand', 'writeComputerFiles'].includes(entry.function.name))),
             cliToolSchemas,
             requestText,
             effectiveModel.provider === 'hosted-free' ? HOSTED_FREE_MAX_TOOLS : undefined,
@@ -1744,10 +1744,16 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 let data: any;
                 let status: 'success' | 'error' = 'success';
                 try {
+                  if (knowledgeMode === "selected" && fn === "searchKnowledge") {
+                    if (!knowledgeSpaceIds.length) throw new BadRequestException("No Knowledge Spaces are selected for this chat.");
+                    args = { ...(args as Record<string, unknown>), spaceIds: knowledgeSpaceIds };
+                  }
                   data = await got_.default
                     .post(
                       `http://localhost:${process.env.PORT}/v1/agents/tools`,
                       {
+                        timeout: { connect: 10_000, request: toolRequestTimeoutMs(fn, args as Record<string, unknown>) },
+                        retry: { limit: 0 },
                         json: {
                           args,
                           toolCall: config.toolCall,
@@ -1759,6 +1765,11 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                               props.attachments?.map(
                                 (attachment) => attachment.fileId,
                               ) ?? [],
+                            knowledgeMode,
+                            knowledgeSpaceIds,
+                            canvasProjectId: canvasContextRequest(props.uiContext)?.projectId,
+                            canvasRevisionId: canvasContextRequest(props.uiContext)?.revisionId,
+                            canvasContextSnapshot: canvasContext ?? undefined,
                             spaceId,
                             runId: traceId,
                             toolCallId: config.toolCall?.id,
@@ -1961,6 +1972,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                     subscriber.next({
                       type: 'cli_tool_request', phase: 'commentary', requestId,
                       tool: name, args, sessionId: currentSessionId,
+                      ...(hostApplication ? { hostApplication } : {}),
                       timestamp: new Date().toISOString(),
                     });
                   });
@@ -2150,9 +2162,27 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
 
           const toolNode = new ToolNode(toolRunners);
           const collectedToolCalls = executedCalls;
+          const toolImageContext = new ToolImageContext();
 
           let consecutiveToolSchemaFailures = 0;
+          let artifactRepairPending = false;
+          let artifactRepairAttempts = 0;
+          const liveSteering = new LiveTurnSteering(this.contentToText(latestUserMessage?.content));
           const callModel = async (s: typeof MessagesAnnotation.State) => {
+            // Consume steering between tool steps, before any model call or
+            // forced output retry. Waiting until graph completion makes an
+            // accepted stop/correction ineffective during a long task.
+            const steering = await liveSteering.beforeModel(props.consumeSteers);
+            if (steering.length) {
+              artifactRepairAttempts = 0;
+              consecutiveToolSchemaFailures = 0;
+              emitStatus('steer', 'running', 'Working on your new prompt');
+            }
+            if (liveSteering.stopped) {
+              artifactRepairPending = false;
+              emitStatus('steer', 'completed', 'Stopped at your request');
+              return { messages: [...steering, new AIMessage('Stopped after the last tool completed. Its executed results are saved in this conversation.')] };
+            }
             consecutiveToolSchemaFailures = nextToolSchemaFailureCount(
               consecutiveToolSchemaFailures,
               s.messages.at(-1),
@@ -2160,10 +2190,30 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             if (consecutiveToolSchemaFailures >= MAX_CONSECUTIVE_TOOL_SCHEMA_FAILURES) {
               throw new Error('The agent repeatedly sent invalid tool input. This run stopped before further model requests.');
             }
-            return { messages: await llmWithTools.invoke(s.messages) };
+            // Tool messages preserve structured file metadata. Vision providers
+            // also need actual image content parts to inspect those files.
+            // Keep these pictures transient: later steps retain tool evidence and
+            // the model's observations without accumulating signed images.
+            const toolImages = await toolImageContext.next(executedCalls, this.supportsImageInputs(effectiveModel.provider, effectiveModel.modelId), (input) => this.filesService.readFileForAgent({
+              ...input, agentId, sessionId: currentSessionId, ownerId: initiator,
+              maxChars: 1, includeImageUrls: true,
+            }));
+            const reply = await llmWithTools.invoke([...s.messages, ...steering, ...toolImages]);
+            if (!reply.tool_calls?.length) {
+              const missing = missingComputedArtifacts(liveSteering.request, attachmentContext?.attachments.map(file => file.name) ?? [], executedCalls, Boolean(props.cliContext));
+              if (missing.length) {
+                if (artifactRepairAttempts >= 2) throw new Error(`The agent did not produce the requested Library outputs: ${missing.join(', ')}. Its executed tool results are preserved; this task is incomplete.`);
+                artifactRepairAttempts++;
+                artifactRepairPending = true;
+                emitStatus('outputs', 'running', 'Completing requested files', `Missing verified outputs: ${missing.join(', ')}`);
+                return { messages: [...steering, reply, { role: 'system', content: `The current request is not complete. Missing verified Library outputs from this run: ${missing.join(', ')}. Files written only on the computer have not been published to the Library. Use runPythonAnalysis to create or assemble the requested files in OUTPUT_DIR; it automatically publishes its generated outputs. Working drafts from this session may be reused as source inputs. ${requiresComputedData(liveSteering.request) ? 'Execute the requested calculation against the real attached input file IDs and save its actual results.' : 'For document or template work, read the actual source and save the assembled documents; no unrelated calculation is needed.'} ${requiresNativeImageGeneration(liveSteering.request) ? 'Also use the explicitly requested image-generation tool for the separate creative illustration; Python plots do not replace it.' : ''} Document tools are also available for their supported report formats. Return verified new file IDs or links. Supplied examples and files from another chat are reference inputs, not outputs you created for this request.` }] as any };
+              }
+            }
+            return { messages: [...steering, reply] };
           };
 
           const shouldCont = (s: typeof MessagesAnnotation.State) => {
+            if (artifactRepairPending) { artifactRepairPending = false; return 'model'; }
             const last = s.messages.at(-1);
             return last &&
               'tool_calls' in last &&
@@ -2177,7 +2227,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             .addNode('model', callModel)
             .addNode('tools', toolNode)
             .addEdge(START, 'model')
-            .addConditionalEdges('model', shouldCont, ['tools', END])
+            .addConditionalEdges('model', shouldCont, ['tools', 'model', END])
             .addEdge('tools', 'model')
             .compile({
               checkpointer: this.getCheckpointer(),
@@ -2192,6 +2242,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               agentId,
               currentSessionId,
               firstUserText,
+              !hostApplication,
             );
             messages.push(
               ...(boot.messages.map((m) => ({
@@ -2221,22 +2272,14 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               appsBlock,
             ] = await Promise.all([
               this.getAgent({ agentId }),
-              this.getChildSessions(currentSessionId),
-              firstUserText
-                ? this.memoryService
-                    .buildMemoryBlock(agentId, firstUserText)
-                    .catch(() => '')
+              this.optionalPromptContext('child sessions', this.getChildSessions(currentSessionId), []),
+              firstUserText && !hostApplication
+                ? this.optionalPromptContext('memory', this.memoryService.buildMemoryBlock(agentId, firstUserText), '')
                 : Promise.resolve(''),
-              this.taskExecution
-                .listSessionTasks(currentSessionId)
-                .catch(() => []),
-              this.computerService
-                .buildComputerPrompt(agentId, currentSessionId)
-                .catch(() => ''),
-              this.skillService
-                .buildPromptIndex(agentId, firstUserText)
-                .catch(() => ''),
-              this.uiPlugins.buildAgentPromptBlock(agentId).catch(() => ''),
+              this.optionalPromptContext('tasks', this.taskExecution.listSessionTasks(currentSessionId), []),
+              this.optionalPromptContext('computer summary', this.computerService.buildComputerPrompt(agentId, currentSessionId), 'Computer summary is unavailable. Use computer tools to verify its actual state and workspace before acting.'),
+              this.optionalPromptContext('skills', this.skillService.buildPromptIndex(agentId, firstUserText), ''),
+              this.optionalPromptContext('apps', this.uiPlugins.buildAgentPromptBlock(agentId), ''),
             ]);
             const childSessionsInfo =
               childSessions.length > 0
@@ -2307,6 +2350,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             } as any);
           }
 
+          if (props.uiContext?.activeLibraryItemId) props.attachments = [...new Map([...(props.attachments ?? []), { fileId: props.uiContext.activeLibraryItemId }].map((file) => [file.fileId, file])).values()];
           const attachmentContext = props.attachments?.length
             ? await (async () => {
                 emitStatus(
@@ -2326,8 +2370,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                       ownerId: initiator,
                       workspaceId: props.workspaceId,
                       includeImageParts: this.supportsImageInputs(
-                        agent.modelProvider,
-                        agent.modelId,
+                        effectiveModel.provider,
+                        effectiveModel.modelId,
                       ),
                       maxImageParts: Math.min(
                         8,
@@ -2381,7 +2425,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             this.contentToText(
               props.messages?.findLast((m) => m.role === 'user')?.content,
             ) || undefined;
-          const memoryBlock = await this.memoryService
+          const memoryBlock = hostApplication ? '' : await this.memoryService
             .buildMemoryBlock(agentId, latestUserMsg ?? '')
             .catch(() => '');
           const copilotContext =
@@ -2413,7 +2457,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           if (
             canvasContext &&
             canvasRequest?.annotationIds.length &&
-            this.supportsImageInputs(agent.modelProvider, agent.modelId)
+            this.supportsImageInputs(effectiveModel.provider, effectiveModel.modelId)
           ) {
             const visuals =
               (await this.canvasVisuals
@@ -2440,6 +2484,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 .catch(() => null)) ?? null,
               initiator,
               agentId,
+              knowledgeMode !== "off",
+              knowledgeMode === "selected" ? knowledgeSpaceIds ?? [] : undefined,
             )
             .catch((error) => {
               this.logger.warn(`Project context unavailable: ${error.message}`);
@@ -2447,14 +2493,14 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             });
           const selectedKnowledgeSpaceIds = [
             ...new Set(
-              (props.knowledgeSpaceIds ?? [])
+              (knowledgeSpaceIds ?? [])
                 .filter((value): value is string => typeof value === 'string')
                 .map((value) => value.trim())
                 .filter((value) => /^[a-zA-Z0-9_-]{1,160}$/.test(value))
                 .slice(0, 20),
             ),
           ];
-          const knowledgeSelectionBlock = selectedKnowledgeSpaceIds.length
+          const knowledgeSelectionBlock = knowledgeMode === "off" ? "Knowledge Spaces are explicitly off for this chat. Use attached files and folder tools for task inputs; do not retrieve or write Knowledge documents." : selectedKnowledgeSpaceIds.length
             ? [
                 '## USER-SELECTED KNOWLEDGE',
                 'The user explicitly referenced Knowledge Spaces for this turn.',
@@ -2495,6 +2541,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             : '';
 
           const extraSystemContent = [
+            DATA_EXECUTION_CONTRACT,
+            `Agent media defaults: ${JSON.stringify(agent.mediaModels ?? {})}. Speech preference: ${agent.ttsProvider ?? "openai"}/${agent.ttsVoice ?? "platform default"}. Use generateMedia with kind for the relevant modality; saved model and voice defaults are authoritative. Set overrideAgentDefault=true only if the user explicitly requests another model or voice for this output.`,
             buildWorkspaceModeContext('cloud', Boolean(props.cliContext), props.uiContext?.desktopMode === 'cloud'),
             memoryBlock,
             projectContext?.block,
@@ -2535,7 +2583,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
 
           while (loop++ < maxTaskCycles) {
             // ✅ Check for next executable task using new TaskExecutionService
-            const nextTask = await this.taskExecution.getNextExecutableTask(
+            const nextTask = liveSteering.stopped ? null : await this.taskExecution.getNextExecutableTask(
               agentId,
               currentSessionId,
             );
@@ -2627,6 +2675,14 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             messages = result.messages;
             finalResult = result;
 
+            if (liveSteering.stopped) {
+              if (nextTask) {
+                await this.db.update(schema.task).set({ status: 'cancelled', updatedAt: new Date() })
+                  .where(and(eq(schema.task.taskId, nextTask.taskId), eq(schema.task.status, 'running')));
+              }
+              break;
+            }
+
             // ── Auto-complete the task if the agent didn't call updateTaskProgress ──
             if (nextTask && nextTask.executionMode !== 'workflow') {
               const taskAfter = await this.db.query.task.findFirst({
@@ -2681,8 +2737,9 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             );
             const steering = (await props.consumeSteers?.()) ?? [];
             if (steering.length) {
-              messages.push(...steering.map((content) => ({ role: 'user', content } as any)));
-              emitStatus('steer', 'running', 'Working on your new prompt');
+              // A steer can arrive just after the last safe model boundary.
+              // Feed it through the same request/stop handling on the next one.
+              messages.push(...await liveSteering.beforeModel(() => steering));
               continue;
             }
             if (!pending) break;
@@ -2971,6 +3028,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           await this.usageService.finalizeAgentRun(creditReservationId);
           creditReservationId = undefined;
 
+          await this.resourceUpgrades.finishRun(agentId, traceId).catch((error) => this.logger.error(`Computer resource cleanup failed: ${error.message}`));
+
           clearInterval(keepalive);
           unsubscribeProgress();
           subscriber.complete();
@@ -2995,7 +3054,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 ),
               }));
 
-            if (historyForConsolidation.length >= 2) {
+            if (!hostApplication && historyForConsolidation.length >= 2) {
               this.memoryService
                 .consolidateSession(
                   agentId,
@@ -3008,6 +3067,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             }
           }
         } catch (err) {
+          await this.resourceUpgrades.finishRun(agentId, traceId).catch((error) => this.logger.error(`Computer resource cleanup failed: ${error.message}`));
           await this.usageService
             .finalizeAgentRun(creditReservationId)
             .catch((finalizeError) =>
@@ -3256,7 +3316,18 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       'frequencyPenalty',
       'ttsProvider',
       'ttsVoice',
+      'mediaModels',
     ];
+    if (updateData.mediaModels) {
+      for (const [key, value] of Object.entries(updateData.mediaModels)) {
+        if (key === "transcriptionModel") {
+          if (value && !TRANSCRIPTION_MODELS.includes(value)) throw new BadRequestException("Choose a supported transcription model.");
+          continue;
+        }
+        const kind = key.replace(/Model$/, '');
+        if (!['image', 'video', 'audio', 'music'].includes(kind) || (value && !MEDIA_MODEL_REGISTRY.some((model) => model.modelKey === value && model.kind === kind))) throw new BadRequestException('Choose a supported media model for each modality.');
+      }
+    }
     const data = (
       existing.isSystemManaged
         ? Object.fromEntries(

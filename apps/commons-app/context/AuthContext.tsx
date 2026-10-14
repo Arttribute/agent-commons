@@ -39,6 +39,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [localAccount, setLocalAccount] = useState<DesktopAccount | undefined>();
   const { data: session, status, update } = useSession();
   const previousMode = useRef(mode);
+  const [profileReady, setProfileReady] = useState(false);
   useEffect(() => {
     if (previousMode.current === "private-local" && mode === "cloud") void update();
     previousMode.current = mode;
@@ -55,6 +56,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (event.type === "state") setLocalAccount(event.state.account);
     });
   }, [local]);
+
+  useEffect(() => {
+    if (!window.agentCommonsDesktop) { setProfileReady(true); return; }
+    if (status === 'loading') { setProfileReady(false); return; }
+    let current = true;
+    setProfileReady(false);
+    // Main verifies the actual session and selects the account's local profile.
+    void window.agentCommonsDesktop.syncAccount().then(async () => {
+      if (local && window.agentCommonsLocal) {
+        const state = await window.agentCommonsLocal.getState();
+        if (current) setLocalAccount(state.account);
+      }
+      if (current) setProfileReady(true);
+    }).catch(() => { if (current) setProfileReady(true); });
+    return () => { current = false; };
+  }, [status, session?.user?.id, local]);
 
   // Derive this compatibility shape synchronously. Copying it in an effect
   // used to add another anonymous render after NextAuth had resolved the user.
@@ -114,17 +131,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = async () => {
-    if (local) {
-      await window.agentCommonsLocal?.clearAccount();
+    if (window.agentCommonsDesktop) {
       await commonsSignOut({ redirect: false });
+      await window.agentCommonsDesktop.syncAccount();
       setLocalAccount(undefined);
+      window.location.assign('/');
       return;
     }
-    try {
-      await commonsSignOut({ callbackUrl: "/" });
-    } catch (err) {
-      console.error("Logout error:", err);
-    }
+    await commonsSignOut({ callbackUrl: '/' });
   };
 
   const refresh = async () => {
@@ -140,7 +154,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     authenticated,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  const accountAligned = status !== "authenticated" || !session?.user?.id || localAccount?.userId === session.user.id;
+  return <AuthContext.Provider value={value}>{local && (!profileReady || !accountAligned) ? <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground" role="status">Opening local workspace…</div> : children}</AuthContext.Provider>;
 };
 
 export function useAuth() {

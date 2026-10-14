@@ -106,25 +106,33 @@ interface RandomPixelAvatarProps {
   username: string;
   size?: number;
   hideInitials?: boolean;
+  /** Where the letter comes from, when the seed is an id rather than a name. */
+  label?: string | null;
+}
+
+/** The first letter or digit of a name, capitalized. */
+export function avatarInitial(value?: string | null) {
+  const match = (value ?? "").trim().match(/[\p{L}\p{N}]/u);
+  return match ? match[0].toLocaleUpperCase() : "";
 }
 
 /**
- * A circular avatar that uses a multi-color gradient as the background.
- * Displays the first two letters of the username in the center.
+ * A circular avatar on a gradient picked from the seed, with one letter in
+ * the center. Used for agents and people without a picture.
  */
 export default function RandomAvatar({
   username,
   size = 100,
   hideInitials,
+  label,
 }: RandomPixelAvatarProps) {
   // Generate a single gradient for the entire avatar.
   const gradientClass = getGradientForUsername(username);
 
-  // Get first two letters (or one if the username is short).
-  const initials = username.slice(0, 3).toLowerCase();
+  const initials = avatarInitial(label) || avatarInitial(username);
 
-  // Calculate font size based on avatar size
-  const fontSize = Math.max(size * 0.3, 8); // 30% of size, minimum 8px
+  // One letter reads well a little larger than the old three.
+  const fontSize = Math.max(size * 0.42, 9);
 
   return (
     <div
@@ -135,7 +143,7 @@ export default function RandomAvatar({
       {!hideInitials && (
         <div className="absolute inset-0 flex items-center justify-center">
           <span
-            className="text-black font-semibold drop-shadow-sm"
+            className="font-medium leading-none text-stone-900"
             style={{ fontSize: `${fontSize}px` }}
           >
             {initials}
