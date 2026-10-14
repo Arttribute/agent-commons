@@ -165,7 +165,7 @@ function RunStateIcon({ run }: { run: AgentRun }) {
 
 function runLabel(run: AgentRun) {
   if (run.state === "awaiting_approval") return "Needs approval";
-  if (run.state === "awaiting_input") return "Waiting for you";
+  if (run.state === "awaiting_input") return run.actionUrl ? "Open business" : "Waiting for you";
   return null;
 }
 
@@ -288,7 +288,7 @@ export default function AgentsShowcase({
                     {(activity[agent.agentId] ?? []).map((run) => (
                       <li key={run.sessionId}>
                         <Link
-                          href={`/sessions/${encodeURIComponent(run.sessionId)}`}
+                          href={run.actionUrl || `/sessions/${encodeURIComponent(run.sessionId)}`}
                           className="-mx-1.5 flex items-center gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-muted"
                         >
                           <span className="min-w-0 flex-1 truncate text-foreground/80">{run.title}</span>

@@ -147,4 +147,17 @@ describe('RunStreamRegistry', () => {
     const states = Object.fromEntries(registry.listForInitiator('u').map((run) => [run.runId, run.state]));
     expect(states).toEqual({ 'run-1': 'completed', 'run-2': 'failed' });
   });
+  it('routes hosted tool requests back to their app and clears the wait at completion', () => {
+    collect(registry.start('host-run', source, { agentId: 'a1', initiator: 'user-1', sessionId: 's1' }));
+    source.next({ type: 'cli_tool_request', tool: 'search_inventory', hostApplication: { name: 'Common Business', url: 'https://business.example.com/dashboard?copilotSession=s1' } });
+    expect(registry.listForInitiator('user-1')[0]).toMatchObject({
+      state: 'awaiting_input', activity: 'Continue in Common Business', actionUrl: 'https://business.example.com/dashboard?copilotSession=s1',
+    });
+    source.next({ type: 'status', stage: 'model', message: 'Waiting' });
+    expect(registry.listForInitiator('user-1')[0].state).toBe('awaiting_input');
+    source.next({ type: 'final', payload: {} });
+    source.complete();
+    expect(registry.listForInitiator('user-1')[0].state).toBe('completed');
+  });
+
 });

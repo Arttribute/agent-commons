@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAgentContext } from "@/context/AgentContext";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { isBrowserRunAttached } from "@/hooks/use-agent-stream";
@@ -13,6 +13,7 @@ import { useSessionRunStore } from "@/stores/session-run-store";
 
 type RecentRun = {
   runId: string;
+  actionUrl?: string;
   sessionId?: string;
   state: "running" | "awaiting_approval" | "awaiting_input" | "completed" | "failed";
 };
@@ -23,6 +24,7 @@ type ReplayedEvent = {
   prompt?: string;
   content?: string;
   requestId?: string;
+  hostApplication?: { name: string; url: string };
   tool?: string;
   toolName?: string;
   args?: unknown;
@@ -32,6 +34,7 @@ type ReplayedEvent = {
 
 /** Restore a Cloud run after a full page reload, including its live output. */
 export function useSessionRunRecovery(sessionId: string, ready: boolean) {
+  const [hostActionUrl, setHostActionUrl] = useState<string | null>(null);
   const { mode } = useWorkspaceMode();
   const {
     addMessage,
@@ -45,6 +48,7 @@ export function useSessionRunRecovery(sessionId: string, ready: boolean) {
   const markCompleted = useSessionRunStore((state) => state.markCompleted);
 
   useEffect(() => {
+    setHostActionUrl(null);
     if (!ready || !sessionId || mode === "private-local") return;
     const abort = new AbortController();
     let cancelled = false;
@@ -63,6 +67,7 @@ export function useSessionRunRecovery(sessionId: string, ready: boolean) {
       const run = (Array.isArray(body.data) ? body.data : [] as RecentRun[])
         .find((entry: RecentRun) => entry.sessionId === sessionId) as RecentRun | undefined;
       if (!run) return;
+      if (run.actionUrl && /^https:\/\//.test(run.actionUrl)) setHostActionUrl(run.actionUrl);
       if (run.state === "completed" || run.state === "failed") {
         await refreshHistory();
         return;
@@ -104,7 +109,7 @@ export function useSessionRunRecovery(sessionId: string, ready: boolean) {
               if (!current?.isStreaming || content.length >= current.content.length) {
                 updateStreamingMessage(content, sessionId);
               }
-            } else if (event.type === "cli_tool_request" && event.requestId && !handledLocalRequests.has(event.requestId)) {
+            } else if (event.type === "cli_tool_request" && !event.hostApplication && event.requestId && !handledLocalRequests.has(event.requestId)) {
               handledLocalRequests.add(event.requestId);
               const bridge = window.agentCommonsDesktop;
               if (bridge && claimCliToolRequest(event.requestId)) {
@@ -159,4 +164,5 @@ export function useSessionRunRecovery(sessionId: string, ready: boolean) {
     sessionId, ready, mode, addMessage, getSessionMessages, updateStreamingMessage,
     finalizeStreamingMessage, setSessionHistory, markRunning, markRunId, markCompleted,
   ]);
+  return hostActionUrl;
 }

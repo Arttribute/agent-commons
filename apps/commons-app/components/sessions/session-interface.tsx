@@ -66,6 +66,7 @@ interface Message {
 }
 
 interface SessionInterfaceImprovedProps {
+  hostActionUrl?: string | null;
   height?: string;
   agent: CommonAgent | null;
   session: any;
@@ -142,6 +143,7 @@ function ExpandableToolCard({ tools }: { tools: Message[] }) {
 }
 
 export default function SessionInterfaceImproved({
+  hostActionUrl,
   height,
   agent,
   session,
@@ -461,7 +463,12 @@ export default function SessionInterfaceImproved({
     });
   }, []);
 
-  const composer = (
+  const composer = hostActionUrl ? (
+    <div className="rounded-xl border border-border bg-muted p-4 text-sm">
+      <p>This conversation runs in Common Business. Review actions and continue there.</p>
+      <a href={hostActionUrl} className="mt-2 inline-block font-medium underline">Open business copilot</a>
+    </div>
+  ) : (
     <ChatInputBox
       agentId={agentId}
       sessionId={sessionId}

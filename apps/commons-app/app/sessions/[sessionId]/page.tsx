@@ -46,7 +46,7 @@ export default function SessionPage() {
   const [launch, setLaunch] = useState<ComposerLaunch | null>(() =>
     useChatLaunchStore.getState().peekLaunch(sessionId),
   );
-  useSessionRunRecovery(sessionId, loadedSessionId === sessionId && !loading && Boolean(session));
+  const hostActionUrl = useSessionRunRecovery(sessionId, loadedSessionId === sessionId && !loading && Boolean(session));
 
   const { authState } = useAuth();
   const userAddress = normalizePrincipalId(authState.walletAddress);
@@ -132,6 +132,7 @@ export default function SessionPage() {
             </div>
           ) : (
             <SessionInterface
+              hostActionUrl={hostActionUrl}
               agent={agent}
               session={session}
               agentId={session.agentId}
