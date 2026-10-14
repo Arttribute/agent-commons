@@ -101,7 +101,7 @@ jobs:
         run: node --experimental-vm-modules --test apps/commons-app/lib/agents-proxy.test.mjs
 
       - name: Test workspace navigation and new chat suggestions
-        run: node --experimental-strip-types --test apps/commons-app/lib/workspace-routes.test.mjs apps/commons-app/lib/start-suggestions.test.mjs
+        run: node --experimental-strip-types --test apps/commons-app/lib/workspace-routes.test.mjs apps/commons-app/lib/start-suggestions.test.mjs apps/commons-app/lib/message-preview.test.mjs apps/commons-app/lib/short-time.test.mjs
 
       - name: Test session token refresh backoff
         run: node --experimental-strip-types --test apps/commons-app/lib/token-refresh.test.mjs

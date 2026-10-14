@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, History, PanelRight, SquarePen } from "lucide-react";
@@ -28,6 +28,9 @@ import type { CommonAgent } from "@/types/agent";
 import { AgentDetailsPanel, type DetailsTab } from "./agent-details-panel";
 import { AgentSectionScreen, parseChatSection, type ChatSection } from "./agent-chat-sections";
 import { headerIconButton } from "./agents-list-pane";
+
+// Switch the chat store before paint so another chat never shows for a frame.
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 type AgentSession = { sessionId: string; agentId: string; title?: string | null; updatedAt?: string | null; createdAt?: string | null; projectId?: string | null };
 
@@ -415,6 +418,10 @@ function AgentSessionPane({
   header: (title: string | null) => React.ReactNode;
 }) {
   const { session, loading, ready, launch, clearLaunch, hostActionUrl, title } = useSessionView(sessionId, { loadAgent: false });
+  const { activateSession } = useAgentContext();
+  useIsomorphicLayoutEffect(() => {
+    activateSession(sessionId);
+  }, [sessionId, activateSession]);
 
   if (ready && !loading && !session) {
     return (
@@ -435,6 +442,8 @@ function AgentSessionPane({
       userId={userAddress}
       isLoadingSession={!ready || loading}
       initialLaunch={ready && !loading ? launch : null}
+      pendingLaunch={launch}
+      showResponseTimes
       onInitialLaunchSent={clearLaunch}
       composerVariant="compact"
       composerPlaceholder={`Message ${agent.name}`}
@@ -462,22 +471,23 @@ function NewAgentChat({
   const { projects } = useProjects(Boolean(userAddress));
   const { setInputText } = useAgentContext();
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [launching, setLaunching] = useState(false);
+  // The message being sent, shown as the first turn while the session is made.
+  const [sending, setSending] = useState<ComposerLaunch | null>(null);
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     onActivate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const launch = async (value: ComposerLaunch) => {
-    if (launching) return;
-    setLaunching(true);
+    if (sending) return;
+    setSending(value);
     try {
       onCreated(await createChat({ agentId: agent.agentId, projectId: projectId ?? undefined, launch: value }));
     } catch (cause) {
       setInputText(value.text);
       onError(cause instanceof Error ? cause.message : undefined);
-      setLaunching(false);
+      setSending(null);
     }
   };
 
@@ -489,11 +499,12 @@ function NewAgentChat({
       sessionId=""
       userId={userAddress}
       onLaunch={(value) => void launch(value)}
-      launching={launching}
+      isLoadingSession={Boolean(sending)}
+      pendingLaunch={sending}
       composerVariant="compact"
       composerPlaceholder={`Message ${agent.name}`}
       composerAccessory={
-        projects.length > 0 ? (
+        projects.length > 0 && !sending ? (
           <ProjectChip
             variant="quiet"
             projects={projects.map(({ projectId: id, name }) => ({ projectId: id, name }))}

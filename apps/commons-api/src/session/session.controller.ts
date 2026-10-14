@@ -103,6 +103,21 @@ export class SessionController {
   }
 
   /**
+   * The last message of the person's latest chat with each agent, for the
+   * agents list. GET /v1/sessions/user/:initiator/previews
+   */
+  @Get('user/:initiator/previews')
+  async getLatestMessagePerAgent(
+    @Param('initiator') initiator: string,
+    @Req() req: Request,
+  ) {
+    this.assertInitiatorAccess(initiator, req);
+    return {
+      data: await this.sessionService.getLatestMessagePerAgent({ initiator }),
+    };
+  }
+
+  /**
    * Ideas for what to ask next, written from the person's recent chats.
    * POST /v1/sessions/user/:initiator/suggestions
    */

@@ -119,7 +119,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
             }
           >
             <div className="rounded-full overflow-hidden shrink-0 ring-1 ring-border">
-              <UserAvatar image={authState.profileImage} seed={principalId || displayName} size={28} />
+              <UserAvatar image={authState.profileImage} seed={principalId || displayName} name={username} size={28} />
             </div>
             {!collapsed && (
               <>

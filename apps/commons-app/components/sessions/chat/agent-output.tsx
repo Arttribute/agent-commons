@@ -10,6 +10,7 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { messageTime } from "@/lib/short-time";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import type { StreamActivity } from "@/context/AgentContext";
 import {
@@ -93,6 +94,8 @@ interface AgentOutputProps {
    * don't repeat the avatar.
    */
   showAgentHeader?: boolean;
+  /** When this turn's reply finished; shown quietly beside the agent's name. */
+  respondedAt?: string | null;
   onOpenArtifact?: (artifact: ArtifactRef) => void;
   artifacts?: ArtifactRef[];
   sessionId?: string;
@@ -110,6 +113,7 @@ export default function AgentOutput({
   agentName,
   agentAvatar,
   showAgentHeader = false,
+  respondedAt,
   onOpenArtifact,
   artifacts,
   sessionId,
@@ -206,6 +210,15 @@ export default function AgentOutput({
           <AgentAvatar name={agentName} src={agentAvatar} size={20} />
           {agentName && (
             <span className="text-xs text-muted-foreground">{agentName}</span>
+          )}
+          {respondedAt && messageTime(respondedAt) && (
+            <time
+              dateTime={respondedAt}
+              title={new Date(respondedAt).toLocaleString()}
+              className="text-[11px] text-muted-foreground/60"
+            >
+              {messageTime(respondedAt)}
+            </time>
           )}
         </div>
       )}

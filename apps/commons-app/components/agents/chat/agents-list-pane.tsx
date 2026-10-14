@@ -11,8 +11,8 @@ import { PageTitle } from "@/components/layout/page-header";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAgents } from "@/hooks/use-agents";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
+import { useAgentPreviews } from "@/hooks/sessions/use-agent-previews";
 import { compareRuns, isWaitingRun, useSessionRuns, type AgentRun } from "@/hooks/use-agent-activity";
-import { shortTime } from "@/lib/short-time";
 import { cn } from "@/lib/utils";
 
 type ListSession = { sessionId: string; agentId: string; title?: string | null; updatedAt?: string | null; createdAt?: string | null };
@@ -46,6 +46,10 @@ export function AgentsListPane({
   const { agents, loading, error, refresh } = useAgents(userAddress || undefined);
   const { sessions } = useUserSessions(userAddress);
   const runs = useSessionRuns(sessions);
+  // Refresh previews when the newest chat moves or a run starts or finishes.
+  const activeRunKey = [...runs.values()].filter((run) => run.state !== "completed").map((run) => `${run.sessionId}:${run.state}`).sort().join(",");
+  const newest = (sessions as ListSession[])[0];
+  const previews = useAgentPreviews(userAddress, `${newest?.sessionId ?? ""}:${newest?.updatedAt ?? ""}:${activeRunKey}`);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -149,7 +153,7 @@ export function AgentsListPane({
           <div className="space-y-1 px-1 pt-1" aria-hidden="true">
             {[0, 1, 2, 3, 4].map((index) => (
               <div key={index} className="flex items-center gap-2.5 px-2 py-1.5" style={{ opacity: 1 - index * 0.15 }}>
-                <span className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-muted" />
+                <span className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-muted" />
                 <span className="flex-1 space-y-2">
                   <span className="block h-3 w-1/3 animate-pulse rounded bg-muted" />
                   <span className="block h-3 w-2/3 animate-pulse rounded bg-muted" />
@@ -184,9 +188,12 @@ export function AgentsListPane({
               const selected = agent.agentId === selectedAgentId;
               const status = runStatusLabel(run);
               const waiting = isWaitingRun(run);
-              const preview = status && run?.state !== "failed"
-                ? status
-                : chatTitle(last?.title) ?? agent.description ?? (last ? "New chat" : "No chats yet");
+              // Second line: what the agent is doing now, else the last
+              // message of its latest chat. Agents with no chats show just
+              // their name.
+              const lastMessage = last ? previews?.[agent.agentId]?.text ?? (previews ? chatTitle(last.title) : null) : null;
+              const activeStatus = status && run?.state !== "failed" ? status : null;
+              const preview = activeStatus ?? lastMessage;
               return (
                 <li key={agent.agentId}>
                   <Link
@@ -198,26 +205,25 @@ export function AgentsListPane({
                     )}
                   >
                     <span className="relative shrink-0">
-                      <AgentAvatar name={agent.name} src={agent.avatar} size={28} />
+                      <AgentAvatar name={agent.name} src={agent.avatar} size={36} />
                       <RunStatusDot state={run?.state} size="sm" />
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline gap-2">
-                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5 text-foreground">{agent.name}</span>
-                        {last && <span className="shrink-0 text-[11px] text-muted-foreground">{shortTime(last.updatedAt ?? last.createdAt)}</span>}
-                      </span>
-                      <span className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            "min-w-0 flex-1 truncate text-xs leading-4",
-                            waiting ? "text-amber-700" : "text-muted-foreground",
-                            run?.state === "running" && "text-shimmer",
-                          )}
-                        >
-                          {preview}
+                    <span className="flex min-h-9 min-w-0 flex-1 flex-col justify-center">
+                      <span className="block truncate text-[13px] font-medium leading-5 text-foreground">{agent.name}</span>
+                      {(preview || (last && !previews)) && (
+                        <span className="flex items-center gap-2">
+                          <span
+                            className={cn(
+                              "min-h-4 min-w-0 flex-1 truncate text-xs leading-4",
+                              waiting ? "text-amber-700" : "text-muted-foreground",
+                              run?.state === "running" && "text-shimmer",
+                            )}
+                          >
+                            {preview}
+                          </span>
+                          {waiting && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />}
                         </span>
-                        {waiting && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />}
-                      </span>
+                      )}
                     </span>
                   </Link>
                 </li>

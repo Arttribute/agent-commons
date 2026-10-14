@@ -110,6 +110,14 @@ interface SessionInterfaceImprovedProps {
   composerVariant?: "default" | "compact";
   /** Shown just above the composer, e.g. the project picker for a new chat. */
   composerAccessory?: React.ReactNode;
+  /**
+   * A first message still on its way (the session is being created or
+   * loaded). It shows as the opening turn with the agent thinking, exactly
+   * like a live run, so starting a chat never flashes an empty screen.
+   */
+  pendingLaunch?: ComposerLaunch | null;
+  /** Show when each agent turn finished, next to the agent's name. */
+  showResponseTimes?: boolean;
 }
 
 function ExpandableToolCard({ tools }: { tools: Message[] }) {
@@ -176,6 +184,8 @@ export default function SessionInterfaceImproved({
   composerPlaceholder,
   composerVariant = "default",
   composerAccessory,
+  pendingLaunch,
+  showResponseTimes = false,
 }: SessionInterfaceImprovedProps) {
   const { mode } = useWorkspaceMode();
   useEffect(() => {
@@ -244,6 +254,33 @@ export default function SessionInterfaceImproved({
     }
     return items;
   }, [messages]);
+
+  // When each agent turn finished: the time of its last reply, keyed by the
+  // message that shows the agent's name. Turns still streaming get none.
+  const turnFinishedAt = useMemo(() => {
+    const finished = new Map<number, string>();
+    if (!showResponseTimes) return finished;
+    let headerIndex: number | null = null;
+    let lastTimestamp: string | null = null;
+    let streaming = false;
+    const close = () => {
+      if (headerIndex !== null && lastTimestamp && !streaming) finished.set(headerIndex, lastTimestamp);
+      headerIndex = null;
+      lastTimestamp = null;
+      streaming = false;
+    };
+    groupedItems.forEach((item, index) => {
+      if (item.type !== "message") return;
+      const role = item.message.role;
+      if (role === "user" || role === "human") return close();
+      if (role !== "ai") return;
+      if (headerIndex === null) headerIndex = index;
+      lastTimestamp = item.message.timestamp;
+      streaming = streaming || Boolean(item.message.isStreaming);
+    });
+    close();
+    return finished;
+  }, [groupedItems, showResponseTimes]);
 
   // Get the last message content for tracking streaming updates
   const lastMessageContent = messages[messages.length - 1]?.content;
@@ -499,9 +536,10 @@ export default function SessionInterfaceImproved({
     />
   );
 
+  const pendingFirst = messages.length === 0 ? (pendingLaunch ?? initialLaunch ?? null) : null;
   // Chat-app surfaces keep the composer at the bottom, like any messenger.
   const showCenteredEmptyState =
-    composerVariant !== "compact" && !isNarrowSurface && !isLoadingSession && messages.length === 0;
+    composerVariant !== "compact" && !isNarrowSurface && !isLoadingSession && messages.length === 0 && !pendingFirst;
 
   return (
     <div
@@ -575,7 +613,24 @@ export default function SessionInterfaceImproved({
               className="container mx-auto max-w-[46rem] px-4 pb-6 pt-4"
               ref={scrollRef}
             >
-              {isLoadingSession && messages.length === 0 ? null : messages.length === 0 &&
+              {pendingFirst ? (
+                <>
+                  <InitiatorMessage
+                    message={pendingFirst.text}
+                    timestamp={new Date().toISOString()}
+                    metadata={pendingFirst.attachments.length ? { attachments: pendingFirst.attachments } : undefined}
+                  />
+                  <AgentOutput
+                    content=""
+                    isStreaming
+                    agentName={agent?.name}
+                    agentAvatar={(agent as any)?.avatar}
+                    showAgentHeader
+                    sessionId={sessionId}
+                  />
+                  <div ref={bottomRef} />
+                </>
+              ) : isLoadingSession && messages.length === 0 ? null : messages.length === 0 &&
                 (greeting || conversationStarters.length > 0 || composerVariant === "compact") ? (
                 <div className="flex min-h-[45vh] flex-col justify-center py-8">
                   <div className="space-y-6">
@@ -684,6 +739,7 @@ export default function SessionInterfaceImproved({
                               agentName={agent?.name}
                               agentAvatar={(agent as any)?.avatar}
                               showAgentHeader={showAgentHeader}
+                              respondedAt={showAgentHeader ? turnFinishedAt.get(index) : undefined}
                               onOpenArtifact={(artifact) => {
                                 if (mode === "private-local") {
                                   const localConversationId = message.metadata?.localConversationId ?? sessionId;

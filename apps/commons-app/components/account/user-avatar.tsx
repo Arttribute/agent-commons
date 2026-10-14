@@ -12,12 +12,15 @@ import { cn } from "@/lib/utils";
 export function UserAvatar({
   image,
   seed,
+  name,
   size,
   alt = "",
   className,
 }: {
   image?: string | null;
   seed: string;
+  /** The person's name, for the letter when there is no picture. */
+  name?: string | null;
   size: number;
   alt?: string;
   className?: string;
@@ -26,7 +29,7 @@ export function UserAvatar({
   useEffect(() => setFailed(false), [image]);
 
   if (!image || failed) {
-    return <RandomPixelAvatar username={seed || "account"} size={size} />;
+    return <RandomPixelAvatar username={seed || "account"} label={name} size={size} />;
   }
   return (
     <img
