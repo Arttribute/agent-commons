@@ -23,7 +23,7 @@ function AccountMenu() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div className="rounded-full overflow-hidden">
-                <UserAvatar image={authState.profileImage} seed={username || walletAddress || ""} size={32} />
+                <UserAvatar image={authState.profileImage} seed={username || walletAddress || ""} name={username} size={32} />
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">

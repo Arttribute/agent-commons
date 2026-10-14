@@ -121,7 +121,7 @@ function ProfileSection({ walletAddress, local }: { walletAddress: string; local
       </div>
       <div className="space-y-4">
         <div className="w-fit overflow-hidden rounded-full ring-1 ring-border">
-          <UserAvatar image={profile?.image || authState.profileImage} seed={walletAddress || authState.username || ""} size={64} alt="Profile" />
+          <UserAvatar image={profile?.image || authState.profileImage} seed={walletAddress || authState.username || ""} name={profile?.name || authState.username} size={64} alt="Profile" />
         </div>
         {!local && <div className="space-y-2">
           <Label htmlFor="profile-photo" className="text-xs">Profile photo</Label>

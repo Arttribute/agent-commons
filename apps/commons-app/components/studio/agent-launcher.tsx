@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ChatInputBox, { type ComposerLaunch } from "@/components/sessions/chat/chat-input-box";
-import { startChat } from "@/lib/start-chat";
-import { useToast } from "@/hooks/use-toast";
+import { beginChat } from "@/lib/start-chat";
 import { AgentSidebarSwitcher } from "@/components/studio/agent-sidebar-switcher";
 import { useAgentContext } from "@/context/AgentContext";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
@@ -22,9 +21,9 @@ type LauncherAgent = {
 };
 
 /**
- * The agents-overview composer: type a message, add files or knowledge, pick
- * an agent, and send. The chat opens in its own session view and streams
- * there. Reuses {@link ChatInputBox} in launch mode and the
+ * The composer on /new and project pages: type a message, add files or
+ * knowledge, pick an agent, and send. The chat opens at once in its session
+ * view and streams there. Reuses {@link ChatInputBox} in launch mode and the
  * {@link AgentSidebarSwitcher} as a compact picker.
  */
 export function StudioAgentLauncher({
@@ -50,10 +49,7 @@ export function StudioAgentLauncher({
   projectPicker?: boolean;
 }) {
   const router = useRouter();
-  const { toast } = useToast();
   const { setInputText } = useAgentContext();
-  const [launching, setLaunching] = useState(false);
-  const [pendingLaunch, setPendingLaunch] = useState<ComposerLaunch | null>(null);
   const { isLoading: sessionsLoading } = useUserSessions(userAddress);
   const showProjectPicker = projectPicker && !projectId;
   const { projects } = useProjects(showProjectPicker && Boolean(userAddress));
@@ -109,48 +105,26 @@ export function StudioAgentLauncher({
     [selectedAgent],
   );
 
-  const handleLaunch = async (launch: ComposerLaunch) => {
-    if (!selectedAgentId || launching) return;
-    setPendingLaunch(launch);
-    setLaunching(true);
-    try {
-      router.push(await startChat({ agentId: selectedAgentId, projectId: projectId ?? chosenProjectId ?? undefined, launch }));
-    } catch (cause) {
-      setInputText(launch.text);
-      toast({
-        title: "Could not start the chat",
-        description: cause instanceof Error ? cause.message : undefined,
-        variant: "destructive",
-      });
-      setPendingLaunch(null);
-      setLaunching(false);
-    }
+  // Open the chat right away; it shows the message and the agent thinking
+  // while the session is created in the background.
+  const handleLaunch = (launch: ComposerLaunch) => {
+    if (!selectedAgent) return;
+    router.push(
+      beginChat({
+        agent: { agentId: selectedAgent.agentId, name: selectedAgent.name, avatar: selectedAgent.avatar },
+        projectId: projectId ?? chosenProjectId ?? undefined,
+        launch,
+      }),
+    );
   };
 
   return (
     <div className="flex w-full flex-col">
-      {pendingLaunch && (
-        <div aria-live="polite" className="mx-auto mb-5 flex max-w-3xl flex-col gap-4">
-          <div className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-2xl bg-muted px-4 py-3 text-sm text-foreground">
-            {pendingLaunch.text}
-            {pendingLaunch.attachments.length > 0 && (
-              <div className="mt-2 text-xs text-muted-foreground">
-                {pendingLaunch.attachments.map((attachment) => attachment.name).join(", ")}
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
-            {selectedAgent?.name ?? "Agent"} is working…
-          </div>
-        </div>
-      )}
       <ChatInputBox
         agentId={selectedAgentId}
         sessionId=""
         userId={userAddress}
-        onLaunch={(launch) => void handleLaunch(launch)}
-        launching={launching}
+        onLaunch={handleLaunch}
         placeholder={
           placeholder ??
           (selectedAgent
