@@ -8,11 +8,13 @@ import { ComputerService } from './computer.service';
 import { ComputeMeteringService } from './compute-metering.service';
 import { CapabilityProviderModule } from '~/provider';
 import { ResourceUpgradeService } from './resource-upgrade.service';
+import { ComputeMeteringLock } from './compute-metering-lock';
 
 @Module({
   imports: [CreditModule, BillingModule, CapabilityProviderModule],
   controllers: [ComputerController],
   providers: [
+    { provide: ComputeMeteringLock, useFactory: () => new ComputeMeteringLock() },
     ComputerMigrationService,
     ComputerService,
     ComputeMeteringService,

@@ -10,6 +10,7 @@ describe('ComputeMeteringService', () => {
   };
   let insertValues: jest.Mock;
   let updateSet: jest.Mock;
+  let lock: jest.Mock;
 
   beforeEach(() => {
     insertValues = jest.fn().mockReturnValue({
@@ -28,10 +29,12 @@ describe('ComputeMeteringService', () => {
         .mockResolvedValue({ balance: 10_000, reserved: 0, available: 10_000 }),
       record: jest.fn().mockResolvedValue({ entryId: 'entry_1' }),
     };
+    lock = jest.fn().mockImplementation((_id, action) => action());
     service = new ComputeMeteringService(
       db as any,
       credits as any,
       { stopComputer: jest.fn() } as any,
+      { withInstanceLock: lock } as any,
     );
     delete process.env.COMPUTE_MAX_CATCH_UP_MINUTES;
   });
@@ -80,9 +83,8 @@ describe('ComputeMeteringService', () => {
       from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(), for: jest.fn().mockResolvedValue([current]),
     };
-    const execute = jest.fn().mockResolvedValueOnce([{ locked: false }])
-      .mockResolvedValueOnce([{ locked: true }]);
-    db.transaction = jest.fn().mockImplementation((callback) => callback({ select: () => selection, execute }));
+    lock.mockResolvedValueOnce(undefined).mockImplementationOnce((_id, action) => action());
+    db.transaction = jest.fn().mockImplementation((callback) => callback({ select: () => selection }));
     db.query = { agentComputerInstance: { findFirst: jest.fn().mockResolvedValue(current) } };
     await service.tick();
     expect(db.query.agentComputerInstance.findFirst).not.toHaveBeenCalled();
@@ -103,7 +105,7 @@ describe('ComputeMeteringService', () => {
     db.query = { agentComputerInstance: { findFirst: jest.fn().mockResolvedValue(current) } };
     (service as any).computers.getAssignedComputer = jest.fn().mockResolvedValue(current);
     await service.settleForResourceChange('agent');
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(lock).toHaveBeenCalledWith('computer', expect.any(Function), false);
     expect(credits.record).toHaveBeenCalledWith(expect.objectContaining({ amount: 14, description: 'Computer use (standard) 2m' }));
     expect(updateSet).toHaveBeenLastCalledWith(expect.objectContaining({ meteredThroughAt: now }));
     current.resourceProfile = 'gpu';
