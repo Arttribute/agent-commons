@@ -1,3 +1,4 @@
+import { hostApplicationFromContext } from "./host-application";
 import { missingComputedArtifacts, preferManagedArtifactTools } from './computed-artifact-completion';
 import { LiveTurnSteering } from './live-turn-steering';
 import { ToolImageContext } from './tool-image-context';
@@ -630,6 +631,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     agentId: string,
     sessionId: string,
     firstUserMessage = '',
+    useAgentMemory = true,
   ) {
     const [
       agent,
@@ -642,7 +644,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     ] = await Promise.all([
       this.getAgent({ agentId }),
       this.optionalPromptContext('child sessions', this.getChildSessions(sessionId), []),
-      firstUserMessage
+      firstUserMessage && useAgentMemory
         ? this.optionalPromptContext('memory', this.memoryService.buildMemoryBlock(agentId, firstUserMessage), '')
         : Promise.resolve(''),
       this.optionalPromptContext('tasks', this.taskExecution.listSessionTasks(sessionId), []),
@@ -819,6 +821,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       metadata?: Record<string, unknown>;
     };
   }): Observable<any> {
+    const hostApplication = hostApplicationFromContext(props.cliContext);
     return new Observable<any>((subscriber) => {
       // Keep SSE connection alive through proxies
       const keepalive = setInterval(
@@ -1969,6 +1972,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                     subscriber.next({
                       type: 'cli_tool_request', phase: 'commentary', requestId,
                       tool: name, args, sessionId: currentSessionId,
+                      ...(hostApplication ? { hostApplication } : {}),
                       timestamp: new Date().toISOString(),
                     });
                   });
@@ -2238,6 +2242,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               agentId,
               currentSessionId,
               firstUserText,
+              !hostApplication,
             );
             messages.push(
               ...(boot.messages.map((m) => ({
@@ -2268,7 +2273,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             ] = await Promise.all([
               this.getAgent({ agentId }),
               this.optionalPromptContext('child sessions', this.getChildSessions(currentSessionId), []),
-              firstUserText
+              firstUserText && !hostApplication
                 ? this.optionalPromptContext('memory', this.memoryService.buildMemoryBlock(agentId, firstUserText), '')
                 : Promise.resolve(''),
               this.optionalPromptContext('tasks', this.taskExecution.listSessionTasks(currentSessionId), []),
@@ -2420,7 +2425,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             this.contentToText(
               props.messages?.findLast((m) => m.role === 'user')?.content,
             ) || undefined;
-          const memoryBlock = await this.memoryService
+          const memoryBlock = hostApplication ? '' : await this.memoryService
             .buildMemoryBlock(agentId, latestUserMsg ?? '')
             .catch(() => '');
           const copilotContext =
@@ -3049,7 +3054,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                 ),
               }));
 
-            if (historyForConsolidation.length >= 2) {
+            if (!hostApplication && historyForConsolidation.length >= 2) {
               this.memoryService
                 .consolidateSession(
                   agentId,

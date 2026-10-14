@@ -13,6 +13,7 @@ export type AgentRun = {
   title: string;
   state: AgentRunState;
   activity?: string;
+  actionUrl?: string;
   updatedAt: string;
 };
 

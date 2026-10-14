@@ -33,7 +33,7 @@ const TERMINAL_EVENT_TYPES = new Set([
 /** Consecutive failed reconnects (no events received) before giving up. */
 const MAX_RESUME_ATTEMPTS = 8;
 
-type ResumableStreamEvent = StreamEvent & { seq?: number; runId?: string };
+type ResumableStreamEvent = StreamEvent & { seq?: number; runId?: string; hostApplication?: { name: string; url: string } };
 
 // A route change unmounts the composer but does not stop its fetch. Session
 // recovery can use this to avoid opening a second subscriber in the same tab.
@@ -198,7 +198,7 @@ export function useAgentStream(
             lastSeq = event.seq;
           if (event.type === "final" && event.payload?.sessionId) localStorage.setItem(`commons-chat-context:${event.payload.sessionId}`, JSON.stringify({ workspaceRoot: params.localWorkspaceRoot ?? null, knowledgeMode: params.knowledgeMode ?? "auto", spaceIds: params.knowledgeSpaceIds ?? [] }));
           handleEvent(event, optionsRef.current);
-          if (event.type === "cli_tool_request" && event.requestId && !handledLocalRequests.has(event.requestId)) {
+          if (event.type === "cli_tool_request" && !event.hostApplication && event.requestId && !handledLocalRequests.has(event.requestId)) {
             handledLocalRequests.add(event.requestId);
             const bridge = window.agentCommonsDesktop;
             if (bridge && claimCliToolRequest(event.requestId)) {
