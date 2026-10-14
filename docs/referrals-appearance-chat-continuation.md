@@ -1,0 +1,89 @@
+# Referrals, appearance and chat continuation
+
+The inviter earns 1,000 credits after a unique, verified first Agent Commons
+activation. The invitee keeps the existing welcome-credit flow. Invitations do
+not themselves grant credits.
+
+The app captures first-touch attribution in a 30-day HTTP-only, same-site
+cookie at `/r/<code>`. Codes contain 128 bits of randomness. Its server-side
+OAuth callback attests the activation using the dedicated Agent Commons service
+identity; a browser, management key or unrelated service cannot grant referral
+rewards. A failed delivery to the API remains in the signed session for retry.
+Existing credit accounts created before activation cannot be attributed.
+
+The signup row and ledger grant commit in one PostgreSQL transaction. Permanent
+unique constraints on the referred principal and canonical email hash prevent
+repeat rewards, including Gmail dot/plus aliases and account recreation. The
+inviter cannot refer themselves or their email aliases. The ledger also has an
+idempotency key for each referred principal.
+
+Email invitations reserve a durable invitation ID before using Resend, use that
+ID as the provider idempotency key, and confirm the result afterward. Retries
+after an ambiguous timeout retain the same reservation. Old unconfirmed sends
+are not resent beyond the provider's idempotency window. Invitations are limited
+to ten distinct recipients per inviter per rolling day and five requests per
+minute. Completed invitations to the same recipient are not sent again.
+
+Apply versioned migration `044_referral_program.sql` through the usual API
+deployment. The web environment needs `RESEND_API_KEY`, with optional
+`REFERRAL_EMAIL_FROM` (default `Agent Commons <hello@agentcommons.io>`). The
+staging Vercel environment has been configured. The API trusts
+`svc_agent_commons_staging` when `APP_ENV=staging`, otherwise
+`svc_agent_commons`; `REFERRAL_APP_SERVICE_PRINCIPAL` can explicitly override
+this for another deployment. New API endpoints are authenticated and require
+no public gateway allowlist entries.
+
+Appearance is Light by default, with explicit Dark and System settings. A
+script applies the theme before paint. Browser preferences and desktop's native
+timestamped preferences persist it, including desktop restarts and Cloud/Local
+mode switches. The desktop's native theme and window background follow the
+same preference. Sidebar, page, card, muted and overlay surfaces remain
+distinct. Legacy neutral utilities and the shared UI kit's surface variables
+adapt to the theme. Compact account and agent icons use a shared 28px size.
+
+Agent Commons session lists and suggestions include web sessions with existing
+agents. CLI, Common OS and orphaned Arcade/system sessions remain available to
+API clients and by explicit ID, while they stay out of web/desktop recents.
+Summaries include project IDs so project chats are grouped correctly. Account
+and mode changes do not show the previous session list while loading.
+
+Personal suggestions must name an exact source session from the supplied
+history. They include concrete recent context and a detailed execution prompt.
+`readUserChat` and `listUserChats` expose owner-scoped history across general
+and project chats. Long messages have character-offset pagination rather than
+silent truncation. Retrieval tools are retained when the model tool budget is
+full. Historical content is data, not new instructions. Each tool trace has an
+independent native disclosure for its full arguments and result/error.
+
+Desktop changes are tested by the Desktop workflow. Existing desktop installers
+receive them through the repository's separate desktop release procedure.
+
+## Logo artifacts
+
+The built-in imagegen tool produced `apps/commons-app/public/logo-transparent.png`
+and `apps/commons-app/public/logo-dark.png`. `CommonsLogo` selects the variant.
+The dark variant gives the standalone “t” a warm light fill.
+
+Light edit prompt:
+
+> Remove only the pure white background surrounding the text and gradient
+> highlights, including all white gaps between and around letters. Make those
+> regions truly alpha transparent. Preserve the exact existing text “Agent
+> Commons”, lettering shape, position, proportions, black color, existing
+> yellow-pink first-row and green-cyan second-row gradient rounded blocks.
+> Do not redesign, redraw, recolor, add elements or shadows. Output tightly
+> cropped to original artwork on transparent background.
+
+Dark edit prompt:
+
+> Make a clean transparent PNG version of this Agent Commons logo for a dark UI.
+> Keep layout and letter shapes unchanged, same black letters on both colored
+> gradient highlights. Only the standalone letter “t” in “Agent”, outside the
+> first gradient block, must become warm off-white (#f5f5f4). Remove all pure
+> white background to alpha 0. Outside edges must be smooth and clean, without
+> specks, streaks, halos or remnants. Preserve the original gradients, rounded
+> highlight shapes, typography and image aspect ratio.
+
+Provider references: [Resend sending](https://resend.com/docs/api-reference/emails/send-email),
+[Resend idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys),
+[Telegram sharing](https://core.telegram.org/widgets/share).

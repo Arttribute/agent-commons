@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 
 export type EntityKind = "agent" | "task" | "tool" | "skill" | "workflow" | "app" | "knowledge" | "note";
 
@@ -266,7 +267,7 @@ function EntityPreview({ kind, name, data }: { kind: EntityKind; name: string; d
     return (
       <div className="space-y-3">
         <div className="flex items-center gap-3">
-          <AgentAvatar name={data.name ?? name} src={data.avatar} size={36} />
+          <AgentAvatar name={data.name ?? name} src={data.avatar} size={PROFILE_ICON_SIZE} />
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{data.name ?? name}</p>
             <p className="truncate text-xs text-muted-foreground">{[data.modelProvider, data.modelId].filter(Boolean).join(" · ") || "Agent"}</p>

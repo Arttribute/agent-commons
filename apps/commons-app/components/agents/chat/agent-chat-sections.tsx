@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import { AgentAutonomy } from "@/components/agents/agent-autonomy";
 import { AgentRuntimeSurface } from "@/components/agents/agent-runtime-surface";
 import { AgentArtifactsView } from "@/components/artifacts/agent-artifacts-view";
@@ -160,7 +161,7 @@ export function AgentSectionScreen({
         >
           <ArrowLeft className="h-[18px] w-[18px]" strokeWidth={1.75} />
         </button>
-        <AgentAvatar name={agent.name} src={agent.avatar} size={28} />
+        <AgentAvatar name={agent.name} src={agent.avatar} size={PROFILE_ICON_SIZE} />
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-medium">
             {meta.title}

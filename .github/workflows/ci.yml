@@ -109,10 +109,14 @@ jobs:
       - name: Test appearance preferences and attributable sharing
         run: node --experimental-strip-types --test apps/commons-app/lib/appearance.test.mjs apps/commons-app/lib/referrals.test.mjs
 
+      - name: Test invitation email authorization and delivery retries
+        run: node --experimental-vm-modules --test apps/commons-app/lib/referral-email.test.mjs
+
       - name: Test referral rewards, concurrency and authorization
         env:
           REFERRAL_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
-        run: pnpm --filter commons-api exec jest --runInBand credit/referral credit/credit.service.spec.ts credit/credit.controller.spec.ts session/session-visibility.integration.spec.ts
+          NODE_OPTIONS: --experimental-vm-modules --max-old-space-size=4096
+        run: pnpm --filter commons-api exec jest --runInBand credit/referral credit/credit.service.spec.ts credit/credit.controller.spec.ts session/session-visibility.integration.spec.ts session/chat-history-page.spec.ts session/session-suggestions.service.spec.ts tool/tools/common-tool.project.spec.ts agent/model-tool-selection.spec.ts
 
       - name: Test wallet balance response and network selection
         run: node --experimental-strip-types --test apps/commons-app/lib/wallet-networks.test.mjs

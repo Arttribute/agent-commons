@@ -15,6 +15,13 @@ function tool(name: string, category = 'platform') {
 }
 
 describe('model tool selection', () => {
+  it('keeps chat retrieval available when configured tools fill the model budget', () => {
+    const selected = selectModelTools([
+      ...Array.from({ length: 140 }, (_, index) => tool(`customTool${index}`, 'dynamic')),
+      tool('readUserChat', 'platform'), tool('listUserChats', 'platform'),
+    ], [], 'Continue the chat from source session ID 571c946f-a62e-4b43-ae62-b58ca3803899. Read its transcript.', 4);
+    expect(selected.tools.slice(0, 2).map((entry) => entry.function.name)).toEqual(['readUserChat', 'listUserChats']);
+  });
   it('keeps local coding and configured tools when a broad catalog exceeds the provider limit', () => {
     const platform = Array.from({ length: 125 }, (_, index) =>
       tool(`platform_${index}`),

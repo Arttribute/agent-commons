@@ -21,6 +21,7 @@ import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 import { apiErrorMessage } from "@/lib/api-error";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import SessionInterface from "@/components/sessions/session-interface";
 import ChatInputBox, { type ComposerLaunch } from "@/components/sessions/chat/chat-input-box";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -475,7 +476,7 @@ function AgentPicker({
               }}
               className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-stone-100"
             >
-              <AgentAvatar name={agent.name} src={agent.avatar ?? undefined} size={24} />
+              <AgentAvatar name={agent.name} src={agent.avatar ?? undefined} size={PROFILE_ICON_SIZE} />
               <span className="min-w-0 flex-1 truncate">{agent.name}</span>
               {agent.agentId === selected.agentId && <Check className="h-3.5 w-3.5 text-stone-700" />}
             </button>

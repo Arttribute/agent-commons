@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import { CommonAgent } from "@/types/agent";
 import { Card } from "@/components/ui/card";
 import { normalizeSessionHistory } from "@/lib/session-history";
@@ -106,7 +107,7 @@ export default function AgentMessaging({
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <AgentAvatar name={agent?.name} src={agent?.avatar} size={32} />
+          <AgentAvatar name={agent?.name} src={agent?.avatar} size={PROFILE_ICON_SIZE} />
           <div className="flex-1">
             <h3 className="font-medium text-sm">{agent?.name ?? "Agent"}</h3>
             <p className="text-xs text-muted-foreground">{agentId}</p>

@@ -21,4 +21,14 @@ describe('referral authorization', () => {
     await expect(controller.complete({ principal: { principalId: 'usr_alice', principalType: 'user' } }, { invitationId: 'x', sent: true })).rejects.toMatchObject({ status: 403 });
     expect(referrals.completeInvitation).not.toHaveBeenCalled();
   });
+
+  it('uses the staging service identity only in the staging API', async () => {
+    const previous = process.env.APP_ENV;
+    process.env.APP_ENV = 'staging';
+    try {
+      await expect(controller.activate(app, {} as any)).rejects.toMatchObject({ status: 403 });
+      await controller.activate({ ...app, principal: { ...app.principal, principalId: 'svc_agent_commons_staging' } }, {} as any);
+      expect(referrals.activate).toHaveBeenCalledTimes(1);
+    } finally { if (previous === undefined) delete process.env.APP_ENV; else process.env.APP_ENV = previous; }
+  });
 });

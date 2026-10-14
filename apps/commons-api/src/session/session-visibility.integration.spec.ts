@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import * as schema from '#/models/schema';
 import { SessionService } from './session.service';
 import { SessionSuggestionsService } from './session-suggestions.service';
+import { CommonToolService } from '~/tool/tools/common-tool.service';
 
 jest.setTimeout(60_000);
 const url = process.env.REFERRAL_TEST_DATABASE_URL;
@@ -16,10 +17,10 @@ const url = process.env.REFERRAL_TEST_DATABASE_URL;
     client = postgres(url!, { max: 2, connection: { search_path: namespace }, onnotice: () => {}, ssl: process.env.REFERRAL_TEST_SSL === 'require' ? { rejectUnauthorized: false } : false });
     await client.unsafe(`create schema ${namespace}`);
     await client.unsafe(`
-      create table agent (agent_id text primary key, name text);
+      create table agent (agent_id text primary key, name text, persona text, owner_user_id text, owner text);
       create table session (session_id uuid primary key default gen_random_uuid(), agent_id text, initiator text,
-        initiator_type text, title text, project_id text, created_at timestamptz default now(), updated_at timestamptz default now());
-      insert into agent values ('active_agent','Commons Copilot');
+        initiator_type text, title text, project_id text, history jsonb default '[]', created_at timestamptz default now(), updated_at timestamptz default now());
+      insert into agent (agent_id,name) values ('active_agent','Commons Copilot');
       insert into session (agent_id,initiator,initiator_type,title) values
         ('active_agent','usr_alice','web','Current product chat'),
         ('active_agent','usr_alice','cli','Old AGC CLI chat'),
@@ -53,5 +54,20 @@ const url = process.env.REFERRAL_TEST_DATABASE_URL;
     await client`update session set project_id='project_example' where title='Current product chat'`;
     const [session] = await service.getSessionsByInitiator({ initiator: 'usr_alice', commonsSurface: true });
     expect(session.projectId).toBe('project_example');
+  });
+
+  it('finds and reads general agent chats without a project and prevents cross-account transcript access', async () => {
+    const tools = Object.create(CommonToolService.prototype) as CommonToolService;
+    (tools as any).db = db;
+    const metadata = { agentId: 'active_agent', ownerId: 'usr_alice', sessionId: randomUUID() };
+    const listed = await tools.listUserChats({ query: 'Current product' }, metadata);
+    expect(listed.chats).toHaveLength(1);
+    const source = listed.chats[0].sessionId;
+    await client`update session set project_id=null, history=${JSON.stringify([{ role: 'user', content: 'Use Node 22' }, { role: 'assistant', content: 'Deploy the migrations first' }])}::jsonb where session_id=${source}`;
+    const read = await tools.readUserChat({ targetSessionId: source }, metadata);
+    expect(read.projectId).toBeNull();
+    expect(read.messages.map((message) => message.content)).toEqual(['Use Node 22', 'Deploy the migrations first']);
+    await expect(tools.readUserChat({ targetSessionId: source }, { ...metadata, ownerId: 'usr_bob' })).rejects.toMatchObject({ status: 404 });
+    await expect(tools.readUserChat({ targetSessionId: source }, { agentId: 'active_agent' })).rejects.toMatchObject({ status: 400 });
   });
 });

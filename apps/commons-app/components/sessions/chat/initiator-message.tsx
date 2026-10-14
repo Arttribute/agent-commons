@@ -55,7 +55,7 @@ export default function InitiatorMessage({
 
   return (
     <div className="flex justify-end my-3">
-      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-indigo-100 px-4 py-2.5">
+      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-indigo-100 px-4 py-2.5 dark:bg-indigo-950/40">
         {(attachments.length > 0 || computerRequest) && (
           <div className="mb-2 flex flex-wrap justify-end gap-1.5">
             {computerRequest && (
@@ -95,7 +95,7 @@ export default function InitiatorMessage({
             {message}
           </p>
           {clamped && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-indigo-100 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-indigo-100 to-transparent dark:from-indigo-950/40" />
           )}
         </div>
         {overflows && (

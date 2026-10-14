@@ -157,10 +157,12 @@ export function selectModelTools<T extends NamedTool>(
     };
   }
   const request = words(requestText);
+  const historyRequest = /\b(?:chat|session|conversation|transcript|readUserChat)\b/i.test(requestText);
   const candidates = uniqueAvailable
-    .map((tool, index) => ({ tool, index, score: relevance(tool, request) }))
+    .map((tool, index) => ({ tool, index, history: historyRequest && ['readUserChat', 'listUserChats'].includes(tool.function.name), score: relevance(tool, request) }))
     .sort(
       (a, b) =>
+        Number(b.history) - Number(a.history) ||
         // Account, agent, space, and MCP tools are configured for this agent;
         // the platform catalog is shared by every agent and can be trimmed.
         Number(b.tool.category !== 'platform') -

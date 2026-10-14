@@ -77,6 +77,9 @@ let desktopWindow: BrowserWindow | null = null;
 let visibleView: WebContentsView | null = null;
 let unifiedView: WebContentsView | null = null;
 let commonsServer: CommonsAppServer | null = null;
+nativeTheme.on('updated', () => {
+  desktopWindow?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1f1d1b' : '#fcfcfb');
+});
 let runtime: PrivateLocalRuntime;
 let localProfiles: LocalProfiles;
 let accountSync: Promise<void> = Promise.resolve();

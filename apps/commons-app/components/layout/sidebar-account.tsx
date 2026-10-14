@@ -26,6 +26,7 @@ import {
 import { useCredits } from "@/hooks/use-credits";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { formatCredits, formatCreditsExact } from "@/lib/format-credits";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import {
   UserRound,
   LogOut,
@@ -124,7 +125,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
             }
           >
             <div className="rounded-full overflow-hidden shrink-0 ring-1 ring-border">
-              <UserAvatar image={authState.profileImage} seed={principalId || displayName} name={username} size={28} />
+              <UserAvatar image={authState.profileImage} seed={principalId || displayName} name={username} size={PROFILE_ICON_SIZE} />
             </div>
             {!collapsed && (
               <>

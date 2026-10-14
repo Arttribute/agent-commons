@@ -64,6 +64,7 @@ import { cn } from "@/lib/utils";
 import { StudioAgentLauncher } from "@/components/studio/agent-launcher";
 import { LibraryPickerDialog } from "@/components/sessions/chat/library-picker-dialog";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import { InfoHint } from "@/components/ui/info-hint";
 import { ProjectNavigationToggle } from "./project-navigation";
 
@@ -226,7 +227,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
                         href={`/sessions/${encodeURIComponent(session.sessionId)}`}
                         className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
                       >
-                        <AgentAvatar name={agent?.name} src={agent?.avatar} size={22} />
+                        <AgentAvatar name={agent?.name} src={agent?.avatar} size={PROFILE_ICON_SIZE} />
                         <span className="min-w-0 flex-1 truncate text-sm">{session.title && session.title !== "New chat" ? session.title : "Untitled chat"}</span>
                         <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(session.updatedAt)}</span>
                       </Link>

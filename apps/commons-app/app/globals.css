@@ -149,6 +149,21 @@ body {
   --brand-lilac: #c4b5fd;
 }
 
+/* The published UI kit uses its own surface tokens. Bridge them to the app
+   theme so composers and embedded controls share the same appearance. */
+:root.dark {
+  --ac-surface: hsl(var(--card));
+  --ac-canvas: hsl(var(--page));
+  --ac-text: hsl(var(--foreground));
+  --ac-muted: hsl(var(--muted-foreground));
+  --ac-line: hsl(var(--border));
+  --ac-accent: hsl(var(--primary));
+}
+.dark .ac-button-primary,
+.dark .ac-composer-send {
+  color: hsl(var(--primary-foreground));
+}
+
 @layer base {
   /* shadcn "stone" base palette — warm neutrals matching the stone-50
      page backgrounds, so muted/accent hovers, skeletons and borders all

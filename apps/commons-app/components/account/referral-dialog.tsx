@@ -64,7 +64,7 @@ export function ReferralDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               {referralShares(summary.url).map((share) => <Button key={share.name} variant="outline" asChild className="gap-2 px-2 text-xs">
                 <a href={share.href} target="_blank" rel="noopener noreferrer" aria-label={`Invite on ${share.name}`} onClick={() => {
                   if (share.name === 'Facebook' || share.name === 'LinkedIn') setNotice('Add your own message in the share composer.');
-                }}><BrandLogo name={share.icon} size={16} />{share.name}</a>
+                }}><BrandLogo name={share.icon} className={share.icon === "x" ? "dark:invert" : undefined} size={16} />{share.name}</a>
               </Button>)}
             </div>
             {nativeShare && <Button variant="outline" className="w-full gap-2" onClick={() => void navigator.share({ title: 'Agent Commons', text: referralMessage('').trim(), url: summary.url }).catch((cause) => {
