@@ -1,22 +1,22 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { auth } from '@/auth';
 import { backendServiceAuthHeaders } from '@/lib/api-headers';
-import { getAppBaseUrl } from '@/lib/app-url';
+import { referralAppBaseUrl, referralSession, forwardDesktopReferral } from '@/lib/referral-server';
 import { referralMessage } from '@/lib/referrals';
 
 export async function POST(request: NextRequest) {
-  // These server credentials can send email. Require both an account and a
-  // same-origin browser request before touching Resend or reserving an invite.
-  if (request.headers.get('origin') !== request.nextUrl.origin) return NextResponse.json({ error: 'Invalid request origin.' }, { status: 403 });
-  const session = await auth();
+  const { session, bearer } = await referralSession(request);
   if (!session?.user?.id) return NextResponse.json({ error: 'Sign in to invite friends.' }, { status: 401 });
-  const key = process.env.RESEND_API_KEY;
-  const base = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
-  if (!key || !base) return NextResponse.json({ error: 'Email invitations are temporarily unavailable.' }, { status: 503 });
+  // Cookie requests require same-origin. A native token is explicitly verified
+  // with identity before it can reach these server-held credentials.
+  if (!bearer && request.headers.get('origin') !== request.nextUrl.origin) return NextResponse.json({ error: 'Invalid request origin.' }, { status: 403 });
   const body = await request.json().catch(() => null);
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
   if (!email || email.length > 254 || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)) return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 400 });
   if (email === session.user.email?.trim().toLowerCase()) return NextResponse.json({ error: 'Invite a friend using a different email address.' }, { status: 400 });
+  if (process.env.COMMONS_DESKTOP_SERVER === '1') return forwardDesktopReferral(session, '/api/referrals/email', { email });
+  const key = process.env.RESEND_API_KEY;
+  const base = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
+  if (!key || !base) return NextResponse.json({ error: 'Email invitations are temporarily unavailable.' }, { status: 503 });
   const service = await backendServiceAuthHeaders({ allowLegacyKey: false });
   if (!service.Authorization) return NextResponse.json({ error: 'Email invitations are temporarily unavailable.' }, { status: 503 });
   const headers = { ...service, 'Content-Type': 'application/json', 'x-initiator': session.user.id, 'x-owner-id': session.user.id };
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     if (!reserved.ok) return NextResponse.json(payload, { status: reserved.status });
     const invite = payload.data;
     if (invite.alreadySent) return NextResponse.json({ message: 'You already invited this email address.' });
-    const url = `${getAppBaseUrl()}/r/${invite.code}`;
+    const url = `${referralAppBaseUrl()}/r/${invite.code}`;
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST', signal: AbortSignal.timeout(10_000),
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'Idempotency-Key': `referral/${invite.invitationId}` },

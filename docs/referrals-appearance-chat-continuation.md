@@ -62,7 +62,10 @@ receive them through the repository's separate desktop release procedure.
 
 The built-in imagegen tool produced `apps/commons-app/public/logo-transparent.png`
 and `apps/commons-app/public/logo-dark.png`. `CommonsLogo` selects the variant.
-The dark variant gives the standalone “t” a warm light fill.
+The dark variant uses white lettering throughout. Its gradient endpoints match
+Tailwind yellow-700 (#a16207), pink-700 (#be185d), green-700 (#15803d) and
+cyan-700 (#0e7490), targeting at least 4.5:1 contrast for small white lettering.
+These retain the original hue families while darkening the bars.
 
 Light edit prompt:
 
@@ -76,14 +79,15 @@ Light edit prompt:
 
 Dark edit prompt:
 
-> Make a clean transparent PNG version of this Agent Commons logo for a dark UI.
-> Keep layout and letter shapes unchanged, same black letters on both colored
-> gradient highlights. Only the standalone letter “t” in “Agent”, outside the
-> first gradient block, must become warm off-white (#f5f5f4). Remove all pure
-> white background to alpha 0. Outside edges must be smooth and clean, without
-> specks, streaks, halos or remnants. Preserve the original gradients, rounded
-> highlight shapes, typography and image aspect ratio.
+> Use case: precise-object-edit. Asset: exact existing Agent Commons logo for a dark sidebar, transparent PNG. Reference image is the ORIGINAL brand logo. Preserve its exact geometry, slightly tilted letter shapes, typography, two rows, spacing and aspect ratio. Change every black letter in both 'Agent' and 'Commons' to solid pure white #ffffff, including the standalone t. Replace only the two rounded gradient bars with MUCH DARKER gradients suitable for small white text: top bar smoothly yellow-700 #a16207 to pink-700 #be185d, bottom bar green-700 #15803d to cyan-700 #0e7490, horizontal interpolation, absolutely no brighter highlights or pastel pixels. These endpoint colors provide about 5:1 or better contrast for white lettering. Keep the original gradient hue families and original bar silhouettes. Remove the surrounding white field to real alpha transparency. CRITICAL clean flat digital logo: hard smooth antialiased outlines, opaque white letters, no texture, glow, shadows, fuzz, streaks, random pixels or halo. Preserve the original exact spelling Agent Commons and original letter silhouettes. Output a faithful color edit, not a redesign.
 
-Provider references: [Resend sending](https://resend.com/docs/api-reference/emails/send-email),
+Desktop invitations use the hosted app with a user bearer token verified at
+identity’s userinfo endpoint. Native installations hold no Resend or app-service
+credentials. Cookie-authenticated sends still require same-origin requests.
+`COMMONS_DESKTOP_CLOUD_URL` optionally selects the hosted environment; public
+invite links never use the native loopback URL. Verified first-activation
+attestations originate only from the hosted OAuth callback.
+
+Provider references: [Tailwind colors](https://tailwindcss.com/docs/colors), [Resend sending](https://resend.com/docs/api-reference/emails/send-email),
 [Resend idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys),
 [Telegram sharing](https://core.telegram.org/widgets/share).

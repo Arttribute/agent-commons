@@ -110,7 +110,7 @@ jobs:
         run: node --experimental-strip-types --test apps/commons-app/lib/appearance.test.mjs apps/commons-app/lib/referrals.test.mjs
 
       - name: Test invitation email authorization and delivery retries
-        run: node --experimental-vm-modules --test apps/commons-app/lib/referral-email.test.mjs
+        run: node --experimental-vm-modules --test apps/commons-app/lib/referral-email.test.mjs apps/commons-app/lib/referral-server.test.mjs
 
       - name: Test referral rewards, concurrency and authorization
         env:

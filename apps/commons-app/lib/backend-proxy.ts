@@ -6,6 +6,7 @@ import {
 } from "@/lib/api-headers";
 import { auth } from "@/auth";
 import { normalizePrincipalId } from "@/lib/principal-id";
+import type { Session } from "next-auth";
 
 const baseUrl = process.env.NEXT_PUBLIC_NEST_API_BASE_URL;
 
@@ -17,6 +18,8 @@ export async function proxyBackend(
     cache?: RequestCache;
     /** Server-derived context; never populate this from browser headers. */
     headers?: Record<string, string>;
+    /** Already authenticated by a server-owned session/token verifier. */
+    session?: Session | null;
   } = {},
 ) {
   if (!baseUrl) {
@@ -29,7 +32,7 @@ export async function proxyBackend(
   try {
     // This BFF holds service credentials, so every route using it must prove a
     // browser session before any upstream request is made.
-    const session = await auth();
+    const session = options.session === undefined ? await auth() : options.session;
     const userId = normalizePrincipalId(session?.user?.id);
     if (!session || !userId) {
       return NextResponse.json(

@@ -246,7 +246,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.accessTokenExpiresAt = desktopUser.accessTokenExpiresAt;
         token.workspaceId = desktopUser.workspaceId ?? token.workspaceId;
         const identity = await activateProduct(desktopUser.accessToken);
-        if (identity && typeof token.accessToken === "string") {
+        if (identity && typeof token.accessToken === "string" && process.env.COMMONS_DESKTOP_SERVER !== '1') {
           const claims = decodeJwtPayload(token.accessToken);
           token.pendingReferralActivation = await captureReferralActivation({
             principalId: identity.userId || String(token.identityUserId),
@@ -255,6 +255,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             firstActivation: identity.firstActivation === true,
             activatedAt: identity.activatedAt,
           });
+        } else if (identity?.firstActivation && typeof token.accessToken === 'string') {
+          await provisionCreditAccount(token.accessToken);
         }
         if (identity?.userId) token.identityUserId = identity.userId;
         if (identity?.workspaceId) token.workspaceId = identity.workspaceId;
@@ -270,7 +272,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           ? account.expires_at * 1000
           : Date.now() + 60 * 60 * 1000;
         const identity = await activateProduct(account.access_token);
-        if (identity && typeof token.accessToken === "string") {
+        if (identity && typeof token.accessToken === "string" && process.env.COMMONS_DESKTOP_SERVER !== '1') {
           const claims = decodeJwtPayload(token.accessToken);
           token.pendingReferralActivation = await captureReferralActivation({
             principalId: identity.userId || String(token.identityUserId),
@@ -279,13 +281,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             firstActivation: identity.firstActivation === true,
             activatedAt: identity.activatedAt,
           });
+        } else if (identity?.firstActivation && typeof token.accessToken === 'string') {
+          await provisionCreditAccount(token.accessToken);
         }
         if (identity?.userId) token.identityUserId = identity.userId;
         if (identity?.workspaceId) token.workspaceId = identity.workspaceId;
         if (identity?.image) token.picture = identity.image;
         if (identity?.name) token.name = identity.name;
       }
-      if (token.pendingReferralActivation && Date.now() >= Number(token.referralRetryAt || 0)) {
+      if (process.env.COMMONS_DESKTOP_SERVER !== '1' && token.pendingReferralActivation && Date.now() >= Number(token.referralRetryAt || 0)) {
         const pending = token.pendingReferralActivation as PendingReferralActivation;
         if (await deliverReferralActivation(pending)) {
           token.pendingReferralActivation = undefined;

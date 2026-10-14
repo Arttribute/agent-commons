@@ -43,6 +43,10 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
   // Auth.js and the native sign-in handoff must remain reachable while signed
   // out. Guarding these routes redirects /login back to its own start route.
   if (request.nextUrl.pathname.startsWith("/api/auth/")) return NextResponse.next();
+  // Only invitation routes support native user tokens. Their handlers verify
+  // bearer credentials against identity; other APIs still require the cookie.
+  if (["/api/referrals", "/api/referrals/email", "/api/referrals/qr"].includes(request.nextUrl.pathname)
+    && request.headers.get('authorization')?.startsWith('Bearer ')) return NextResponse.next();
   return cloudAuthMiddleware(request, event as never);
 }
 
