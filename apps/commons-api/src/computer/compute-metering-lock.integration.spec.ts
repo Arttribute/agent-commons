@@ -72,4 +72,17 @@ integration('compute metering locks with real Postgres', () => {
       .rejects.toThrow('Credit unavailable');
     expect(await otherWorker.withInstanceLock(id, async () => 'recovered', true)).toBe('recovered');
   });
+
+  it('bounds foreground lock waits without blocking application reads', async () => {
+    const started = deferred();
+    const finish = deferred();
+    const id = randomUUID();
+    const first = locks.withInstanceLock(id, async () => { started.resolve(); await finish.promise; });
+    await started.promise;
+    try {
+      await expect(otherWorker.withInstanceLock(id, async () => 'settled'))
+        .rejects.toMatchObject({ code: '55P03' });
+      expect((await application.query('select 1 as available')).rows[0].available).toBe(1);
+    } finally { finish.resolve(); await first; }
+  }, 10_000);
 });
