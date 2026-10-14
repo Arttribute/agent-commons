@@ -85,7 +85,7 @@ export function useUserSessions(userAddress: string) {
         setError(err instanceof Error ? err.message : "Unknown error");
         console.error("Error fetching user sessions:", err);
       } finally {
-        setLoadedUser(userAddress);
+        setLoadedUser(`${mode}:${userAddress}`);
         setIsLoading(false);
       }
     },
@@ -111,10 +111,10 @@ export function useUserSessions(userAddress: string) {
   }, [fetchSessions, mode]);
 
   return {
-    sessions,
+    sessions: loadedUser === `${mode}:${userAddress}` ? sessions : [],
     setSessions,
     isLoading:
-      Boolean(userAddress) && (isLoading || loadedUser !== userAddress),
+      Boolean(userAddress) && (isLoading || loadedUser !== `${mode}:${userAddress}`),
     error,
     refetch,
   };

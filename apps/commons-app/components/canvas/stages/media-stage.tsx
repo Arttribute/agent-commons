@@ -332,7 +332,7 @@ export function MediaStage({
               type="button"
               onClick={toggle}
               aria-label={playing ? "Pause" : "Play"}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-stone-900 text-white hover:bg-stone-800"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground hover:bg-primary"
             >
               {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="ml-0.5 h-3.5 w-3.5" />}
             </button>

@@ -289,7 +289,7 @@ function CanvasChatInner() {
           className="flex max-w-full items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 py-1 pl-1.5 pr-1 text-xs text-amber-950"
           title={note.body}
         >
-          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-stone-900 px-1 text-[9px] font-medium text-white">
+          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-medium text-primary-foreground">
             {note.number || "•"}
           </span>
           <span className="max-w-40 truncate">{note.body}</span>

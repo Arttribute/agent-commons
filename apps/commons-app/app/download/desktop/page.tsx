@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { CommonsLogo } from "@/components/layout/commons-logo";
 import Link from "next/link";
 import { ChevronDown, Cloud, Cpu, Laptop } from "lucide-react";
 import { MacFirstLaunch } from "@/components/download/mac-first-launch";
@@ -21,7 +21,7 @@ export default function DesktopDownloadPage() {
     <main className="h-dvh overflow-y-auto overscroll-contain bg-page">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-5 pt-5 sm:px-6">
         <Link href="/" aria-label="Agent Commons" className="flex items-center">
-          <Image src="/logo.jpg" alt="Agent Commons" width={131} height={60} priority className="h-8 w-auto rounded-md object-contain" />
+          <CommonsLogo priority className="h-8 w-auto rounded-md object-contain" />
         </Link>
         <nav className="flex items-center gap-1 text-sm">
           <a href="https://docs.agentcommons.io/docs" target="_blank" rel="noreferrer" className="rounded-md px-3 py-1.5 text-stone-600 transition-colors hover:bg-muted hover:text-stone-950">Docs</a>

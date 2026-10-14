@@ -1,8 +1,9 @@
 "use client";
+
+import { CommonsLogo } from "@/components/layout/commons-logo";
 import { Menubar, MenubarMenu, MenubarTrigger } from "@/components/ui/menubar";
 import AccountMenu from "@/components/account/AccountMenu";
 import Link from "next/link";
-import Image from "next/image";
 
 export default function AppBar() {
   return (
@@ -11,12 +12,7 @@ export default function AppBar() {
         <MenubarMenu>
           <MenubarTrigger>
             <Link href="/">
-              <Image
-                src="/logo.jpg"
-                alt="Agent Commons"
-                width={80}
-                height={20}
-              />
+              <CommonsLogo />
             </Link>
           </MenubarTrigger>
         </MenubarMenu>

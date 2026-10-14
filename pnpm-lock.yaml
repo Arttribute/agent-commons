@@ -786,6 +786,9 @@ importers:
       pdfjs-dist:
         specifier: 5.4.296
         version: 5.4.296
+      qrcode:
+        specifier: 1.5.3
+        version: 1.5.3
       react:
         specifier: ^19.0.0
         version: 19.0.0

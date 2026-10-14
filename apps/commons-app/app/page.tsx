@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { CommonsLogo } from "@/components/layout/commons-logo";
 import Link from "next/link";
 import { Github, MonitorDown } from "lucide-react";
 import { FeatureCarousel } from "@/components/landing/feature-carousel";
@@ -29,14 +29,7 @@ export default function Home() {
               className="flex items-center md:hidden"
               aria-label="Agent Commons"
             >
-              <Image
-                src="/logo.jpg"
-                alt="Agent Commons"
-                width={131}
-                height={60}
-                priority
-                className="h-7 w-auto rounded-md object-contain"
-              />
+              <CommonsLogo priority className="h-7 w-auto rounded-md object-contain" />
             </Link>
             <div className="hidden md:block" />
 

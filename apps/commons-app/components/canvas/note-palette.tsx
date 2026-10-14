@@ -97,7 +97,7 @@ function PaletteButton({
       aria-pressed={active}
       className={cn(
         "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900",
-        active && "bg-stone-900 text-white hover:bg-stone-800 hover:text-white",
+        active && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
       )}
     >
       {children}

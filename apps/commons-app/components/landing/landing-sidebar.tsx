@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { CommonsLogo } from "@/components/layout/commons-logo";
 import Link from "next/link";
 import {
   Bot,
@@ -36,14 +36,7 @@ export function LandingSidebar() {
       <div className="px-3 pt-4">
         <div className="mb-3 flex h-8 items-center justify-between px-1">
           <Link href="/" className="flex items-center" aria-label="Agent Commons">
-            <Image
-              src="/logo.jpg"
-              alt="Agent Commons"
-              width={131}
-              height={60}
-              priority
-              className="h-8 w-auto rounded-md object-contain"
-            />
+            <CommonsLogo priority className="h-8 w-auto rounded-md object-contain" />
           </Link>
           <Link
             href={signInTo("/new")}

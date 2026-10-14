@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { desc, eq, inArray, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, or } from 'drizzle-orm';
+import { commonsSessionPredicate } from './session-visibility';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import { ModelProviderFactory } from '~/modules/model-provider';
@@ -98,7 +99,7 @@ export class SessionSuggestionsService {
     const apps = [...new Set(connectedApps.filter((app) => typeof app === 'string' && app.trim()).map((app) => app.trim().slice(0, 40)))].slice(0, 12);
 
     const sessions = await this.db.query.session.findMany({
-      where: (s) => eq(s.initiator, owner),
+      where: (s) => and(eq(s.initiator, owner), commonsSessionPredicate(s)),
       columns: { sessionId: true, title: true, agentId: true, projectId: true },
       orderBy: (s) => [desc(s.updatedAt), desc(s.createdAt)],
       limit: 25,

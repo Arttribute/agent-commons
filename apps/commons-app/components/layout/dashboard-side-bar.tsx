@@ -1,9 +1,10 @@
 "use client";
 
+import { CommonsLogo } from "@/components/layout/commons-logo";
+
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { cn } from "@/lib/utils";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
@@ -191,7 +192,7 @@ export function DashboardSideBar({ username }: { username: string }) {
       </MobileNavDrawer>
       <div
         className={cn(
-          "hidden h-full flex-col border-r border-border bg-white transition-all duration-300 md:flex",
+          "hidden h-full flex-col border-r border-border bg-sidebar transition-all duration-300 md:flex",
           sidebarOpen ? "w-[290px] min-w-[290px]" : "w-[60px] min-w-[60px]",
         )}
       >
@@ -271,10 +272,10 @@ export function MobileMenuButton({ className }: { className?: string }) {
 /** The default phone header for pages that do not bring their own. */
 function MobileTopBar() {
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border/60 bg-white px-2 md:hidden">
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border/60 bg-sidebar px-2 md:hidden">
       <MobileMenuButton />
       <Link href="/new" aria-label="Agent Commons" className="flex min-w-0 flex-1 items-center">
-        <Image src="/logo.jpg" alt="Agent Commons" width={131} height={60} className="h-7 w-auto rounded-md object-contain" />
+        <CommonsLogo className="h-7 w-auto rounded-md object-contain" />
       </Link>
       <Link
         href="/new"
@@ -295,7 +296,7 @@ function MobileNavDrawer({ open, onOpenChange, children }: { open: boolean; onOp
         <DialogPrimitive.Content
           aria-describedby={undefined}
           onOpenAutoFocus={(event) => event.preventDefault()}
-          className="fixed inset-0 z-[80] flex h-app flex-col bg-white pt-[env(safe-area-inset-top)] pb-safe duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left motion-reduce:animate-none md:hidden"
+          className="fixed inset-0 z-[80] flex h-app flex-col bg-sidebar pt-[env(safe-area-inset-top)] pb-safe duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left motion-reduce:animate-none md:hidden"
         >
           <DialogPrimitive.Title className="sr-only">Menu</DialogPrimitive.Title>
           {children}

@@ -12,7 +12,7 @@
 .tiptap h1,
 .tiptap h2,
 .tiptap h3 {
-  color: #1c1917;
+  color: hsl(var(--foreground));
   font-weight: 600;
   letter-spacing: -0.025em;
   line-height: 1.25;
@@ -47,13 +47,13 @@
 }
 .tiptap blockquote {
   border-left: 3px solid #99f6e4;
-  color: #57534e;
+  color: hsl(var(--muted-foreground));
   padding-left: 1rem;
 }
 .tiptap code {
   border-radius: 0.35rem;
-  background: #f1f0ed;
-  color: #292524;
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
   font-family: var(--font-geist-mono), ui-monospace, monospace;
   font-size: 0.88em;
   padding: 0.12em 0.3em;
@@ -77,14 +77,14 @@
 }
 .tiptap th,
 .tiptap td {
-  border: 1px solid #d6d3d1;
+  border: 1px solid hsl(var(--border));
   min-width: 6rem;
   padding: 0.5rem 0.65rem;
   position: relative;
   vertical-align: top;
 }
 .tiptap th {
-  background: #f5f5f4;
+  background: hsl(var(--muted));
   font-weight: 600;
   text-align: left;
 }
@@ -106,7 +106,7 @@
 }
 .tiptap hr {
   border: 0;
-  border-top: 1px solid #d6d3d1;
+  border-top: 1px solid hsl(var(--border));
   margin: 1.5rem 0;
 }
 .tiptap img {
@@ -154,6 +154,9 @@ body {
      page backgrounds, so muted/accent hovers, skeletons and borders all
      sit on the same hue. */
   :root {
+    --page: 60 14.3% 98.8%;
+    --sidebar: 0 0% 100%;
+    --surface-white: 255 255 255;
     --background: 0 0% 100%;
     --foreground: 20 14.3% 4.1%;
     --card: 0 0% 100%;
@@ -181,24 +184,27 @@ body {
     --radius: 0.625rem;
   }
   .dark {
-    --background: 20 14.3% 4.1%;
+    --page: 30 7% 12%;
+    --sidebar: 30 7% 9%;
+    --surface-white: 36 34 32;
+    --background: 30 7% 12%;
     --foreground: 60 9.1% 97.8%;
-    --card: 20 14.3% 4.1%;
+    --card: 30 6% 14%;
     --card-foreground: 60 9.1% 97.8%;
-    --popover: 20 14.3% 4.1%;
+    --popover: 30 6% 16%;
     --popover-foreground: 60 9.1% 97.8%;
     --primary: 60 9.1% 97.8%;
     --primary-foreground: 24 9.8% 10%;
     --secondary: 12 6.5% 15.1%;
     --secondary-foreground: 60 9.1% 97.8%;
-    --muted: 12 6.5% 15.1%;
+    --muted: 30 6% 17%;
     --muted-foreground: 24 5.4% 63.9%;
-    --accent: 12 6.5% 15.1%;
+    --accent: 30 6% 20%;
     --accent-foreground: 60 9.1% 97.8%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 60 9.1% 97.8%;
-    --border: 12 6.5% 15.1%;
-    --input: 12 6.5% 15.1%;
+    --border: 30 6% 23%;
+    --input: 30 6% 23%;
     --ring: 24 5.7% 82.9%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
@@ -415,4 +421,172 @@ body {
 }
 ::highlight(canvas-note-resolved) {
   background-color: rgb(214 211 209 / 0.45);
+}
+
+/* Compatibility tokens for the existing warm neutral utility palette. */
+@layer base {
+ :root {
+  --surface-stone-50: 250 250 249;
+  --surface-stone-100: 245 245 244;
+  --surface-stone-200: 231 229 228;
+  --surface-stone-300: 214 211 209;
+  --text-stone-400: 168 162 158;
+  --text-stone-500: 120 113 108;
+  --text-stone-600: 87 83 78;
+  --text-stone-700: 68 64 60;
+  --text-stone-800: 41 37 36;
+  --text-stone-900: 28 25 23;
+  --text-stone-950: 12 10 9;
+  --border-stone-50: 250 250 249;
+  --border-stone-100: 245 245 244;
+  --border-stone-200: 231 229 228;
+  --border-stone-300: 214 211 209;
+  --border-stone-400: 168 162 158;
+  --surface-gray-50: 249 250 251;
+  --surface-gray-100: 243 244 246;
+  --surface-gray-200: 229 231 235;
+  --surface-gray-300: 209 213 219;
+  --text-gray-400: 156 163 175;
+  --text-gray-500: 107 114 128;
+  --text-gray-600: 75 85 99;
+  --text-gray-700: 55 65 81;
+  --text-gray-800: 31 41 55;
+  --text-gray-900: 17 24 39;
+  --text-gray-950: 3 7 18;
+  --border-gray-50: 249 250 251;
+  --border-gray-100: 243 244 246;
+  --border-gray-200: 229 231 235;
+  --border-gray-300: 209 213 219;
+  --border-gray-400: 156 163 175;
+  --surface-zinc-50: 250 250 250;
+  --surface-zinc-100: 244 244 245;
+  --surface-zinc-200: 228 228 231;
+  --surface-zinc-300: 212 212 216;
+  --text-zinc-400: 161 161 170;
+  --text-zinc-500: 113 113 122;
+  --text-zinc-600: 82 82 91;
+  --text-zinc-700: 63 63 70;
+  --text-zinc-800: 39 39 42;
+  --text-zinc-900: 24 24 27;
+  --text-zinc-950: 9 9 11;
+  --border-zinc-50: 250 250 250;
+  --border-zinc-100: 244 244 245;
+  --border-zinc-200: 228 228 231;
+  --border-zinc-300: 212 212 216;
+  --border-zinc-400: 161 161 170;
+  --surface-neutral-50: 250 250 250;
+  --surface-neutral-100: 245 245 245;
+  --surface-neutral-200: 229 229 229;
+  --surface-neutral-300: 212 212 212;
+  --text-neutral-400: 163 163 163;
+  --text-neutral-500: 115 115 115;
+  --text-neutral-600: 82 82 82;
+  --text-neutral-700: 64 64 64;
+  --text-neutral-800: 38 38 38;
+  --text-neutral-900: 23 23 23;
+  --text-neutral-950: 10 10 10;
+  --border-neutral-50: 250 250 250;
+  --border-neutral-100: 245 245 245;
+  --border-neutral-200: 229 229 229;
+  --border-neutral-300: 212 212 212;
+  --border-neutral-400: 163 163 163;
+  --surface-slate-50: 248 250 252;
+  --surface-slate-100: 241 245 249;
+  --surface-slate-200: 226 232 240;
+  --surface-slate-300: 203 213 225;
+  --text-slate-400: 148 163 184;
+  --text-slate-500: 100 116 139;
+  --text-slate-600: 71 85 105;
+  --text-slate-700: 51 65 85;
+  --text-slate-800: 30 41 59;
+  --text-slate-900: 15 23 42;
+  --text-slate-950: 2 6 23;
+  --border-slate-50: 248 250 252;
+  --border-slate-100: 241 245 249;
+  --border-slate-200: 226 232 240;
+  --border-slate-300: 203 213 225;
+  --border-slate-400: 148 163 184;
+ }
+ .dark {
+  --surface-stone-50: 31 29 27;
+  --surface-stone-100: 44 41 38;
+  --surface-stone-200: 54 51 48;
+  --surface-stone-300: 62 58 54;
+  --text-stone-400: 176 169 163;
+  --text-stone-500: 176 169 163;
+  --text-stone-600: 176 169 163;
+  --text-stone-700: 245 245 244;
+  --text-stone-800: 245 245 244;
+  --text-stone-900: 245 245 244;
+  --text-stone-950: 245 245 244;
+  --border-stone-50: 62 58 54;
+  --border-stone-100: 62 58 54;
+  --border-stone-200: 62 58 54;
+  --border-stone-300: 62 58 54;
+  --border-stone-400: 62 58 54;
+  --surface-gray-50: 31 29 27;
+  --surface-gray-100: 44 41 38;
+  --surface-gray-200: 54 51 48;
+  --surface-gray-300: 62 58 54;
+  --text-gray-400: 176 169 163;
+  --text-gray-500: 176 169 163;
+  --text-gray-600: 176 169 163;
+  --text-gray-700: 245 245 244;
+  --text-gray-800: 245 245 244;
+  --text-gray-900: 245 245 244;
+  --text-gray-950: 245 245 244;
+  --border-gray-50: 62 58 54;
+  --border-gray-100: 62 58 54;
+  --border-gray-200: 62 58 54;
+  --border-gray-300: 62 58 54;
+  --border-gray-400: 62 58 54;
+  --surface-zinc-50: 31 29 27;
+  --surface-zinc-100: 44 41 38;
+  --surface-zinc-200: 54 51 48;
+  --surface-zinc-300: 62 58 54;
+  --text-zinc-400: 176 169 163;
+  --text-zinc-500: 176 169 163;
+  --text-zinc-600: 176 169 163;
+  --text-zinc-700: 245 245 244;
+  --text-zinc-800: 245 245 244;
+  --text-zinc-900: 245 245 244;
+  --text-zinc-950: 245 245 244;
+  --border-zinc-50: 62 58 54;
+  --border-zinc-100: 62 58 54;
+  --border-zinc-200: 62 58 54;
+  --border-zinc-300: 62 58 54;
+  --border-zinc-400: 62 58 54;
+  --surface-neutral-50: 31 29 27;
+  --surface-neutral-100: 44 41 38;
+  --surface-neutral-200: 54 51 48;
+  --surface-neutral-300: 62 58 54;
+  --text-neutral-400: 176 169 163;
+  --text-neutral-500: 176 169 163;
+  --text-neutral-600: 176 169 163;
+  --text-neutral-700: 245 245 244;
+  --text-neutral-800: 245 245 244;
+  --text-neutral-900: 245 245 244;
+  --text-neutral-950: 245 245 244;
+  --border-neutral-50: 62 58 54;
+  --border-neutral-100: 62 58 54;
+  --border-neutral-200: 62 58 54;
+  --border-neutral-300: 62 58 54;
+  --border-neutral-400: 62 58 54;
+  --surface-slate-50: 31 29 27;
+  --surface-slate-100: 44 41 38;
+  --surface-slate-200: 54 51 48;
+  --surface-slate-300: 62 58 54;
+  --text-slate-400: 176 169 163;
+  --text-slate-500: 176 169 163;
+  --text-slate-600: 176 169 163;
+  --text-slate-700: 245 245 244;
+  --text-slate-800: 245 245 244;
+  --text-slate-900: 245 245 244;
+  --text-slate-950: 245 245 244;
+  --border-slate-50: 62 58 54;
+  --border-slate-100: 62 58 54;
+  --border-slate-200: 62 58 54;
+  --border-slate-300: 62 58 54;
+  --border-slate-400: 62 58 54;
+ }
 }

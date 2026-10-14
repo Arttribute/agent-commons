@@ -177,7 +177,7 @@ export function AgentsListPane({
               {query ? "Try another name or chat title." : "Create an agent to start chatting."}
             </p>
             {!query && (
-              <Link href="/studio/agents/create" className="mt-4 rounded-lg bg-stone-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-800">
+              <Link href="/studio/agents/create" className="mt-4 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary">
                 Create agent
               </Link>
             )}

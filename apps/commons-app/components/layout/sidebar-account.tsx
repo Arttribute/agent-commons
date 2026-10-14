@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { UserAvatar } from "@/components/account/user-avatar";
+import { ReferralDialog } from "@/components/account/referral-dialog";
 import {
   SettingsPanel,
   type SettingsSection,
@@ -34,6 +35,7 @@ import {
   CircleArrowUp,
   MonitorDown,
   ShieldCheck,
+  Gift,
 } from "lucide-react";
 
 const DESKTOP_DOWNLOAD_URL =
@@ -51,6 +53,7 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [referralOpen, setReferralOpen] = useState(false);
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("profile");
   const [desktopAvailable, setDesktopAvailable] = useState(false);
@@ -101,10 +104,12 @@ export function SidebarAccount({ collapsed = false }: { collapsed?: boolean }) {
       ? [{ label: "Upgrade plan", icon: CircleArrowUp, onClick: () => go("/plans") }]
       : []),
     { label: "Account", icon: UserRound, onClick: () => openSettings("profile") },
+    ...(mode === "cloud" ? [{ label: "Invite to get credits", icon: Gift, onClick: () => { setMenuOpen(false); setReferralOpen(true); } }] : []),
   ];
 
   return (
     <>
+      <ReferralDialog open={referralOpen} onOpenChange={setReferralOpen} />
       <Popover open={menuOpen} onOpenChange={setMenuOpen}>
         <PopoverTrigger asChild>
           <button

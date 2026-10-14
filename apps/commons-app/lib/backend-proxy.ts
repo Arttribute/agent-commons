@@ -15,6 +15,8 @@ export async function proxyBackend(
     method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     body?: unknown;
     cache?: RequestCache;
+    /** Server-derived context; never populate this from browser headers. */
+    headers?: Record<string, string>;
   } = {},
 ) {
   if (!baseUrl) {
@@ -46,6 +48,7 @@ export async function proxyBackend(
         method: options.method ?? "GET",
         cache: options.cache ?? "no-store",
         headers: {
+          ...options.headers,
           ...(hasBody ? { "Content-Type": "application/json" } : {}),
           ...authHeaders,
         },

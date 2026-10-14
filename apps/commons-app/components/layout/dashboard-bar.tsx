@@ -1,10 +1,11 @@
 // components/layout/DashboardBar.tsx
 "use client";
 
+import { CommonsLogo } from "@/components/layout/commons-logo";
+
 import { FC, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { NewChatButton } from "./new-chat-button";
 import { SidebarMoreMenu } from "./sidebar-more-menu";
 import { WorkspaceNavigation } from "./workspace-navigation";
@@ -26,14 +27,7 @@ export const DashboardBar: FC<DashboardBarProps> = ({
       activeTab={activeTab}
       navigate={(path) => router.push(path)}
       brand={<Link href="/new" className="flex items-center" aria-label="Agent Commons">
-          <Image
-            src="/logo.jpg"
-            alt="Agent Commons"
-            width={131}
-            height={60}
-            priority
-            className="h-8 w-auto rounded-md object-contain"
-          />
+          <CommonsLogo priority className="h-8 w-auto rounded-md object-contain" />
         </Link>}
       rightSlot={rightSlot}
       lead={<NewChatButton active={activeTab === "new"} />}

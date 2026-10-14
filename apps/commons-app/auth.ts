@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { refreshBlocked, refreshFailure } from "@/lib/token-refresh";
+import { captureReferralActivation, deliverReferralActivation, type PendingReferralActivation } from "@/lib/referral-activation";
 
 const issuer = process.env.COMMONS_IDENTITY_ISSUER;
 const clientId = process.env.COMMONS_IDENTITY_CLIENT_ID;
@@ -16,6 +17,7 @@ const refreshFlights = new Map<string, Promise<any>>();
 
 async function activateProduct(accessToken: unknown) {
   if (!issuer || typeof accessToken !== "string") return null;
+  const activatedAt = new Date().toISOString();
   const response = await fetch(
     `${issuer.replace(/\/api\/auth\/?$/, "")}/api/identity/apps/agent-commons/activate`,
     {
@@ -31,14 +33,7 @@ async function activateProduct(accessToken: unknown) {
     image?: string | null;
     name?: string | null;
   };
-  // Provision the new user's credit account during the first product
-  // activation. The credit service performs the 500-credit grant atomically;
-  // the normal studio balance request safely retries if this network call is
-  // unavailable during sign-in.
-  if (identity.firstActivation) {
-    await provisionCreditAccount(accessToken);
-  }
-  return identity;
+  return { ...identity, activatedAt };
 }
 
 async function provisionCreditAccount(accessToken: string) {
@@ -251,6 +246,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.accessTokenExpiresAt = desktopUser.accessTokenExpiresAt;
         token.workspaceId = desktopUser.workspaceId ?? token.workspaceId;
         const identity = await activateProduct(desktopUser.accessToken);
+        if (identity && typeof token.accessToken === "string") {
+          const claims = decodeJwtPayload(token.accessToken);
+          token.pendingReferralActivation = await captureReferralActivation({
+            principalId: identity.userId || String(token.identityUserId),
+            email: typeof claims.email === "string" ? claims.email : user?.email || "",
+            emailVerified: claims.email_verified === true,
+            firstActivation: identity.firstActivation === true,
+            activatedAt: identity.activatedAt,
+          });
+        }
         if (identity?.userId) token.identityUserId = identity.userId;
         if (identity?.workspaceId) token.workspaceId = identity.workspaceId;
         if (identity?.image) token.picture = identity.image;
@@ -265,10 +270,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           ? account.expires_at * 1000
           : Date.now() + 60 * 60 * 1000;
         const identity = await activateProduct(account.access_token);
+        if (identity && typeof token.accessToken === "string") {
+          const claims = decodeJwtPayload(token.accessToken);
+          token.pendingReferralActivation = await captureReferralActivation({
+            principalId: identity.userId || String(token.identityUserId),
+            email: typeof claims.email === "string" ? claims.email : user?.email || "",
+            emailVerified: claims.email_verified === true,
+            firstActivation: identity.firstActivation === true,
+            activatedAt: identity.activatedAt,
+          });
+        }
         if (identity?.userId) token.identityUserId = identity.userId;
         if (identity?.workspaceId) token.workspaceId = identity.workspaceId;
         if (identity?.image) token.picture = identity.image;
         if (identity?.name) token.name = identity.name;
+      }
+      if (token.pendingReferralActivation && Date.now() >= Number(token.referralRetryAt || 0)) {
+        const pending = token.pendingReferralActivation as PendingReferralActivation;
+        if (await deliverReferralActivation(pending)) {
+          token.pendingReferralActivation = undefined;
+          token.referralRetryAt = undefined;
+        } else {
+          // Keep the server-attested first activation in the signed session;
+          // an API outage does not turn a retry into an existing-user claim.
+          token.referralRetryAt = Date.now() + 15_000;
+        }
+        if (pending.firstActivation && typeof token.accessToken === "string") {
+          await provisionCreditAccount(token.accessToken);
+        }
       }
       if (trigger === 'update' && identityBaseUrl && token.accessToken) {
         if (token.accessTokenExpiresAt && Date.now() >= Number(token.accessTokenExpiresAt) - 30_000) token = await refreshAccessToken(token);

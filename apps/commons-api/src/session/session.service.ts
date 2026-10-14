@@ -19,6 +19,7 @@ import { first } from 'lodash';
 import { inArray } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { EncryptionService } from '~/modules/encryption';
+import { commonsSessionPredicate } from './session-visibility';
 
 const sessionSummaryColumns = {
   sessionId: true,
@@ -26,6 +27,7 @@ const sessionSummaryColumns = {
   initiator: true,
   initiatorType: true,
   agentId: true,
+  projectId: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -316,10 +318,10 @@ export class SessionService {
    * @param props.initiator - The initiator's (user's) address or ID.
    * @returns Array of session objects with selected fields.
    */
-  public async getSessionsByInitiator(props: { initiator: string }) {
+  public async getSessionsByInitiator(props: { initiator: string; commonsSurface?: boolean }) {
     const initiator = props.initiator.toLowerCase();
     const sessions = await this.db.query.session.findMany({
-      where: (s) => eq(s.initiator, initiator),
+      where: (s) => and(eq(s.initiator, initiator), props.commonsSurface ? commonsSessionPredicate(s) : undefined),
       columns: {
         ...sessionSummaryColumns,
       },
@@ -378,11 +380,12 @@ export class SessionService {
   public async getSessionsByAgentAndInitiator(props: {
     agentId: string;
     initiator: string;
+    commonsSurface?: boolean;
   }) {
     const { agentId } = props;
     const initiator = props.initiator.toLowerCase();
     const sessions = await this.db.query.session.findMany({
-      where: (s) => and(eq(s.agentId, agentId), eq(s.initiator, initiator)),
+      where: (s) => and(eq(s.agentId, agentId), eq(s.initiator, initiator), props.commonsSurface ? commonsSessionPredicate(s) : undefined),
       columns: {
         ...sessionSummaryColumns,
       },

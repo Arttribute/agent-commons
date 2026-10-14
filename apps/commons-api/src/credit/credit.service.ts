@@ -18,6 +18,22 @@ const NEW_USER_CREDIT_GRANT = 500;
 export class CreditService {
   constructor(private readonly db: DatabaseService) {}
 
+  /** The signup and reward must commit together; only ReferralService calls this. */
+  async grantReferralWithTx(tx: Tx, referrerId: string, referredId: string) {
+    return this.recordWithTx(tx, this.normalizeInput({
+      principalId: referrerId,
+      amount: 1000,
+      direction: 'grant',
+      eventType: 'referral_signup',
+      sourcePlatform: 'agent_commons',
+      idempotencyKey: `referral-signup:${referredId}`,
+      description: 'A friend joined Agent Commons',
+      metadata: { referredPrincipalId: referredId },
+      createdBy: 'referral_service',
+      createdByType: 'service',
+    }));
+  }
+
   async getBalance(input: {
     principalId: string;
     workspaceId?: string | null;
