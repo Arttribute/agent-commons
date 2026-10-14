@@ -10,6 +10,7 @@ import { DatabaseService } from '~/modules/database/database.service';
 import { CreditService } from '~/credit/credit.service';
 import { creditsPerMinute } from '~/billing/compute-pricing';
 import { ComputerService } from './computer.service';
+import { ComputeMeteringLock } from './compute-metering-lock';
 
 /**
  * Meters running computers by the minute and debits credits.
@@ -32,6 +33,7 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
     private readonly db: DatabaseService,
     private readonly credits: CreditService,
     private readonly computers: ComputerService,
+    private readonly locks: ComputeMeteringLock,
   ) {}
 
   onModuleInit() {
@@ -113,18 +115,7 @@ export class ComputeMeteringService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async withInstanceLock<T>(computerId: string, action: () => Promise<T>, skipIfBusy = false) {
-    return this.db.transaction(async (tx) => {
-      if (skipIfBusy) {
-        // Queued overlapping ticks can consume the entire connection pool
-        // while the lock holder still needs the shared DB for credit queries.
-        const [lock] = await tx.execute<{ locked: boolean }>(sql`select pg_try_advisory_xact_lock(hashtextextended(${computerId}, 0)) as locked`);
-        if (!lock?.locked) return;
-      } else {
-        // Resource changes must settle the old rate before changing profiles.
-        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${computerId}, 0))`);
-      }
-      return action();
-    });
+    return this.locks.withInstanceLock(computerId, action, skipIfBusy);
   }
 
   /** Close the old price interval before a profile change. Partial minutes round up. */

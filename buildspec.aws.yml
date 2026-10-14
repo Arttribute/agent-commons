@@ -181,6 +181,9 @@ phases:
         COMMONS_GATEWAY_INTERNAL_SECRET=$(jq -r '.COMMONS_GATEWAY_INTERNAL_SECRET // empty' <<<"$SECRET_JSON") \
         API_SECRET_KEY=$(jq -r '.API_SECRET_KEY // empty' <<<"$SECRET_JSON") \
           node apps/commons-api/scripts/smoke-skill-route.mjs "$ENDPOINT"
+        COMMONS_GATEWAY_INTERNAL_SECRET=$(jq -r '.COMMONS_GATEWAY_INTERNAL_SECRET // empty' <<<"$SECRET_JSON") \
+        API_SECRET_KEY=$(jq -r '.API_SECRET_KEY // empty' <<<"$SECRET_JSON") \
+          node apps/commons-api/scripts/smoke-data-routes.mjs "$ENDPOINT"
 
         if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then
           SEARCH_ENDPOINT=$(aws cloudformation describe-stacks \
