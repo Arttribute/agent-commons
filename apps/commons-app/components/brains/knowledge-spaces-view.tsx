@@ -6,12 +6,13 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
   BookOpen,
   Bot,
   Brain,
   Check,
-  ChevronDown,
   ChevronRight,
+  ChevronsUpDown,
   Clock3,
   FilePlus2,
   FileText,
@@ -30,9 +31,11 @@ import {
   Settings2,
   Tags,
   Trash2,
+  X,
 } from "lucide-react";
 import { DashboardSideBar } from "@/components/layout/dashboard-side-bar";
-import { CreateButton, PageTitle } from "@/components/layout/page-header";
+import { PageTitle } from "@/components/layout/page-header";
+import { secondaryPaneWidth } from "@/components/layout/secondary-pane";
 import { CommonsAppsBar } from "@/components/plugins/apps-bar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -124,6 +127,9 @@ export function KnowledgeSpacesView() {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [folders, setFolders] = useState<KnowledgeFolder[]>([]);
   const [documentId, setDocumentId] = useState("");
+  // Phones show one pane at a time: the note list or the open note.
+  const [mobilePane, setMobilePane] = useState<"list" | "doc">("list");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [document, setDocument] = useState<KnowledgeDocument | null>(null);
   const [graph, setGraph] = useState<KnowledgeGraph>({ nodes: [], edges: [] });
   const [view, setView] = useState<"notes" | "graph">("notes");
@@ -167,6 +173,15 @@ export function KnowledgeSpacesView() {
     connectedFolderIds.has(activeSpace.spaceId);
   const canEdit = Boolean(canWrite && sourceConnected);
   const canManage = activeSpace?.permission === "manage";
+  const syncLabel = local
+    ? activeSpace?.linkedFolder
+      ? activeSpace.liveSync === false ? "Refresh from folder" : "Kept in sync · refresh now"
+      : "Refresh"
+    : activeSpace?.provider === "browser_filesystem"
+    ? connectedFolderIds.has(activeSpace.spaceId)
+      ? "Sync connected folder"
+      : "Reconnect folder"
+    : "Import Markdown folder";
   documentRef.current = document;
   activeSpaceRef.current = activeSpace;
   canEditRef.current = canEdit;
@@ -978,385 +993,402 @@ export function KnowledgeSpacesView() {
     <div className="h-app overflow-hidden bg-white text-stone-950">
       <div className="flex h-app flex-col md:flex-row">
         <DashboardSideBar username={userAddress} />
-        <main className="min-h-0 flex min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-14 shrink-0 items-center justify-between border-b border-stone-200/80 bg-white px-5">
-            <div className="min-w-0">
-              <PageTitle title="Knowledge" />
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="relative hidden w-[300px] lg:block">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search this space"
-                  className="h-9 bg-white pl-9 pr-9"
-                />
-                {searching && (
-                  <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-stone-400" />
-                )}
-                {search.trim().length >= 2 && (
-                  <SearchResults
-                    results={searchResults}
-                    spaces={spaces}
-                    onSelect={selectSearchResult}
+        <main className="min-h-0 flex min-w-0 flex-1 overflow-hidden">
+          <aside
+            className={cn(
+              secondaryPaneWidth,
+              "flex shrink-0 flex-col border-r border-stone-200/80 bg-white max-md:w-full",
+              mobilePane === "doc" && "max-md:hidden",
+            )}
+          >
+            <header className="flex h-14 shrink-0 items-center gap-1 px-2 sm:px-3">
+              {searchOpen ? (
+                <div className="relative flex h-9 min-w-0 flex-1 items-center gap-2 rounded-full bg-muted px-3">
+                  <Search className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                  <input
+                    autoFocus
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        setSearch("");
+                        setSearchOpen(false);
+                      }
+                    }}
+                    placeholder="Search this space"
+                    aria-label="Search this space"
+                    className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
                   />
-                )}
-              </div>
-              <CommonsAppsBar />
-              {canManage && (
-                <TooltipProvider delayDuration={150}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => setAccessOpen(true)}
-                        aria-label="Configure space"
-                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-card transition-colors hover:bg-muted"
-                      >
-                        <Settings2 className="h-4 w-4" strokeWidth={1.75} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="text-xs">
-                      Configure space
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                  {searching && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-stone-400" />}
+                  {search.trim().length >= 2 && (
+                    <SearchResults
+                      results={searchResults}
+                      spaces={spaces}
+                      onSelect={(result) => {
+                        setMobilePane("doc");
+                        selectSearchResult(result);
+                      }}
+                    />
+                  )}
+                </div>
+              ) : (
+                <div className="min-w-0 flex-1 px-1">
+                  <PageTitle title="Knowledge" />
+                </div>
               )}
-              <CreateButton label="New Knowledge Space" onClick={() => setCreateSpaceOpen(true)} />
-            </div>
-          </header>
-
-          {(error || notice) && (
-            <div
-              className={cn(
-                "flex shrink-0 items-center justify-between border-b px-6 py-2 text-xs",
-                error
-                  ? "border-red-100 bg-red-50 text-red-700"
-                  : "border-teal-100 bg-teal-50 text-teal-800",
-              )}
-            >
-              <span>{error || notice}</span>
               <button
+                type="button"
+                aria-label={searchOpen ? "Close search" : "Search this space"}
+                title={searchOpen ? "Close search" : "Search"}
+                className={paneIconButton}
                 onClick={() => {
-                  setError("");
-                  setNotice("");
+                  setSearch("");
+                  setSearchOpen((open) => !open);
                 }}
-                aria-label="Dismiss"
               >
-                ×
+                {searchOpen ? <X className="h-[18px] w-[18px]" strokeWidth={1.75} /> : <Search className="h-[18px] w-[18px]" strokeWidth={1.75} />}
               </button>
-            </div>
-          )}
-
-          <div className="flex min-h-0 flex-1">
-            <aside className="flex w-[276px] shrink-0 flex-col border-r border-stone-200/80 bg-white">
-              <div className="border-b p-3">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="flex h-10 w-full items-center gap-2 rounded-lg px-2 text-left hover:bg-stone-50">
-                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-stone-100 text-stone-700">
-                        <Brain className="h-4 w-4" strokeWidth={1.75} />
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {activeSpace?.name || "Knowledge Spaces"}
-                      </span>
-                      <ChevronDown className="h-4 w-4 text-stone-400" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-[242px]">
-                    {spaces.map((space) => (
-                      <DropdownMenuItem
-                        key={space.spaceId}
-                        onClick={() => void selectSpace(space.spaceId)}
-                        className="gap-2"
-                      >
-                        <span className="h-2 w-2 rounded-full bg-teal-400" />
-                        <span className="min-w-0 flex-1 truncate">
-                          {space.name}
-                        </span>
-                        {space.spaceId === spaceId && (
-                          <Check className="h-3.5 w-3.5" />
-                        )}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setCreateSpaceOpen(true)}>
-                      <Plus className="h-4 w-4" /> Create Knowledge Space
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              <div className="flex items-center justify-between px-3 pb-2 pt-3">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Notes
-                </span>
-                <div className="flex items-center gap-0.5">
-                  <button
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" aria-label="New" title="New" className={paneIconButton}>
+                    <Plus className="h-5 w-5" strokeWidth={1.75} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60">
+                  <DropdownMenuItem disabled={!canEdit} onClick={() => setNewNoteOpen(true)}>
+                    <FilePlus2 className="h-4 w-4" /> New note
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!canEdit}
                     onClick={() => {
                       setNewFolderParent("");
                       setNewFolderOpen(true);
                     }}
-                    disabled={!canEdit}
-                    className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-40"
-                    title="New folder"
                   >
-                    <FolderPlus className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setNewNoteOpen(true)}
-                    disabled={!canEdit}
-                    className="rounded p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-40"
-                    title="New note"
-                  >
-                    <FilePlus2 className="h-3.5 w-3.5" />
-                  </button>
+                    <FolderPlus className="h-4 w-4" /> New folder
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={!activeSpace || !canWrite || syncing} onClick={() => void importOrReconnect()}>
+                    {syncing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : local || activeSpace?.provider === "browser_filesystem" ? (
+                      <FolderSync className="h-4 w-4" />
+                    ) : (
+                      <FolderInput className="h-4 w-4" />
+                    )}
+                    {syncLabel}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setCreateSpaceOpen(true)}>
+                    <Brain className="h-4 w-4" /> New knowledge space
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </header>
+
+            <ScrollArea className="min-h-0 flex-1 px-2">
+              {documentsLoading ? (
+                <div className="space-y-2 px-2 py-2">
+                  {[0, 1, 2, 3].map((item) => (
+                    <div
+                      key={item}
+                      className="h-7 animate-pulse rounded bg-stone-100"
+                    />
+                  ))}
                 </div>
-              </div>
-              <ScrollArea className="min-h-0 flex-1 px-2">
-                {documentsLoading ? (
-                  <div className="space-y-2 px-2 py-2">
-                    {[0, 1, 2, 3].map((item) => (
-                      <div
-                        key={item}
-                        className="h-7 animate-pulse rounded bg-stone-100"
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <KnowledgeTree
-                    folders={folders}
-                    documents={documents}
-                    selectedId={documentId}
-                    canWrite={canEdit}
-                    onSelect={(id) => {
-                      void selectDocument(id, "notes");
-                    }}
-                    onCreateFolder={(parent) => {
-                      setNewFolderParent(parent);
-                      setNewFolderOpen(true);
-                    }}
-                    onRenameDocument={renameDocument}
-                    onRenameFolder={renameFolder}
-                    onMoveDocument={moveDocument}
-                    onMoveFolder={moveFolder}
-                    onDeleteDocument={(target) => void removeDocument(target)}
-                    onDeleteFolder={(target) => void removeFolder(target)}
-                  />
+              ) : (
+                <KnowledgeTree
+                  folders={folders}
+                  documents={documents}
+                  selectedId={documentId}
+                  canWrite={canEdit}
+                  onSelect={(id) => {
+                    setMobilePane("doc");
+                    void selectDocument(id, "notes");
+                  }}
+                  onCreateFolder={(parent) => {
+                    setNewFolderParent(parent);
+                    setNewFolderOpen(true);
+                  }}
+                  onRenameDocument={renameDocument}
+                  onRenameFolder={renameFolder}
+                  onMoveDocument={moveDocument}
+                  onMoveFolder={moveFolder}
+                  onDeleteDocument={(target) => void removeDocument(target)}
+                  onDeleteFolder={(target) => void removeFolder(target)}
+                />
+              )}
+            </ScrollArea>
+            <div className="border-t border-stone-200/80 p-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex h-10 w-full items-center gap-2 rounded-lg px-2 text-left hover:bg-stone-50">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-stone-100 text-stone-700">
+                      <Brain className="h-4 w-4" strokeWidth={1.75} />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {activeSpace?.name || "Knowledge Spaces"}
+                    </span>
+                    <ChevronsUpDown className="h-4 w-4 text-stone-400" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="top" align="start" className="w-[264px]">
+                  {spaces.map((space) => (
+                    <DropdownMenuItem
+                      key={space.spaceId}
+                      onClick={() => void selectSpace(space.spaceId)}
+                      className="gap-2"
+                    >
+                      <span className="h-2 w-2 rounded-full bg-teal-400" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {space.name}
+                      </span>
+                      {space.spaceId === spaceId && (
+                        <Check className="h-3.5 w-3.5" />
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setCreateSpaceOpen(true)}>
+                    <Plus className="h-4 w-4" /> New knowledge space
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </aside>
+
+          <section className={cn("flex min-w-0 flex-1 flex-col bg-white", mobilePane === "list" && "max-md:hidden")}>
+            {(error || notice) && (
+              <div
+                className={cn(
+                  "flex shrink-0 items-center justify-between border-b px-6 py-2 text-xs",
+                  error
+                    ? "border-red-100 bg-red-50 text-red-700"
+                    : "border-teal-100 bg-teal-50 text-teal-800",
                 )}
-              </ScrollArea>
-              <div className="border-t p-2">
+              >
+                <span>{error || notice}</span>
                 <button
-                  onClick={importOrReconnect}
-                  disabled={!activeSpace || !canWrite || syncing}
-                  className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-xs text-muted-foreground hover:bg-stone-50 hover:text-foreground disabled:opacity-45"
+                  onClick={() => {
+                    setError("");
+                    setNotice("");
+                  }}
+                  aria-label="Dismiss"
                 >
-                  {syncing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : local || activeSpace?.provider === "browser_filesystem" ? (
-                    <FolderSync className="h-3.5 w-3.5" />
-                  ) : (
-                    <FolderInput className="h-3.5 w-3.5" />
-                  )}
-                  {local
-                    ? activeSpace?.linkedFolder
-                      ? activeSpace.liveSync === false ? "Refresh from folder" : "Kept in sync · refresh now"
-                      : "Refresh"
-                    : activeSpace?.provider === "browser_filesystem"
-                    ? connectedFolderIds.has(activeSpace.spaceId)
-                      ? "Sync connected folder"
-                      : "Reconnect folder"
-                    : "Import Markdown folder"}
+                  ×
                 </button>
               </div>
-            </aside>
-
-            <section className="flex min-w-0 flex-1 flex-col bg-white">
-              <div className="flex h-11 shrink-0 items-center gap-3 border-b border-stone-200/80 bg-white px-3">
-                <div className="flex shrink-0 rounded-lg bg-stone-100 p-0.5">
-                  <button
-                    onClick={() => setView("notes")}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs",
-                      view === "notes"
-                        ? "bg-white font-medium shadow-sm"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    <BookOpen className="h-3.5 w-3.5" /> Notes
-                  </button>
-                  <button
-                    onClick={() => {
-                      setView("graph");
-                      if (spaceId) void loadGraph(spaceId);
-                    }}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs",
-                      view === "graph"
-                        ? "bg-white font-medium shadow-sm"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    <Network className="h-3.5 w-3.5" /> Graph
-                  </button>
-                </div>
-                {view === "notes" && document ? (
-                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-stone-400" />
-                    <span className="truncate font-mono text-xs text-stone-600" title={draftPath}>
-                      {draftPath}
-                    </span>
-                  </span>
-                ) : (
-                  <span className="flex-1" />
-                )}
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {activeSpace?.source?.git?.branch && (
-                    <span
-                      className="hidden items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground md:flex"
-                      title={`Indexed at ${activeSpace.source.git.commit ?? "the current commit"}. Switching branches updates Knowledge automatically.`}
-                    >
-                      <GitBranch className="h-3 w-3" />
-                      {activeSpace.source.git.branch}
-                    </span>
+            )}
+            <div className="flex h-14 shrink-0 items-center gap-3 border-b border-stone-200/80 bg-white px-3">
+              <button
+                type="button"
+                onClick={() => setMobilePane("list")}
+                aria-label="Back to notes"
+                className={cn(paneIconButton, "-mr-1 md:hidden")}
+              >
+                <ArrowLeft className="h-[18px] w-[18px]" strokeWidth={1.75} />
+              </button>
+              <div className="flex shrink-0 rounded-lg bg-stone-100 p-0.5">
+                <button
+                  onClick={() => setView("notes")}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs",
+                    view === "notes"
+                      ? "bg-white font-medium shadow-sm"
+                      : "text-muted-foreground",
                   )}
-                  {view === "notes" && document && (
-                    <SaveIndicator state={saveState} dirty={dirty} />
+                >
+                  <BookOpen className="h-3.5 w-3.5" /> Notes
+                </button>
+                <button
+                  onClick={() => {
+                    setView("graph");
+                    if (spaceId) void loadGraph(spaceId);
+                  }}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs",
+                    view === "graph"
+                      ? "bg-white font-medium shadow-sm"
+                      : "text-muted-foreground",
                   )}
-                  {view === "notes" && document && document.editable !== false && (
-                    <div className="flex rounded-md bg-stone-100 p-0.5">
-                      <button
-                        onClick={() => setEditorMode("visual")}
-                        className={cn(
-                          "rounded px-2 py-0.5 text-[11px]",
-                          editorMode === "visual"
-                            ? "bg-white font-medium shadow-sm"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        Visual
-                      </button>
-                      <button
-                        onClick={() => setEditorMode("markdown")}
-                        className={cn(
-                          "rounded px-2 py-0.5 text-[11px]",
-                          editorMode === "markdown"
-                            ? "bg-white font-medium shadow-sm"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        Markdown
-                      </button>
-                    </div>
-                  )}
-                  {view === "notes" && document && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100" aria-label="Note actions">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() =>
-                            navigator.clipboard.writeText(draft)
-                          }
-                        >
-                          <Link2 className="h-4 w-4" /> Copy Markdown
-                        </DropdownMenuItem>
-                        {canEdit && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-red-600"
-                              onClick={() => void removeDocument()}
-                            >
-                              <Trash2 className="h-4 w-4" /> Delete note
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                  <button
-                    onClick={() => setInspectorOpen((open) => !open)}
-                    className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100"
-                    title={inspectorOpen ? "Hide links and details" : "Show links and details"}
-                    aria-label={inspectorOpen ? "Hide details" : "Show details"}
-                  >
-                    {inspectorOpen ? (
-                      <PanelRightClose className="h-4 w-4" />
-                    ) : (
-                      <PanelRightOpen className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
+                >
+                  <Network className="h-3.5 w-3.5" /> Graph
+                </button>
               </div>
-
-              <div className="flex min-h-0 flex-1">
-                <div className="min-w-0 flex-1 overflow-hidden bg-page p-0">
-                  {loading ? (
-                    <div className="grid h-full place-items-center">
-                      <Loader2 className="h-5 w-5 animate-spin text-stone-400" />
-                    </div>
-                  ) : view === "graph" ? (
-                    <KnowledgeGraphView
-                      graph={graph}
-                      selectedId={documentId}
-                      onSelect={(id) => void selectDocument(id, "graph")}
-                      onOpen={(id) => {
-                        void selectDocument(id, "notes");
-                      }}
-                    />
-                  ) : document ? (
-                    <div className="flex h-full w-full flex-col bg-page">
-                      {editorMode === "visual" ? (
-                        <RichMarkdownEditor
-                          value={draft}
-                          onChange={updateDraft}
-                          editable={canEdit && document.editable !== false}
-                          documentPath={draftPath}
-                          documents={documents}
-                          onOpenDocument={(id) =>
-                            void selectDocument(id, "notes")
-                          }
-                        />
-                      ) : (
-                        <textarea
-                          value={draft}
-                          onChange={(event) => updateDraft(event.target.value)}
-                          readOnly={!canEdit}
-                          spellCheck
-                          className="min-h-0 flex-1 resize-none border-0 bg-page px-6 py-6 font-mono text-[13px] leading-7 text-stone-800 outline-none placeholder:text-stone-300 sm:px-8"
-                          placeholder="Write raw Markdown here."
-                        />
+              {view === "notes" && document ? (
+                <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5 shrink-0 text-stone-400" />
+                  <span className="truncate font-mono text-xs text-stone-600" title={draftPath}>
+                    {draftPath}
+                  </span>
+                </span>
+              ) : (
+                <span className="flex-1" />
+              )}
+              <div className="flex shrink-0 items-center gap-1.5">
+                {activeSpace?.source?.git?.branch && (
+                  <span
+                    className="hidden items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground md:flex"
+                    title={`Indexed at ${activeSpace.source.git.commit ?? "the current commit"}. Switching branches updates Knowledge automatically.`}
+                  >
+                    <GitBranch className="h-3 w-3" />
+                    {activeSpace.source.git.branch}
+                  </span>
+                )}
+                {view === "notes" && document && (
+                  <SaveIndicator state={saveState} dirty={dirty} />
+                )}
+                {view === "notes" && document && document.editable !== false && (
+                  <div className="flex rounded-md bg-stone-100 p-0.5">
+                    <button
+                      onClick={() => setEditorMode("visual")}
+                      className={cn(
+                        "rounded px-2 py-0.5 text-[11px]",
+                        editorMode === "visual"
+                          ? "bg-white font-medium shadow-sm"
+                          : "text-muted-foreground",
                       )}
-                    </div>
+                    >
+                      Visual
+                    </button>
+                    <button
+                      onClick={() => setEditorMode("markdown")}
+                      className={cn(
+                        "rounded px-2 py-0.5 text-[11px]",
+                        editorMode === "markdown"
+                          ? "bg-white font-medium shadow-sm"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      Markdown
+                    </button>
+                  </div>
+                )}
+                {view === "notes" && document && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100" aria-label="Note actions">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() =>
+                          navigator.clipboard.writeText(draft)
+                        }
+                      >
+                        <Link2 className="h-4 w-4" /> Copy Markdown
+                      </DropdownMenuItem>
+                      {canEdit && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-red-600"
+                            onClick={() => void removeDocument()}
+                          >
+                            <Trash2 className="h-4 w-4" /> Delete note
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                <CommonsAppsBar />
+                {canManage && (
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => setAccessOpen(true)}
+                          aria-label="Configure space"
+                          className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100"
+                        >
+                          <Settings2 className="h-4 w-4" strokeWidth={1.75} />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-xs">
+                        Configure space
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                <button
+                  onClick={() => setInspectorOpen((open) => !open)}
+                  className="rounded-md p-1.5 text-stone-500 hover:bg-stone-100"
+                  title={inspectorOpen ? "Hide links and details" : "Show links and details"}
+                  aria-label={inspectorOpen ? "Hide details" : "Show details"}
+                >
+                  {inspectorOpen ? (
+                    <PanelRightClose className="h-4 w-4" />
                   ) : (
-                    <EmptyNotes
-                      canWrite={canEdit}
-                      onCreate={() => setNewNoteOpen(true)}
-                    />
+                    <PanelRightOpen className="h-4 w-4" />
                   )}
-                </div>
+                </button>
+              </div>
+            </div>
 
-                {inspectorOpen && (
-                  <Inspector
-                    space={activeSpace}
-                    document={document}
+            <div className="flex min-h-0 flex-1">
+              <div className="min-w-0 flex-1 overflow-hidden bg-page p-0">
+                {loading ? (
+                  <div className="grid h-full place-items-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-stone-400" />
+                  </div>
+                ) : view === "graph" ? (
+                  <KnowledgeGraphView
                     graph={graph}
-                    view={view}
-                    documents={documents}
-                    onSelect={(id) => {
+                    selectedId={documentId}
+                    onSelect={(id) => void selectDocument(id, "graph")}
+                    onOpen={(id) => {
                       void selectDocument(id, "notes");
                     }}
-                    onAccess={() => setAccessOpen(true)}
+                  />
+                ) : document ? (
+                  <div className="flex h-full w-full flex-col bg-page">
+                    {editorMode === "visual" ? (
+                      <RichMarkdownEditor
+                        value={draft}
+                        onChange={updateDraft}
+                        editable={canEdit && document.editable !== false}
+                        documentPath={draftPath}
+                        documents={documents}
+                        onOpenDocument={(id) =>
+                          void selectDocument(id, "notes")
+                        }
+                      />
+                    ) : (
+                      <textarea
+                        value={draft}
+                        onChange={(event) => updateDraft(event.target.value)}
+                        readOnly={!canEdit}
+                        spellCheck
+                        className="min-h-0 flex-1 resize-none border-0 bg-page px-6 py-6 font-mono text-[13px] leading-7 text-stone-800 outline-none placeholder:text-stone-300 sm:px-8"
+                        placeholder="Write raw Markdown here."
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <EmptyNotes
+                    canWrite={canEdit}
+                    onCreate={() => setNewNoteOpen(true)}
                   />
                 )}
               </div>
-            </section>
-          </div>
+
+              {inspectorOpen && (
+                <Inspector
+                  space={activeSpace}
+                  document={document}
+                  graph={graph}
+                  view={view}
+                  documents={documents}
+                  onSelect={(id) => {
+                    void selectDocument(id, "notes");
+                  }}
+                  onAccess={() => setAccessOpen(true)}
+                />
+              )}
+            </div>
+          </section>
         </main>
       </div>
 
@@ -1696,6 +1728,9 @@ function EmptyNotes({
   );
 }
 
+const paneIconButton =
+  "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40";
+
 function SearchResults({
   results,
   spaces,
@@ -1706,7 +1741,7 @@ function SearchResults({
   onSelect: (result: KnowledgeSearchResult) => void;
 }) {
   return (
-    <div className="absolute left-0 right-0 top-11 z-40 max-h-[420px] overflow-y-auto rounded-xl border bg-white p-1.5 shadow-xl">
+    <div className="absolute left-0 top-11 z-40 max-h-[420px] w-[min(26rem,calc(100vw-1.5rem))] overflow-y-auto rounded-xl border bg-white p-1.5 shadow-floating">
       {results.map((result) => (
         <button
           key={`${result.documentId}:${result.heading || ""}`}

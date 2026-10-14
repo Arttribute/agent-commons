@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { cn } from "@/lib/utils";
+import { secondaryPaneWidth } from "@/components/layout/secondary-pane";
 import { AgentsListPane } from "./agents-list-pane";
 
 /**
@@ -23,7 +24,7 @@ export function AgentsChatShell({ children }: { children: React.ReactNode }) {
       <AgentsListPane
         userAddress={userAddress}
         selectedAgentId={selectedAgentId}
-        className={cn("w-full border-border md:w-[300px] md:shrink-0 md:border-r lg:w-[320px]", showingDetail && "max-md:hidden")}
+        className={cn(secondaryPaneWidth, "border-border max-md:w-full md:shrink-0 md:border-r", showingDetail && "max-md:hidden")}
       />
       <section className={cn("flex min-w-0 flex-1 flex-col bg-page", !showingDetail && "max-md:hidden")}>{children}</section>
     </div>

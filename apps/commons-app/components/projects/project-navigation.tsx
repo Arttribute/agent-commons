@@ -8,6 +8,7 @@ import { projectsApi, useProjects } from "@/hooks/use-projects";
 import { SESSIONS_CHANGED } from "@/hooks/sessions/use-user-sessions";
 import { useSecondaryNav } from "@/stores/secondary-nav-store";
 import { cn } from "@/lib/utils";
+import { secondaryPaneWidth } from "@/components/layout/secondary-pane";
 
 type ProjectChat = Awaited<ReturnType<typeof projectsApi.sessions>>[number];
 
@@ -53,7 +54,7 @@ export function ProjectNavigation() {
   };
 
   return (
-    <nav aria-label="Projects" className="hidden h-screen w-60 shrink-0 flex-col border-r border-border bg-white md:flex">
+    <nav aria-label="Projects" className={cn("hidden h-full shrink-0 flex-col border-r border-border bg-white md:flex", secondaryPaneWidth)}>
       <div className="flex h-14 shrink-0 items-center gap-1 px-3">
         <Link
           href="/projects"

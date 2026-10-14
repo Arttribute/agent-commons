@@ -75,8 +75,8 @@ export function SessionActivityMenu({
           className="flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted"
         >
           <span className="relative shrink-0">
-            <AgentAvatar name={agent?.name} src={agent?.avatar} size={32} />
-            <RunStatusDot state={run?.state} />
+            <AgentAvatar name={agent?.name} src={agent?.avatar} size={28} />
+            <RunStatusDot state={run?.state} size="sm" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm text-foreground">{chatTitle(session.title)}</span>
