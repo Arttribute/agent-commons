@@ -160,4 +160,13 @@ describe('RunStreamRegistry', () => {
     expect(registry.listForInitiator('user-1')[0].state).toBe('completed');
   });
 
+  it.each(['confirmation', 'app'])('keeps native %s controls actionable after a hosted tool', (kind) => {
+    collect(registry.start('mixed-run', source, { agentId: 'a1', initiator: 'u', sessionId: 's1' }));
+    source.next({ type: 'cli_tool_request', tool: 'search_inventory', hostApplication: { name: 'Common Business', url: 'https://business.example.com' } });
+    source.next({ type: 'toolEnd', toolName: kind === 'app' ? 'showCommonsApp' : 'requestCompute', output: { requiresConfirmation: kind === 'confirmation' } });
+    source.next({ type: 'final', payload: {} });
+    source.complete();
+    expect(registry.listForInitiator('u')[0]).toMatchObject({ state: kind === 'app' ? 'awaiting_input' : 'awaiting_approval', actionUrl: undefined });
+  });
+
 });
