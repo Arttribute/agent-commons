@@ -10,7 +10,7 @@ import { useGlobalSearch } from "@/context/SearchContext";
  * Shared across the dashboard and agent-workspace sidebars so search lives in
  * one place and behaves identically everywhere.
  *
- * - `collapsed` — icon-only, for the narrow icon rail.
+ * - `collapsed` — icon-only, for the narrow icon rail and the sidebar header.
  * - `variant="menu"` — a plain nav menu item (default), matching sidebar nav.
  */
 export function SearchTrigger({
@@ -42,7 +42,7 @@ export function SearchTrigger({
           className
         )}
       >
-        <Search className="h-4 w-4" />
+        <Search className="h-4 w-4" strokeWidth={1.75} />
       </button>
     );
   }

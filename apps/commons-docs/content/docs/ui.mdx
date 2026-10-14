@@ -8,50 +8,66 @@ the API does, without code. Sign in with your Commons account to get started.
 
 ## Layout
 
-A left sidebar holds the workspace; recent sessions sit beneath it so you can
-jump back into a conversation from anywhere.
+A left sidebar holds the workspace: **New chat** first, then each section, then
+your recent chats. Search sits beside the button that collapses the sidebar. On
+a phone the sidebar opens full screen from the menu button.
 
 | Section | Route | What it holds |
 |---|---|---|
-| **Agents** | `/studio/agents` | Your agents — create, configure, chat |
-| **Tools** | `/studio/tools` | Custom tools and MCP servers |
+| **New chat** | `/new` | Start a chat with any agent |
+| **Agents** | `/studio/agents` | Your agents as a chat list: chats, files, settings |
+| **Projects** | `/projects` | Chats and files grouped by project |
 | **Scheduled tasks** | `/studio/tasks` | Every task and its next run |
-| **Workflows** | `/studio/workflows` | Workflow definitions and executions |
 | **Knowledge** | `/knowledge` | Knowledge spaces, folders, documents |
 | **Library** | `/library` | Files, artifacts, and share links |
-| **Customize** | `/studio/customize/apps` | Installed apps and skills |
+| **Customize** | `/studio/customize/apps` | Apps, skills, tools and workflows |
 | **Logs** | `/logs` | Activity and errors |
-| **Spaces** | `/spaces` | Real-time rooms |
+| **Spaces** | `/spaces` | Real-time rooms with several agents |
+
+## New chat
+
+`/new` is the home screen. Pick an agent, pick a project if the chat belongs to
+one, and type. The suggestions under the composer come from your recent chats.
+New accounts see a few things agents can do instead.
+
+The avatar at the top right shows the agent that needs you most: an amber dot
+when a chat waits for your approval, a pulsing dot while one is working. Open it
+to see chats in progress and your recent chats.
 
 ## Chat
 
-`/agents/[agentId]/[sessionId]`
+`/sessions/[sessionId]`
 
 The main working surface. Type, press Enter, watch the answer stream. Tool
 calls render inline as they run, and files you drag onto the composer are
-attached to that run.
-
-The session timeline on the left keeps every conversation; open one to resume
-it with full history.
+attached to that run. On a phone the composer stays at the bottom, above the
+keyboard.
 
 ## Agents
 
-`/studio/agents` lists what you own. `/studio/agents/create` makes a new one —
-name and instructions are the only required fields.
+`/studio/agents` works like a messaging app. Your agents are listed on the left,
+newest chat first, each showing whether it is working or waiting for you. Open
+one to continue its latest chat. The pen starts a new chat and the clock lists
+earlier ones. `/studio/agents/create` makes a new agent: a name and
+instructions are the only required fields.
 
-Open an agent to configure it:
+Select the agent's name to open its info. **About** shows its instructions and
+one row per setting, **Files** shows the images, documents and apps from its
+chats, and **Computer** shows its cloud machine. Each setting opens its own
+screen:
 
-| Panel | What you set |
+| Setting | What you set |
 |---|---|
-| **General** | Name, instructions, persona, greeting, conversation starters |
-| **Model** | Provider, model, temperature, max tokens, and your own API key |
-| **Tools** | Platform tools, custom tools, MCP servers |
+| **Profile** | Name, picture, description, discovery by other agents |
+| **Instructions** | Persona, greeting, conversation starters, system prompt |
+| **Model** | Provider, model and your own API key. Advanced settings hold temperature and limits |
+| **Tools** | Platform tools, connected apps, custom tools, MCP servers |
 | **Skills** | Which playbooks the agent can reach for |
-| **Knowledge** | Always-on context and the knowledge spaces it can search |
-| **Connections** | Google, GitHub, Slack, Canva, X accounts it may act as |
-| **Computer** | Enable and size the persistent cloud machine |
+| **Scheduled tasks** | Tasks this agent runs on a schedule |
 | **Heartbeat** | Wake the agent on an interval to work unprompted |
-| **Voice** | Text-to-speech provider and voice |
+| **Memory** | Facts the agent keeps between chats |
+| **Activity, Usage, Wallet** | Runs and errors, spend, and the agent's wallet |
+| **Runtime** | The engine that runs the agent |
 
 `/agents/external` browses agents published from other platforms over
 [A2A](/docs/guides/a2a).

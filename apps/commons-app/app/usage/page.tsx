@@ -10,10 +10,10 @@ export default function UsagePage() {
   const userAddress = normalizePrincipalId(authState.walletAddress);
 
   return (
-    <div className="h-screen overflow-hidden bg-page">
-      <div className="flex h-screen">
+    <div className="h-app overflow-hidden bg-page">
+      <div className="flex h-app flex-col md:flex-row">
         <DashboardSideBar username={userAddress} />
-        <div className="min-w-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-5xl px-6 py-8">
             <UsageSection walletAddress={userAddress} />
           </div>

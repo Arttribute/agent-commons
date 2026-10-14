@@ -9,6 +9,8 @@ import { AgentSidebarSwitcher } from "@/components/studio/agent-sidebar-switcher
 import { useAgentContext } from "@/context/AgentContext";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
 import { normalizeConversationStarters } from "@/lib/conversation-starters";
+import { ProjectChip } from "@/components/projects/project-chip";
+import { useProjects } from "@/hooks/use-projects";
 
 type LauncherAgent = {
   agentId: string;
@@ -33,6 +35,7 @@ export function StudioAgentLauncher({
   onAgentChange,
   placeholder,
   hideStarters = false,
+  projectPicker = false,
 }: {
   agents: LauncherAgent[];
   userAddress: string;
@@ -43,6 +46,8 @@ export function StudioAgentLauncher({
   onAgentChange?: (agentId: string) => void;
   placeholder?: string;
   hideStarters?: boolean;
+  /** Let the person choose a project for the chat when none is fixed. */
+  projectPicker?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -50,6 +55,9 @@ export function StudioAgentLauncher({
   const [launching, setLaunching] = useState(false);
   const [pendingLaunch, setPendingLaunch] = useState<ComposerLaunch | null>(null);
   const { isLoading: sessionsLoading } = useUserSessions(userAddress);
+  const showProjectPicker = projectPicker && !projectId;
+  const { projects } = useProjects(showProjectPicker && Boolean(userAddress));
+  const [chosenProjectId, setChosenProjectId] = useState<string | null>(null);
 
   const defaultAgentId = useMemo(
     () =>
@@ -106,7 +114,7 @@ export function StudioAgentLauncher({
     setPendingLaunch(launch);
     setLaunching(true);
     try {
-      router.push(await startChat({ agentId: selectedAgentId, projectId, launch }));
+      router.push(await startChat({ agentId: selectedAgentId, projectId: projectId ?? chosenProjectId ?? undefined, launch }));
     } catch (cause) {
       setInputText(launch.text);
       toast({
@@ -120,7 +128,7 @@ export function StudioAgentLauncher({
   };
 
   return (
-    <div className="w-full">
+    <div className="flex w-full flex-col">
       {pendingLaunch && (
         <div aria-live="polite" className="mx-auto mb-5 flex max-w-3xl flex-col gap-4">
           <div className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-2xl bg-muted px-4 py-3 text-sm text-foreground">
@@ -168,6 +176,19 @@ export function StudioAgentLauncher({
           />
         }
       />
+      {showProjectPicker && (
+        // Above the composer on phones, where it sits at the bottom of the
+        // screen; below it on larger screens.
+        <div className="order-first mb-1.5 flex items-center md:order-none md:mb-0 md:mt-2">
+          <ProjectChip
+            variant="quiet"
+            side="bottom"
+            projects={projects.map(({ projectId: id, name }) => ({ projectId: id, name }))}
+            projectId={chosenProjectId}
+            onChange={setChosenProjectId}
+          />
+        </div>
+      )}
       {!hideStarters && starters.length > 0 && (
         <div className="mt-3 flex flex-nowrap justify-center gap-2">
           {starters.map((starter) => (

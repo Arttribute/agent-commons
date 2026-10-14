@@ -10,15 +10,15 @@ export default function ApiKeysPage() {
   const principalId = normalizePrincipalId(authState.walletAddress);
 
   return (
-    <div className="h-screen overflow-hidden bg-page">
-      <div className="flex h-screen">
+    <div className="h-app overflow-hidden bg-page">
+      <div className="flex h-app flex-col md:flex-row">
         <DashboardSideBar username={principalId} />
-        <div className="min-w-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1">
           <SettingsPanel
             walletAddress={principalId}
             workspaceId={authState.workspaceId}
             initialSection="api-keys"
-            className="h-screen"
+            className="h-full"
           />
         </div>
       </div>

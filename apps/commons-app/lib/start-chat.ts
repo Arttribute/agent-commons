@@ -6,9 +6,9 @@ import type { ComposerLaunch } from "@/components/sessions/chat/chat-input-box";
 
 /**
  * Creates a chat (optionally inside a project) and queues its first message
- * for the session view. Returns the session path to navigate to.
+ * for whichever view opens it. Returns the new session id.
  */
-export async function startChat(input: { agentId: string; projectId?: string; launch: ComposerLaunch }) {
+export async function createChat(input: { agentId: string; projectId?: string; launch: ComposerLaunch }) {
   const response = await desktopApiFetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -24,5 +24,10 @@ export async function startChat(input: { agentId: string; projectId?: string; la
     throw new Error(payload?.message || payload?.error || "Could not start the chat");
   }
   useChatLaunchStore.getState().setLaunch(sessionId, input.launch);
-  return `/sessions/${encodeURIComponent(sessionId)}`;
+  return sessionId;
+}
+
+/** Creates a chat and returns the session page path to navigate to. */
+export async function startChat(input: { agentId: string; projectId?: string; launch: ComposerLaunch }) {
+  return `/sessions/${encodeURIComponent(await createChat(input))}`;
 }

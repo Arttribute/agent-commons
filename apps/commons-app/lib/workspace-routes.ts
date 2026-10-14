@@ -1,8 +1,9 @@
 export type WorkspaceSection =
-  | "agents" | "tools" | "tasks" | "workflows" | "skills" | "projects"
+  | "new" | "agents" | "tools" | "tasks" | "workflows" | "skills" | "projects"
   | "knowledge" | "library" | "customize" | "sessions" | "settings" | "apps" | "logs" | "spaces" | "developers";
 
 export const workspacePaths: Record<WorkspaceSection, string> = {
+  new: "/new",
   agents: "/studio/agents",
   projects: "/projects",
   tools: "/studio/customize/tools",
@@ -28,7 +29,7 @@ export function resolveWorkspaceRoute(path: string): {
   id?: string;
   isDetail: boolean;
 } {
-  const url = new URL(path || "/studio/agents", "https://commons.invalid");
+  const url = new URL(path || "/new", "https://commons.invalid");
   const segments = url.pathname.split("/").filter(Boolean);
   if (segments[0] === "studio") {
     if (segments[1] === "customize") {
@@ -43,6 +44,7 @@ export function resolveWorkspaceRoute(path: string): {
       return { section, id: segments[2] && segments[2] !== "create" ? decodeURIComponent(segments[2]) : undefined, isDetail: segments.length > 2 && segments[2] !== "create" };
     }
   }
+  if (segments[0] === "new") return { section: "new", isDetail: false };
   if (segments[0] === "projects") {
     return { section: "projects", id: segments[1] ? decodeURIComponent(segments[1]) : undefined, isDetail: segments.length > 1 };
   }
@@ -67,4 +69,14 @@ export function navigationSection(path: string) {
 export function isLockedStudioDetailRoute(path: string): boolean {
   const route = resolveWorkspaceRoute(path);
   return route.isDetail && ["agents", "tools", "workflows", "skills"].includes(route.section);
+}
+
+/** The agents chat app, where the agent list sits beside the main sidebar rail. */
+export function isAgentsChatRoute(path: string): boolean {
+  return /^\/studio\/agents(\/|$|\?)/.test(path);
+}
+
+/** Pages that put the phone menu button in their own header instead of the default top bar. */
+export function hasOwnMobileHeader(path: string): boolean {
+  return path === "/new" || isAgentsChatRoute(path) || /^\/sessions\/[^/]+/.test(path);
 }
