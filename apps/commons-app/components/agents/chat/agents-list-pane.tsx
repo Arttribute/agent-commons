@@ -7,6 +7,7 @@ import { AlertCircle, Bot, Plus, Search, Users, X } from "lucide-react";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { RunStatusDot, runStatusLabel } from "@/components/agents/run-status-dot";
 import { MobileMenuButton } from "@/components/layout/dashboard-side-bar";
+import { PageTitle } from "@/components/layout/page-header";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAgents } from "@/hooks/use-agents";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
@@ -107,7 +108,9 @@ export function AgentsListPane({
             />
           </div>
         ) : (
-          <h1 className="min-w-0 flex-1 truncate px-1 text-lg font-medium">Agents</h1>
+          <div className="min-w-0 flex-1 px-1">
+            <PageTitle title="Agents" />
+          </div>
         )}
         <button
           type="button"
