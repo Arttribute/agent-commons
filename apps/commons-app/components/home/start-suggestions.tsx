@@ -15,7 +15,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
-import { useAgentContext } from "@/context/AgentContext";
+import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { getBrandIcon } from "@/lib/brand-icons";
 import {
   capabilitySuggestions,
@@ -25,7 +26,8 @@ import {
   type SuggestionKind,
 } from "@/lib/start-suggestions";
 
-const CACHE_PREFIX = "commons.startSuggestions.";
+// v2: suggestions carry a suggested agent and hover context.
+const CACHE_PREFIX = "commons.startSuggestions.v2.";
 const FRESH_MS = 6 * 60 * 60_000;
 
 type Cached = { signature: string; at: number; items: StartSuggestion[] };
@@ -152,18 +154,36 @@ function SuggestionIcon({ item }: { item: StartSuggestion }) {
   return <Icon className="h-4 w-4" strokeWidth={1.75} />;
 }
 
-/** A quiet list of things to try. Picking one fills the composer. */
-export function StartSuggestionList({ items, loading, className }: { items: StartSuggestion[] | null; loading: boolean; className?: string }) {
+type SuggestionAgent = { agentId: string; name: string; avatar?: string | null };
+
+/**
+ * A quiet list of things to try. Each row shows the agent suggested to take
+ * it; hovering shows the context behind it. Picking one hands it to `onPick`,
+ * which fills the composer and switches to that agent.
+ */
+export function StartSuggestionList({
+  items,
+  loading,
+  agents = [],
+  onPick,
+  className,
+}: {
+  items: StartSuggestion[] | null;
+  loading: boolean;
+  agents?: SuggestionAgent[];
+  onPick: (item: StartSuggestion) => void;
+  className?: string;
+}) {
   const router = useRouter();
-  const { setInputText } = useAgentContext();
   const rows = useMemo(() => items ?? [], [items]);
+  const agentById = useMemo(() => new Map(agents.map((agent) => [agent.agentId, agent])), [agents]);
 
   if (loading) {
     return (
       <div className={className} aria-hidden="true">
         {[0.7, 0.55, 0.62].map((width, index) => (
           <div key={index} className="flex items-center gap-3 px-3 py-2.5">
-            <span className="h-4 w-4 animate-pulse rounded bg-muted" />
+            <span className="h-5 w-5 animate-pulse rounded-full bg-muted" />
             <span className="h-3.5 animate-pulse rounded bg-muted" style={{ width: `${width * 100}%` }} />
           </div>
         ))}
@@ -174,31 +194,52 @@ export function StartSuggestionList({ items, loading, className }: { items: Star
 
   return (
     <ul className={className} aria-label="Suggestions">
-      {rows.map((item) => (
-        <li key={item.id}>
+      {rows.map((item) => {
+        const agent = item.agentId ? agentById.get(item.agentId) : undefined;
+        const brand = item.app ? getBrandIcon(item.app) : null;
+        const row = (
           <button
             type="button"
-            onClick={() => {
-              if (item.href) {
-                router.push(item.href);
-                return;
-              }
-              setInputText(item.prompt ?? item.text);
-              requestAnimationFrame(() => {
-                const field = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message your agent"]');
-                field?.focus();
-                field?.setSelectionRange(field.value.length, field.value.length);
-              });
-            }}
+            onClick={() => (item.href ? router.push(item.href) : onPick(item))}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
           >
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-              <SuggestionIcon item={item} />
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+              {agent ? <AgentAvatar name={agent.name} src={agent.avatar} size={20} /> : <SuggestionIcon item={item} />}
             </span>
             <span className="min-w-0 flex-1 truncate">{item.text}</span>
+            {agent && brand && (
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center opacity-80" aria-label={item.app ?? undefined}>
+                <SuggestionIcon item={item} />
+              </span>
+            )}
           </button>
-        </li>
-      ))}
+        );
+        return (
+          <li key={item.id}>
+            {item.detail ? (
+              <HoverCard openDelay={350} closeDelay={80}>
+                <HoverCardTrigger asChild>{row}</HoverCardTrigger>
+                <HoverCardContent
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                  className="w-[min(30rem,calc(100vw-2rem))] rounded-2xl p-4 shadow-floating"
+                >
+                  <p className="text-sm leading-6 text-foreground">{item.detail}</p>
+                  {agent && (
+                    <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                      <AgentAvatar name={agent.name} src={agent.avatar} size={18} />
+                      {item.href ? `Continues your chat with ${agent.name}` : `${agent.name} will take this`}
+                    </p>
+                  )}
+                </HoverCardContent>
+              </HoverCard>
+            ) : (
+              row
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

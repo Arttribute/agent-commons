@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useAgentContext } from "@/context/AgentContext";
+import type { StartSuggestion } from "@/lib/start-suggestions";
 import { useAuth } from "@/context/AuthContext";
 import { useAgents } from "@/hooks/use-agents";
 import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
@@ -25,6 +27,21 @@ export function NewChatView({ userAddress: userOverride }: { userAddress?: strin
   const { sessions, isLoading: sessionsLoading } = useUserSessions(userAddress);
   const runs = useSessionRuns(sessions);
   const suggestions = useStartSuggestions({ userAddress, sessions, sessionsLoading });
+  const { setInputText } = useAgentContext();
+  // Picking a suggestion switches the composer to its agent and fills it in.
+  const [requestedAgent, setRequestedAgent] = useState<{ agentId: string; key: number } | null>(null);
+  const pickSuggestion = useCallback(
+    (item: StartSuggestion) => {
+      if (item.agentId) setRequestedAgent({ agentId: item.agentId, key: Date.now() });
+      setInputText(item.prompt ?? item.text);
+      requestAnimationFrame(() => {
+        const field = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message your agent"]');
+        field?.focus();
+        field?.setSelectionRange(field.value.length, field.value.length);
+      });
+    },
+    [setInputText],
+  );
 
   const launcherAgents = useMemo(
     () =>
@@ -59,12 +76,12 @@ export function NewChatView({ userAddress: userOverride }: { userAddress?: strin
             <div className="text-center md:mb-6">
               <LauncherGreeting />
             </div>
-            <StartSuggestionList items={suggestions.items} loading={suggestions.loading} className="mt-6 md:hidden" />
+            <StartSuggestionList items={suggestions.items} loading={suggestions.loading} agents={menuAgents} onPick={pickSuggestion} className="mt-6 md:hidden" />
           </div>
           <div className="shrink-0 pb-[max(env(safe-area-inset-bottom),0.75rem)] md:pb-0">
-            <StudioAgentLauncher agents={launcherAgents} userAddress={userAddress} hideStarters projectPicker />
+            <StudioAgentLauncher agents={launcherAgents} userAddress={userAddress} hideStarters projectPicker requestedAgent={requestedAgent} />
           </div>
-          <StartSuggestionList items={suggestions.items} loading={suggestions.loading} className="mt-3 hidden md:block" />
+          <StartSuggestionList items={suggestions.items} loading={suggestions.loading} agents={menuAgents} onPick={pickSuggestion} className="mt-3 hidden md:block" />
         </div>
       </div>
     </div>

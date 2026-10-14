@@ -20,6 +20,10 @@ export type StartSuggestion = {
   text: string;
   /** What the composer receives. Defaults to the text. */
   prompt?: string;
+  /** A few sentences of context, shown on hover. */
+  detail?: string;
+  /** The agent suggested to take it; picking the suggestion switches to it. */
+  agentId?: string | null;
   /** A connected app this uses, shown with the app's mark. */
   app?: string | null;
   kind?: SuggestionKind;
@@ -64,13 +68,20 @@ export function capabilitySuggestions(connectedApps: string[], now = new Date(),
 
 /** Without personal suggestions, the latest chat is still worth one row. */
 export function fallbackSuggestions(
-  sessions: Array<{ sessionId: string; title?: string | null }>,
+  sessions: Array<{ sessionId: string; agentId?: string; title?: string | null }>,
   connectedApps: string[],
   now = new Date(),
 ): StartSuggestion[] {
   const latest = sessions.find((session) => session.title && !["New chat", "New Session"].includes(session.title));
   const resume: StartSuggestion[] = latest
-    ? [{ id: `continue-${latest.sessionId}`, kind: "continue", text: `Continue “${latest.title}”`, href: `/sessions/${encodeURIComponent(latest.sessionId)}` }]
+    ? [{
+        id: `continue-${latest.sessionId}`,
+        kind: "continue",
+        text: `Continue “${latest.title}”`,
+        detail: `Your most recent chat was “${latest.title}”. Open it to pick up where you left off.`,
+        agentId: latest.agentId ?? null,
+        href: `/sessions/${encodeURIComponent(latest.sessionId)}`,
+      }]
     : [];
   return [...resume, ...capabilitySuggestions(connectedApps, now, 3)].slice(0, 3);
 }
@@ -84,10 +95,12 @@ export function normalizeSuggestions(value: unknown): StartSuggestion[] {
     const text = typeof item?.text === "string" ? item.text.replace(/\s+/g, " ").trim().replace(/^["'“”]+|["'“”]+$/g, "").trim() : "";
     if (!text || text.length > 140 || seen.has(text.toLowerCase())) continue;
     seen.add(text.toLowerCase());
-    const prompt = typeof item?.prompt === "string" && item.prompt.trim() ? item.prompt.trim().slice(0, 600) : undefined;
+    const prompt = typeof item?.prompt === "string" && item.prompt.trim() ? item.prompt.replace(/\s+/g, " ").trim().slice(0, 800) : undefined;
+    const detail = typeof item?.detail === "string" && item.detail.trim() ? item.detail.replace(/\s+/g, " ").trim().slice(0, 600) : undefined;
+    const agentId = typeof item?.agentId === "string" && item.agentId.trim() ? item.agentId.trim() : null;
     const app = typeof item?.app === "string" && item.app.trim() ? item.app.trim().slice(0, 40) : null;
     const kind = typeof item?.kind === "string" && ["research", "document", "website", "schedule", "data", "image", "agent"].includes(item.kind) ? (item.kind as SuggestionKind) : undefined;
-    out.push({ id: `s-${out.length}-${text.slice(0, 24)}`, text, prompt, app, kind });
+    out.push({ id: `s-${out.length}-${text.slice(0, 24)}`, text, prompt, detail, agentId, app, kind });
     if (out.length === 3) break;
   }
   return out;

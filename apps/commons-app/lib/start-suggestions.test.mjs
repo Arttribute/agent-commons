@@ -19,8 +19,10 @@ test("the capability pick is stable within a day", () => {
 });
 
 test("fallback offers to continue the latest titled chat", () => {
-  const items = fallbackSuggestions([{ sessionId: "a", title: "New chat" }, { sessionId: "b", title: "Launch plan" }], [], day);
+  const items = fallbackSuggestions([{ sessionId: "a", agentId: "x", title: "New chat" }, { sessionId: "b", agentId: "writer", title: "Launch plan" }], [], day);
   assert.equal(items[0].href, "/sessions/b");
+  assert.equal(items[0].agentId, "writer");
+  assert.match(items[0].detail, /Launch plan/);
   assert.match(items[0].text, /Launch plan/);
   assert.equal(items.length, 3);
 });
@@ -31,7 +33,7 @@ test("API suggestions are trimmed, deduplicated and capped", () => {
       { text: "  \"Draft the launch email\" ", app: "Gmail" },
       { text: "Draft the launch email" },
       { text: "" },
-      { text: "Schedule a weekly review", kind: "schedule" },
+      { text: "Schedule a weekly review", kind: "schedule", agentId: "copilot", prompt: "Every  Friday, review my week.", detail: "You set up briefings last week." },
       { text: "Summarize the research", kind: "bogus" },
       { text: "A fourth one" },
     ],
@@ -39,6 +41,10 @@ test("API suggestions are trimmed, deduplicated and capped", () => {
   assert.deepEqual(items.map((item) => item.text), ["Draft the launch email", "Schedule a weekly review", "Summarize the research"]);
   assert.equal(items[0].app, "Gmail");
   assert.equal(items[1].kind, "schedule");
+  assert.equal(items[1].agentId, "copilot");
+  assert.equal(items[1].prompt, "Every Friday, review my week.");
+  assert.equal(items[1].detail, "You set up briefings last week.");
+  assert.equal(items[0].agentId, null);
   assert.equal(items[2].kind, undefined);
   assert.deepEqual(normalizeSuggestions(null), []);
 });
