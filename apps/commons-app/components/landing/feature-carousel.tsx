@@ -282,7 +282,7 @@ export function FeatureCarousel() {
               i === index ? "opacity-100" : "pointer-events-none opacity-0",
             )}
           >
-            <div className="min-h-0 min-w-0 overflow-hidden border-stone-200 bg-[#fcfcfb] p-4 sm:border-r">
+            <div className="min-h-0 min-w-0 overflow-hidden border-stone-200 bg-[#fcfcfb] dark:bg-muted p-4 sm:border-r">
               {loaded.includes(i) && (
                 <ScaledStage
                   width={slide.width}

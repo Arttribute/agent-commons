@@ -81,7 +81,7 @@ const edges: Edge[] = ["research", "builder", "reviewer"].map((target) => ({
 
 export function TeamVisual() {
   return (
-    <div className="relative h-[430px] overflow-hidden rounded-[1.5rem] border border-stone-200 bg-[#fafaf9] shadow-[0_28px_80px_-44px_rgba(28,25,23,0.32)]">
+    <div className="relative h-[430px] overflow-hidden rounded-[1.5rem] border border-stone-200 bg-stone-50 shadow-[0_28px_80px_-44px_rgba(28,25,23,0.32)]">
       <ReactFlowProvider>
         <ReactFlow
           nodes={nodes}
@@ -110,7 +110,7 @@ export function TeamVisual() {
         <span className="text-xs font-semibold text-stone-800">
           Launch team
         </span>
-        <span className="rounded-md bg-teal-200 px-1.5 py-0.5 text-[9px] font-semibold text-stone-800">
+        <span className="rounded-md bg-teal-200 dark:bg-teal-800 px-1.5 py-0.5 text-[9px] font-semibold text-stone-800">
           4 agents
         </span>
       </div>

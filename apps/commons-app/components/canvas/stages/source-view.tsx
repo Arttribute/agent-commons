@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useAppearance } from '@/context/AppearanceContext';
 import { FileCode2 } from "lucide-react";
 import type { CanvasAnnotation } from "@/lib/canvas";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ export function SourceView({
   onOpenNote: StageProps["onOpenNote"];
   onViewer: StageProps["onViewer"];
 }) {
+  const { resolvedTheme } = useAppearance();
   const [activePath, setActivePath] = useState(initialPath && files.some((file) => file.path === initialPath) ? initialPath : files[0]?.path);
   const active = files.find((file) => file.path === activePath) ?? files[0];
   const code = useRef<HTMLDivElement>(null);
@@ -132,7 +134,7 @@ export function SourceView({
       <div ref={code} className="relative min-w-0 flex-1 overflow-auto overscroll-contain">
         <SyntaxHighlighter
           language={languageFor(active.path)}
-          style={oneLight}
+          style={resolvedTheme === 'dark' ? oneDark : oneLight}
           showLineNumbers
           wrapLines
           lineProps={(line: number) => {

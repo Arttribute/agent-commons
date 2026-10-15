@@ -26,7 +26,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useAppearance } from '@/context/AppearanceContext';
 import { ArtifactIcon } from "./artifact-icon";
 import {
   ArtifactProvenance,
@@ -513,6 +514,7 @@ function ArtifactPreviewBody({ preview }: { preview: ArtifactPreview }) {
 }
 
 function ArtifactSource({ preview }: { preview: ArtifactPreview }) {
+  const { resolvedTheme } = useAppearance();
   const files = preview.codeProject?.files ?? [];
   const [activePath, setActivePath] = useState(
     preview.codeProject?.entryFile || files[0]?.path || preview.name,
@@ -523,7 +525,7 @@ function ArtifactSource({ preview }: { preview: ArtifactPreview }) {
   const language = codeLanguage(active?.path || preview.name);
 
   return (
-    <div className="flex min-h-0 flex-1 bg-[#fafaf9]">
+    <div className="flex min-h-0 flex-1 bg-stone-50">
       {files.length ? (
         <aside className="w-44 shrink-0 overflow-y-auto border-r border-stone-200 bg-white py-2">
           {files.map((file) => (
@@ -546,14 +548,14 @@ function ArtifactSource({ preview }: { preview: ArtifactPreview }) {
         {content ? (
           <SyntaxHighlighter
             language={language}
-            style={oneLight}
+            style={resolvedTheme === 'dark' ? oneDark : oneLight}
             showLineNumbers
             wrapLongLines={false}
             customStyle={{
               margin: 0,
               minHeight: "100%",
               padding: "20px",
-              background: "#fafaf9",
+              background: "rgb(var(--surface-stone-50))",
               fontSize: "12px",
               lineHeight: "1.65",
             }}

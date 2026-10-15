@@ -146,7 +146,7 @@ const edges: Edge[] = [
 
 export function WorkflowVisual() {
   return (
-    <div className="relative h-[430px] overflow-hidden rounded-[1.5rem] border border-stone-200 bg-[#fafaf9] shadow-[0_28px_80px_-44px_rgba(28,25,23,0.35)] sm:h-[470px]">
+    <div className="relative h-[430px] overflow-hidden rounded-[1.5rem] border border-stone-200 bg-stone-50 shadow-[0_28px_80px_-44px_rgba(28,25,23,0.35)] sm:h-[470px]">
       <ReactFlowProvider>
         <ReactFlow
           nodes={nodes}
