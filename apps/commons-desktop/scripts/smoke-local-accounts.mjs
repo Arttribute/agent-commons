@@ -12,14 +12,14 @@ async function cookieCommand(page, method, params) {
       socket.onopen = () => { clearTimeout(timer); resolve(); };
       socket.onerror = () => { clearTimeout(timer); reject(new Error('Account test DevTools connection failed')); };
     });
-    await new Promise((resolve, reject) => {
+    return await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Account test cookie operation timed out')), 5000);
       socket.onmessage = (event) => {
         const result = JSON.parse(event.data);
         if (result.id !== 1) return;
         clearTimeout(timer);
         if (result.error || result.result?.success === false) reject(new Error('Account test cookie operation failed'));
-        else resolve();
+        else resolve(result.result);
       };
       socket.send(JSON.stringify({ id: 1, method, params }));
     });
@@ -36,34 +36,66 @@ async function setSmokeAccountCookie(evaluate, page, userData, id) {
   await cookieCommand(page, id ? 'Network.setCookie' : 'Network.deleteCookies', { name: cookie, url: origin + '/', ...(id ? { value, path: '/', httpOnly: true, sameSite: 'Lax' } : {}) });
 }
 
+// Synthetic account changes must not race a previous React page's Auth.js
+// refresh. The JSON endpoint keeps the native bridge on the same trusted origin
+// while cancelling the old page and draining its queued native verification.
+async function pauseAccountFixture(evaluate, page, deadline = Date.now() + 45_000) {
+  const origin = await evaluate(page, 'location.origin');
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      await cookieCommand(page, 'Page.stopLoading', {});
+      await cookieCommand(page, 'Page.navigate', { url: origin + '/api/auth/csrf' });
+      let paused = false;
+      while (Date.now() < deadline) {
+        paused = await evaluate(page, "location.pathname === '/api/auth/csrf' && document.readyState === 'complete'").catch(() => false);
+        if (paused) break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      if (!paused) throw new Error('Account fixture navigation timed out');
+      await evaluate(page, 'window.agentCommonsDesktop.syncAccount()');
+      await evaluate(page, 'window.agentCommonsLocal.getState()');
+      if (!await evaluate(page, "location.pathname === '/api/auth/csrf'")) throw new Error('Account verification replaced the fixture document');
+      return origin;
+    } catch (error) { lastError = error.message; }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`Account fixture did not settle: ${lastError ?? 'navigation timed out'}`);
+}
+
 // Mode navigation needs a signed-in Cloud surface. Otherwise its intentional
 // sign-in redirect can still be loading when the next switch is dispatched.
 export async function smokeModeAccount(evaluate, page, userData) {
   const select = async (id) => {
-    const before = await evaluate(page, 'window.agentCommonsLocal.getState()');
-    const previous = (before.account?.userId ?? null) !== id ? await evaluate(page, 'performance.timeOrigin') : undefined;
+    const origin = await evaluate(page, 'location.origin');
     const deadline = Date.now() + 45_000;
-    let lastSyncError;
-    let nextSync = 0;
+    let lastError;
     while (Date.now() < deadline) {
-      const ready = await evaluate(page, "document.readyState === 'complete' && !!window.agentCommonsDesktop").catch(() => false);
-      if (ready && Date.now() >= nextSync) {
-        // A mode switch can still have a session refresh/navigation in flight.
-        // Reapply the test session only after that document is ready, then await
-        // the native verification instead of losing its result during reload.
-        try {
-          await setSmokeAccountCookie(evaluate, page, userData, id);
-          lastSyncError = await evaluate(page, "window.agentCommonsDesktop.syncAccount().then(() => null, error => String(error.message || error))");
-        } catch (error) { lastSyncError = error.message; }
-        nextSync = Date.now() + 1000;
-      }
-      const settled = await evaluate(page, `document.readyState === 'complete' && ${previous ? `performance.timeOrigin !== ${previous}` : 'true'} && ${id ? `!!document.querySelector('[aria-label="Workspace mode"], [aria-label^="Workspace mode:"]')` : 'true'}`).catch(() => false);
-      const state = settled ? await evaluate(page, 'window.agentCommonsLocal.getState()').catch(() => undefined) : undefined;
-      if (state && (state.account?.userId ?? null) === id) return;
+      try {
+        await pauseAccountFixture(evaluate, page, deadline);
+        await setSmokeAccountCookie(evaluate, page, userData, id);
+        await evaluate(page, 'window.agentCommonsDesktop.syncAccount()').catch(error => {
+          if (!/context.*destroyed|Cannot find context/i.test(error.message)) throw error;
+        });
+        await cookieCommand(page, 'Page.navigate', { url: origin + '/' });
+        while (Date.now() < deadline) {
+          const ready = await evaluate(page, `location.pathname !== '/api/auth/csrf' && document.readyState === 'complete' && !!document.querySelector('[aria-label="Workspace mode"], [aria-label^="Workspace mode:"]')`).catch(() => false);
+          const state = ready ? await evaluate(page, 'window.agentCommonsLocal.getState()').catch(() => undefined) : undefined;
+          if (state && (state.account?.userId ?? null) === id) {
+            // Local deliberately hides /api/auth/session from the renderer.
+            // Check cookie presence here; native getState proves the verified ID.
+            const { cookies } = await cookieCommand(page, 'Network.getCookies', { urls: [origin] });
+            const signedIn = cookies.some(cookie => cookie.name.startsWith('authjs.agent-commons.session-token.'));
+            if (signedIn === Boolean(id)) return;
+            throw new Error('Browser cookie store and verified Local account did not agree');
+          }
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (error) { lastError = error.message; }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    const diagnostic = await evaluate(page, `(async () => ({ targetOwner: ${JSON.stringify(id)}, previousOwner: ${JSON.stringify(before.account?.userId ?? null)}, documentChanged: ${previous ? `performance.timeOrigin !== ${previous}` : 'null'}, path: location.pathname, readyState: document.readyState, owner: await window.agentCommonsLocal.getState().then(state => state.account?.userId ?? null).catch(error => String(error.message)) }))()`).catch(error => ({ error: error.message }));
-    throw new Error(`The isolated mode-navigation account did not become ready: ${JSON.stringify({ ...diagnostic, lastSyncError })}`);
+    const diagnostic = await evaluate(page, `(async () => ({ targetOwner: ${JSON.stringify(id)}, path: location.pathname, readyState: document.readyState, owner: await window.agentCommonsLocal.getState().then(state => state.account?.userId ?? null).catch(error => String(error.message)) }))()`).catch(error => ({ error: error.message }));
+    throw new Error(`The isolated mode-navigation account did not become ready: ${JSON.stringify({ ...diagnostic, lastError })}`);
   };
   await select('desktop-smoke-mode');
   return () => select(null);
@@ -84,6 +116,7 @@ export async function smokeLocalAccounts(evaluate, page, userData) {
     throw new Error(`Desktop did not select test account ${owner ?? 'guest'}`);
   };
   const select = async (id) => {
+    await pauseAccountFixture(evaluate, page);
     const previous = await state();
     const previousDocument = (previous.account?.userId ?? null) !== id ? await evaluate(page, 'performance.timeOrigin') : undefined;
     // Auth.js rotates to HttpOnly cookies: use the browser cookie store just as
