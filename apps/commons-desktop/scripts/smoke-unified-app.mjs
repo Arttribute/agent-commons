@@ -290,8 +290,8 @@ try {
           const localAgain = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getInfo()");
           if (localAgain?.mode !== "private-local") throw new Error("Could not return to the Local workspace in the same renderer");
           const restored = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getState()");
-          if (!restored?.conversations?.some((conversation) => conversation.id === savedSession.id)) {
-            throw new Error("Saved Local session disappeared after switching modes");
+          if (restored?.account || !restored?.conversations?.some((conversation) => conversation.id === savedSession.id)) {
+            throw new Error(`Saved Local session disappeared after switching modes: ${JSON.stringify({ owner: restored?.account?.userId ?? null, sessionIds: restored?.conversations?.map(conversation => conversation.id), expectedSession: savedSession.id })}`);
           }
           await smokeLocalAccounts(evaluate, cloudPage.webSocketDebuggerUrl, temp);
           console.log(`Unified Commons desktop loaded ${result.path} with Local agent and both mode bridges.`);
