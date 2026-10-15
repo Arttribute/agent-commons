@@ -123,12 +123,16 @@ for (const model of ["deepseek-r1:1.5b", "qwen3.5:2b"]) {
       const follow = await runtime.sendMessage({ agentId: imported.id, conversationId: greeting.conversation.id, prompt: "Tell me a joke" });
       assert.equal(follow.response, "Hello from Local.");
       const inspected = await runtime.sendMessage({ agentId: imported.id, conversationId: greeting.conversation.id, workspaceRoot: folder, prompt: "What is in this folder?" });
-      assert.equal(inspected.response, "The folder contains project-plan-731.md.");
-      assert.equal(folderReads, 1);
+      assert.match(inspected.response, /project-plan-731\.md/);
+      const inventory = inspected.conversation.messages.filter(message => message.toolName === "cli_list_directory");
+      assert.equal(inventory.length, 1);
+      assert.equal(inventory[0].toolArgs.path, ".");
+      assert.match(inventory[0].content, /project-plan-731\.md/);
+      assert.equal(folderReads, 0, "The built-in inventory should return real evidence without a model turn");
       const selected = await runtime.sendMessage({ agentId: imported.id, prompt: "Find PrivateKnowledgeMarker731", knowledgeMode: "selected", spaceIds: ["selected-notes"] });
       assert.equal(selected.response, "The approved launch owner is Amina.");
       assert.equal(runtime.state().agents[0].instructions, imported.instructions);
-      assert.equal(requests.length, 4);
+      assert.equal(requests.length, 3);
       assert.deepEqual(failures, []);
     } finally {
       runtime.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));

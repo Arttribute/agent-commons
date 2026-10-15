@@ -1582,6 +1582,14 @@ export class PrivateLocalRuntime {
     const unscopedConversation = !project && !lastUserMessage?.attachments?.length && !lastUserMessage?.canvasProjectId && !conversation.mcpServerIds?.length;
     const conversationOnly = unscopedConversation && (isOpeningGreeting(lastUser) || conversation.knowledgeMode !== "selected" && isLocalConversationOnlyRequest(lastUser));
     const folderInventory = Boolean(workspace) && unscopedConversation && conversation.knowledgeMode !== "selected" && isLocalFolderInventoryRequest(lastUser);
+    if (folderInventory && localPromptAgent(agent) !== agent) {
+      // The built-in Copilot can fulfill this exact read-only request directly.
+      // Returning the real listing avoids spending a small model's entire turn
+      // planning or paraphrasing an inventory. Custom agent behavior is retained.
+      const result = await this.executeTool("cli_list_directory", { path: "." }, workspace, conversationId, spaceIds);
+      if (result.startsWith("Error:")) throw new Error(result);
+      return result;
+    }
     const localManifest = workspace
       ? `Selected folder: ${workspace}. File paths and command cwd are relative to this root; use "." for the root itself. Inspect with cli_list_directory, then read or search actual files. Commands must be non-interactive, with an executable and argument array. Use cli_start_process for long jobs and cli_wait_for_process until done. Writes and commands require approval. Never claim completion while a setup process is running.`
       : "No workspace folder is selected. Do not call cli_* filesystem or command tools.";
@@ -1812,16 +1820,6 @@ export class PrivateLocalRuntime {
       if (count === 2 && nextRecoverableTextOutput()) libraryWriteArgsRepair = true;
       if (count >= 3) throw new Error(`The model repeatedly read the same unchanged file without completing this request. Its tool results are saved; continue from them or choose a stronger local model.`);
     };
-    // An unambiguous folder inventory has a known read-only first step. Fetch
-    // that evidence once instead of making a small model plan from a catalog.
-    if (folderInventory) {
-      const args = { path: "." };
-      const result = await this.executeTool("cli_list_directory", args, workspace, conversationId, spaceIds);
-      executedTools += 1;
-      recordFailure("cli_list_directory", result);
-      recordRead("cli_list_directory", args, result);
-      messages.push({ role: "assistant", content: "", tool_calls: [{ function: { name: "cli_list_directory", arguments: args } }] }, toolResult("cli_list_directory", result));
-    }
     let identityRepairAttempted = false;
     for (let turn = 0; turn < 64; turn += 1) {
       const beforeStep = this.pendingSteers.get(conversationId)?.splice(0) ?? [];
