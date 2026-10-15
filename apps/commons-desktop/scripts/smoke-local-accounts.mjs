@@ -40,12 +40,13 @@ async function setSmokeAccountCookie(evaluate, page, userData, id) {
 // sign-in redirect can still be loading when the next switch is dispatched.
 export async function smokeModeAccount(evaluate, page, userData) {
   const select = async (id) => {
-    const previous = await evaluate(page, 'performance.timeOrigin');
+    const before = await evaluate(page, 'window.agentCommonsLocal.getState()');
+    const previous = (before.account?.userId ?? null) !== id ? await evaluate(page, 'performance.timeOrigin') : undefined;
     await setSmokeAccountCookie(evaluate, page, userData, id);
     await evaluate(page, "void window.agentCommonsDesktop.syncAccount().catch(() => undefined)");
     const deadline = Date.now() + 45_000;
     while (Date.now() < deadline) {
-      const ready = await evaluate(page, `document.readyState === 'complete' && performance.timeOrigin !== ${previous} && !!document.querySelector('[aria-label="Workspace mode"], [aria-label^="Workspace mode:"]')`).catch(() => false);
+      const ready = await evaluate(page, `document.readyState === 'complete' && ${previous ? `performance.timeOrigin !== ${previous}` : 'true'} && ${id ? `!!document.querySelector('[aria-label="Workspace mode"], [aria-label^="Workspace mode:"]')` : 'true'}`).catch(() => false);
       const state = ready ? await evaluate(page, 'window.agentCommonsLocal.getState()').catch(() => undefined) : undefined;
       if (state && (state.account?.userId ?? null) === id) return;
       await new Promise(resolve => setTimeout(resolve, 100));
