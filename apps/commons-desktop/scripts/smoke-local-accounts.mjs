@@ -26,16 +26,40 @@ async function cookieCommand(page, method, params) {
   } finally { socket.close(); }
 }
 
-// Exercise the real loopback Auth.js session and native IPC boundary using
-// test-only encrypted sessions. No identity-provider or customer account calls.
-export async function smokeLocalAccounts(evaluate, page, userData) {
+async function setSmokeAccountCookie(evaluate, page, userData, id) {
   const require = createRequire(new URL('../../commons-app/package.json', import.meta.url));
   const { encode } = await import(pathToFileURL(require.resolve('next-auth/jwt')).href);
   const secret = readFileSync(join(userData, 'commons-app-auth-secret'), 'utf8').trim();
   const cookie = `authjs.agent-commons.session-token.${(process.env.COMMONS_AUTH_SESSION_VERSION || 'v2').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-  const token = async (id) => encode({ secret, salt: cookie, token: { sub: id, identityUserId: id, name: 'Same display name', authSessionVersion: 'v2' }, maxAge: 3600 });
-  const state = () => evaluate(page, 'window.agentCommonsLocal.getState()');
+  const value = id ? await encode({ secret, salt: cookie, token: { sub: id, identityUserId: id, name: 'Same display name', authSessionVersion: 'v2' }, maxAge: 3600 }) : '';
   const origin = await evaluate(page, 'location.origin');
+  await cookieCommand(page, id ? 'Network.setCookie' : 'Network.deleteCookies', { name: cookie, url: origin + '/', ...(id ? { value, path: '/', httpOnly: true, sameSite: 'Lax' } : {}) });
+}
+
+// Mode navigation needs a signed-in Cloud surface. Otherwise its intentional
+// sign-in redirect can still be loading when the next switch is dispatched.
+export async function smokeModeAccount(evaluate, page, userData) {
+  const select = async (id) => {
+    const previous = await evaluate(page, 'performance.timeOrigin');
+    await setSmokeAccountCookie(evaluate, page, userData, id);
+    await evaluate(page, "void window.agentCommonsDesktop.syncAccount().catch(() => undefined)");
+    const deadline = Date.now() + 45_000;
+    while (Date.now() < deadline) {
+      const ready = await evaluate(page, `document.readyState === 'complete' && performance.timeOrigin !== ${previous} && !!document.querySelector('[aria-label="Workspace mode"], [aria-label^="Workspace mode:"]')`).catch(() => false);
+      const state = ready ? await evaluate(page, 'window.agentCommonsLocal.getState()').catch(() => undefined) : undefined;
+      if (state && (state.account?.userId ?? null) === id) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('The isolated mode-navigation account did not become ready');
+  };
+  await select('desktop-smoke-mode');
+  return () => select(null);
+}
+
+// Exercise the real loopback Auth.js session and native IPC boundary using
+// test-only encrypted sessions. No identity-provider or customer account calls.
+export async function smokeLocalAccounts(evaluate, page, userData) {
+  const state = () => evaluate(page, 'window.agentCommonsLocal.getState()');
   const waitFor = async (owner, previousDocument) => {
     const deadline = Date.now() + 45_000;
     while (Date.now() < deadline) {
@@ -49,10 +73,9 @@ export async function smokeLocalAccounts(evaluate, page, userData) {
   const select = async (id) => {
     const previous = await state();
     const previousDocument = (previous.account?.userId ?? null) !== id ? await evaluate(page, 'performance.timeOrigin') : undefined;
-    const value = id ? await token(id) : '';
     // Auth.js rotates to HttpOnly cookies: use the browser cookie store just as
     // a sign-in response would, rather than trying to overwrite document.cookie.
-    await cookieCommand(page, id ? 'Network.setCookie' : 'Network.deleteCookies', { name: cookie, url: origin + '/', ...(id ? { value, path: '/', httpOnly: true, sameSite: 'Lax' } : {}) });
+    await setSmokeAccountCookie(evaluate, page, userData, id);
     // A forged renderer principal must never determine which profile opens.
     await evaluate(page, "window.__accountTestSyncError = undefined; void window.agentCommonsDesktop.syncAccount({userId:'forged-renderer-principal'}).catch(error => { window.__accountTestSyncError = String(error.message || error); })");
     try {

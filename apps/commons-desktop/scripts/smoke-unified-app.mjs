@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { smokeLocalTools } from "./smoke-local-tools.mjs";
-import { smokeLocalAccounts } from "./smoke-local-accounts.mjs";
+import { smokeLocalAccounts, smokeModeAccount } from "./smoke-local-accounts.mjs";
 
 const temp = mkdtempSync(join(tmpdir(), "commons-desktop-smoke-"));
 const port = await new Promise((resolve, reject) => {
@@ -55,14 +55,12 @@ async function evaluate(wsUrl, expression, timeout = 10_000) {
   } finally { socket.close(); }
 }
 
-async function waitForWorkspace(wsUrl, mode, path, allowSignIn = false) {
+async function waitForWorkspace(wsUrl, mode, path) {
   const deadline = Date.now() + 10_000;
   let current;
   while (Date.now() < deadline) {
     current = await evaluate(wsUrl, "(async () => ({ mode: (await window.agentCommonsDesktop.getInfo()).mode, path: location.pathname + location.search + location.hash }))()");
-    const redirected = new URL(current.path, "https://commons.invalid");
-    const signInForDestination = allowSignIn && redirected.pathname === "/login" && redirected.searchParams.get("callbackUrl") === path;
-    if (current.mode === mode && (current.path === path || signInForDestination)) return;
+    if (current.mode === mode && current.path === path) return;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error(`Mode switch did not open ${mode} at ${path}: ${JSON.stringify(current)}`);
@@ -269,10 +267,9 @@ try {
             if (panel.native && panel.text.includes('This computer') && panel.text.includes('Open terminal') && !panel.text.includes('Cloud APIs are unavailable')) { computerVisible = true; break; }
           }
           if (!computerVisible) throw new Error("Local Computer panel did not route to native windows");
+          const restoreGuest = await smokeModeAccount(evaluate, page.webSocketDebuggerUrl, temp);
           await evaluate(page.webSocketDebuggerUrl, `window.agentCommonsLocal.openCloud('/sessions/${savedSession.id}?view=chat#messages')`);
-          // The isolated guest must authenticate for Cloud. Preserve /new as
-          // its callback instead of reopening a Local conversation in Cloud.
-          await waitForWorkspace(page.webSocketDebuggerUrl, "cloud", "/new", true);
+          await waitForWorkspace(page.webSocketDebuggerUrl, "cloud", "/new");
           const cloudPages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
           const cloudPage = cloudPages.find((item) => item.type === "page" && item.url.startsWith("http://localhost:"));
           if (!cloudPage || cloudPage.id !== page.id) throw new Error("Changing modes replaced the Commons renderer");
@@ -283,12 +280,13 @@ try {
           if (restricted?.readFiles !== false || restricted?.writeFiles !== false || restricted?.runCommands !== false) {
             throw new Error(`Could not restrict Cloud desktop access: ${JSON.stringify(restricted)}`);
           }
-          await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsDesktop.openPrivateWorkspace('/download/desktop?platform=linux#downloads')");
-          await waitForWorkspace(cloudPage.webSocketDebuggerUrl, "private-local", "/download/desktop?platform=linux#downloads");
+          await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsDesktop.openPrivateWorkspace('/library?tab=apps#recent')");
+          await waitForWorkspace(cloudPage.webSocketDebuggerUrl, "private-local", "/library?tab=apps#recent");
           await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.openCloud()");
-          await waitForWorkspace(cloudPage.webSocketDebuggerUrl, "cloud", "/download/desktop?platform=linux#downloads");
+          await waitForWorkspace(cloudPage.webSocketDebuggerUrl, "cloud", "/library?tab=apps#recent");
           await evaluate(cloudPage.webSocketDebuggerUrl, `window.agentCommonsDesktop.openPrivateWorkspace('/sessions/${savedSession.id}')`);
           await waitForWorkspace(cloudPage.webSocketDebuggerUrl, "private-local", "/new");
+          await restoreGuest();
           const localAgain = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getInfo()");
           if (localAgain?.mode !== "private-local") throw new Error("Could not return to the Local workspace in the same renderer");
           const restored = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getState()");
