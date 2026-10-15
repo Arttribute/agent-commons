@@ -55,6 +55,16 @@ async function evaluate(wsUrl, expression, timeout = 10_000) {
   } finally { socket.close(); }
 }
 
+async function waitForWorkspace(wsUrl, mode, path) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const current = await evaluate(wsUrl, "(async () => ({ mode: (await window.agentCommonsDesktop.getInfo()).mode, path: location.pathname + location.search + location.hash }))()");
+    if (current.mode === mode && current.path === path) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`Mode switch did not open ${mode} at ${path}`);
+}
+
 try {
   const deadline = Date.now() + 90_000;
   let ready = false;
@@ -256,7 +266,8 @@ try {
             if (panel.native && panel.text.includes('This computer') && panel.text.includes('Open terminal') && !panel.text.includes('Cloud APIs are unavailable')) { computerVisible = true; break; }
           }
           if (!computerVisible) throw new Error("Local Computer panel did not route to native windows");
-          await evaluate(page.webSocketDebuggerUrl, "window.agentCommonsLocal.openCloud('/studio/agents')");
+          await evaluate(page.webSocketDebuggerUrl, `window.agentCommonsLocal.openCloud('/sessions/${savedSession.id}?view=chat#messages')`);
+          await waitForWorkspace(page.webSocketDebuggerUrl, "cloud", "/new");
           const cloudPages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
           const cloudPage = cloudPages.find((item) => item.type === "page" && item.url.startsWith("http://localhost:"));
           if (!cloudPage || cloudPage.id !== page.id) throw new Error("Changing modes replaced the Commons renderer");
@@ -267,7 +278,12 @@ try {
           if (restricted?.readFiles !== false || restricted?.writeFiles !== false || restricted?.runCommands !== false) {
             throw new Error(`Could not restrict Cloud desktop access: ${JSON.stringify(restricted)}`);
           }
-          await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsDesktop.openPrivateWorkspace('/studio/agents')");
+          await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsDesktop.openPrivateWorkspace('/library?tab=apps#recent')");
+          await waitForWorkspace(cloudPage.webSocketDebuggerUrl, "private-local", "/library?tab=apps#recent");
+          await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.openCloud()");
+          await waitForWorkspace(cloudPage.webSocketDebuggerUrl, "cloud", "/library?tab=apps#recent");
+          await evaluate(cloudPage.webSocketDebuggerUrl, `window.agentCommonsDesktop.openPrivateWorkspace('/sessions/${savedSession.id}')`);
+          await waitForWorkspace(cloudPage.webSocketDebuggerUrl, "private-local", "/new");
           const localAgain = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getInfo()");
           if (localAgain?.mode !== "private-local") throw new Error("Could not return to the Local workspace in the same renderer");
           const restored = await evaluate(cloudPage.webSocketDebuggerUrl, "window.agentCommonsLocal.getState()");

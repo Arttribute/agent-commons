@@ -159,7 +159,8 @@ test('session folders, model inheritance, media overrides and disabled knowledge
     await runtime.sendMessage({ agentId: inherited, conversationId: greeting.conversation.id, prompt: 'List this folder', workspaceRoot: join(root, 'One') });
     const taskRequest = requests.filter((request) => request.stream).at(-1);
     assert.ok(taskRequest.tools.some((tool) => tool.function.name === 'cli_list_directory'), 'The next task must restore its normal tool harness');
-    assert.match(taskRequest.messages[0].content, /Current selected-folder snapshot/);
+    assert.ok(taskRequest.messages[0].content.includes(realpathSync(join(root, 'One'))));
+    assert.doesNotMatch(taskRequest.messages[0].content, /Current selected-folder snapshot|One\.txt/);
     await runtime.sendMessage({ agentId: inherited, prompt: 'Hello!', attachmentIds: [report.id], knowledgeMode: 'off' });
     const contextualGreeting = requests.filter((request) => request.stream).at(-1);
     assert.ok(contextualGreeting.tools?.length, 'An attached greeting must retain the full context');

@@ -21,6 +21,19 @@ export const workspacePaths: Record<WorkspaceSection, string> = {
   developers: "/developers",
 };
 
+/** Conversations belong to a workspace. Other pages keep their exact location. */
+export function workspaceModeSwitchPath(path?: string): string {
+  if (!path?.startsWith("/") || path.startsWith("//")) return "/new";
+  try {
+    const url = new URL(path, "https://commons.invalid");
+    if (url.origin !== "https://commons.invalid") return "/new";
+    if (/^\/sessions\/[^/]+/.test(url.pathname)) return "/new";
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return "/new";
+  }
+}
+
 /** Sections that live under Customize in the main navigation. */
 export const customizeSections = new Set<WorkspaceSection>(["customize", "tools", "workflows", "skills", "apps"]);
 

@@ -33,7 +33,7 @@ export function WorkspaceModeProvider({ initialMode, children }: { initialMode: 
     return bridge.onModeChange((next, path) => {
       setDesktopApiMode(next);
       setCurrentMode(next);
-      if (path && path !== window.location.pathname) router.replace(path);
+      if (path && path !== window.location.pathname + window.location.search + window.location.hash) router.replace(path);
       router.refresh();
       void useCommonsAppsStore.getState().refresh();
     });
@@ -42,9 +42,9 @@ export function WorkspaceModeProvider({ initialMode, children }: { initialMode: 
   const setMode = useCallback(async (next: Mode) => {
     if (next === mode) return;
     if (next === "private-local") {
-      await window.agentCommonsDesktop?.openPrivateWorkspace(window.location.pathname + window.location.search);
+      await window.agentCommonsDesktop?.openPrivateWorkspace(window.location.pathname + window.location.search + window.location.hash);
     } else {
-      await window.agentCommonsLocal?.openCloud(window.location.pathname + window.location.search);
+      await window.agentCommonsLocal?.openCloud(window.location.pathname + window.location.search + window.location.hash);
       if (window.agentCommonsDesktop && window.agentCommonsLocal) {
         const response = await fetch("/api/auth/session", { cache: "no-store" }).catch(() => null);
         const session = await response?.json().catch(() => null);
