@@ -88,8 +88,8 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
        bg-white"
     >
       <div className="">
-        <div className="bg-teal-200 dark:bg-teal-800 w-48 h-8 -mb-8 rounded-lg"></div>
-        <h2 className="text-lg font-medium">Create New Space</h2>
+        <div className="bg-teal-200 w-48 h-8 -mb-8 rounded-lg dark:hidden"></div>
+        <h2 className="text-lg font-medium dark:text-white">Create New Space</h2>
       </div>
 
       <div className="space-y-1.5">

@@ -31,8 +31,8 @@ export function McpToolsDialog({ server, open, onClose }: McpToolsDialogProps) {
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <div className="bg-teal-200 dark:bg-teal-800 w-48 h-6 -mb-6 rounded-lg"></div>
-          <DialogTitle>{server?.name} - Tools</DialogTitle>
+          <div className="bg-teal-200 w-48 h-6 -mb-6 rounded-lg dark:hidden"></div>
+          <DialogTitle className="dark:text-white">{server?.name} - Tools</DialogTitle>
           <DialogDescription>
             {tools.length} {tools.length === 1 ? "tool" : "tools"} discovered from
             this MCP server
