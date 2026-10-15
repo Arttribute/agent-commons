@@ -3,14 +3,16 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
+import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose';
 
-async function harness({ env = {}, session = null, fetcher = () => { throw new Error('Unexpected fetch'); } } = {}) {
+async function harness({ env = {}, session = null, fetcher = () => { throw new Error('Unexpected fetch'); }, keys } = {}) {
   const context = vm.createContext({ process: { env }, fetch: fetcher, AbortSignal, Date, URL });
   const loaded = new Map();
   const stubs = {
     'next/server': { NextResponse: { json: Response.json.bind(Response) } },
     '@/auth': { auth: async () => session },
     './app-url': { getAppBaseUrl: () => 'https://staging.agentcommons.io' },
+    'jose': { createRemoteJWKSet: (url) => { assert.equal(url.href, 'https://identity.test/.well-known/jwks.json'); return createLocalJWKSet({ keys }); }, jwtVerify },
   };
   async function load(name) {
     if (loaded.has(name)) return loaded.get(name);
@@ -39,6 +41,26 @@ test('desktop links use a public HTTPS host even with a loopback auth origin or 
     assert.equal(module.referralAppBaseUrl(), 'https://www.agentcommons.io');
   }
   assert.equal((await harness({ env: { COMMONS_DESKTOP_SERVER: '1', COMMONS_DESKTOP_CLOUD_URL: 'https://staging.agentcommons.io/' } })).referralAppBaseUrl(), 'https://staging.agentcommons.io');
+});
+
+test('verifies actual desktop platform JWT signatures, issuer, audience, expiry and user claims', async () => {
+  const { privateKey, publicKey } = await generateKeyPair('ES256');
+  const key = await exportJWK(publicKey);
+  key.kid = 'identity-key';
+  const mint = async (claims = {}, options = {}) => new SignJWT({ actor_type: 'user', email_verified: true, email: 'alice@example.com', ...claims })
+    .setProtectedHeader({ alg: 'ES256', kid: 'identity-key' }).setIssuer(options.issuer || 'https://identity.test')
+    .setAudience(options.audience || 'commons-platform').setSubject('usr_alice').setIssuedAt()
+    .setExpirationTime(options.expiry || '15m').sign(privateKey);
+  const module = await harness({ env: { COMMONS_IDENTITY_ISSUER: 'https://identity.test' }, keys: [key] });
+  const call = async (token) => module.referralSession({ headers: new Headers({ Authorization: `Bearer ${token}` }) });
+  assert.equal((await call(await mint())).session.user.id, 'usr_alice');
+  for (const token of [await mint({}, { issuer: 'https://attacker.test' }), await mint({}, { audience: 'different-app' }), await mint({}, { expiry: '-1s' }), await mint({ actor_type: 'service' }), await mint({ email_verified: false })]) {
+    assert.equal((await call(token)).session, null);
+  }
+  const good = await mint();
+  const parts = good.split('.');
+  parts[1] = Buffer.from(JSON.stringify({ sub: 'usr_attacker', actor_type: 'user', email_verified: true })).toString('base64url');
+  assert.equal((await call(parts.join('.'))).session, null);
 });
 
 test('native tokens are checked at trusted identity userinfo and retain only the verified user principal', async () => {

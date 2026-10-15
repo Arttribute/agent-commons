@@ -2,6 +2,9 @@ import type { Session } from 'next-auth';
 import { NextResponse, type NextRequest } from 'next/server';
 import { auth } from '@/auth';
 import { getAppBaseUrl } from './app-url';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+
+let identityKeys: ReturnType<typeof createRemoteJWKSet> | undefined;
 
 export function referralAppBaseUrl() {
   const desktop = process.env.COMMONS_DESKTOP_SERVER === '1';
@@ -23,21 +26,33 @@ export async function referralSession(request: NextRequest): Promise<{ session: 
   const issuer = process.env.COMMONS_IDENTITY_ISSUER?.replace(/\/+$/, '');
   if (!issuer || !authorization?.startsWith('Bearer ')) return { session: null, bearer: false };
   try {
-    // Native clients hold user tokens, never app service credentials. Identity
-    // verifies signature, expiry and openid scope before returning this profile.
-    const response = await fetch(`${issuer}/oauth2/userinfo`, {
-      headers: { Authorization: authorization }, cache: 'no-store',
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!response.ok) return { session: null, bearer: false };
-    const user = await response.json();
+    let user;
+    const token = authorization.slice(7);
+    if (token.split('.').length === 3) {
+      // Desktop device sign-in returns a platform JWT, whose scopes differ
+      // from OAuth's openid token. Verify it using identity's configured keys.
+      identityKeys ??= createRemoteJWKSet(new URL(process.env.COMMONS_IDENTITY_JWKS_URL || `${issuer}/.well-known/jwks.json`));
+      const { payload } = await jwtVerify(token, identityKeys, {
+        issuer, audience: 'commons-platform', algorithms: ['ES256'], requiredClaims: ['exp', 'iat', 'sub'],
+      });
+      if (payload.actor_type !== 'user') return { session: null, bearer: false };
+      user = payload;
+    } else {
+      // Opaque OAuth tokens are verified remotely, including openid scope.
+      const response = await fetch(`${issuer}/oauth2/userinfo`, {
+        headers: { Authorization: authorization }, cache: 'no-store',
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!response.ok) return { session: null, bearer: false };
+      user = await response.json();
+    }
     if (typeof user.sub !== 'string' || !/^usr_[A-Za-z0-9_-]+$/.test(user.sub)
       || user.email_verified !== true || typeof user.email !== 'string') {
       return { session: null, bearer: false };
     }
     return { bearer: true, session: {
       expires: new Date(Date.now() + 60_000).toISOString(),
-      accessToken: authorization.slice(7),
+      accessToken: token,
       user: { id: user.sub, email: user.email, name: user.name, image: user.picture },
     } };
   } catch { return { session: null, bearer: false }; }

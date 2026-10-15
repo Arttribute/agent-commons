@@ -82,7 +82,9 @@ Dark edit prompt:
 > Use case: precise-object-edit. Asset: exact existing Agent Commons logo for a dark sidebar, transparent PNG. Reference image is the ORIGINAL brand logo. Preserve its exact geometry, slightly tilted letter shapes, typography, two rows, spacing and aspect ratio. Change every black letter in both 'Agent' and 'Commons' to solid pure white #ffffff, including the standalone t. Replace only the two rounded gradient bars with MUCH DARKER gradients suitable for small white text: top bar smoothly yellow-700 #a16207 to pink-700 #be185d, bottom bar green-700 #15803d to cyan-700 #0e7490, horizontal interpolation, absolutely no brighter highlights or pastel pixels. These endpoint colors provide about 5:1 or better contrast for white lettering. Keep the original gradient hue families and original bar silhouettes. Remove the surrounding white field to real alpha transparency. CRITICAL clean flat digital logo: hard smooth antialiased outlines, opaque white letters, no texture, glow, shadows, fuzz, streaks, random pixels or halo. Preserve the original exact spelling Agent Commons and original letter silhouettes. Output a faithful color edit, not a redesign.
 
 Desktop invitations use the hosted app with a user bearer token verified at
-identity’s userinfo endpoint. Native installations hold no Resend or app-service
+identity’s userinfo endpoint for opaque OAuth tokens or checked against its
+configured JWKS, issuer and platform audience for device-sign-in JWTs. Expiry,
+user actor type and verified email are required. Native installations hold no Resend or app-service
 credentials. Cookie-authenticated sends still require same-origin requests.
 `COMMONS_DESKTOP_CLOUD_URL` optionally selects the hosted environment; public
 invite links never use the native loopback URL. Verified first-activation
