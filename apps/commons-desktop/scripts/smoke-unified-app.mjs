@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import { smokeLocalTools } from "./smoke-local-tools.mjs";
 import { smokeLocalAccounts, smokeModeAccount } from "./smoke-local-accounts.mjs";
 
@@ -15,7 +16,24 @@ const port = await new Promise((resolve, reject) => {
     server.close(() => resolve(address.port));
   });
 });
-const env = { ...process.env, COMMONS_DESKTOP_START_MODE: "private-local", COMMONS_DESKTOP_SMOKE_DEBUG: "1" };
+// Cloud navigation uses synthetic identities with no production credentials.
+// Keep their BFF requests on loopback so CI cannot generate production 401s
+// or trip the gateway's rollback alarm. Real Cloud API health is checked apart.
+let cloudFixtureRequests = 0;
+const cloudFixture = createHttpServer((request, response) => {
+  cloudFixtureRequests++;
+  const catalog = new URL(request.url, 'http://localhost').pathname === '/v1/billing/catalog';
+  response.writeHead(catalog ? 200 : 401, { 'Content-Type': 'application/json' });
+  response.end(JSON.stringify(catalog ? { plans: [], topups: [] } : {
+    error: { type: 'authentication_error', message: 'Synthetic smoke accounts have no Cloud API credential' },
+  }));
+});
+await new Promise((resolve, reject) => {
+  cloudFixture.once('error', reject);
+  cloudFixture.listen(0, '127.0.0.1', resolve);
+});
+const cloudFixtureOrigin = `http://127.0.0.1:${cloudFixture.address().port}`;
+const env = { ...process.env, COMMONS_DESKTOP_START_MODE: "private-local", COMMONS_DESKTOP_SMOKE_DEBUG: "1", NEXT_PUBLIC_NEST_API_BASE_URL: cloudFixtureOrigin };
 delete env.ELECTRON_RUN_AS_NODE;
 const packagedExecutable = process.env.COMMONS_DESKTOP_SMOKE_EXECUTABLE;
 // Installed-app checks already have Electron in the packaged executable.
@@ -321,6 +339,9 @@ try {
     new Promise((resolve) => setTimeout(resolve, 3_000)),
   ]);
   if (child.exitCode === null) child.kill("SIGKILL");
+  cloudFixture.closeAllConnections();
+  await new Promise(resolve => cloudFixture.close(resolve));
+  console.log(`Desktop smoke: ${cloudFixtureRequests} synthetic Cloud API requests stayed on loopback.`);
   try {
     rmSync(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   } catch (error) {
