@@ -21,3 +21,12 @@ test("older and invalid preferences cannot replace the latest valid value", () =
   assert.deepEqual(mergeWorkspacePreferences(current, { agentsPerPage: { value: 20, updatedAt: 99 } }, "cloud"), current);
   assert.deepEqual(mergeWorkspacePreferences(current, { agentsPerPage: { value: 13, updatedAt: 101 } }, "cloud"), current);
 });
+
+test('appearance survives mode changes and stale or invalid updates', () => {
+  const dark = mergeWorkspacePreferences({}, { appearance: { value: 'dark', updatedAt: 10 } }, 'private-local');
+  assert.deepEqual(cloudVisiblePreferences(dark).appearance, { value: 'dark', updatedAt: 10 });
+  const system = mergeWorkspacePreferences(dark, { appearance: { value: 'system', updatedAt: 11 } }, 'cloud');
+  assert.equal(system.appearance.value, 'system');
+  assert.deepEqual(mergeWorkspacePreferences(system, { appearance: { value: 'light', updatedAt: 9 } }, 'private-local'), system);
+  assert.deepEqual(mergeWorkspacePreferences(system, { appearance: { value: 'invalid', updatedAt: 12 } }, 'cloud'), system);
+});

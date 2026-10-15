@@ -12,6 +12,7 @@ import {
   ipcMain,
   Menu,
   powerMonitor,
+  nativeTheme,
   session,
   shell,
   WebContentsView,
@@ -76,6 +77,9 @@ let desktopWindow: BrowserWindow | null = null;
 let visibleView: WebContentsView | null = null;
 let unifiedView: WebContentsView | null = null;
 let commonsServer: CommonsAppServer | null = null;
+nativeTheme.on('updated', () => {
+  desktopWindow?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1f1d1b' : '#fcfcfb');
+});
 let runtime: PrivateLocalRuntime;
 let localProfiles: LocalProfiles;
 let accountSync: Promise<void> = Promise.resolve();
@@ -521,6 +525,10 @@ async function createUnifiedView(path?: string) {
   ensureDesktopWindow();
   const partition = "persist:commons-unified";
   const unifiedSession = session.fromPartition(partition);
+  const appearance = runtime.preferences().appearance?.value ?? 'light';
+  nativeTheme.themeSource = appearance;
+  desktopWindow?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1f1d1b' : '#fcfcfb');
+  await unifiedSession.cookies.set({ url: commonsServer.origin, name: 'commons-desktop-appearance', value: appearance, sameSite: 'strict', httpOnly: true });
   await unifiedSession.cookies.set({
     url: commonsServer.origin,
     name: "commons-desktop-mode",
@@ -796,6 +804,11 @@ function registerIpc() {
   });
   const syncPreferences = (incoming: WorkspacePreferences, source: "cloud" | "private-local") => {
     const preferences = runtime.syncPreferences(incoming, source);
+    nativeTheme.themeSource = preferences.appearance?.value ?? 'light';
+    desktopWindow?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1f1d1b' : '#fcfcfb');
+    if (commonsServer) void session.fromPartition('persist:commons-unified').cookies.set({
+      url: commonsServer.origin, name: 'commons-desktop-appearance', value: nativeTheme.themeSource, sameSite: 'strict', httpOnly: true,
+    }).catch(() => undefined);
     if (unifiedView && !unifiedView.webContents.isDestroyed()) {
       unifiedView.webContents.send("desktop:preferences-changed", activeMode === "cloud" ? cloudPreferences() : preferences);
     }

@@ -11,7 +11,7 @@ import {
 
 /**
  * Brand page title — the text sits fully inside a soft highlight block,
- * matching the marker-highlight style of the Agent Commons brand slides.
+ * matching the brand slides in Light mode; Dark mode uses plain white text.
  */
 export function PageTitle({
   title,
@@ -22,7 +22,7 @@ export function PageTitle({
 }) {
   return (
     <h1 className={cn("text-base font-medium tracking-tight", className)}>
-      <span className="inline-block rounded-md bg-teal-200 px-1.5 py-0.5 leading-snug text-neutral-900">
+      <span className="inline-block rounded-md bg-teal-200 dark:bg-transparent px-1.5 py-0.5 leading-snug text-neutral-900 dark:text-white">
         {title}
       </span>
     </h1>

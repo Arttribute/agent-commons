@@ -238,7 +238,7 @@ export function ArtifactProvenance({
                     type="button"
                     onClick={share}
                     disabled={sharing}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-r-lg bg-stone-900 px-2.5 text-[11px] font-medium text-white hover:bg-stone-800 disabled:opacity-60"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-r-lg bg-primary px-2.5 text-[11px] font-medium text-primary-foreground hover:bg-primary disabled:opacity-60"
                   >
                     {sharing ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />

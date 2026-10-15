@@ -122,7 +122,7 @@ export function AutomationVisual() {
           Support triage
         </span>
       </div>
-      <div className="pointer-events-none absolute right-0 top-1 z-20 hidden items-center gap-1.5 rounded-xl bg-stone-950 px-3 py-2 text-[10px] font-medium text-white sm:flex">
+      <div className="pointer-events-none absolute right-0 top-1 z-20 hidden items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-[10px] font-medium text-primary-foreground sm:flex">
         <Play className="h-3.5 w-3.5" /> Run workflow
       </div>
 

@@ -14,9 +14,10 @@ function readBrowser(): WorkspacePreferences {
   if (typeof window === "undefined") return {};
   try {
     const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as WorkspacePreferences;
-    if (saved.agentsPerPage || saved.pinnedAppIds) return saved;
+    if (saved.agentsPerPage || saved.pinnedAppIds || saved.appearance) return saved;
   } catch { /* An invalid old value should not hide the workspace. */ }
-  const legacy = Number(window.localStorage.getItem(LEGACY_AGENT_COUNT));
+  let legacy: number;
+  try { legacy = Number(window.localStorage.getItem(LEGACY_AGENT_COUNT)); } catch { return {}; }
   return PAGE_SIZES.includes(legacy as PageSize)
     ? { agentsPerPage: { value: legacy as PageSize, updatedAt: 1 } }
     : {};
@@ -24,14 +25,17 @@ function readBrowser(): WorkspacePreferences {
 
 function merge(a: WorkspacePreferences, b: WorkspacePreferences): WorkspacePreferences {
   return {
+    appearance: (b.appearance?.updatedAt ?? 0) > (a.appearance?.updatedAt ?? 0) ? b.appearance : a.appearance,
     agentsPerPage: (b.agentsPerPage?.updatedAt ?? 0) > (a.agentsPerPage?.updatedAt ?? 0) ? b.agentsPerPage : a.agentsPerPage,
     pinnedAppIds: (b.pinnedAppIds?.updatedAt ?? 0) > (a.pinnedAppIds?.updatedAt ?? 0) ? b.pinnedAppIds : a.pinnedAppIds,
   };
 }
 
 function writeBrowser(preferences: WorkspacePreferences) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
-  if (preferences.agentsPerPage) window.localStorage.setItem(LEGACY_AGENT_COUNT, String(preferences.agentsPerPage.value));
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+    if (preferences.agentsPerPage) window.localStorage.setItem(LEGACY_AGENT_COUNT, String(preferences.agentsPerPage.value));
+  } catch { /* Apply preferences in memory if browser storage is unavailable. */ }
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: preferences }));
 }
 
@@ -84,6 +88,8 @@ export function useWorkspacePreferences() {
     Math.max(Date.now(), (readBrowser()[key]?.updatedAt ?? 0) + 1);
 
   return {
+    appearance: preferences.appearance?.value,
+    setAppearance: (value: 'light' | 'dark' | 'system') => update({ appearance: { value, updatedAt: nextTimestamp('appearance') } }),
     agentsPerPage: preferences.agentsPerPage?.value ?? 10,
     setAgentsPerPage: (value: number) => {
       if (PAGE_SIZES.includes(value as PageSize)) update({ agentsPerPage: { value: value as PageSize, updatedAt: nextTimestamp("agentsPerPage") } });

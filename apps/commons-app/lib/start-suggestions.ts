@@ -24,6 +24,7 @@ export type StartSuggestion = {
   detail?: string;
   /** The agent suggested to take it; picking the suggestion switches to it. */
   agentId?: string | null;
+  sourceSessionId?: string;
   /** A connected app this uses, shown with the app's mark. */
   app?: string | null;
   kind?: SuggestionKind;
@@ -95,12 +96,13 @@ export function normalizeSuggestions(value: unknown): StartSuggestion[] {
     const text = typeof item?.text === "string" ? item.text.replace(/\s+/g, " ").trim().replace(/^["'“”]+|["'“”]+$/g, "").trim() : "";
     if (!text || text.length > 140 || seen.has(text.toLowerCase())) continue;
     seen.add(text.toLowerCase());
-    const prompt = typeof item?.prompt === "string" && item.prompt.trim() ? item.prompt.replace(/\s+/g, " ").trim().slice(0, 800) : undefined;
+    const prompt = typeof item?.prompt === "string" && item.prompt.trim() ? item.prompt.replace(/[ \t]+/g, ' ').trim().slice(0, 8_000) : undefined;
     const detail = typeof item?.detail === "string" && item.detail.trim() ? item.detail.replace(/\s+/g, " ").trim().slice(0, 600) : undefined;
     const agentId = typeof item?.agentId === "string" && item.agentId.trim() ? item.agentId.trim() : null;
     const app = typeof item?.app === "string" && item.app.trim() ? item.app.trim().slice(0, 40) : null;
     const kind = typeof item?.kind === "string" && ["research", "document", "website", "schedule", "data", "image", "agent"].includes(item.kind) ? (item.kind as SuggestionKind) : undefined;
-    out.push({ id: `s-${out.length}-${text.slice(0, 24)}`, text, prompt, detail, agentId, app, kind });
+    const sourceSessionId = typeof item?.sourceSessionId === 'string' && /^[0-9a-f-]{36}$/i.test(item.sourceSessionId) ? item.sourceSessionId : undefined;
+    out.push({ id: `s-${out.length}-${text.slice(0, 24)}`, text, prompt, detail, agentId, app, kind, ...(sourceSessionId ? { sourceSessionId } : {}) });
     if (out.length === 3) break;
   }
   return out;

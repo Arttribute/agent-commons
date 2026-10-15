@@ -59,10 +59,13 @@ jobs:
 
       - name: Start CodeBuild deployment
         id: build
+        env:
+          REFERRAL_APP_SERVICE_PRINCIPAL: ${{ vars.REFERRAL_APP_SERVICE_PRINCIPAL || (github.ref_name == 'main' && 'svc_agent_commons' || 'svc_agent_commons_staging') }}
         run: |
           build_id=$(aws codebuild start-build \
             --project-name "${{ vars.AWS_CODEBUILD_PROJECT }}" \
             --source-version "${{ steps.source.outputs.version_id }}" \
+            --environment-variables-override "name=REFERRAL_APP_SERVICE_PRINCIPAL,value=$REFERRAL_APP_SERVICE_PRINCIPAL,type=PLAINTEXT" \
             --query 'build.id' --output text)
           echo "id=$build_id" >> "$GITHUB_OUTPUT"
 

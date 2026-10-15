@@ -26,8 +26,8 @@ import {
   type SuggestionKind,
 } from "@/lib/start-suggestions";
 
-// v2: suggestions carry a suggested agent and hover context.
-const CACHE_PREFIX = "commons.startSuggestions.v2.";
+// v3: personal suggestions carry an exact source session and grounded prompt.
+const CACHE_PREFIX = "commons.startSuggestions.v3.";
 const FRESH_MS = 6 * 60 * 60_000;
 
 type Cached = { signature: string; at: number; items: StartSuggestion[] };
@@ -60,7 +60,7 @@ export function useStartSuggestions({
   sessionsLoading,
 }: {
   userAddress: string;
-  sessions: Array<{ sessionId: string; title?: string | null }>;
+  sessions: Array<{ sessionId: string; title?: string | null; updatedAt?: string }>;
   sessionsLoading: boolean;
 }) {
   const { mode } = useWorkspaceMode();
@@ -87,7 +87,7 @@ export function useStartSuggestions({
     };
   }, [cloud, userAddress]);
 
-  const signature = sessions.length ? `${sessions[0].sessionId}:${sessions.length}` : "";
+  const signature = JSON.stringify([sessions.slice(0, 25).map((session) => [session.sessionId, session.updatedAt]), apps]);
 
   useEffect(() => {
     if (!userAddress || sessionsLoading || apps === null) return;

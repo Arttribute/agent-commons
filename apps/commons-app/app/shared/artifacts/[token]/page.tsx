@@ -72,7 +72,7 @@ export default async function SharedArtifactPage({
           {shared.download?.url ? (
             <a
               href={shared.download.url}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-stone-900 px-3 text-xs font-medium text-white hover:bg-stone-800"
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary"
             >
               <Download className="h-3.5 w-3.5" />
               Download

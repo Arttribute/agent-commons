@@ -182,7 +182,7 @@ export function NoteEditor({
           onClick={save}
           disabled={!canSave}
           aria-label={existing ? "Save note" : "Add note"}
-          className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-stone-900 text-white transition hover:bg-stone-800 disabled:bg-stone-200 disabled:text-stone-400"
+          className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary disabled:bg-stone-200 disabled:text-stone-400"
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
         </button>

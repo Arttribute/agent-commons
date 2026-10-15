@@ -126,8 +126,8 @@ export default function ExternalAgentForm() {
         // Show Form
         <Card className="p-8 max-w-lg mx-auto border border-border">
           <div className="mb-12">
-            <div className="bg-emerald-300 w-80 h-8 -mb-8 rounded-lg"></div>
-            <h2 className="text-2xl font-bold mb-4">
+            <div className="bg-emerald-300 w-80 h-8 -mb-8 rounded-lg dark:hidden"></div>
+            <h2 className="text-2xl font-bold mb-4 dark:text-white">
               {"Register an External Agent"}
             </h2>
           </div>
@@ -192,8 +192,8 @@ export default function ExternalAgentForm() {
         // Show Liaison Details
         <Card className="p-6 max-w-lg mx-auto border border-border">
           <div className="mb-8">
-            <div className="bg-emerald-300 w-80 h-8 -mb-8 rounded-lg"></div>
-            <h2 className="text-xl font-bold mb-4">
+            <div className="bg-emerald-300 w-80 h-8 -mb-8 rounded-lg dark:hidden"></div>
+            <h2 className="text-xl font-bold mb-4 dark:text-white">
               {"Agent Registered with Liaison!"}
             </h2>
           </div>

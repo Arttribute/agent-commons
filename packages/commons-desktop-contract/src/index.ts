@@ -291,6 +291,7 @@ export type DesktopAccount = {
 };
 
 export type WorkspacePreferences = {
+  appearance?: { value: 'light' | 'dark' | 'system'; updatedAt: number };
   agentsPerPage?: { value: 5 | 10 | 20 | 50; updatedAt: number };
   pinnedAppIds?: { value: string[]; updatedAt: number };
 };

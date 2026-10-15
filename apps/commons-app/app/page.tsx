@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { CommonsLogo } from "@/components/layout/commons-logo";
 import Link from "next/link";
 import { Github, MonitorDown } from "lucide-react";
 import { FeatureCarousel } from "@/components/landing/feature-carousel";
@@ -29,14 +29,7 @@ export default function Home() {
               className="flex items-center md:hidden"
               aria-label="Agent Commons"
             >
-              <Image
-                src="/logo.jpg"
-                alt="Agent Commons"
-                width={131}
-                height={60}
-                priority
-                className="h-7 w-auto rounded-md object-contain"
-              />
+              <CommonsLogo priority className="h-7 w-auto rounded-md object-contain" />
             </Link>
             <div className="hidden md:block" />
 
@@ -82,9 +75,9 @@ export default function Home() {
           </header>
 
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-5 py-4 sm:px-8 sm:py-6">
-            <h1 className="shrink-0 text-center text-[1.5rem] font-medium leading-[1.1] tracking-[-0.04em] text-stone-950 sm:text-[1.8rem]">
+            <h1 className="shrink-0 text-center text-[1.5rem] font-medium leading-[1.1] tracking-[-0.04em] text-stone-950 dark:text-white sm:text-[1.8rem]">
               One space for your{" "}
-              <span className="inline-block rounded-md border border-teal-300/70 bg-teal-200 px-[0.18em] leading-[1.15] text-stone-950">
+              <span className="inline-block rounded-md border border-teal-300/70 dark:border-transparent bg-teal-200 dark:bg-transparent px-[0.18em] leading-[1.15] text-stone-950 dark:text-white">
                 agents and knowledge
               </span>
               .

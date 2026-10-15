@@ -229,7 +229,7 @@ export function HistoryList({
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
                     <span className="text-sm text-stone-900">Version {index}</span>
-                    {current && <span className="rounded-full bg-stone-900 px-1.5 py-px text-[10px] text-white">Current</span>}
+                    {current && <span className="rounded-full bg-primary px-1.5 py-px text-[10px] text-primary-foreground">Current</span>}
                   </span>
                   <span className="mt-0.5 block text-xs text-stone-500">{describeRevision(revision)}</span>
                   {summary && <span className="mt-1 line-clamp-2 block text-xs text-stone-600">{summary}</span>}
@@ -466,7 +466,7 @@ export function CreativeTools({
               setSaving(false);
             }
           }}
-          className="flex h-8 items-center gap-1.5 rounded-lg bg-stone-900 px-3 text-xs font-medium text-white hover:bg-stone-800 disabled:bg-stone-200 disabled:text-stone-400"
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary disabled:bg-stone-200 disabled:text-stone-400"
         >
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Save preferences

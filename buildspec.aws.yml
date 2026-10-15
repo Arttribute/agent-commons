@@ -123,6 +123,7 @@ phases:
           --capabilities CAPABILITY_NAMED_IAM \
           --parameter-overrides \
           Environment="$ENVIRONMENT" \
+          ReferralAppServicePrincipal="${REFERRAL_APP_SERVICE_PRINCIPAL:-}" \
           MaxTasks="$MAX_TASKS" \
           ImageUri="$IMAGE_URI" \
           ExecutionRoleArn="$TASK_EXECUTION_ROLE_ARN" \

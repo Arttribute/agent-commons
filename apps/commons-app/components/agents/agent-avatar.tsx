@@ -36,7 +36,7 @@ export function AgentAvatar({
         style={dimensions}
         className={cn(
           "shrink-0 rounded-full object-cover",
-          bordered && "border border-border",
+          bordered && "ring-1 ring-border",
           className,
         )}
       />
@@ -48,7 +48,7 @@ export function AgentAvatar({
       style={dimensions}
       className={cn(
         "shrink-0 overflow-hidden rounded-full",
-        bordered && "border border-border",
+        bordered && "ring-1 ring-border",
         className,
       )}
     >

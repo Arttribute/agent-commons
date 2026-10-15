@@ -23,6 +23,31 @@ import { sql } from 'drizzle-orm';
 import { relations } from 'drizzle-orm';
 import { ChatCompletionTool } from 'openai/resources';
 
+export const referralProfile = pgTable('referral_profile', {
+  principalId: text('principal_id').primaryKey(),
+  code: text('code').notNull().unique(),
+  emailHash: text('email_hash'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const referralSignup = pgTable('referral_signup', {
+  referredPrincipalId: text('referred_principal_id').primaryKey(),
+  emailHash: text('email_hash').notNull().unique(),
+  referrerPrincipalId: text('referrer_principal_id').notNull().references(() => referralProfile.principalId),
+  rewardCredits: integer('reward_credits').notNull().default(1000),
+  ledgerEntryId: uuid('ledger_entry_id').notNull().references(() => creditLedgerEntry.entryId),
+  joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const referralInvitation = pgTable('referral_invitation', {
+  invitationId: uuid('invitation_id').primaryKey().defaultRandom(),
+  principalId: text('principal_id').notNull().references(() => referralProfile.principalId),
+  email: text('email').notNull(),
+  status: text('status').notNull().default('pending'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+}, (table) => [uniqueIndex('referral_invitation_sender_email').on(table.principalId, table.email)]);
+
 /* ─────────────────────────  AGENT  ───────────────────────── */
 
 export const agent = pgTable('agent', {
