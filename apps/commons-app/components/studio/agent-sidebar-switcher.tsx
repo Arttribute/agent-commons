@@ -66,7 +66,9 @@ export function AgentSidebarSwitcher({
         {compact ? (
           <button
             type="button"
-            className="flex max-w-full items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1 text-left transition-colors hover:bg-muted"
+            // The avatar sits concentric with the pill's rounded left end:
+            // the same 3px gap on its left, top and bottom.
+            className="flex max-w-full items-center gap-2 rounded-full border border-border bg-background py-[3px] pl-[3px] pr-2.5 text-left transition-colors hover:bg-muted"
           >
             <AgentAvatar name={current.name} src={current.avatar} size={22} />
             <span className="min-w-0 truncate text-sm font-medium leading-none">
