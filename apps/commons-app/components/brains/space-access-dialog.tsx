@@ -7,7 +7,6 @@ import { Loader2 } from "lucide-react";
 import { InfoHint } from "@/components/ui/info-hint";
 import type { AgentItem } from "@/hooks/agents/use-agents";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
-import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import {
   Dialog,
   DialogContent,
@@ -181,7 +180,7 @@ export function SpaceAccessDialog({
               const isBusy = busy === agent.agentId;
               return (
                 <div key={agent.agentId} className="flex items-center gap-3 px-5 py-2.5">
-                  <AgentAvatar name={agent.name} src={agent.avatar} size={PROFILE_ICON_SIZE} />
+                  <AgentAvatar name={agent.name} src={agent.avatar} size={28} />
                   <p className="min-w-0 flex-1 truncate text-sm">{agent.name || "Untitled agent"}</p>
                   {isBusy ? (
                     <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />

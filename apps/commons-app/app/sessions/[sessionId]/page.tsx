@@ -9,7 +9,6 @@ import { useAgentContext } from "@/context/AgentContext";
 import { DashboardSideBar, MobileMenuButton } from "@/components/layout/dashboard-side-bar";
 import SessionInterface from "@/components/sessions/session-interface";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
-import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import { Button } from "@/components/ui/button";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { isPendingSessionId } from "@/lib/start-chat";
@@ -185,7 +184,7 @@ function SessionHeader({
             className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted"
             title="Agent details"
           >
-            <AgentAvatar name={agent.name} src={agent.avatar} size={PROFILE_ICON_SIZE} />
+            <AgentAvatar name={agent.name} src={agent.avatar} size={24} />
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium leading-tight">{title ?? agent.name}</span>
               {title && <span className="block truncate text-xs text-muted-foreground">{agent.name}</span>}

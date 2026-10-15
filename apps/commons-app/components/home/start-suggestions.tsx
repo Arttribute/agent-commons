@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
-import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { getBrandIcon } from "@/lib/brand-icons";
 import {
@@ -204,8 +203,8 @@ export function StartSuggestionList({
             onClick={() => (item.href ? router.push(item.href) : onPick(item))}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
           >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center">
-              {agent ? <AgentAvatar name={agent.name} src={agent.avatar} size={PROFILE_ICON_SIZE} /> : <SuggestionIcon item={item} />}
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+              {agent ? <AgentAvatar name={agent.name} src={agent.avatar} size={20} /> : <SuggestionIcon item={item} />}
             </span>
             <span className="min-w-0 flex-1 truncate">{item.text}</span>
             {agent && brand && (
@@ -229,7 +228,7 @@ export function StartSuggestionList({
                   <p className="text-sm leading-6 text-foreground">{item.detail}</p>
                   {agent && (
                     <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                      <AgentAvatar name={agent.name} src={agent.avatar} size={PROFILE_ICON_SIZE} />
+                      <AgentAvatar name={agent.name} src={agent.avatar} size={18} />
                       {item.href ? `Continues your chat with ${agent.name}` : `${agent.name} will take this`}
                     </p>
                   )}

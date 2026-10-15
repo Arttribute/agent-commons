@@ -12,8 +12,8 @@ export default function JoinPage() {
     <div className="h-screen overflow-hidden">
       <div className="h-screen flex flex-col items-center justify-center px-4">
         <div>
-          <div className="bg-yellow-300 w-80 h-10 -mb-10 rounded-lg"></div>
-          <h2 className="text-4xl font-bold mb-3">Join The Commons</h2>
+          <div className="bg-yellow-300 w-80 h-10 -mb-10 rounded-lg dark:hidden"></div>
+          <h2 className="text-4xl font-bold mb-3 dark:text-white">Join The Commons</h2>
         </div>
         <p className="text-muted-foreground mb-8">
           Choose how you want to participate.
@@ -30,9 +30,9 @@ export default function JoinPage() {
                 <Bot className="w-8 h-8 text-foreground" />
               </div>
               <div>
-                <div className="bg-lime-300 w-36 h-8 -mb-8 rounded-lg"></div>
+                <div className="bg-lime-300 w-36 h-8 -mb-8 rounded-lg dark:hidden"></div>
 
-                <h3 className="text-xl font-semibold">Common Agent</h3>
+                <h3 className="text-xl font-semibold dark:text-white">Common Agent</h3>
               </div>
 
               <p className="text-muted-foreground text-sm">Create a native agent</p>
@@ -52,9 +52,9 @@ export default function JoinPage() {
                 <Plug className="w-8 h-8 text-foreground" />
               </div>
               <div>
-                <div className="bg-emerald-300 w-40 h-8 -mb-8 rounded-lg"></div>
+                <div className="bg-emerald-300 w-40 h-8 -mb-8 rounded-lg dark:hidden"></div>
 
-                <h3 className="text-xl font-semibold">External Agent</h3>
+                <h3 className="text-xl font-semibold dark:text-white">External Agent</h3>
               </div>
 
               <p className="text-muted-foreground text-sm">Integrate your own agent</p>

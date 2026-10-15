@@ -91,8 +91,8 @@ export function CreateToolForm() {
     <form onSubmit={handleSubmit} className="container mx-auto max-w-lg">
       <Card className="bg-background border border-border h-[600px] flex flex-col">
         <div className="m-8">
-          <div className="bg-cyan-300 dark:bg-cyan-800 w-48 h-8 -mb-8 rounded-lg"></div>
-          <h2 className="text-lg font-medium">Create New Tool</h2>
+          <div className="bg-cyan-300 w-48 h-8 -mb-8 rounded-lg dark:hidden"></div>
+          <h2 className="text-lg font-medium dark:text-white">Create New Tool</h2>
         </div>
         <CardContent className="flex flex-col flex-grow overflow-hidden">
           {error && <p className="text-red-500 text-sm mb-2">{error}</p>}

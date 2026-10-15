@@ -249,7 +249,7 @@ body {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   /* Slide-deck style highlight pill behind a word or heading.
-     Always dark text on a pastel wash so it reads the same in both themes. */
+     Light mode uses a pastel wash; Dark mode uses plain white text. */
   .hl {
     color: #18181b;
     border-radius: 0.4em;
@@ -274,6 +274,11 @@ body {
   }
   .hl-lilac {
     background-color: var(--brand-lilac);
+  }
+
+  .dark .hl {
+    color: #fff;
+    background-color: transparent;
   }
 
   /* Logo gradient — for thin accent bars and rings, use sparingly */
