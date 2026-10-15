@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { getBrandIcon } from "@/lib/brand-icons";
 import {
@@ -26,8 +27,8 @@ import {
   type SuggestionKind,
 } from "@/lib/start-suggestions";
 
-// v2: suggestions carry a suggested agent and hover context.
-const CACHE_PREFIX = "commons.startSuggestions.v2.";
+// v3: personal suggestions carry an exact source session and grounded prompt.
+const CACHE_PREFIX = "commons.startSuggestions.v3.";
 const FRESH_MS = 6 * 60 * 60_000;
 
 type Cached = { signature: string; at: number; items: StartSuggestion[] };
@@ -60,7 +61,7 @@ export function useStartSuggestions({
   sessionsLoading,
 }: {
   userAddress: string;
-  sessions: Array<{ sessionId: string; title?: string | null }>;
+  sessions: Array<{ sessionId: string; title?: string | null; updatedAt?: string }>;
   sessionsLoading: boolean;
 }) {
   const { mode } = useWorkspaceMode();
@@ -87,7 +88,7 @@ export function useStartSuggestions({
     };
   }, [cloud, userAddress]);
 
-  const signature = sessions.length ? `${sessions[0].sessionId}:${sessions.length}` : "";
+  const signature = JSON.stringify([sessions.slice(0, 25).map((session) => [session.sessionId, session.updatedAt]), apps]);
 
   useEffect(() => {
     if (!userAddress || sessionsLoading || apps === null) return;
@@ -203,8 +204,8 @@ export function StartSuggestionList({
             onClick={() => (item.href ? router.push(item.href) : onPick(item))}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
           >
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-              {agent ? <AgentAvatar name={agent.name} src={agent.avatar} size={20} /> : <SuggestionIcon item={item} />}
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center">
+              {agent ? <AgentAvatar name={agent.name} src={agent.avatar} size={PROFILE_ICON_SIZE} /> : <SuggestionIcon item={item} />}
             </span>
             <span className="min-w-0 flex-1 truncate">{item.text}</span>
             {agent && brand && (
@@ -228,7 +229,7 @@ export function StartSuggestionList({
                   <p className="text-sm leading-6 text-foreground">{item.detail}</p>
                   {agent && (
                     <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                      <AgentAvatar name={agent.name} src={agent.avatar} size={18} />
+                      <AgentAvatar name={agent.name} src={agent.avatar} size={PROFILE_ICON_SIZE} />
                       {item.href ? `Continues your chat with ${agent.name}` : `${agent.name} will take this`}
                     </p>
                   )}

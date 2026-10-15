@@ -1,5 +1,12 @@
 import type { Config } from "tailwindcss";
 
+const neutrals = ["stone", "gray", "zinc", "neutral", "slate"] as const;
+const surfaces = Object.fromEntries(neutrals.map((family) => [family, Object.fromEntries([50, 100, 200, 300].map((shade) => [shade, `rgb(var(--surface-${family}-${shade}) / <alpha-value>)`]))]));
+const neutralText = Object.fromEntries(neutrals.map((family) => [family, Object.fromEntries([400, 500, 600, 700, 800, 900, 950].map((shade) => [shade, `rgb(var(--text-${family}-${shade}) / <alpha-value>)`]))]));
+const neutralBorders = Object.fromEntries(neutrals.map((family) => [family, Object.fromEntries([50, 100, 200, 300, 400].map((shade) => [shade, `rgb(var(--border-${family}-${shade}) / <alpha-value>)`]))]));
+// CSS variables preserve each existing light shade and adapt legacy product
+// surfaces; intentionally dark code and media stages retain their colors.
+
 export default {
   darkMode: ["class"],
   content: {
@@ -32,9 +39,13 @@ export default {
         floating:
           "0 8px 24px -8px rgba(28, 25, 23, 0.12), 0 2px 6px -2px rgba(28, 25, 23, 0.05)",
       },
+      backgroundColor: { white: "rgb(var(--surface-white) / <alpha-value>)", ...surfaces },
+      textColor: neutralText,
+      borderColor: neutralBorders,
       colors: {
         // Page canvas sits between stone-50 and the white used on cards.
-        page: "#fcfcfb",
+        page: "hsl(var(--page))",
+        sidebar: "hsl(var(--sidebar))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {

@@ -1,6 +1,7 @@
 "use client";
 
-import Image from "next/image";
+import { CommonsLogo } from "@/components/layout/commons-logo";
+
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { PlansGrid } from "@/components/billing/plans-grid";
@@ -25,13 +26,7 @@ export default function PlansPage() {
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <Image
-          src="/logo.jpg"
-          alt="Agent Commons"
-          width={131}
-          height={60}
-          className="mr-2 h-8 w-auto shrink-0 rounded-md object-contain"
-        />
+        <CommonsLogo className="mr-2 h-8 w-auto shrink-0 rounded-md object-contain" />
       </div>
 
       <div className="mx-auto max-w-6xl px-6 pb-20">

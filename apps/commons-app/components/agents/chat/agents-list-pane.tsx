@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Bot, Plus, Search, Users, X } from "lucide-react";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import { RunStatusDot, runStatusLabel } from "@/components/agents/run-status-dot";
 import { MobileMenuButton } from "@/components/layout/dashboard-side-bar";
 import { PageTitle } from "@/components/layout/page-header";
@@ -153,7 +154,7 @@ export function AgentsListPane({
           <div className="space-y-1 px-1 pt-1" aria-hidden="true">
             {[0, 1, 2, 3, 4].map((index) => (
               <div key={index} className="flex items-center gap-2.5 px-2 py-1.5" style={{ opacity: 1 - index * 0.15 }}>
-                <span className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-muted" />
+                <span className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-muted" />
                 <span className="flex-1 space-y-2">
                   <span className="block h-3 w-1/3 animate-pulse rounded bg-muted" />
                   <span className="block h-3 w-2/3 animate-pulse rounded bg-muted" />
@@ -177,7 +178,7 @@ export function AgentsListPane({
               {query ? "Try another name or chat title." : "Create an agent to start chatting."}
             </p>
             {!query && (
-              <Link href="/studio/agents/create" className="mt-4 rounded-lg bg-stone-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-stone-800">
+              <Link href="/studio/agents/create" className="mt-4 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary">
                 Create agent
               </Link>
             )}
@@ -205,7 +206,7 @@ export function AgentsListPane({
                     )}
                   >
                     <span className="relative shrink-0">
-                      <AgentAvatar name={agent.name} src={agent.avatar} size={36} />
+                      <AgentAvatar name={agent.name} src={agent.avatar} size={PROFILE_ICON_SIZE} />
                       <RunStatusDot state={run?.state} size="sm" />
                     </span>
                     <span className="flex min-h-9 min-w-0 flex-1 flex-col justify-center">

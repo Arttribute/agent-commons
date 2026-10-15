@@ -44,6 +44,6 @@ export function AuthTitle({ children, description }: { children: React.ReactNode
 export const authInputClass =
   "h-10 w-full rounded-[10px] border border-stone-300 bg-white px-3 text-sm text-stone-950 outline-none transition focus:border-stone-400 focus:ring-4 focus:ring-stone-100";
 export const authPrimaryButtonClass =
-  "flex w-full items-center justify-center gap-2 rounded-[10px] bg-stone-950 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-700 disabled:opacity-50";
+  "flex w-full items-center justify-center gap-2 rounded-[10px] bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50";
 export const authSecondaryButtonClass =
   "flex w-full items-center justify-center gap-2 rounded-[10px] border border-stone-300 bg-white px-4 py-2.5 text-sm font-medium text-stone-900 transition-colors hover:bg-stone-50 disabled:opacity-50";

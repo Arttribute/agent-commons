@@ -9,6 +9,7 @@ import {
   BadRequestException,
   NotFoundException,
   Req,
+  Query,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { SessionService } from './session.service';
@@ -94,10 +95,12 @@ export class SessionController {
   async getSessionsByInitiator(
     @Param('initiator') initiator: string,
     @Req() req: Request,
+    @Query('surface') surface?: string,
   ) {
     this.assertInitiatorAccess(initiator, req);
     const sessions = await this.sessionService.getSessionsByInitiator({
       initiator,
+      commonsSurface: surface === 'agent-commons',
     });
     return { data: sessions };
   }
@@ -139,6 +142,7 @@ export class SessionController {
     @Param('agentId') agentId: string,
     @Param('initiator') initiator: string,
     @Req() req: Request,
+    @Query('surface') surface?: string,
   ) {
     this.assertInitiatorAccess(initiator, req);
     const scopedCaller = this.scopedCaller(req);
@@ -148,6 +152,7 @@ export class SessionController {
     const sessions = await this.sessionService.getSessionsByAgentAndInitiator({
       agentId,
       initiator,
+      commonsSurface: surface === 'agent-commons',
     });
     return { data: sessions };
   }

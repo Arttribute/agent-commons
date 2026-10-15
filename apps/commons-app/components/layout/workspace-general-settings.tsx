@@ -6,6 +6,7 @@ import type { CloudAccess, ImageModelStatus, LocalModelDownload, LocalModelStatu
 import { useWorkspacePreferences } from "../../hooks/use-workspace-preferences";
 import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 import { LocalConnectedApps } from "@/components/tools/local-connected-apps";
+import { AppearanceSettings } from "@/components/account/appearance-settings";
 
 const LOCAL_CHAT_MODELS = [
   { id: "qwen3:0.6b", name: "Qwen 3 Light", size: "523 MB", ram: 3, use: "Simple chat on limited hardware", abilities: "Tools · Reasoning" },
@@ -186,6 +187,7 @@ export function WorkspaceGeneralSettings({ mode }: { mode: "cloud" | "private-lo
       <h2 className="text-base font-semibold">General</h2>
       <p className="mt-1 text-sm text-muted-foreground">Your display preferences follow you between Cloud and Local.</p>
     </div>
+    <AppearanceSettings />
     <label className="flex max-w-md items-center justify-between gap-4 text-sm">
       <span>Agents shown per page</span>
       <select className="rounded-md border border-border bg-background px-3 py-2" value={agentsPerPage} onChange={(event) => setAgentsPerPage(Number(event.target.value))}>

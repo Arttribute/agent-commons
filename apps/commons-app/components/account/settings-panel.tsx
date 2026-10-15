@@ -716,13 +716,13 @@ export function SettingsPanel({
   const activeSection = visibleSections.includes(section) ? section : "general";
 
   return (
-    <div className={cn("flex min-h-0", className)}>
+    <div className={cn("flex min-h-0 flex-col md:flex-row", className)}>
       {/* Account nav */}
-      <div className="w-48 shrink-0 border-r border-border px-3 pt-6">
-        <p className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="w-full shrink-0 border-b border-border px-3 py-3 md:w-48 md:border-b-0 md:border-r md:pt-6">
+        <p className="mb-2 hidden px-2 text-xs font-medium text-muted-foreground md:block">
           Account
         </p>
-        <nav className="space-y-0.5">
+        <nav className="flex gap-1 overflow-x-auto overscroll-contain md:block md:space-y-0.5">
           {visibleSections.map((s) => {
             const Icon = SECTION_ICONS[s];
             const active = activeSection === s;
@@ -731,7 +731,7 @@ export function SettingsPanel({
                 key={s}
                 onClick={() => setSection(s)}
                 className={cn(
-                  "flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-sm transition-colors",
+                  "flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-md px-2 py-2 text-sm transition-colors md:w-full",
                   active
                     ? "bg-accent font-medium text-accent-foreground"
                     : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
@@ -745,7 +745,7 @@ export function SettingsPanel({
         </nav>
       </div>
       {/* Content */}
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-8">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 md:px-8 md:py-8">
         {activeSection === "general" && <WorkspaceGeneralSettings mode={mode} />}
         {activeSection === "profile" && (
           <ProfileSection walletAddress={walletAddress} local={local} />

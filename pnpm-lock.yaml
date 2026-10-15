@@ -768,6 +768,9 @@ importers:
       framer-motion:
         specifier: ^12.0.11
         version: 12.4.10(@emotion/is-prop-valid@1.2.2)(react-dom@19.0.0(react@19.0.0))(react@19.0.0)
+      jose:
+        specifier: 6.2.2
+        version: 6.2.2
       lucide-react:
         specifier: ^0.474.0
         version: 0.474.0(react@19.0.0)
@@ -786,6 +789,9 @@ importers:
       pdfjs-dist:
         specifier: 5.4.296
         version: 5.4.296
+      qrcode:
+        specifier: 1.5.3
+        version: 1.5.3
       react:
         specifier: ^19.0.0
         version: 19.0.0

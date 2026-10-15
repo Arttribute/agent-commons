@@ -3,7 +3,7 @@ import type { WorkspacePreferences } from "@agent-commons/desktop-contract";
 const PAGE_SIZES = new Set([5, 10, 20, 50]);
 
 export function cloudVisiblePreferences(preferences: WorkspacePreferences): WorkspacePreferences {
-  return { agentsPerPage: preferences.agentsPerPage };
+  return { agentsPerPage: preferences.agentsPerPage, ...(preferences.appearance ? { appearance: preferences.appearance } : {}) };
 }
 
 export function mergeWorkspacePreferences(
@@ -13,6 +13,11 @@ export function mergeWorkspacePreferences(
 ): WorkspacePreferences {
   if (!incoming || typeof incoming !== "object") return current;
   const next = { ...current };
+  const appearance = incoming.appearance;
+  if (appearance && ['light', 'dark', 'system'].includes(appearance.value) && Number.isFinite(appearance.updatedAt)
+    && appearance.updatedAt > (current.appearance?.updatedAt ?? 0)) {
+    next.appearance = { value: appearance.value, updatedAt: appearance.updatedAt };
+  }
   const count = incoming.agentsPerPage;
   if (count && PAGE_SIZES.has(count.value) && Number.isFinite(count.updatedAt)
     && count.updatedAt > (current.agentsPerPage?.updatedAt ?? 0)) {

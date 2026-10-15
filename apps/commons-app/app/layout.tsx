@@ -18,6 +18,7 @@ import { DesktopApprovalBridge } from "@/components/desktop/approval-widgets";
 import { WorkspaceModeProvider } from "@/context/WorkspaceModeContext";
 import { AgentProvider } from "@/context/AgentContext";
 import { AppHeight } from "@/components/layout/app-height";
+import { APPEARANCE_SCRIPT, appearanceValue } from "@/lib/appearance";
 
 const spaceGrotesk = localFont({
   src: "../fonts/SpaceGrotesk-variable.ttf",
@@ -98,6 +99,8 @@ export default async function RootLayout({
   const localMode = process.env.COMMONS_DESKTOP_SERVER === "1" &&
     (await cookies()).get("commons-desktop-mode")?.value === "private-local";
   const serverSession = localMode ? null : await auth();
+  const desktopAppearance = process.env.COMMONS_DESKTOP_SERVER === '1'
+    ? appearanceValue((await cookies()).get('commons-desktop-appearance')?.value) : 'light';
   const session: Session | null = serverSession?.user
     ? {
         expires: serverSession.expires,
@@ -114,6 +117,7 @@ export default async function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: APPEARANCE_SCRIPT.replace("let t='light'", `let t='${desktopAppearance}'`) }} /></head>
       <body
         className={`${spaceGrotesk.className} ${spaceGrotesk.variable} ${geistMono.variable}`}
         suppressHydrationWarning

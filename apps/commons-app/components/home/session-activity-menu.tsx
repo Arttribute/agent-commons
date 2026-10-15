@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import { RunStatusDot, runStatusLabel } from "@/components/agents/run-status-dot";
 import { CreateButton } from "@/components/layout/page-header";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -75,7 +76,7 @@ export function SessionActivityMenu({
           className="flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted"
         >
           <span className="relative shrink-0">
-            <AgentAvatar name={agent?.name} src={agent?.avatar} size={28} />
+            <AgentAvatar name={agent?.name} src={agent?.avatar} size={PROFILE_ICON_SIZE} />
             <RunStatusDot state={run?.state} size="sm" />
           </span>
           <span className="min-w-0 flex-1">
@@ -112,7 +113,7 @@ export function SessionActivityMenu({
             open && "bg-muted",
           )}
         >
-          <AgentAvatar name={leadAgent.name} src={leadAgent.avatar} size={29} bordered={false} />
+          <AgentAvatar name={leadAgent.name} src={leadAgent.avatar} size={PROFILE_ICON_SIZE} bordered={false} />
           <RunStatusDot state={lead?.state} />
         </button>
       </PopoverTrigger>

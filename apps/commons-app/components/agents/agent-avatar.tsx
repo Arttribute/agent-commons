@@ -1,5 +1,6 @@
 import RandomAvatar from "@/components/account/random-avatar";
 import { cn } from "@/lib/utils";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 
 export type AgentAvatarProps = {
   /** Agent display name — used for the generated fallback avatar and alt text. */
@@ -21,7 +22,7 @@ export type AgentAvatarProps = {
 export function AgentAvatar({
   name,
   src,
-  size = 40,
+  size = PROFILE_ICON_SIZE,
   className,
   bordered = true,
 }: AgentAvatarProps) {
@@ -36,7 +37,7 @@ export function AgentAvatar({
         style={dimensions}
         className={cn(
           "shrink-0 rounded-full object-cover",
-          bordered && "border border-border",
+          bordered && "ring-1 ring-border",
           className,
         )}
       />
@@ -48,7 +49,7 @@ export function AgentAvatar({
       style={dimensions}
       className={cn(
         "shrink-0 overflow-hidden rounded-full",
-        bordered && "border border-border",
+        bordered && "ring-1 ring-border",
         className,
       )}
     >

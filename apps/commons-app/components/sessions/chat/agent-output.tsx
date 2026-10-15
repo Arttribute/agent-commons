@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { messageTime } from "@/lib/short-time";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import type { StreamActivity } from "@/context/AgentContext";
 import {
   AppChatCard,
@@ -204,10 +205,10 @@ export default function AgentOutput({
   }
 
   return (
-    <div className={cn("prose max-w-none my-3", className)}>
+    <div className={cn("prose dark:prose-invert max-w-none my-3", className)}>
       {showAgentHeader && (
         <div className="not-prose mb-2 flex items-center gap-2">
-          <AgentAvatar name={agentName} src={agentAvatar} size={20} />
+          <AgentAvatar name={agentName} src={agentAvatar} size={PROFILE_ICON_SIZE} />
           {agentName && (
             <span className="text-xs text-muted-foreground">{agentName}</span>
           )}
@@ -465,82 +466,23 @@ function ActivityTimeline({
   );
 }
 
-/**
- * While a run is in flight only the current step shows — one shimmering line.
- * Clicking it expands to the full timeline of earlier steps; clicking
- * anywhere in the expanded list collapses it again.
- */
-function StreamingSteps({
-  activities,
-  thinking,
-}: {
-  activities: StreamActivity[];
-  thinking: boolean;
-}) {
+/** The live summary and individual tool details have independent controls. */
+function StreamingSteps({ activities, thinking }: { activities: StreamActivity[]; thinking: boolean }) {
   const [open, setOpen] = useState(false);
-  const current = thinking
-    ? undefined
-    : ([...activities]
-        .reverse()
-        .find((activity) => activity.status === "running") ??
-      activities[activities.length - 1]);
-  const hasHistory = activities.length > (current ? 1 : 0);
-
-  return (
-    <div className="not-prose mb-3">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="block w-full cursor-pointer text-left"
-        title={open ? "Hide steps" : hasHistory ? "Show all steps" : undefined}
-      >
-        {open ? (
-          <ActivityList activities={activities} thinking={thinking} />
-        ) : (
-          <span className="flex items-center gap-2.5">
-            {(() => {
-              const Icon = current ? iconForActivity(current) : CircleDashed;
-              const running = !current || current.status === "running";
-              return (
-                <>
-                  <Icon
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0",
-                      current?.status === "failed"
-                        ? "text-red-500"
-                        : "text-muted-foreground/70",
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-[13px] leading-5",
-                      running ? "text-shimmer" : "text-muted-foreground",
-                    )}
-                  >
-                    {current?.title ?? "Thinking…"}
-                    {current?.detail ? (
-                      <span
-                        className={
-                          running ? undefined : "text-muted-foreground/60"
-                        }
-                      >
-                        {" "}
-                        · {current.detail}
-                      </span>
-                    ) : null}
-                  </span>
-                  {hasHistory && (
-                    <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground/50" />
-                  )}
-                </>
-              );
-            })()}
-          </span>
-        )}
-      </button>
-    </div>
-  );
+  const current = thinking ? undefined : [...activities].reverse().find((activity) => activity.status === "running") ?? activities[activities.length - 1];
+  const Icon = current ? iconForActivity(current) : CircleDashed;
+  const running = !current || current.status === "running";
+  return <div className="not-prose mb-3">
+    <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}
+      className="flex w-full items-center gap-2.5 text-left" title={open ? "Hide steps" : "Show all steps"}>
+      <Icon className={cn("h-3.5 w-3.5 shrink-0", current?.status === "failed" ? "text-red-500" : "text-muted-foreground/70")} />
+      <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-5", running ? "text-shimmer" : "text-muted-foreground")}>
+        {current?.title ?? "Thinking…"}{current?.detail && <span className={running ? undefined : "text-muted-foreground/60"}> · {current.detail}</span>}
+      </span>
+      <ChevronDown className={cn("h-3 w-3 shrink-0 text-muted-foreground/60 transition-transform", open && "rotate-180")} />
+    </button>
+    {open && <div className="mt-2.5 max-h-80 overflow-y-auto overscroll-contain"><ActivityList activities={activities} thinking={thinking} /></div>}
+  </div>;
 }
 
 function CompletedActivitySummary({
@@ -552,12 +494,13 @@ function CompletedActivitySummary({
 }) {
   const [open, setOpen] = useState(false);
   const label = `Worked for ${formatDuration(durationMs, activities)}`;
-  const visible = activities.slice(-12);
+  const visible = activities;
   return (
     <div className="not-prose mb-3">
       <button
         type="button"
         className="group inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
         <span>{label}</span>
@@ -569,7 +512,7 @@ function CompletedActivitySummary({
         />
       </button>
       {open && visible.length > 0 && (
-        <div className="mt-2.5">
+        <div className="mt-2.5 max-h-80 overflow-y-auto overscroll-contain">
           <ActivityList activities={visible} />
         </div>
       )}
@@ -613,28 +556,39 @@ function ActivityList({
               {!isLast && <span className="mt-1 w-px flex-1 bg-border" />}
             </div>
             <div className={cn("min-w-0 flex-1", !isLast && "pb-2")}>
-              <span
-                className={cn(
-                  "block truncate text-[13px] leading-5",
-                  running ? "text-shimmer" : "text-muted-foreground",
-                )}
-              >
-                {activity?.title ?? "Thinking…"}
-                {activity?.detail ? (
-                  <span
-                    className={running ? undefined : "text-muted-foreground/60"}
-                  >
-                    {" "}
-                    · {activity.detail}
-                  </span>
-                ) : null}
-              </span>
+              <ActivityEntry activity={activity} running={running} />
             </div>
           </div>
         );
       })}
     </div>
   );
+}
+
+function ActivityEntry({ activity, running }: { activity?: StreamActivity; running: boolean }) {
+  const label = <span className={cn("min-w-0 flex-1 truncate text-[13px] leading-5", running ? "text-shimmer" : "text-muted-foreground")}>
+    {activity?.title ?? "Thinking…"}{activity?.detail && <span className={running ? undefined : "text-muted-foreground/60"}> · {activity.detail}</span>}
+  </span>;
+  const payload = activity?.payload;
+  const hasDetails = Boolean(activity?.detail || payload);
+  if (!hasDetails) return <span className="flex">{label}</span>;
+  const format = (value: unknown) => {
+    if (typeof value === 'string') return value;
+    try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+  };
+  const blocks = [
+    { label: 'Arguments', value: payload?.args },
+    { label: activity?.status === 'failed' ? 'Error or result' : 'Result', value: payload?.output ?? payload?.result ?? payload?.error },
+    ...(!payload || (payload.args === undefined && payload.output === undefined && payload.result === undefined && payload.error === undefined) ? [{ label: 'Details', value: payload ?? activity?.detail }] : []),
+  ].filter((block) => block.value !== undefined);
+  return <details className="group min-w-0">
+    <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+      {label}<ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground/60 transition-transform group-open:rotate-180" />
+    </summary>
+    <div className="my-2 space-y-2 rounded-lg border border-border bg-muted/40 p-3 text-xs">
+      {blocks.map((block) => <div key={block.label}><p className="mb-1 font-medium text-muted-foreground">{block.label}</p><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-foreground">{format(block.value)}</pre></div>)}
+    </div>
+  </details>;
 }
 
 function iconForActivity(activity: StreamActivity) {

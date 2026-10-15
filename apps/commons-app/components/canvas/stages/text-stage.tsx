@@ -373,7 +373,7 @@ function SlideText({
             key={note.annotationId}
             type="button"
             onClick={() => onOpenNote(note, { x: rect.right + 8, y: rect.top })}
-            className="fixed z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-stone-900 px-1 text-[10px] font-medium text-white shadow-floating"
+            className="fixed z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground shadow-floating"
             style={{ left: rect.right + 4, top: rect.top - 10 }}
             aria-label={`Note ${numberOf(note.annotationId)}: ${note.body}`}
           >

@@ -96,7 +96,7 @@ export function NoteMarkers({
               aria-label={`Note ${numberOf(note.annotationId)}: ${note.body}`}
               className={cn(
                 "pointer-events-auto absolute flex h-6 min-w-6 -translate-y-full items-center justify-center rounded-full rounded-bl-none px-1.5 text-[11px] font-medium shadow-floating ring-2 ring-white transition-transform hover:scale-105",
-                resolved ? "bg-stone-400 text-white" : "bg-stone-900 text-white",
+                resolved ? "bg-stone-400 text-white" : "bg-primary text-primary-foreground",
                 focused && "scale-110 bg-amber-500",
                 !isRegion && "-translate-x-0",
               )}

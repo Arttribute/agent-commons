@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     );
   }
   const initiatorId = user.userId;
-  const url = `${baseUrl}/v1/sessions/list/${encodeURIComponent(agentId)}/${encodeURIComponent(initiatorId)}`;
+  const url = `${baseUrl}/v1/sessions/list/${encodeURIComponent(agentId)}/${encodeURIComponent(initiatorId)}?surface=agent-commons`;
   try {
     const res = await fetch(url, { cache: "no-store", headers: await backendAuthHeaders() });
     const data = await res.json().catch(() => ({ error: "Bad JSON" }));

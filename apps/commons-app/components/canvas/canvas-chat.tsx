@@ -21,6 +21,7 @@ import { desktopApiFetch } from "@/lib/desktop-api-fetch";
 import { apiErrorMessage } from "@/lib/api-error";
 import { normalizePrincipalId } from "@/lib/principal-id";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
+import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import SessionInterface from "@/components/sessions/session-interface";
 import ChatInputBox, { type ComposerLaunch } from "@/components/sessions/chat/chat-input-box";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -289,7 +290,7 @@ function CanvasChatInner() {
           className="flex max-w-full items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 py-1 pl-1.5 pr-1 text-xs text-amber-950"
           title={note.body}
         >
-          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-stone-900 px-1 text-[9px] font-medium text-white">
+          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-medium text-primary-foreground">
             {note.number || "•"}
           </span>
           <span className="max-w-40 truncate">{note.body}</span>
@@ -475,7 +476,7 @@ function AgentPicker({
               }}
               className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-stone-100"
             >
-              <AgentAvatar name={agent.name} src={agent.avatar ?? undefined} size={24} />
+              <AgentAvatar name={agent.name} src={agent.avatar ?? undefined} size={PROFILE_ICON_SIZE} />
               <span className="min-w-0 flex-1 truncate">{agent.name}</span>
               {agent.agentId === selected.agentId && <Check className="h-3.5 w-3.5 text-stone-700" />}
             </button>
