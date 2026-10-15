@@ -25,7 +25,7 @@ export const WHISPER_WEIGHT_FILES = {
 } as const;
 
 export const SPEECHT5_WEIGHT_FILES = [
-  { model: "Xenova/speecht5_tts", revision: SPEECHT5_REVISION, file: "onnx/encoder_model_quantized.onnx", bytes: 88402301, sha256: "407375255d220d8ddf81e9a06d4100f80f870f8446e77d4f20951d2a4c08a156" },
-  { model: "Xenova/speecht5_tts", revision: SPEECHT5_REVISION, file: "onnx/decoder_model_merged_quantized.onnx", bytes: 71087100, sha256: "6afe602f82ecdb34a2db003f45ccc1419c77aaf0032c263b4f6a0f8bf5835798" },
+  { model: "Xenova/speecht5_tts", revision: SPEECHT5_REVISION, file: "onnx/encoder_model.onnx", bytes: 342803468, sha256: "a676c62303a4d29ea3ba026a698de4877ee0b0be60350c9f283eb4c5369fad08" },
+  { model: "Xenova/speecht5_tts", revision: SPEECHT5_REVISION, file: "onnx/decoder_model_merged.onnx", bytes: 244486683, sha256: "c055656c559c5d17055a87d5c7ec544326b8852d372f171ce27c52945d836465" },
   { model: "Xenova/speecht5_hifigan", revision: SPEECHT5_VOCODER_REVISION, file: "onnx/model.onnx", bytes: 55432026, sha256: "26408d9b8b3e83e66a3ef614a5621b84cacdcabd81b3a6a2fa984eb788566e6c" },
 ] as const;
