@@ -79,7 +79,7 @@ export function NewChatView({ userAddress: userOverride }: { userAddress?: strin
             <StartSuggestionList items={suggestions.items} loading={suggestions.loading} agents={menuAgents} onPick={pickSuggestion} className="mt-6 md:hidden" />
           </div>
           <div className="shrink-0 pb-[max(env(safe-area-inset-bottom),0.75rem)] md:pb-0">
-            <StudioAgentLauncher agents={launcherAgents} userAddress={userAddress} hideStarters projectPicker requestedAgent={requestedAgent} />
+            <StudioAgentLauncher agents={launcherAgents} loading={agentsLoading} userAddress={userAddress} hideStarters projectPicker requestedAgent={requestedAgent} />
           </div>
           <StartSuggestionList items={suggestions.items} loading={suggestions.loading} agents={menuAgents} onPick={pickSuggestion} className="mt-3 hidden md:block" />
         </div>

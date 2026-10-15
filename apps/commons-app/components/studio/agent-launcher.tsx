@@ -6,7 +6,6 @@ import ChatInputBox, { type ComposerLaunch } from "@/components/sessions/chat/ch
 import { beginChat } from "@/lib/start-chat";
 import { AgentSidebarSwitcher } from "@/components/studio/agent-sidebar-switcher";
 import { useAgentContext } from "@/context/AgentContext";
-import { useUserSessions } from "@/hooks/sessions/use-user-sessions";
 import { normalizeConversationStarters } from "@/lib/conversation-starters";
 import { ProjectChip } from "@/components/projects/project-chip";
 import { useProjects } from "@/hooks/use-projects";
@@ -36,6 +35,7 @@ export function StudioAgentLauncher({
   hideStarters = false,
   projectPicker = false,
   requestedAgent,
+  loading = false,
 }: {
   agents: LauncherAgent[];
   userAddress: string;
@@ -50,10 +50,11 @@ export function StudioAgentLauncher({
   projectPicker?: boolean;
   /** Switch to this agent, e.g. when a suggestion names one. `key` repeats a request. */
   requestedAgent?: { agentId: string; key: number } | null;
+  /** Agents are still loading: the picker shows a placeholder until one is chosen. */
+  loading?: boolean;
 }) {
   const router = useRouter();
   const { setInputText } = useAgentContext();
-  const { isLoading: sessionsLoading } = useUserSessions(userAddress);
   const showProjectPicker = projectPicker && !projectId;
   const { projects } = useProjects(showProjectPicker && Boolean(userAddress));
   const [chosenProjectId, setChosenProjectId] = useState<string | null>(null);
@@ -71,24 +72,19 @@ export function StudioAgentLauncher({
   const manualPickRef = useRef(false);
   const seededRef = useRef(false);
 
-  // Show a sensible default immediately so the picker never reads as empty.
-  useEffect(() => {
-    if (!selectedAgentId && agents[0]) setSelectedAgentId(agents[0].agentId);
-  }, [agents, selectedAgentId]);
-
   // A project's usual agent wins until the person picks another one.
   useEffect(() => {
     if (manualPickRef.current || !preferredAgentId) return;
     if (agents.some((agent) => agent.agentId === preferredAgentId)) setSelectedAgentId(preferredAgentId);
   }, [agents, preferredAgentId]);
 
-  // Once sessions have loaded, upgrade the default to the last-used agent —
-  // unless the user has already picked one themselves.
+  // Choose the default once the agents have loaded, so the picker never shows
+  // one agent and then switches to another.
   useEffect(() => {
-    if (seededRef.current || manualPickRef.current || sessionsLoading) return;
+    if (seededRef.current || manualPickRef.current || loading || !defaultAgentId) return;
     seededRef.current = true;
-    if (defaultAgentId) setSelectedAgentId(defaultAgentId);
-  }, [sessionsLoading, defaultAgentId]);
+    setSelectedAgentId(defaultAgentId);
+  }, [loading, defaultAgentId]);
 
   const appliedRequestRef = useRef<number | null>(null);
   useEffect(() => {
@@ -120,9 +116,14 @@ export function StudioAgentLauncher({
   );
 
   // Open the chat right away; it shows the message and the agent thinking
-  // while the session is created in the background.
+  // while the session is created in the background. A message sent before an
+  // agent is chosen goes out as soon as one is.
+  const queuedLaunchRef = useRef<ComposerLaunch | null>(null);
   const handleLaunch = (launch: ComposerLaunch) => {
-    if (!selectedAgent) return;
+    if (!selectedAgent) {
+      queuedLaunchRef.current = launch;
+      return;
+    }
     router.push(
       beginChat({
         agent: { agentId: selectedAgent.agentId, name: selectedAgent.name, avatar: selectedAgent.avatar },
@@ -131,6 +132,14 @@ export function StudioAgentLauncher({
       }),
     );
   };
+
+  useEffect(() => {
+    if (!selectedAgent || !queuedLaunchRef.current) return;
+    const launch = queuedLaunchRef.current;
+    queuedLaunchRef.current = null;
+    handleLaunch(launch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAgent]);
 
   return (
     <div className="flex w-full flex-col">
@@ -146,22 +155,30 @@ export function StudioAgentLauncher({
             : "Ask an agent anything…")
         }
         footerLeft={
-          <AgentSidebarSwitcher
-            compact
-            current={{
-              id: selectedAgentId,
-              name: selectedAgent?.name ?? "",
-              avatar: selectedAgent?.avatar,
-              modelId: selectedAgent?.modelId,
-            }}
-            items={agents.map((a) => ({
-              id: a.agentId,
-              name: a.name,
-              avatar: a.avatar,
-              modelId: a.modelId,
-            }))}
-            onSelect={handleSelect}
-          />
+          !selectedAgent ? (
+            <span className="flex h-[30px] w-36 items-center gap-2 rounded-full border border-border py-[3px] pl-[3px] pr-2.5">
+              <span className="h-[22px] w-[22px] shrink-0 animate-pulse rounded-full bg-muted motion-reduce:animate-none" aria-hidden="true" />
+              <span className="h-2.5 flex-1 animate-pulse rounded-full bg-muted motion-reduce:animate-none" aria-hidden="true" />
+              <span className="sr-only">Loading agents</span>
+            </span>
+          ) : (
+            <AgentSidebarSwitcher
+              compact
+              current={{
+                id: selectedAgentId,
+                name: selectedAgent?.name ?? "",
+                avatar: selectedAgent?.avatar,
+                modelId: selectedAgent?.modelId,
+              }}
+              items={agents.map((a) => ({
+                id: a.agentId,
+                name: a.name,
+                avatar: a.avatar,
+                modelId: a.modelId,
+              }))}
+              onSelect={handleSelect}
+            />
+          )
         }
       />
       {showProjectPicker && (
