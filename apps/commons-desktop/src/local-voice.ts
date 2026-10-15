@@ -120,9 +120,10 @@ export class LocalVoiceManager {
         await repairSpeechArtifacts(cache, SPEECHT5_WEIGHT_FILES);
         assertSpeechDownloadFits(cache, SPEECHT5_WEIGHT_FILES);
         await prepareSpeechArtifacts(cache, SPEECHT5_WEIGHT_FILES);
-        // The pinned weights are the 8-bit `*_quantized.onnx` files.
+        // Quantized SpeechT5 can truncate or garble speech before Whisper can
+        // recognize it. Keep synthesis in full precision; transcription uses q8.
         const speechPipeline = await pipeline("text-to-speech", "Xenova/speecht5_tts", {
-          dtype: "q8",
+          dtype: "fp32",
           revision: SPEECHT5_REVISION,
           cache_dir: cache,
         });
