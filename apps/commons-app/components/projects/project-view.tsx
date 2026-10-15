@@ -76,7 +76,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
   const { mode } = useWorkspaceMode();
   const local = mode === "private-local";
   const userAddress = normalizePrincipalId(authState.walletAddress);
-  const { agents } = useAgents(userAddress || undefined);
+  const { agents, loading: agentsLoading } = useAgents(userAddress || undefined);
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [sessions, setSessions] = useState<ProjectSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -205,6 +205,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
         <div className="min-w-0">
           <StudioAgentLauncher
             agents={launcherAgents}
+            loading={agentsLoading}
             userAddress={userAddress}
             projectId={project.projectId}
             preferredAgentId={project.agentId}
