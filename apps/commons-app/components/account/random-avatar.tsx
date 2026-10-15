@@ -143,7 +143,8 @@ export default function RandomAvatar({
       {!hideInitials && (
         <div className="absolute inset-0 flex items-center justify-center">
           <span
-            className="font-medium leading-none text-stone-900"
+            // These pastel gradients keep their light colors in both themes.
+            className="font-medium leading-none text-[#1c1917]"
             style={{ fontSize: `${fontSize}px` }}
           >
             {initials}
