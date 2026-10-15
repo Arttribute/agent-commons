@@ -1,4 +1,3 @@
-import electron from "electron";
 import { spawn } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,7 +18,10 @@ const port = await new Promise((resolve, reject) => {
 const env = { ...process.env, COMMONS_DESKTOP_START_MODE: "private-local", COMMONS_DESKTOP_SMOKE_DEBUG: "1" };
 delete env.ELECTRON_RUN_AS_NODE;
 const packagedExecutable = process.env.COMMONS_DESKTOP_SMOKE_EXECUTABLE;
-const child = spawn(packagedExecutable || electron, [
+// Installed-app checks already have Electron in the packaged executable.
+// Importing the development dependency can trigger an unrelated download.
+const executable = packagedExecutable || (await import("electron")).default;
+const child = spawn(executable, [
   ...(packagedExecutable ? [] : ["."]),
   `--user-data-dir=${temp}`,
   `--remote-debugging-port=${port}`,
