@@ -12,7 +12,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { messageTime } from "@/lib/short-time";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
-import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import type { StreamActivity } from "@/context/AgentContext";
 import {
   AppChatCard,
@@ -208,7 +207,7 @@ export default function AgentOutput({
     <div className={cn("prose dark:prose-invert max-w-none my-3", className)}>
       {showAgentHeader && (
         <div className="not-prose mb-2 flex items-center gap-2">
-          <AgentAvatar name={agentName} src={agentAvatar} size={PROFILE_ICON_SIZE} />
+          <AgentAvatar name={agentName} src={agentAvatar} size={20} />
           {agentName && (
             <span className="text-xs text-muted-foreground">{agentName}</span>
           )}

@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import Link from "next/link";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
-import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 // Hover details removed for a simpler UI
 import { useAgents } from "@/hooks/agents/use-agents";
 // Using a native checkbox for simpler controlled behavior
@@ -226,7 +225,7 @@ export function CreateSpaceForm({ creatorId, onCreated }: Props) {
                     aria-label={`Select ${a.name}`}
                     disabled={showAgentsLoading}
                   />
-                  <AgentAvatar name={a.name} src={(a as any).avatar} size={PROFILE_ICON_SIZE} />
+                  <AgentAvatar name={a.name} src={(a as any).avatar} size={32} />
                   <div className="flex flex-col flex-1 min-w-0">
                     <span className="text-sm font-medium text-muted-foreground truncate">
                       {a.name}

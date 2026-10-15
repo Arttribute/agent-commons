@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
-import { PROFILE_ICON_SIZE } from "@/lib/profile-icons";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -69,7 +68,7 @@ export function AgentSidebarSwitcher({
             type="button"
             className="flex max-w-full items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1 text-left transition-colors hover:bg-muted"
           >
-            <AgentAvatar name={current.name} src={current.avatar} size={PROFILE_ICON_SIZE} />
+            <AgentAvatar name={current.name} src={current.avatar} size={22} />
             <span className="min-w-0 truncate text-sm font-medium leading-none">
               {current.name || "Select agent"}
             </span>
@@ -80,7 +79,7 @@ export function AgentSidebarSwitcher({
             type="button"
             className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
           >
-            <AgentAvatar name={current.name} src={current.avatar} size={PROFILE_ICON_SIZE} />
+            <AgentAvatar name={current.name} src={current.avatar} size={28} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium leading-tight">{current.name}</p>
               <p className="truncate text-xs text-muted-foreground">
@@ -120,7 +119,7 @@ export function AgentSidebarSwitcher({
                   )}
                   onClick={() => openAgent(item.id)}
                 >
-                  <AgentAvatar name={item.name} src={item.avatar} size={PROFILE_ICON_SIZE} />
+                  <AgentAvatar name={item.name} src={item.avatar} size={28} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{item.name}</span>
                     {item.modelId && (
