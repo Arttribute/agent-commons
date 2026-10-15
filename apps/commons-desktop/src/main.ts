@@ -35,7 +35,7 @@ import {
 import { ensureLocalPreview, PrivateLocalRuntime } from "./runtime";
 import { LocalProfiles } from "./local-profiles";
 import { buildDirSnapshot, buildLocalToolsManifest, runLocalTool } from "../../../packages/agc-cli/src/local-tools";
-import { resolveWorkspaceRoute, workspacePaths } from "../../commons-app/lib/workspace-routes";
+import { resolveWorkspaceRoute, workspacePaths, workspaceModeSwitchPath } from "../../commons-app/lib/workspace-routes";
 import { cloudVisiblePreferences } from "./workspace-preferences";
 import { startCommonsAppServer, type CommonsAppServer } from "./commons-app-server";
 import { handleLocalKnowledgeApi } from "./local-knowledge-api";
@@ -348,6 +348,14 @@ function sectionPath(path?: string) {
   return workspacePaths[route.section];
 }
 
+function switchedWorkspacePath(path?: string) {
+  if (path === undefined) {
+    const current = new URL(unifiedView!.webContents.getURL());
+    path = `${current.pathname}${current.search}${current.hash}`;
+  }
+  return workspaceModeSwitchPath(path);
+}
+
 async function switchToLocal(path?: string) {
   const previousMode = activeMode;
   cloudAuthAttempt += 1;
@@ -363,7 +371,7 @@ async function switchToLocal(path?: string) {
       sameSite: "strict",
     });
     rememberStartupMode(activeMode);
-    unifiedView!.webContents.send("desktop:mode-changed", activeMode, sectionPath(path));
+    unifiedView!.webContents.send("desktop:mode-changed", activeMode, switchedWorkspacePath(path));
     if (process.env.COMMONS_DESKTOP_SMOKE_DEBUG !== "1") void runtime.prepareLocalModel().catch(() => undefined);
   } catch (error) {
     activeMode = previousMode;
@@ -471,7 +479,7 @@ async function switchToCloud(path?: string) {
       sameSite: "strict",
     });
     rememberStartupMode(activeMode);
-    unifiedView!.webContents.send("desktop:mode-changed", activeMode, sectionPath(path));
+    unifiedView!.webContents.send("desktop:mode-changed", activeMode, switchedWorkspacePath(path));
   } finally {
     cloudTransition = false;
   }

@@ -26,16 +26,53 @@ async function cookieCommand(page, method, params) {
   } finally { socket.close(); }
 }
 
-// Exercise the real loopback Auth.js session and native IPC boundary using
-// test-only encrypted sessions. No identity-provider or customer account calls.
-export async function smokeLocalAccounts(evaluate, page, userData) {
+async function setSmokeAccountCookie(evaluate, page, userData, id) {
   const require = createRequire(new URL('../../commons-app/package.json', import.meta.url));
   const { encode } = await import(pathToFileURL(require.resolve('next-auth/jwt')).href);
   const secret = readFileSync(join(userData, 'commons-app-auth-secret'), 'utf8').trim();
   const cookie = `authjs.agent-commons.session-token.${(process.env.COMMONS_AUTH_SESSION_VERSION || 'v2').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-  const token = async (id) => encode({ secret, salt: cookie, token: { sub: id, identityUserId: id, name: 'Same display name', authSessionVersion: 'v2' }, maxAge: 3600 });
-  const state = () => evaluate(page, 'window.agentCommonsLocal.getState()');
+  const value = id ? await encode({ secret, salt: cookie, token: { sub: id, identityUserId: id, name: 'Same display name', authSessionVersion: 'v2' }, maxAge: 3600 }) : '';
   const origin = await evaluate(page, 'location.origin');
+  await cookieCommand(page, id ? 'Network.setCookie' : 'Network.deleteCookies', { name: cookie, url: origin + '/', ...(id ? { value, path: '/', httpOnly: true, sameSite: 'Lax' } : {}) });
+}
+
+// Mode navigation needs a signed-in Cloud surface. Otherwise its intentional
+// sign-in redirect can still be loading when the next switch is dispatched.
+export async function smokeModeAccount(evaluate, page, userData) {
+  const select = async (id) => {
+    const before = await evaluate(page, 'window.agentCommonsLocal.getState()');
+    const previous = (before.account?.userId ?? null) !== id ? await evaluate(page, 'performance.timeOrigin') : undefined;
+    const deadline = Date.now() + 45_000;
+    let lastSyncError;
+    let nextSync = 0;
+    while (Date.now() < deadline) {
+      const ready = await evaluate(page, "document.readyState === 'complete' && !!window.agentCommonsDesktop").catch(() => false);
+      if (ready && Date.now() >= nextSync) {
+        // A mode switch can still have a session refresh/navigation in flight.
+        // Reapply the test session only after that document is ready, then await
+        // the native verification instead of losing its result during reload.
+        try {
+          await setSmokeAccountCookie(evaluate, page, userData, id);
+          lastSyncError = await evaluate(page, "window.agentCommonsDesktop.syncAccount().then(() => null, error => String(error.message || error))");
+        } catch (error) { lastSyncError = error.message; }
+        nextSync = Date.now() + 1000;
+      }
+      const settled = await evaluate(page, `document.readyState === 'complete' && ${previous ? `performance.timeOrigin !== ${previous}` : 'true'} && ${id ? `!!document.querySelector('[aria-label="Workspace mode"], [aria-label^="Workspace mode:"]')` : 'true'}`).catch(() => false);
+      const state = settled ? await evaluate(page, 'window.agentCommonsLocal.getState()').catch(() => undefined) : undefined;
+      if (state && (state.account?.userId ?? null) === id) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    const diagnostic = await evaluate(page, `(async () => ({ targetOwner: ${JSON.stringify(id)}, previousOwner: ${JSON.stringify(before.account?.userId ?? null)}, documentChanged: ${previous ? `performance.timeOrigin !== ${previous}` : 'null'}, path: location.pathname, readyState: document.readyState, owner: await window.agentCommonsLocal.getState().then(state => state.account?.userId ?? null).catch(error => String(error.message)) }))()`).catch(error => ({ error: error.message }));
+    throw new Error(`The isolated mode-navigation account did not become ready: ${JSON.stringify({ ...diagnostic, lastSyncError })}`);
+  };
+  await select('desktop-smoke-mode');
+  return () => select(null);
+}
+
+// Exercise the real loopback Auth.js session and native IPC boundary using
+// test-only encrypted sessions. No identity-provider or customer account calls.
+export async function smokeLocalAccounts(evaluate, page, userData) {
+  const state = () => evaluate(page, 'window.agentCommonsLocal.getState()');
   const waitFor = async (owner, previousDocument) => {
     const deadline = Date.now() + 45_000;
     while (Date.now() < deadline) {
@@ -49,10 +86,9 @@ export async function smokeLocalAccounts(evaluate, page, userData) {
   const select = async (id) => {
     const previous = await state();
     const previousDocument = (previous.account?.userId ?? null) !== id ? await evaluate(page, 'performance.timeOrigin') : undefined;
-    const value = id ? await token(id) : '';
     // Auth.js rotates to HttpOnly cookies: use the browser cookie store just as
     // a sign-in response would, rather than trying to overwrite document.cookie.
-    await cookieCommand(page, id ? 'Network.setCookie' : 'Network.deleteCookies', { name: cookie, url: origin + '/', ...(id ? { value, path: '/', httpOnly: true, sameSite: 'Lax' } : {}) });
+    await setSmokeAccountCookie(evaluate, page, userData, id);
     // A forged renderer principal must never determine which profile opens.
     await evaluate(page, "window.__accountTestSyncError = undefined; void window.agentCommonsDesktop.syncAccount({userId:'forged-renderer-principal'}).catch(error => { window.__accountTestSyncError = String(error.message || error); })");
     try {

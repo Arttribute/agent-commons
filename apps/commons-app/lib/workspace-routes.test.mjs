@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasOwnMobileHeader, isAgentsChatRoute, isLockedStudioDetailRoute, navigationSection, resolveWorkspaceRoute } from "./workspace-routes.ts";
+import { hasOwnMobileHeader, isAgentsChatRoute, isLockedStudioDetailRoute, navigationSection, resolveWorkspaceRoute, workspaceModeSwitchPath } from "./workspace-routes.ts";
 
 test("studio, library, and session paths resolve consistently", () => {
   assert.deepEqual(resolveWorkspaceRoute("/studio/agents"), { section: "agents", id: undefined, isDetail: false });
@@ -39,4 +39,16 @@ test("chat surfaces bring their own phone header", () => {
   assert.equal(hasOwnMobileHeader("/sessions/s1"), true);
   assert.equal(hasOwnMobileHeader("/sessions"), false);
   assert.equal(hasOwnMobileHeader("/projects"), false);
+});
+
+test("mode switches preserve pages, details, filters and fragments except active sessions", () => {
+  for (const path of ["/new", "/sessions?agentId=a", "/studio/agents/a?tab=settings#model", "/projects/p1", "/library?tab=apps#recent", "/knowledge/notes", "/settings?tab=privacy"]) {
+    assert.equal(workspaceModeSwitchPath(path), path);
+  }
+  for (const path of ["/sessions/s1", "/sessions/pending-one?agentId=a#messages", "/sessions/s1/artifacts"]) {
+    assert.equal(workspaceModeSwitchPath(path), "/new");
+  }
+  for (const path of [undefined, "https://example.org/", "//example.org/", "/\\example.org/"]) {
+    assert.equal(workspaceModeSwitchPath(path), "/new");
+  }
 });

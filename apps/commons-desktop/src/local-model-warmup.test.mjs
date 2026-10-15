@@ -156,10 +156,15 @@ test("memory pressure releases an owned warm model and prevents repeated reloadi
     () => true,
     15,
   );
+  const waitForGenerations = async (count) => {
+    const deadline = Date.now() + 2000;
+    while (requests.filter(c => c.url.endsWith('/api/generate')).length < count && Date.now() < deadline) await sleep(5);
+    assert.equal(requests.filter(c => c.url.endsWith('/api/generate')).length, count);
+  };
   warmup.schedule(target);
-  await sleep(10);
+  await waitForGenerations(1);
   pressure = true;
-  await sleep(35);
+  await waitForGenerations(2);
   const generates = requests
     .filter((c) => c.url.endsWith("/api/generate"))
     .map((c) => JSON.parse(c.options.body));
