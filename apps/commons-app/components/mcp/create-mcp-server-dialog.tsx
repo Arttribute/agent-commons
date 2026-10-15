@@ -93,7 +93,7 @@ export function CreateMcpServerDialog({
       <DialogContent className="max-w-2xl">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <div className="bg-teal-200 w-48 h-6 -mb-6 rounded-lg"></div>
+            <div className="bg-teal-200 dark:bg-teal-800 w-48 h-6 -mb-6 rounded-lg"></div>
             <DialogTitle>Connect MCP Server</DialogTitle>
             <DialogDescription>
               Connect a remote MCP endpoint for Cloud tools. For a server on

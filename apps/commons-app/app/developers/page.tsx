@@ -158,8 +158,8 @@ export default function DevelopersPage() {
   const maxRequests = Math.max(1, ...daily.map((item) => item.requests));
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#faf9f6] text-stone-950">
-      <aside className="hidden w-[238px] shrink-0 flex-col border-r border-stone-200 bg-white md:flex">
+    <div className="flex h-screen overflow-hidden bg-[#faf9f6] dark:bg-page text-stone-950">
+      <aside className="hidden w-[238px] shrink-0 flex-col border-r border-stone-200 bg-white dark:bg-sidebar md:flex">
         <Link href="/studio/agents" className="flex h-[74px] items-center gap-3 border-b border-stone-100 px-5">
           <Image src="/ac-icon.svg" width={28} height={28} alt="Agent Commons" className="rounded-lg" />
           <span className="text-sm font-semibold tracking-tight">Agent Commons</span>
@@ -184,7 +184,7 @@ export default function DevelopersPage() {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-y-auto">
-        <header className="sticky top-0 z-10 flex min-h-[74px] flex-wrap items-center justify-between gap-3 border-b border-stone-200 bg-[#faf9f6]/95 px-5 py-3 backdrop-blur sm:px-9">
+        <header className="sticky top-0 z-10 flex min-h-[74px] flex-wrap items-center justify-between gap-3 border-b border-stone-200 bg-[#faf9f6]/95 dark:bg-page/95 px-5 py-3 backdrop-blur sm:px-9">
           <div className="flex items-center gap-3">
             <Link href="/studio/agents" className="md:hidden" aria-label="Back to Studio"><ArrowLeft className="h-5 w-5" /></Link>
             <div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-400">Developer console</p><p className="text-sm font-medium">{tabs.find((item) => item.id === tab)?.label}</p></div>
@@ -226,7 +226,7 @@ export default function DevelopersPage() {
             <SectionTitle eyebrow="Your workspace" title="Agents" description="Agents you own are available through the SDK and REST API. Open one in Studio to edit its model, instructions, and tools." action={<Link href="/studio/agents/create" className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm text-primary-foreground hover:bg-primary/90"><Plus className="h-4 w-4" />Create agent</Link>} />
             {agentsError && <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{agentsError} <button onClick={() => void refreshAgents()} className="ml-2 underline">Retry</button></p>}
             {agentsLoading ? <Loader2 className="mt-10 h-5 w-5 animate-spin text-stone-500" /> : agents.length === 0 ? <Empty title="No agents yet" text="Create an agent in Studio, then use its ID from your own codebase." action="Create agent" href="/studio/agents/create" /> : <div className="mt-7 overflow-hidden rounded-2xl border border-stone-200 bg-white">
-              {agents.map((agent) => <div key={agent.agentId} className="flex flex-wrap items-center gap-3 border-b border-stone-100 px-5 py-4 last:border-0 sm:gap-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e9e8fa]"><Bot className="h-5 w-5 text-stone-700" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{agent.name}</p><p className="mt-0.5 truncate font-mono text-[11px] text-stone-500">{agent.agentId}</p></div><CopyButton value={agent.agentId} label="Copy ID" /><Link href={`/studio/agents/${encodeURIComponent(agent.agentId)}`} className="inline-flex items-center gap-1 text-xs font-medium hover:underline">Manage <ArrowRight className="h-3.5 w-3.5" /></Link></div>)}
+              {agents.map((agent) => <div key={agent.agentId} className="flex flex-wrap items-center gap-3 border-b border-stone-100 px-5 py-4 last:border-0 sm:gap-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e9e8fa] dark:bg-violet-900/40"><Bot className="h-5 w-5 text-stone-700" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{agent.name}</p><p className="mt-0.5 truncate font-mono text-[11px] text-stone-500">{agent.agentId}</p></div><CopyButton value={agent.agentId} label="Copy ID" /><Link href={`/studio/agents/${encodeURIComponent(agent.agentId)}`} className="inline-flex items-center gap-1 text-xs font-medium hover:underline">Manage <ArrowRight className="h-3.5 w-3.5" /></Link></div>)}
             </div>}
           </>}
 

@@ -100,7 +100,7 @@ export function ComputerVisual() {
         </div>
       </div>
 
-      <div className="relative min-h-[390px] overflow-hidden bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.96),transparent_32%),linear-gradient(135deg,#eef2f2_0%,#e5e8e7_48%,#f2f0ed_100%)] p-3 sm:p-5">
+      <div className="relative min-h-[390px] overflow-hidden bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.96),transparent_32%),linear-gradient(135deg,#eef2f2_0%,#e5e8e7_48%,#f2f0ed_100%)] dark:bg-none dark:bg-muted p-3 sm:p-5">
         <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(#a8a29e_0.7px,transparent_0.7px)] [background-size:22px_22px]" />
         <div className="relative mx-auto h-[354px] max-w-[650px]">
           {app === "files" && <FilesWindow />}
@@ -248,7 +248,7 @@ function BrowserWindow() {
           sizes="(max-width: 768px) 90vw, 650px"
           className="object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-white/95 via-white/55 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-white/95 via-white/55 to-transparent dark:from-background/95 dark:via-background/70" />
         <div className="absolute left-6 top-7 max-w-[230px] sm:left-9 sm:top-10">
           <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-stone-600">
             Atelier North

@@ -4,11 +4,12 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { APPEARANCE_KEY, appearanceValue, resolvedAppearance, type Appearance } from '@/lib/appearance';
 import { useWorkspacePreferences } from '@/hooks/use-workspace-preferences';
 
-const AppearanceContext = createContext<{ appearance: Appearance; setAppearance: (value: Appearance) => void }>({ appearance: 'light', setAppearance: () => {} });
+const AppearanceContext = createContext<{ appearance: Appearance; resolvedTheme: 'light' | 'dark'; setAppearance: (value: Appearance) => void }>({ appearance: 'light', resolvedTheme: 'light', setAppearance: () => {} });
 
 export function AppearanceProvider({ children }: { children: React.ReactNode }) {
   const [appearance, setValue] = useState<Appearance>('light');
   const [initialized, setInitialized] = useState(false);
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
   const preferences = useWorkspacePreferences();
   const setAppearance = useCallback((value: Appearance) => {
     const next = appearanceValue(value);
@@ -35,6 +36,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
       const resolved = resolvedAppearance(appearance, media.matches);
+      setResolvedTheme(resolved);
       document.documentElement.classList.toggle('dark', resolved === 'dark');
       document.documentElement.style.colorScheme = resolved;
       document.documentElement.dataset.appearance = appearance;
@@ -42,7 +44,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     apply(); media.addEventListener('change', apply);
     return () => media.removeEventListener('change', apply);
   }, [appearance, initialized]);
-  return <AppearanceContext.Provider value={{ appearance, setAppearance }}>{children}</AppearanceContext.Provider>;
+  return <AppearanceContext.Provider value={{ appearance, resolvedTheme, setAppearance }}>{children}</AppearanceContext.Provider>;
 }
 
 export function useAppearance() { return useContext(AppearanceContext); }

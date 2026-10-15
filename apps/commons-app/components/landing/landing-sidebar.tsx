@@ -83,7 +83,7 @@ export function LandingSidebar() {
       <div className="mt-auto border-t border-border p-2">
         <Link
           href={signInTo("/new")}
-          className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-neutral-900 text-sm font-medium text-white transition-colors hover:bg-neutral-700"
+          className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           Sign in
         </Link>
