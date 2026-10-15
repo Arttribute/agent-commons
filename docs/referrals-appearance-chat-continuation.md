@@ -30,7 +30,12 @@ deployment. The web environment needs `RESEND_API_KEY`, with optional
 staging Vercel environment has been configured. The API trusts
 `svc_agent_commons_staging` when `APP_ENV=staging`, otherwise
 `svc_agent_commons`; `REFERRAL_APP_SERVICE_PRINCIPAL` can explicitly override
-this for another deployment. New API endpoints are authenticated and require
+this for another deployment. The GitHub environment variable of that name is
+passed through CodeBuild and CloudFormation into the API. Set it to the app's
+actual authenticated principal (`/v1/auth/me`), which can be the OAuth client ID
+on identity versions that omit a service-account `sub` claim. Staging configures
+that exact dedicated client ID; unrelated service credentials remain rejected.
+Check this setting before production promotion too. New API endpoints are authenticated and require
 no public gateway allowlist entries.
 
 Appearance is Light by default, with explicit Dark and System settings. A

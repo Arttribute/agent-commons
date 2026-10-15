@@ -9,6 +9,10 @@ Parameters:
       - production
       - staging
     Description: Deployment environment; drives resource names and tags.
+  ReferralAppServicePrincipal:
+    Type: String
+    Default: ""
+    Description: Exact authenticated OAuth principal allowed to attest referral signups and send invitations.
   MaxTasks:
     Type: Number
     Default: 4
@@ -274,6 +278,8 @@ Resources:
             Value: production
           - Name: APP_ENV
             Value: !Ref Environment
+          - Name: REFERRAL_APP_SERVICE_PRINCIPAL
+            Value: !Ref ReferralAppServicePrincipal
           - Name: COMMON_OS_GPU_RUNTIME_CLASS
             Value: !If [IsProduction, '', commons-staging-gpu]
           - Name: COMMON_OS_PERFORMANCE_RUNTIME_CLASS

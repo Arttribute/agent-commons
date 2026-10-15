@@ -21,7 +21,7 @@ export class ReferralController {
   }
 
   private isAppService(req: any) {
-    const expected = process.env.REFERRAL_APP_SERVICE_PRINCIPAL ?? (process.env.APP_ENV === 'staging' ? 'svc_agent_commons_staging' : 'svc_agent_commons');
+    const expected = process.env.REFERRAL_APP_SERVICE_PRINCIPAL || (process.env.APP_ENV === 'staging' ? 'svc_agent_commons_staging' : 'svc_agent_commons');
     return req.principal?.principalType === 'service' && req.principal?.principalId === expected;
   }
 
