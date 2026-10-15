@@ -74,13 +74,29 @@ test('checksum, size and invalid resume metadata failures remove temporary files
     assert.equal(calls, 2);
   });
   calls = 0;
-  await fixture((_req, res) => {
-    if (++calls === 1) { res.writeHead(200, { 'content-length': bytes.length }); res.write(bytes.subarray(0, 4096)); setTimeout(() => res.destroy(), 25); }
-    else { res.writeHead(206, { 'content-range': 'bytes 0-16383/16384' }); res.end(bytes); }
-  }, async (url, path) => {
-    await assert.rejects(downloadVerified(url, path, sha, () => {}, bytes.length), /invalid resume/);
-    assert.equal(existsSync(path), false);
-  });
+  let destination, firstResponse, interruption;
+  const owner = new AbortController();
+  const deadline = setTimeout(() => owner.abort(new Error('Invalid resume fixture timed out')), 10_000);
+  const disconnectAfterWrite = () => {
+    if (existsSync(destination) && statSync(destination).size === 4096) firstResponse.destroy();
+    else interruption = setTimeout(disconnectAfterWrite, 5);
+  };
+  try {
+    await fixture((_req, res) => {
+      if (++calls === 1) {
+        firstResponse = res;
+        res.writeHead(200, { 'content-length': bytes.length });
+        res.write(bytes.subarray(0, 4096));
+      } else { res.writeHead(206, { 'content-range': 'bytes 0-16383/16384' }); res.end(bytes); }
+    }, async (url, path) => {
+      destination = path;
+      let disconnectScheduled = false;
+      await assert.rejects(downloadVerified(url, path, sha, progress => {
+        if (progress >= 0.25 && !disconnectScheduled) { disconnectScheduled = true; disconnectAfterWrite(); }
+      }, bytes.length, owner.signal), /invalid resume/);
+      assert.equal(existsSync(path), false);
+    });
+  } finally { clearTimeout(interruption); clearTimeout(deadline); }
 });
 
 test('account cancellation stops the stream, avoids retry and removes partial bytes', async () => {
