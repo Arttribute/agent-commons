@@ -42,16 +42,28 @@ export async function smokeModeAccount(evaluate, page, userData) {
   const select = async (id) => {
     const before = await evaluate(page, 'window.agentCommonsLocal.getState()');
     const previous = (before.account?.userId ?? null) !== id ? await evaluate(page, 'performance.timeOrigin') : undefined;
-    await setSmokeAccountCookie(evaluate, page, userData, id);
-    await evaluate(page, "void window.agentCommonsDesktop.syncAccount().catch(() => undefined)");
     const deadline = Date.now() + 45_000;
+    let lastSyncError;
+    let nextSync = 0;
     while (Date.now() < deadline) {
-      const ready = await evaluate(page, `document.readyState === 'complete' && ${previous ? `performance.timeOrigin !== ${previous}` : 'true'} && ${id ? `!!document.querySelector('[aria-label="Workspace mode"], [aria-label^="Workspace mode:"]')` : 'true'}`).catch(() => false);
-      const state = ready ? await evaluate(page, 'window.agentCommonsLocal.getState()').catch(() => undefined) : undefined;
+      const ready = await evaluate(page, "document.readyState === 'complete' && !!window.agentCommonsDesktop").catch(() => false);
+      if (ready && Date.now() >= nextSync) {
+        // A mode switch can still have a session refresh/navigation in flight.
+        // Reapply the test session only after that document is ready, then await
+        // the native verification instead of losing its result during reload.
+        try {
+          await setSmokeAccountCookie(evaluate, page, userData, id);
+          lastSyncError = await evaluate(page, "window.agentCommonsDesktop.syncAccount().then(() => null, error => String(error.message || error))");
+        } catch (error) { lastSyncError = error.message; }
+        nextSync = Date.now() + 1000;
+      }
+      const settled = await evaluate(page, `document.readyState === 'complete' && ${previous ? `performance.timeOrigin !== ${previous}` : 'true'} && ${id ? `!!document.querySelector('[aria-label="Workspace mode"], [aria-label^="Workspace mode:"]')` : 'true'}`).catch(() => false);
+      const state = settled ? await evaluate(page, 'window.agentCommonsLocal.getState()').catch(() => undefined) : undefined;
       if (state && (state.account?.userId ?? null) === id) return;
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    throw new Error('The isolated mode-navigation account did not become ready');
+    const diagnostic = await evaluate(page, `(async () => ({ targetOwner: ${JSON.stringify(id)}, previousOwner: ${JSON.stringify(before.account?.userId ?? null)}, documentChanged: ${previous ? `performance.timeOrigin !== ${previous}` : 'null'}, path: location.pathname, readyState: document.readyState, owner: await window.agentCommonsLocal.getState().then(state => state.account?.userId ?? null).catch(error => String(error.message)) }))()`).catch(error => ({ error: error.message }));
+    throw new Error(`The isolated mode-navigation account did not become ready: ${JSON.stringify({ ...diagnostic, lastSyncError })}`);
   };
   await select('desktop-smoke-mode');
   return () => select(null);
