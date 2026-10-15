@@ -49,7 +49,7 @@ import { KnowledgeWatcher } from "./knowledge-watcher";
 import { approvalTitle, plainSummary } from "./approval-summary";
 import { serveStaticApp, type StaticAppServer } from "./local-static-server";
 import { libraryTextResult, localChatHistory, localTurnAttachments, prepareLocalInference, LOCAL_CONTEXT_SIZE, toolResult } from "./local-chat-history";
-import { localPromptAgent, localTaskGuidance } from "./local-prompt";
+import { isLocalConversationOnlyRequest, isLocalFolderInventoryRequest, localPromptAgent, localTaskGuidance } from "./local-prompt";
 import { requestLocalModel } from "./local-model-transport";
 import { normalizeLocalCommand } from "./local-command";
 import { DEFAULT_LOCAL_MODEL, LocalStore } from "./store";
@@ -1579,6 +1579,9 @@ export class PrivateLocalRuntime {
     const skills = (state.skills ?? []).filter((skill) => skill.assignedAgentIds === undefined || skill.assignedAgentIds.includes(agent.id));
     const skillsBlock = buildSkillPromptIndex(skills, findMatchingSkills(skills, lastUser));
     const workspace = conversation.workspaceRoot;
+    const unscopedConversation = !project && !lastUserMessage?.attachments?.length && !lastUserMessage?.canvasProjectId && !conversation.mcpServerIds?.length;
+    const conversationOnly = unscopedConversation && (isOpeningGreeting(lastUser) || conversation.knowledgeMode !== "selected" && isLocalConversationOnlyRequest(lastUser));
+    const folderInventory = Boolean(workspace) && unscopedConversation && conversation.knowledgeMode !== "selected" && isLocalFolderInventoryRequest(lastUser);
     const localManifest = workspace
       ? `Selected folder: ${workspace}. File paths and command cwd are relative to this root; use "." for the root itself. Inspect with cli_list_directory, then read or search actual files. Commands must be non-interactive, with an executable and argument array. Use cli_start_process for long jobs and cli_wait_for_process until done. Writes and commands require approval. Never claim completion while a setup process is running.`
       : "No workspace folder is selected. Do not call cli_* filesystem or command tools.";
@@ -1594,10 +1597,10 @@ export class PrivateLocalRuntime {
       `Your assistant identity in this conversation is ${agent.name}. If asked about yourself, answer as ${agent.name} and describe your local capabilities. The underlying model is ${agent.model || state.settings.defaultModel}; mention it as the model powering you, not as your assistant identity.`,
       "For ordinary conversation, answer naturally. Never output JSON describing a tool call or invent a function name. Use only the provided structured tools when an action is needed. If no tool applies, respond in plain language.",
       AUTONOMOUS_EXECUTION_CONTRACT,
-      localTaskGuidance(lastUser, Boolean(workspace || turnAttachments.length || projectFiles.length || conversation.artifacts?.length || /\b(?:files?|documents?|reports?|save|write|create|build|zip|archive|template)\b/i.test(lastUser)), conversation.messages.some(message => message.role === "tool" && message.toolName === "run_python")),
+      localTaskGuidance(lastUser, Boolean(workspace || turnAttachments.length || projectFiles.length || conversation.artifacts?.length || /\b(?:files?|documents?|reports?|save|write|create|build|zip|archive|template)\b/i.test(lastUser)), conversation.messages.some(message => message.role === "tool" && message.toolName === "run_python"), folderInventory),
       localManifest,
       managingCommons ? `Commons app metadata is stored at ${this.layout.root}. Use local_list_data and local_read_data for agents, conversations, skills, tasks and workflows. This is separate from the selected folder and task attachments; never edit the private state index directly.` : "Commons app metadata is separate from task inputs. Never construct file paths from its internal storage root. Read Library files by their provided itemIds, and access them in Python through INPUT_FILES; folder tools use only the selected folder.",
-      conversation.knowledgeMode === "off" ? "Knowledge Spaces are explicitly off in this chat. Use attached files and the selected folder for task inputs." : spaces.length ? `${spaces.length} Knowledge Spaces are available${conversation.knowledgeMode === "selected" ? " within the user's explicit selection" : " on demand"}. Use search_knowledge for relevant saved notes, policies, project facts or references; list_knowledge_spaces discovers their names and IDs. Read only needed passages with read_knowledge_document. Do not search Knowledge for greetings, ordinary conversation or unrelated folder inspection.` : "",
+      folderInventory ? "This request concerns the selected folder. Inspect it with folder tools." : conversation.knowledgeMode === "off" ? "Knowledge Spaces are explicitly off in this chat. Use attached files and the selected folder for task inputs." : spaces.length ? `${spaces.length} Knowledge Spaces are available${conversation.knowledgeMode === "selected" ? " within the user's explicit selection" : " on demand"}. Use search_knowledge for relevant saved notes, policies, project facts or references; list_knowledge_spaces discovers their names and IDs. Read only needed passages with read_knowledge_document. Do not search Knowledge for greetings, ordinary conversation or unrelated folder inspection.` : "",
       shouldOfferCreativeMedia(lastUser) ? "For creative image requests, use generate_image. The result is saved in this conversation's artifacts and Local Library. Model weights download automatically the first time. Do not claim an image exists unless the tool succeeds." : "",
       "For spoken audio requests, use generate_audio. The result is a local WAV artifact. Do not claim audio exists unless the tool succeeds.",
       skillsBlock,
@@ -1613,12 +1616,9 @@ export class PrivateLocalRuntime {
         : "",
       `Current runtime: Private Local. Inference model: ${agent.model || state.settings.defaultModel}. Say this explicitly if the user asks about the current mode or model.`,
     ].filter(Boolean).join("\n\n");
-    const openingGreeting = isOpeningGreeting(lastUser) && conversation.messages.length === 1
-      && !project && !lastUserMessage?.attachments?.length && !lastUserMessage?.canvasProjectId
-      && !conversation.mcpServerIds?.length;
-    if (openingGreeting) system = [
-      buildAgentIdentityPrompt(localPromptAgent(agent)),
-      "Greet the user naturally and concisely. No task has been requested yet. Do not claim to have inspected files or used tools.",
+    if (conversationOnly) system = [
+      buildAgentIdentityPrompt(localPromptAgent(agent, true)),
+      "Respond to the user's message naturally and concisely. Do not claim to have inspected files or used tools.",
       `Current runtime: Private Local. Inference model: ${agent.model || state.settings.defaultModel}.`,
     ].join("\n\n");
     const messages: OllamaMessage[] = [
@@ -1634,7 +1634,7 @@ export class PrivateLocalRuntime {
     this.activeInferenceTargets.set(conversationId, { endpoint, model: agent.model || state.settings.defaultModel });
     const describingImage = imageContext.images.length > 0 && /\b(?:describe|colou?r|appearance)\b/i.test(lastUser)
       && !/\b(?:create|edit|change|crop|save|extract|run|compute|calculate|search|compare|chart|count|dimensions|hex|rgb|export|hubspot|crm|connected|web|online|browse)\b|python/i.test(lastUser);
-    const tools = openingGreeting ? [] : [
+    const tools = conversationOnly ? [] : [
       ...(workspace ? LOCAL_TOOLS : LOCAL_TOOLS.filter((entry) => ["read_canvas", "add_canvas_version", "update_canvas_notes", "write_library_files", "copy_library_file", "run_python", "extract_library_archive", "list_session_files", "list_knowledge_spaces", "list_knowledge_documents", "read_knowledge_document", "search_knowledge", "web_search", "read_library_item", "search_library_item", "generate_image", "generate_audio", "invoke_skill", "local_list_data", "local_read_data", "local_create_knowledge_space", "local_create_note", "local_save_skill"].includes(entry.function.name)))
         .filter((entry) => !describingImage || ["read_canvas", "read_library_item", "list_session_files"].includes(entry.function.name))
         .filter((entry) => !entry.function.name.startsWith("local_") || entry.function.name === "local_register_app" || managingCommons)
@@ -1647,6 +1647,10 @@ export class PrivateLocalRuntime {
       ...[...(this.activeAppTools.get(conversationId)?.entries() ?? [])].map(([name, tool]) => ({ type: "function", function: { name, description: `${tool.app.name}: ${tool.schema.function.description ?? tool.name}`, parameters: tool.schema.function.parameters ?? { type: "object", properties: {} } } })),
       ...[...(this.activeMcpTools.get(conversationId)?.entries() ?? [])].map(([name, tool]) => ({ type: "function", function: { name, description: `${tool.server.name}: ${tool.description}`, parameters: tool.parameters } })),
     ];
+    if (folderInventory) {
+      const readers = new Set(["cli_list_directory", "cli_read_file", "cli_search_file", "cli_search_files", "cli_disk_usage"]);
+      for (let index = tools.length - 1; index >= 0; index--) if (!readers.has(tools[index].function.name)) tools.splice(index, 1);
+    }
 
     const recordingSkill = /\b(?:create|save|make|build|convert|turn)\b[\s\S]*\bskills?\b/i.test(lastUser)
       && (lastUserMessage?.attachments ?? []).some((file) => state.library?.find((item) => item.id === file.id)?.mimeType.startsWith("video/"));
@@ -1680,7 +1684,7 @@ export class PrivateLocalRuntime {
     let pythonArgsRepair = false;
     let pythonEOFRepairAttempted = false;
     let libraryWriteDenied = false;
-    let nativeTools = openingGreeting || !/^deepseek-r1:(?:1\.5b|7b|8b)/.test(agent.model);
+    let nativeTools = conversationOnly || !/^deepseek-r1:(?:1\.5b|7b|8b)/.test(agent.model);
 
     let executionRepairAttempted = false;
     let outputRepairAttempted = false;
@@ -1808,6 +1812,16 @@ export class PrivateLocalRuntime {
       if (count === 2 && nextRecoverableTextOutput()) libraryWriteArgsRepair = true;
       if (count >= 3) throw new Error(`The model repeatedly read the same unchanged file without completing this request. Its tool results are saved; continue from them or choose a stronger local model.`);
     };
+    // An unambiguous folder inventory has a known read-only first step. Fetch
+    // that evidence once instead of making a small model plan from a catalog.
+    if (folderInventory) {
+      const args = { path: "." };
+      const result = await this.executeTool("cli_list_directory", args, workspace, conversationId, spaceIds);
+      executedTools += 1;
+      recordFailure("cli_list_directory", result);
+      recordRead("cli_list_directory", args, result);
+      messages.push({ role: "assistant", content: "", tool_calls: [{ function: { name: "cli_list_directory", arguments: args } }] }, toolResult("cli_list_directory", result));
+    }
     let identityRepairAttempted = false;
     for (let turn = 0; turn < 64; turn += 1) {
       const beforeStep = this.pendingSteers.get(conversationId)?.splice(0) ?? [];
@@ -1835,7 +1849,9 @@ export class PrivateLocalRuntime {
       if (archives.length) messages[0].content += `\n## Current Library archive state\nThis is verified file availability, not document contents: ${JSON.stringify({ totalArchives: archives.length, archives: archives.slice(0, 10) })}. Reuse extracted members with list_session_files, read_library_item or search_library_item. Extraction is offered only while an archive still needs it. The selected computer folder has not changed.`;
       const currentArtifacts = this.currentArtifactIdentifiers(conversationId);
       if (currentArtifacts.length) messages[0].content += `\n## Current artifact versions from this chat\nThese are the latest available output identifiers by exact filename, not verified document contents. Use their exact itemIds to inspect saved results instead of an older revision or similarly named reference. Earlier immutable revisions remain accessible by their own IDs. A canvas's explicitly viewed revision remains separate. ${JSON.stringify(currentArtifacts)}`;
-      const inferenceTools = tools.filter((entry) => (entry.function.name !== "web_search" || this.webSearchAllowed(conversationId))
+      const folderInventoryComplete = folderInventory && successfulTools.has("cli_list_directory");
+      if (folderInventoryComplete) messages[0].content += "\nThe selected folder was listed successfully. Answer the current folder question using the actual entries in that tool result. No further tools are needed for this inventory; do not repeat the listing or answer an earlier message.";
+      const inferenceTools = tools.filter((entry) => !folderInventoryComplete && (entry.function.name !== "web_search" || this.webSearchAllowed(conversationId))
         && (entry.function.name !== "extract_library_archive" || archives.some(archive => !archive.extracted)));
       const repairingSkillArgs = recordingSkillArgsRepair;
       const repairingArgs = repairingSkillArgs || libraryWriteArgsRepair || pythonArgsRepair;
@@ -1861,7 +1877,7 @@ export class PrivateLocalRuntime {
       const wireMessages: OllamaMessage[] = requestNativeTools ? messages : messages.map((message) => message.role === "tool" ? { role: "user", content: `Tool result ${message.tool_name}: ${message.content}` } : { role: message.role, content: message.content, ...(message.tool_calls?.length ? { content: JSON.stringify({ tool: message.tool_calls[0].function.name, args: message.tool_calls[0].function.arguments }) } : {}) });
       const visualMessages = inspectedImages.length ? withToolImages(wireMessages, stepImages) : withLocalImages(wireMessages, lastUser, stepImages.images);
       const response = await requestLocalModel(`${endpoint}/api/chat`, {
-        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: visualMessages, tools: requestNativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(repairingArgs ? { format: toolArgumentRepairSchema } : !nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...inferenceTools.map(entry => entry.function.name), "final"] }, args: { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: localTaskReasoning(reasoningEffort, requiresComputedData(lastUser) || Boolean(recordingSkill) || outputNames.length > 1 || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells")), outputsConfirmed) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
+        body: JSON.stringify({ model: agent.model || state.settings.defaultModel, messages: visualMessages, tools: requestNativeTools && inferenceTools.length ? inferenceTools : undefined, stream: true, keep_alive: LOCAL_MODEL_KEEP_ALIVE, ...(repairingArgs ? { format: toolArgumentRepairSchema } : !nativeTools ? { format: { type: "object", properties: { tool: { type: "string", enum: [...inferenceTools.map(entry => entry.function.name), "final"] }, args: folderInventoryComplete ? { type: "object", properties: { response: { type: "string" } }, required: ["response"] } : { type: "object" } }, required: ["tool", "args"] } } : {}), ...(/^(?:qwen3(?:\.5)?|deepseek-r1|gemma4(?:-e2b-unsloth)?)(?::|$)/.test(agent.model) ? { think: localTaskReasoning(reasoningEffort, requiresComputedData(lastUser) || Boolean(recordingSkill) || outputNames.length > 1 || Boolean(lastUserMessage?.canvasAnnotations?.some((note) => note.geometry || note.metadata?.target && (note.metadata.target as { type?: string }).type === "cells")), outputsConfirmed) } : {}), options: { temperature: 0.3, num_ctx: LOCAL_CONTEXT_SIZE, num_predict: outputTokens } }),
         signal: AbortSignal.any([this.lifecycle.signal, AbortSignal.timeout(10 * 60_000)]),
       });
       if (!response.ok) {

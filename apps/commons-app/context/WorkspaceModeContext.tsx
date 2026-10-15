@@ -34,7 +34,7 @@ export function WorkspaceModeProvider({ initialMode, children }: { initialMode: 
       setDesktopApiMode(next);
       setCurrentMode(next);
       if (path && path !== window.location.pathname + window.location.search + window.location.hash) router.replace(path);
-      router.refresh();
+      else router.refresh();
       void useCommonsAppsStore.getState().refresh();
     });
   }, [router]);

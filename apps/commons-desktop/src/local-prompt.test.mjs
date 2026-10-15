@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { build } from "tsup";
 import { COMMONS_COPILOT_OPERATING_GUIDE } from "../../commons-api/src/agent/copilot-platform-guide.ts";
-import { localPromptAgent, localTaskGuidance } from "./local-prompt.ts";
+import { isLocalConversationOnlyRequest, isLocalFolderInventoryRequest, localPromptAgent, localTaskGuidance } from "./local-prompt.ts";
 
 const imported = {
   id: "cloud-copilot", name: "Commons Copilot", source: "cloud", isDefault: true,
@@ -36,6 +36,15 @@ test("Local loads detailed data guidance for computations and their continuation
   assert.match(localTaskGuidance("What is in this folder?", true), /current selected folder is authoritative/);
   assert.match(localTaskGuidance("Plot the CSV values", true), /align paired x\/y/);
   assert.match(localTaskGuidance("Continue", true, true), /align paired x\/y/);
+});
+
+test("only unambiguous conversation and folder inventories narrow the tool catalog", () => {
+  assert.equal(isLocalConversationOnlyRequest("Tell me a short joke"), true);
+  assert.equal(isLocalConversationOnlyRequest("Tell me a joke and save it to joke.md"), false);
+  assert.equal(isLocalFolderInventoryRequest("What is in this folder?"), true);
+  assert.equal(isLocalFolderInventoryRequest("List this folder"), true);
+  assert.equal(isLocalFolderInventoryRequest("List this folder then rename the files"), false);
+  assert.equal(isLocalFolderInventoryRequest("What is in this folder and my Knowledge notes?"), false);
 });
 
 const output = resolve(import.meta.dirname, "../node_modules/.cache/local-prompt-test");
@@ -83,6 +92,9 @@ for (const model of ["deepseek-r1:1.5b", "qwen3.5:2b"]) {
         assert.ok(!messages[0].content.includes("project-plan-731.md"), "The selected folder must be read through a tool, not injected as a snapshot");
         const last = messages.at(-1);
         const folderTask = messages.some(message => message.content === "What is in this folder?");
+        const joke = messages.at(-1).content === "Tell me a joke";
+        if (joke) assert.equal(body.tools, undefined, "Ordinary conversation must not load a tool catalog");
+        if (folderTask && !selected && body.tools) assert.ok(body.tools.every(tool => /^cli_(?:list_directory|read_file|search_file|search_files|disk_usage)$/.test(tool.function.name)));
         const result = last.role === "tool" || last.content.startsWith("Tool result cli_list_directory:");
         let message = { role: "assistant", content: "Hello from Local." };
         if (folderTask && !selected) {
@@ -116,7 +128,7 @@ for (const model of ["deepseek-r1:1.5b", "qwen3.5:2b"]) {
       const selected = await runtime.sendMessage({ agentId: imported.id, prompt: "Find PrivateKnowledgeMarker731", knowledgeMode: "selected", spaceIds: ["selected-notes"] });
       assert.equal(selected.response, "The approved launch owner is Amina.");
       assert.equal(runtime.state().agents[0].instructions, imported.instructions);
-      assert.equal(requests.length, 5);
+      assert.equal(requests.length, 4);
       assert.deepEqual(failures, []);
     } finally {
       runtime.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
