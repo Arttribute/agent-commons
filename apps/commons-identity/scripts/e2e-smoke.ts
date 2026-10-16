@@ -150,18 +150,35 @@ await database.query(
     JSON.stringify(["openid", "profile"]),
   ],
 );
-const profileBefore = await app.request("http://identity.test/api/identity/me/profile", {
-  headers: { Authorization: `Bearer ${platformAccessToken}` },
-});
+const profileBefore = await app.request(
+  "http://identity.test/api/identity/me/profile",
+  {
+    headers: { Authorization: `Bearer ${platformAccessToken}` },
+  },
+);
 assert(profileBefore.ok, `profile read failed: ${profileBefore.status}`);
-const profileUpdated = await app.request("http://identity.test/api/identity/me/profile", {
-  method: "PATCH",
-  headers: { Authorization: `Bearer ${platformAccessToken}`, "Content-Type": "application/json" },
-  body: JSON.stringify({ name: "Updated Commons Name" }),
-});
-const updatedProfile = (await profileUpdated.json()) as { data?: { name?: string } };
-assert(profileUpdated.ok, `profile update failed: ${profileUpdated.status} ${JSON.stringify(updatedProfile)}`);
-assert(updatedProfile.data?.name === "Updated Commons Name", "profile name did not persist");
+const profileUpdated = await app.request(
+  "http://identity.test/api/identity/me/profile",
+  {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${platformAccessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ name: "Updated Commons Name" }),
+  },
+);
+const updatedProfile = (await profileUpdated.json()) as {
+  data?: { name?: string };
+};
+assert(
+  profileUpdated.ok,
+  `profile update failed: ${profileUpdated.status} ${JSON.stringify(updatedProfile)}`,
+);
+assert(
+  updatedProfile.data?.name === "Updated Commons Name",
+  "profile name did not persist",
+);
 const projectsResponse = await app.request(
   "http://identity.test/api/platform/projects",
   { headers: { Authorization: `Bearer ${platformAccessToken}` } },
@@ -216,7 +233,10 @@ assert(ownUsage.ok, `project usage failed: ${ownUsage.status}`);
 const usageBody = (await ownUsage.json()) as {
   data?: { summary?: { requests?: number }; recent?: unknown[] };
 };
-assert(usageBody.data?.summary?.requests === 0, "new project usage was not empty");
+assert(
+  usageBody.data?.summary?.requests === 0,
+  "new project usage was not empty",
+);
 assert(usageBody.data?.recent?.length === 0, "new project had request events");
 await database.query(
   `insert into commons_api_usage_event
@@ -227,13 +247,29 @@ await database.query(
 const populatedUsage = await app.request(usagePath, {
   headers: { Authorization: `Bearer ${platformAccessToken}` },
 });
-assert(populatedUsage.ok, `populated project usage failed: ${populatedUsage.status}`);
+assert(
+  populatedUsage.ok,
+  `populated project usage failed: ${populatedUsage.status}`,
+);
 const populatedBody = (await populatedUsage.json()) as {
-  data?: { summary?: { requests?: number }; daily?: unknown[]; recent?: unknown[] };
+  data?: {
+    summary?: { requests?: number };
+    daily?: unknown[];
+    recent?: unknown[];
+  };
 };
-assert(populatedBody.data?.summary?.requests === 1, "project usage count is wrong");
-assert(populatedBody.data?.daily?.length === 1, "project usage daily series is wrong");
-assert(populatedBody.data?.recent?.length === 1, "project recent requests are wrong");
+assert(
+  populatedBody.data?.summary?.requests === 1,
+  "project usage count is wrong",
+);
+assert(
+  populatedBody.data?.daily?.length === 1,
+  "project usage daily series is wrong",
+);
+assert(
+  populatedBody.data?.recent?.length === 1,
+  "project recent requests are wrong",
+);
 
 const desktopDevice = await app.request(
   "http://identity.test/api/auth/device/code",
@@ -381,7 +417,9 @@ assert(
 assert(serviceClaims.actor_type === "service", "service actor type is missing");
 
 assert(
-  !["credits:write", "ops:read"].some(scope => (platformClaims.scopes as string[]).includes(scope)),
+  !["credits:write", "ops:read"].some((scope) =>
+    (platformClaims.scopes as string[]).includes(scope),
+  ),
   "Ordinary account JWTs must not grant credit administration",
 );
 const grantClient = await ensureOAuthClient(database, {
@@ -398,17 +436,37 @@ async function creditToken(client: typeof grantClient) {
       Authorization: `Basic ${Buffer.from(`${client.client_id}:${client.client_secret}`).toString("base64")}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: new URLSearchParams({ grant_type: "client_credentials", scope: "credits:write ops:read", resource: "commons-platform" }).toString(),
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      scope: "credits:write ops:read",
+      resource: "commons-platform",
+    }).toString(),
   });
 }
 const grantResponse = await creditToken(grantClient);
-assert(grantResponse.ok, `Explicitly scoped grant client failed: ${grantResponse.status}`);
+assert(
+  grantResponse.ok,
+  `Explicitly scoped grant client failed: ${grantResponse.status}`,
+);
 const grantToken = await grantResponse.json();
-const grantClaims = JSON.parse(Buffer.from(grantToken.access_token.split(".")[1], "base64url").toString("utf8"));
+const grantClaims = JSON.parse(
+  Buffer.from(grantToken.access_token.split(".")[1], "base64url").toString(
+    "utf8",
+  ),
+);
 assert(grantClaims.scopes.includes("credits:write"), "Grant scope is missing");
-assert(grantClaims.scopes.includes("ops:read"), "Operations read scope is missing");
-assert(grantClaims.workspace_id === "ops:staging", "Operations environment binding is missing");
-assert((await creditToken(serviceClient)).status === 400, "Unregistered service must not acquire grant scope");
+assert(
+  grantClaims.scopes.includes("ops:read"),
+  "Operations read scope is missing",
+);
+assert(
+  grantClaims.workspace_id === "ops:staging",
+  "Operations environment binding is missing",
+);
+assert(
+  (await creditToken(serviceClient)).status === 400,
+  "Unregistered service must not acquire grant scope",
+);
 
 const lookup = (query: string, token = serviceToken.access_token!) =>
   app.request(`http://identity.test/api/identity/users/resolve?${query}`, {

@@ -99,19 +99,46 @@ describe('CreditController delegated self-service', () => {
 });
 
 describe('operations grant environment binding', () => {
-  const grant=jest.fn().mockResolvedValue({entryId:'entry_test'});
-  const controller=new CreditController({grant} as any);
-  const previous=process.env.APP_ENV;
-  beforeEach(()=>{process.env.APP_ENV='production';jest.clearAllMocks();});
-  afterAll(()=>{if(previous===undefined)delete process.env.APP_ENV;else process.env.APP_ENV=previous;});
-  const request=(env:string)=>({principal:{principalId:'svc_ops',principalType:'service',workspaceId:`ops:${env}`,scopes:['credits:write']}});
-  const body={principalId:'usr_recipient',amount:1000000,eventType:'ops_credit_grant',idempotencyKey:'test-ops-grant'};
-  it('rejects staging credentials on production',async()=>{
-    await expect(controller.grant(request('staging'),body)).rejects.toMatchObject({status:403});
+  const grant = jest.fn().mockResolvedValue({ entryId: 'entry_test' });
+  const controller = new CreditController({ grant } as any);
+  const previous = process.env.APP_ENV;
+  beforeEach(() => {
+    process.env.APP_ENV = 'production';
+    jest.clearAllMocks();
+  });
+  afterAll(() => {
+    if (previous === undefined) delete process.env.APP_ENV;
+    else process.env.APP_ENV = previous;
+  });
+  const request = (env: string) => ({
+    principal: {
+      principalId: 'svc_ops',
+      principalType: 'service',
+      workspaceId: `ops:${env}`,
+      scopes: ['credits:write'],
+    },
+  });
+  const body = {
+    principalId: 'usr_recipient',
+    amount: 1000000,
+    eventType: 'ops_credit_grant',
+    idempotencyKey: 'test-ops-grant',
+  };
+  it('rejects staging credentials on production', async () => {
+    await expect(
+      controller.grant(request('staging'), body),
+    ).rejects.toMatchObject({ status: 403 });
     expect(grant).not.toHaveBeenCalled();
   });
-  it('allows a production-bound grant',async()=>{
-    await expect(controller.grant(request('production'),body)).resolves.toEqual({data:{entryId:'entry_test'}});
-    expect(grant).toHaveBeenCalledWith(expect.objectContaining({amount:1000000,principalId:'usr_recipient'}));
+  it('allows a production-bound grant', async () => {
+    await expect(
+      controller.grant(request('production'), body),
+    ).resolves.toEqual({ data: { entryId: 'entry_test' } });
+    expect(grant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 1000000,
+        principalId: 'usr_recipient',
+      }),
+    );
   });
 });

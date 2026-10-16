@@ -13,6 +13,7 @@ import { BillingService } from './billing.service';
 import { EntitlementsService } from './entitlements.service';
 import { Public, resolveCallerId, type ApiKeyPrincipal } from '~/modules/auth';
 import { PlanKey } from './plan-catalog';
+import { assertOpsReader } from '~/operations/operations-auth';
 
 interface Caller {
   principalId: string;
@@ -43,15 +44,12 @@ export class BillingController {
 
   /** Staff service only. Stripe credentials remain in the API runtime. */
   @Get('operations')
-  async operations(@Req() req: Request, @Query('principalId') principalId: string) {
+  async operations(
+    @Req() req: Request,
+    @Query('principalId') principalId: string,
+  ) {
     const principal = (req as any).principal as ApiKeyPrincipal | undefined;
-    const env = process.env.APP_ENV || process.env.NODE_ENV;
-    if (principal?.principalType !== 'service' ||
-        !principal.scopes?.includes('ops:read') ||
-        !['staging', 'production'].includes(env ?? '') ||
-        principal.workspaceId !== `ops:${env}`) {
-      throw new ForbiddenException('Environment-bound ops:read service scope is required');
-    }
+    assertOpsReader(principal);
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(principalId ?? '')) {
       throw new BadRequestException('A canonical principalId is required');
     }

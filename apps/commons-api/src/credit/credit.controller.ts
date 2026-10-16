@@ -287,9 +287,14 @@ export class CreditController {
 
   private assertCanWrite(principal: Principal | undefined) {
     if (!principal) throw new ForbiddenException('Authentication required.');
-    if (principal.workspaceId?.startsWith('ops:') &&
-        principal.workspaceId !== `ops:${process.env.APP_ENV || process.env.NODE_ENV}`) {
-      throw new ForbiddenException('Operations credit token belongs to a different environment.');
+    if (
+      principal.workspaceId?.startsWith('ops:') &&
+      principal.workspaceId !==
+        `ops:${process.env.APP_ENV || process.env.NODE_ENV}`
+    ) {
+      throw new ForbiddenException(
+        'Operations credit token belongs to a different environment.',
+      );
     }
     if (this.canWrite(principal)) return;
     throw new ForbiddenException('credits:write scope is required.');

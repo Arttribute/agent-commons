@@ -189,40 +189,77 @@ export class BillingService {
     const row = await this.db.query.billingCustomer.findFirst({
       where: eq(schema.billingCustomer.principalId, principalId),
     });
-    if (!row) return { customerId: null, subscriptions: [], invoices: [], topups: [], paymentMethods: [] };
-    if (!this.stripe.configured) throw new BadRequestException('Stripe is not configured');
+    if (!row)
+      return {
+        customerId: null,
+        subscriptions: [],
+        invoices: [],
+        topups: [],
+        paymentMethods: [],
+      };
+    if (!this.stripe.configured)
+      throw new BadRequestException('Stripe is not configured');
     const [subscriptions, invoices, checkouts, methods] = await Promise.all([
-      this.stripe.stripe.subscriptions.list({ customer: row.stripeCustomerId, status: 'all', limit: 100 }),
-      this.stripe.stripe.invoices.list({ customer: row.stripeCustomerId, limit: 100 }),
-      this.stripe.stripe.checkout.sessions.list({ customer: row.stripeCustomerId, limit: 100 }),
+      this.stripe.stripe.subscriptions.list({
+        customer: row.stripeCustomerId,
+        status: 'all',
+        limit: 100,
+      }),
+      this.stripe.stripe.invoices.list({
+        customer: row.stripeCustomerId,
+        limit: 100,
+      }),
+      this.stripe.stripe.checkout.sessions.list({
+        customer: row.stripeCustomerId,
+        limit: 100,
+      }),
       this.listPaymentMethods(principalId),
     ]);
     return {
       customerId: row.stripeCustomerId,
       fetchedAt: new Date().toISOString(),
-      hasMore: subscriptions.has_more || invoices.has_more || checkouts.has_more,
-      subscriptions: subscriptions.data.map(sub => ({
-        id: sub.id, status: sub.status, cancelAtPeriodEnd: sub.cancel_at_period_end,
+      hasMore:
+        subscriptions.has_more || invoices.has_more || checkouts.has_more,
+      subscriptions: subscriptions.data.map((sub) => ({
+        id: sub.id,
+        status: sub.status,
+        cancelAtPeriodEnd: sub.cancel_at_period_end,
         currentPeriodEnd: new Date(sub.current_period_end * 1000).toISOString(),
-        items: sub.items.data.map(item => ({
-          priceId: item.price.id, label: item.price.nickname,
-          amount: item.price.unit_amount, currency: item.price.currency,
+        items: sub.items.data.map((item) => ({
+          priceId: item.price.id,
+          label: item.price.nickname,
+          amount: item.price.unit_amount,
+          currency: item.price.currency,
           interval: item.price.recurring?.interval ?? null,
           intervalCount: item.price.recurring?.interval_count ?? null,
           quantity: item.quantity ?? 1,
         })),
       })),
-      invoices: invoices.data.map(inv => ({
-        id: inv.id, number: inv.number, created: new Date(inv.created * 1000).toISOString(),
-        amountPaid: inv.amount_paid, amountDue: inv.amount_due, total: inv.total,
-        currency: inv.currency, status: inv.status,
-        lines: inv.lines.data.map(line => ({ description: line.description, amount: line.amount, currency: line.currency })),
+      invoices: invoices.data.map((inv) => ({
+        id: inv.id,
+        number: inv.number,
+        created: new Date(inv.created * 1000).toISOString(),
+        amountPaid: inv.amount_paid,
+        amountDue: inv.amount_due,
+        total: inv.total,
+        currency: inv.currency,
+        status: inv.status,
+        lines: inv.lines.data.map((line) => ({
+          description: line.description,
+          amount: line.amount,
+          currency: line.currency,
+        })),
         linesHasMore: inv.lines.has_more,
       })),
-      topups: checkouts.data.filter(s => s.mode === 'payment').map(s => ({
-        id: s.id, amount: s.amount_total, currency: s.currency, status: s.payment_status,
-        created: new Date(s.created * 1000).toISOString(),
-      })),
+      topups: checkouts.data
+        .filter((s) => s.mode === 'payment')
+        .map((s) => ({
+          id: s.id,
+          amount: s.amount_total,
+          currency: s.currency,
+          status: s.payment_status,
+          created: new Date(s.created * 1000).toISOString(),
+        })),
       paymentMethods: methods.paymentMethods,
     };
   }
