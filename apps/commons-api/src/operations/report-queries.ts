@@ -45,6 +45,10 @@ export const billingCTE = `with objects as (
 ), ranked as (
  select *,row_number() over(partition by coalesce(o->>'id',event_id) order by event_time desc,
  case when type='invoice.paid' then 1 else 0 end desc,received_at desc) as position from objects
+), refund_deltas as (
+ select *, greatest(0, coalesce((o->>'amount_refunded')::bigint,0) -
+ coalesce(lag((o->>'amount_refunded')::bigint) over(partition by o->>'id' order by event_time,received_at,event_id),0)) as refund_delta
+ from objects where type='charge.refunded'
 ), payments as (
  select o->>'id' as id,o->>'customer' as "customerId",type,
  coalesce(o->>'currency','usd') as currency,
@@ -55,9 +59,13 @@ export const billingCTE = `with objects as (
  case when type='invoice.paid' or (type='checkout.session.completed' and o->>'payment_status'='paid') then 'paid'
  when type='charge.refunded' then 'refunded' when type='invoice.payment_failed' then 'failed' else 'unpaid' end as status,
  case when type='checkout.session.completed' then 'Credit top-up' when type='charge.refunded' then 'Refund' else coalesce(o->>'number','Subscription invoice') end as description,
- o->>'hosted_invoice_url' as "invoiceUrl", to_timestamp(coalesce((o->>'created')::bigint,event_time)) as "createdAt",
+ o->>'hosted_invoice_url' as "invoiceUrl", to_timestamp(case when type='invoice.paid' then coalesce((o#>>'{status_transitions,paid_at}')::bigint,event_time) else event_time end) as "createdAt",
  o->>'subscription' as "subscriptionId",o->'lines'->'data' as lines,webhook_status as "webhookStatus"
- from ranked where position=1 and (type<>'checkout.session.completed' or o->>'mode'='payment')
+ from ranked where position=1 and type<>'charge.refunded' and (type<>'checkout.session.completed' or o->>'mode'='payment')
+ union all
+ select o->>'id',o->>'customer',type,coalesce(o->>'currency','usd'),-refund_delta::float8,
+ 'refunded','Refund',null,to_timestamp(event_time),null,null::jsonb,webhook_status
+ from refund_deltas where refund_delta>0
 )`;
 export const billingPayments = `${billingCTE}
  select p.id,p."customerId",p.type,p.currency,p.amount,p.status,p.description,p."invoiceUrl",p."createdAt",p.lines,p."webhookStatus",
