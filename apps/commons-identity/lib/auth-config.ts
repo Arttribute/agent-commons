@@ -429,6 +429,7 @@ export function commonsAuthOptions(database: unknown) {
           // Staff service clients must be explicitly registered for this scope.
           // Keep it out of PLATFORM_SCOPES and ordinary account JWTs.
           "credits:write",
+          "ops:read",
         ],
         validAudiences: ["commons-platform"],
         accessTokenExpiresIn: 15 * 60,

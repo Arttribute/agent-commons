@@ -1,9 +1,11 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   ForbiddenException,
   Get,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -38,6 +40,23 @@ export class BillingController {
     private readonly billing: BillingService,
     private readonly entitlements: EntitlementsService,
   ) {}
+
+  /** Staff service only. Stripe credentials remain in the API runtime. */
+  @Get('operations')
+  async operations(@Req() req: Request, @Query('principalId') principalId: string) {
+    const principal = (req as any).principal as ApiKeyPrincipal | undefined;
+    const env = process.env.APP_ENV || process.env.NODE_ENV;
+    if (principal?.principalType !== 'service' ||
+        !principal.scopes?.includes('ops:read') ||
+        !['staging', 'production'].includes(env ?? '') ||
+        principal.workspaceId !== `ops:${env}`) {
+      throw new ForbiddenException('Environment-bound ops:read service scope is required');
+    }
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(principalId ?? '')) {
+      throw new BadRequestException('A canonical principalId is required');
+    }
+    return { data: await this.billing.inspectCustomer(principalId) };
+  }
 
   /** Current plan, status, entitlements. */
   @Public()

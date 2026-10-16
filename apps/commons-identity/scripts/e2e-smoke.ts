@@ -381,14 +381,14 @@ assert(
 assert(serviceClaims.actor_type === "service", "service actor type is missing");
 
 assert(
-  !(platformClaims.scopes as string[]).includes("credits:write"),
+  !["credits:write", "ops:read"].some(scope => (platformClaims.scopes as string[]).includes(scope)),
   "Ordinary account JWTs must not grant credit administration",
 );
 const grantClient = await ensureOAuthClient(database, {
   name: "E2E Operations Grant",
   redirectUris: ["https://invalid.local/service"],
   grantTypes: ["client_credentials"],
-  scopes: ["credits:write"],
+  scopes: ["credits:write", "ops:read"],
   metadata: { serviceAccountId: "svc_ops_test", workspaceId: "ops:staging" },
 });
 async function creditToken(client: typeof grantClient) {
@@ -398,7 +398,7 @@ async function creditToken(client: typeof grantClient) {
       Authorization: `Basic ${Buffer.from(`${client.client_id}:${client.client_secret}`).toString("base64")}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: new URLSearchParams({ grant_type: "client_credentials", scope: "credits:write", resource: "commons-platform" }).toString(),
+    body: new URLSearchParams({ grant_type: "client_credentials", scope: "credits:write ops:read", resource: "commons-platform" }).toString(),
   });
 }
 const grantResponse = await creditToken(grantClient);
@@ -406,6 +406,7 @@ assert(grantResponse.ok, `Explicitly scoped grant client failed: ${grantResponse
 const grantToken = await grantResponse.json();
 const grantClaims = JSON.parse(Buffer.from(grantToken.access_token.split(".")[1], "base64url").toString("utf8"));
 assert(grantClaims.scopes.includes("credits:write"), "Grant scope is missing");
+assert(grantClaims.scopes.includes("ops:read"), "Operations read scope is missing");
 assert(grantClaims.workspace_id === "ops:staging", "Operations environment binding is missing");
 assert((await creditToken(serviceClient)).status === 400, "Unregistered service must not acquire grant scope");
 
