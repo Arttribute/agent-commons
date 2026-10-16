@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { OperationsModule } from './operations/operations.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth';
@@ -42,6 +43,7 @@ import { MediaModule } from './media';
   imports: [
     // Infrastructure modules (global)
     DatabaseModule,
+    OperationsModule,
     OpenAIModule,
     EncryptionModule,
     ModelProviderModule, // Global model provider factory
