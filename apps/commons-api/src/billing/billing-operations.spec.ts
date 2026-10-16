@@ -85,6 +85,7 @@ describe('staff billing inspection', () => {
               created: 1792000000,
               amount_paid: 2468,
               amount_due: 2468,
+              amount_remaining: 0,
               total: 2468,
               currency: 'usd',
               status: 'paid',
@@ -136,6 +137,7 @@ describe('staff billing inspection', () => {
       interval: 'month',
     });
     expect(result.invoices[0].amountPaid).toBe(2468);
+    expect(result.invoices[0].amountDue).toBe(0);
     expect(result.topups[0].amount).toBe(500);
     expect(JSON.stringify(result)).not.toContain('excluded');
   });

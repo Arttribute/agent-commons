@@ -65,5 +65,10 @@ describe('scoped operations reports', () => {
     );
     expect(query.sql).not.toContain(value);
     expect(query.params).toEqual([value, 7, value]);
+    const date = new Date('2026-01-01T00:00:00.000Z');
+    expect(
+      new PgDialect().sqlToQuery(bindReport('select $1::timestamptz', [date]))
+        .params,
+    ).toEqual([date.toISOString()]);
   });
 });

@@ -240,7 +240,7 @@ export class BillingService {
         number: inv.number,
         created: new Date(inv.created * 1000).toISOString(),
         amountPaid: inv.amount_paid,
-        amountDue: inv.amount_due,
+        amountDue: inv.amount_remaining,
         total: inv.total,
         currency: inv.currency,
         status: inv.status,
