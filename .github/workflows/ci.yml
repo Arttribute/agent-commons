@@ -118,6 +118,11 @@ jobs:
           NODE_OPTIONS: --experimental-vm-modules --max-old-space-size=4096
         run: pnpm --filter commons-api exec jest --runInBand credit/referral credit/credit.service.spec.ts credit/credit.controller.spec.ts session/session-visibility.integration.spec.ts session/chat-history-page.spec.ts session/session-suggestions.service.spec.ts tool/tools/common-tool.project.spec.ts agent/model-tool-selection.spec.ts
 
+      - name: Test staff billing and reporting authorization
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm --filter commons-api exec jest --runInBand operations/operations.controller.spec.ts billing/billing-operations.spec.ts
+
       - name: Test wallet balance response and network selection
         run: node --experimental-strip-types --test apps/commons-app/lib/wallet-networks.test.mjs
 
