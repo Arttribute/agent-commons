@@ -103,7 +103,7 @@ export default async function LoginPage({ searchParams }: Props) {
           <input className={authInputClass} name="name" placeholder="Your name" autoComplete="name" required />
           <input className={authInputClass} name="email" type="email" placeholder="you@example.com" autoComplete="email" required />
           <input className={authInputClass} name="password" type="password" minLength={8} placeholder="At least 8 characters" autoComplete="new-password" required />
-          <button type="submit" className={authSecondaryButtonClass}>Create account · 500 credits included</button>
+          <button type="submit" className={authSecondaryButtonClass}>Create account · 1,000 credits included</button>
         </form>
       </details>
       <p className="mt-5 text-center text-xs leading-5 text-stone-400">

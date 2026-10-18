@@ -141,23 +141,23 @@ describe('CreditService', () => {
     ).rejects.toMatchObject({ status: 402 });
   });
 
-  it('atomically grants 500 credits when a canonical user account is created', async () => {
-    const db = makeDb(undefined, 500, true);
+  it('atomically grants 1,000 credits when a canonical user account is created', async () => {
+    const db = makeDb(undefined, 1000, true);
     const service = await makeService(db);
 
     const result = await service.getBalance({ principalId: 'usr_new' });
 
-    expect(result.balance).toBe(500);
+    expect(result.balance).toBe(1000);
     expect(db._ledgerValues).toHaveBeenCalledWith(
       expect.objectContaining({
         principalId: 'usr_new',
-        amount: 500,
+        amount: 1000,
         eventType: 'new_user_welcome',
         idempotencyKey: 'new-user-welcome:usr_new',
       }),
     );
     expect(db._accountUpdateSet).toHaveBeenCalledWith(
-      expect.objectContaining({ balance: 500, lifetimeGranted: 500 }),
+      expect.objectContaining({ balance: 1000, lifetimeGranted: 1000 }),
     );
   });
 
