@@ -12,7 +12,7 @@ import { DatabaseService } from '~/modules/database/database.service';
 import type { CreditBalance, CreditLedgerInput } from './credit.types';
 
 type Tx = any;
-const NEW_USER_CREDIT_GRANT = 500;
+const NEW_USER_CREDIT_GRANT = 1000;
 
 @Injectable()
 export class CreditService {

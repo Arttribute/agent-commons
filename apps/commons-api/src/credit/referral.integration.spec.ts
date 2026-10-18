@@ -44,10 +44,29 @@ const url = process.env.REFERRAL_TEST_DATABASE_URL;
   });
   const activation = (id = 'usr_friend', email = 'friend@example.com') => ({ principalId: id, email, emailVerified: true, firstActivation: true, activatedAt: new Date().toISOString(), code });
 
+  it('starts new users at 1,000 credits once under concurrent requests without refilling spent credits', async () => {
+    const principalId = 'usr_new_customer';
+    const balances = await Promise.all(Array.from({ length: 8 }, () => credits.getBalance({ principalId })));
+    expect(balances.every((balance) => balance.balance === 1000)).toBe(true);
+    expect(await client`select amount,remaining_amount from credit_ledger_entry where principal_id=${principalId} and event_type='new_user_welcome'`).toEqual([
+      { amount: 1000, remaining_amount: 1000 },
+    ]);
+    await credits.debit({ principalId, amount: 100, eventType: 'agent_run_usage', sourcePlatform: 'agent_commons', idempotencyKey: 'new-user-spend' });
+    expect((await credits.getBalance({ principalId })).balance).toBe(900);
+    expect((await client`select * from credit_ledger_entry where principal_id=${principalId} and event_type='new_user_welcome'`)).toHaveLength(1);
+  });
+
+  it('preserves an existing user balance after the welcome amount increases', async () => {
+    await client`insert into credit_account (principal_id,balance,lifetime_granted) values ('usr_existing_customer',42,500)`;
+    expect((await credits.getBalance({ principalId: 'usr_existing_customer' })).balance).toBe(42);
+    expect((await client`select * from credit_ledger_entry where principal_id='usr_existing_customer'`)).toHaveLength(0);
+    expect(Number((await client`select lifetime_granted from credit_account where principal_id='usr_existing_customer'`)[0].lifetime_granted)).toBe(500);
+  });
+
   it('awards exactly 1,000 credits once under parallel signup callbacks', async () => {
     const results = await Promise.all(Array.from({ length: 8 }, () => referrals.activate(activation())));
     expect(results.filter((result) => result.rewarded)).toHaveLength(1);
-    expect((await credits.getBalance({ principalId: 'usr_referrer' })).balance).toBe(1500);
+    expect((await credits.getBalance({ principalId: 'usr_referrer' })).balance).toBe(2000);
     expect((await referrals.summary('usr_referrer')).earned).toBe(1000);
     expect((await client`select * from referral_signup`)).toHaveLength(1);
     expect((await client`select * from credit_ledger_entry where event_type='referral_signup'`)).toHaveLength(1);
