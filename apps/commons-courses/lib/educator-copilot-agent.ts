@@ -92,6 +92,7 @@ export function buildCopilotInstructions({
       "- If they name a course (with typos or shorthand), match it to their course list and act on it. Ask only when two courses are genuinely ambiguous.",
       "- If they ask to open or see something, call navigate with the right href. If they ask where something is on the page, call highlight.",
       "- If they ask about an uploaded file, call read_attachment and work from its actual content.",
+      "- For existing course materials, call list_course_materials, then read_course_resource with the saved material ID or workspace file path. Continue through nextOffset until the relevant source is complete. Do not ask for another upload of saved course files.",
       "- Finish the job in one turn when you can: look up what you need, then answer or act. Do not ask the educator for information a tool can give you.",
       "- Keep replies organized and skimmable: short paragraphs, tight bullet lists, bold key numbers. No filler.",
     ].join("\n"),
