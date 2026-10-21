@@ -52,6 +52,8 @@ type LearnerProgress = {
   accessLevel?: string;
 };
 
+export const maxDuration = 300;
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -181,19 +183,36 @@ export async function POST(req: NextRequest) {
       ? { ...body.context, visibleText: undefined }
       : body.context;
 
-  const reply = await runCourseAgent({
-    course,
-    agent,
-    role,
-    message: body.message,
-    messages: body.messages || [],
-    context: agentContext,
-    liveCopilotPolicy,
-    searchResults,
-    learnerProgress,
-    learnerProfile,
-    educatorAnalytics,
-  });
+  try {
+    const reply = await runCourseAgent({
+      course,
+      courseId: String(course._id),
+      actor: {
+        userId: session.user.id,
+        principalId: session.user.identityUserId,
+        workspaceId: session.user.identityWorkspaceId,
+      },
+      agent,
+      role,
+      message: body.message,
+      messages: body.messages || [],
+      context: agentContext,
+      liveCopilotPolicy,
+      searchResults,
+      learnerProgress,
+      learnerProfile,
+      educatorAnalytics,
+    });
 
-  return NextResponse.json({ reply });
+    return NextResponse.json({ reply });
+  } catch (error) {
+    console.error("[course-copilot] run failed", error);
+    return NextResponse.json(
+      {
+        error:
+          "Your learning copilot could not connect. Sign in with Commons, then retry.",
+      },
+      { status: 503 },
+    );
+  }
 }

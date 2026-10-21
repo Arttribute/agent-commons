@@ -45,6 +45,7 @@ const TOOL_LABELS: Record<string, string> = {
   list_live_sessions: "Checking live sessions",
   get_live_session: "Reading the live programme",
   list_course_materials: "Checking course materials",
+  read_course_resource: "Reading course source",
   read_attachment: "Reading attached file",
   update_lesson: "Drafting a lesson edit",
   add_lesson: "Drafting a new lesson",
