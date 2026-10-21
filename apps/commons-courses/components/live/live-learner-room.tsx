@@ -712,6 +712,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
         <CourseAgentDrawer
           courseSlug={session.courseSlug}
           role="learner"
+          aboveFooter={Boolean(paceNav)}
           context={{
             page: "live_session",
             liveSessionId: session.id,
