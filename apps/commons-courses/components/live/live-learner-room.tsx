@@ -696,17 +696,18 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      <WorkbookDrawer
-        open={workbookOpen}
-        session={session}
-        selectedId={activity?.id}
-        onClose={closeWorkbook}
-        onSelect={(activityId) => {
-          setSelectedId(activityId);
-          setWorkbookOpen(false);
-        }}
-        onDownload={() => downloadWorkbook()}
-      />
+      {workbookOpen ? (
+        <WorkbookDrawer
+          session={session}
+          selectedId={activity?.id}
+          onClose={closeWorkbook}
+          onSelect={(activityId) => {
+            setSelectedId(activityId);
+            setWorkbookOpen(false);
+          }}
+          onDownload={() => downloadWorkbook()}
+        />
+      ) : null}
       {session.settings.learnerCopilot.enabled ? (
         <CourseAgentDrawer
           courseSlug={session.courseSlug}
@@ -800,14 +801,12 @@ function EnrollmentRequired({
 }
 
 function WorkbookDrawer({
-  open,
   session,
   selectedId,
   onClose,
   onSelect,
   onDownload,
 }: {
-  open: boolean;
   session: LearnerLiveSession;
   selectedId?: string;
   onClose: () => void;
@@ -824,10 +823,9 @@ function WorkbookDrawer({
   const [folderId, setFolderId] = useState(initialPart.id);
   const drawerRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (open) setFolderId(initialPart.id);
-  }, [open, initialPart.id]);
+    setFolderId(initialPart.id);
+  }, [initialPart.id]);
   useEffect(() => {
-    if (!open) return;
     const previousFocus = document.activeElement as HTMLElement | null;
     const drawer = drawerRef.current;
     const focusable = () => Array.from(drawer?.querySelectorAll<HTMLElement>(
@@ -838,7 +836,9 @@ function WorkbookDrawer({
       if (event.key === "Escape") { event.preventDefault(); onClose(); }
       if (event.key !== "Tab") return;
       const items = focusable(), first = items[0], last = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (!drawer?.contains(document.activeElement)) {
+        event.preventDefault(); first?.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault(); last?.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
         event.preventDefault(); first?.focus();
@@ -846,8 +846,7 @@ function WorkbookDrawer({
     };
     document.addEventListener("keydown", handleKey);
     return () => { document.removeEventListener("keydown", handleKey); previousFocus?.focus(); };
-  }, [open, onClose]);
-  if (!open) return null;
+  }, [onClose]);
   const folder = parts.find((part) => part.id === folderId) || initialPart;
   const activities = folder.activityIds.flatMap((id) => {
     const item = session.activities.find((activity) => activity.id === id);
