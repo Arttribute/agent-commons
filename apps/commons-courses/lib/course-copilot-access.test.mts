@@ -48,7 +48,10 @@ test("course copilot agents are isolated by user, course, role and linked princi
     mongoose: { models: { CourseCopilotRuntime: Runtime }, Schema: class {} },
     "@/lib/agent-commons": { getAgentCommonsClient: () => client },
     "@/lib/platform-service-token": {
-      platformServiceToken: async () => "service-token",
+      platformServiceToken: async (_platform: string, scope: string) => {
+        assert.ok(scope.split(" ").includes("agents:create"));
+        return "service-token";
+      },
     },
   });
   const input = {

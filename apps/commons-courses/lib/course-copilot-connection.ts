@@ -27,7 +27,7 @@ export async function courseCopilotConnection(input: {
     throw new Error("Sign in with Commons to connect your learning copilot.");
   const token = await platformServiceToken(
     "agent_commons",
-    "agents:read agents:write agents:run",
+    "agents:read agents:create agents:write agents:run",
   );
   const client = getAgentCommonsClient(token, principalId);
   if (!token || !client)

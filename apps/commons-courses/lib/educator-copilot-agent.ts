@@ -226,7 +226,7 @@ export async function ensureEducatorCopilotProfile(
   const platformAccessToken =
     (await platformServiceToken(
       "agent_commons",
-      "agents:read agents:write agents:run"
+      "agents:read agents:create agents:write agents:run"
     )) ||
     (user.accessTokenError ? undefined : user.accessToken);
   const client = getAgentCommonsClient(platformAccessToken, principalId);
