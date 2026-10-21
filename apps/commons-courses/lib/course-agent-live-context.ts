@@ -75,10 +75,12 @@ export async function buildLiveLearnerContext({
     context.ownSavedResponse = boundedLearnerValue(
       byActivity[activity.id]?.value,
     );
-    context.ownUnsavedWorkbookDraft =
+    const draft =
       activity.id === view.activityId
         ? boundedLearnerValue(view.workbookDraft)
         : undefined;
+    context.ownUnsavedWorkbookDraft =
+      draft !== context.ownSavedResponse ? draft : undefined;
     if (activity.sourceActivityId)
       context.ownLinkedResponse = boundedLearnerValue(
         byActivity[activity.sourceActivityId]?.value,
@@ -216,6 +218,7 @@ export async function buildLiveLearnerContext({
         ownUnsavedFileDraft:
           policy.coachResponses &&
           selected &&
+          reported?.draft !== selected.preview &&
           !/unsafe_request|third_party_skill_to_audit/i.test(selected.path)
             ? boundedLearnerValue(reported?.draft)
             : undefined,

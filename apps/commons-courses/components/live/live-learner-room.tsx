@@ -733,7 +733,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             surface: viewedSurface?.activityId === activity?.id ? viewedSurface?.surface : undefined,
             slide: viewedSlide?.activityId === activity?.id ? viewedSlide?.slide : undefined,
             lab: viewedLab?.activityId === activity?.id ? viewedLab?.lab : undefined,
-            workbookDraft: activity ? values[activity.id] : undefined,
+            workbookDraft: activity && values[activity.id] !== undefined && (!response || !sameLiveResponseValue(values[activity.id], response.value)) ? values[activity.id] : undefined,
             title: activity?.title || session.title,
             visibleText: [activity?.prompt, activity?.instructions, activity?.successCriteria]
               .filter(Boolean)

@@ -60,7 +60,7 @@ export function LearnerLabWorkspace({
       workspaceId,
       folderPath,
       fileId: openFile?.id,
-      draft: openFile?.editable ? workingCopy : undefined,
+      draft: openFile?.editable && workingCopy !== (openFile.preview || "") ? workingCopy : undefined,
     });
   }, [folderPath, openFile, workingCopy, workspace, workspaceId]);
 

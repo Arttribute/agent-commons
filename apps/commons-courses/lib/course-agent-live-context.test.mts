@@ -210,6 +210,25 @@ test("a forged facilitator file selection never supplies private content or an u
     /PRIVATE|Facilitator|FORGED DRAFT/,
   );
 });
+
+test("saved responses and unchanged source files are not mislabeled as unsaved work", async () => {
+  const { build } = harness();
+  const context = await build({
+    view: {
+      ...view,
+      workbookDraft: "My saved attempt",
+      lab: {
+        workspaceId,
+        fileId: "worksheet",
+        draft:
+          "Check source dates and do not resolve deliberate contradictions.",
+      },
+    },
+  });
+  assert.equal(context.ownSavedResponse, "My saved attempt");
+  assert.equal(context.ownUnsavedWorkbookDraft, undefined);
+  assert.equal(context.lab.ownUnsavedFileDraft, undefined);
+});
 test("educator material restrictions prevent additional file and slide reads", async () => {
   const { build, reads } = harness();
   const context = await build({
