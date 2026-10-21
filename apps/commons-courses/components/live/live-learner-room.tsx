@@ -852,6 +852,8 @@ function WorkbookDrawer({
     const item = session.activities.find((activity) => activity.id === id);
     return item ? [item] : [];
   });
+  const guidedActivity = activities.find((item) => item.id === session.currentActivityId && item.status !== "draft") ||
+    activities.find((item) => item.status === "open");
   const responseCount = Object.keys(session.responses).length;
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="workbook-title">
@@ -939,7 +941,9 @@ function WorkbookDrawer({
                   const selected = item.id === selectedId;
                   const done = Boolean(session.responses[item.id]);
                   const locked = item.status === "draft";
-                  const canSelect = selected || (folder.pace === "learner" && !locked && (item.status === "open" || done));
+                  const canSelect = selected || (!locked && (folder.pace === "learner"
+                    ? item.status === "open" || done
+                    : item.id === guidedActivity?.id));
                   return (
                     <button
                       key={item.id}
