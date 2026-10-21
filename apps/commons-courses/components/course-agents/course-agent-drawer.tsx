@@ -1,12 +1,15 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import {
   Bot,
   Brain,
   ChevronRight,
   Compass,
-  MessageSquare,
+  MessageSquarePlus,
+  LoaderCircle,
+  Settings2,
   Send,
   Sparkles,
   Target,
@@ -26,6 +29,7 @@ type Props = {
   role: "learner" | "educator";
   agents?: CourseAgentConfig[];
   context: CourseAgentViewContext;
+  aboveFooter?: boolean;
 };
 
 export function CourseAgentDrawer({
@@ -33,6 +37,7 @@ export function CourseAgentDrawer({
   role,
   agents = [],
   context,
+  aboveFooter = false,
 }: Props) {
   const configuredAgents = agents.length > 0 ? agents : defaultCourseAgents;
   const availableAgents = useMemo(
@@ -45,6 +50,10 @@ export function CourseAgentDrawer({
     [configuredAgents, role]
   );
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const conversationRef = useRef<HTMLDivElement>(null);
   const [agentId, setAgentId] = useState(availableAgents[0]?.id || "");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<CourseAgentMessage[]>([]);
@@ -52,6 +61,16 @@ export function CourseAgentDrawer({
 
   const activeAgent =
     availableAgents.find((agent) => agent.id === agentId) || availableAgents[0];
+
+  useEffect(() => {
+    if (!open) return;
+    inputRef.current?.focus();
+    return () => { launcherRef.current?.focus(); };
+  }, [open]);
+  useEffect(() => {
+    const container = conversationRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
+  }, [messages, loading]);
 
   if (!activeAgent) return null;
 
@@ -108,181 +127,122 @@ export function CourseAgentDrawer({
 
   return (
     <>
-      <button
-        type="button"
-        aria-label={
-          role === "learner" ? "Open learning copilot" : "Open course assistant"
-        }
-        onClick={() => setOpen(true)}
-        className={cn(
-          "fixed right-0 top-1/2 z-40 flex -translate-y-1/2 items-center gap-2 rounded-l-lg border border-r-0 border-slate-200 bg-white px-2.5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50",
-          open && "translate-x-full"
-        )}
-      >
-        {role === "learner" ? (
-          <Sparkles className="h-4 w-4" />
-        ) : (
-          <Bot className="h-4 w-4" />
-        )}
-        <span className="hidden sm:inline">
-          {role === "learner" ? "Copilot" : ""}
-        </span>
-        <ChevronRight className="h-3.5 w-3.5 rotate-180 text-slate-400" />
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/20">
-          <button
-            type="button"
-            aria-label="Close course assistant"
-            className="hidden flex-1 md:block"
-            onClick={() => setOpen(false)}
-          />
-          <aside className="flex h-full w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-xl">
-            <header className="border-b border-slate-100 p-4">
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-medium text-slate-400">
-                    {role === "learner"
-                      ? "Your learning copilot"
-                      : "Course agent"}
-                  </p>
-                  <h2 className="mt-1 text-base font-semibold text-slate-950">
-                    {role === "learner" ? "Learn with guidance" : activeAgent.name}
-                  </h2>
-                  {role === "learner" ? (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Understand, practise, and find your next step.
-                    </p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  aria-label="Close course assistant"
-                  className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100"
-                  onClick={() => setOpen(false)}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              {availableAgents.length > 1 && (
-                <select
-                  value={activeAgent.id}
-                  onChange={(event) => setAgentId(event.target.value)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-                >
-                  {availableAgents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {role === "learner" ? (
-                <div className="mt-3">
-                  <LearnerProfileDialog
-                    buttonLabel="Personalize my guidance"
-                    className="w-full justify-center py-2 text-xs"
-                  />
-                </div>
-              ) : null}
-            </header>
-
-            <div className="flex-1 overflow-y-auto p-4">
-              {messages.length === 0 ? (
-                <div className="mt-10 text-center">
-                  <Sparkles className="mx-auto mb-3 h-5 w-5 text-slate-400" />
-                  <p className="text-sm font-semibold text-slate-800">
-                    {role === "learner"
-                      ? "Let’s work through this together."
-                      : "Ask from this exact view."}
-                  </p>
-                  <p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-slate-500">
-                    {role === "learner"
-                      ? "I can help you connect the ideas, test your understanding, and move forward without taking the learning away from you."
-                      : "I can use the current course, page, lesson, and visible workflow context while respecting the agent access policy."}
-                  </p>
-                  {role === "learner" ? (
-                    <div className="mx-auto mt-5 grid max-w-sm gap-2 text-left">
-                      <Starter
-                        icon={Brain}
-                        label="Check my understanding"
-                        onClick={() =>
-                          sendContent(
-                            "Check my understanding of this lesson. Ask me one question at a time and use hints before explaining.",
-                          )
-                        }
-                      />
-                      <Starter
-                        icon={Target}
-                        label="Help me practise"
-                        onClick={() =>
-                          sendContent(
-                            "Give me a small, ungraded practice step for the idea on this page, then wait for my attempt.",
-                          )
-                        }
-                      />
-                      <Starter
-                        icon={Compass}
-                        label="What should I do next?"
-                        onClick={() =>
-                          sendContent(
-                            "Based on this lesson and my progress, guide me to the most useful next step.",
-                          )
-                        }
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {messages.map((message, index) => (
-                    <div
-                      key={`${message.role}-${index}`}
-                      className={cn(
-                        "rounded-lg px-3 py-2 text-sm leading-6",
-                        message.role === "user"
-                          ? "ml-10 bg-slate-950 text-white"
-                          : "mr-10 border border-slate-200 bg-white text-slate-700"
-                      )}
-                    >
-                      {message.content}
-                    </div>
-                  ))}
-                  {loading && (
-                    <div className="mr-10 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500">
-                      Thinking...
-                    </div>
-                  )}
-                </div>
-              )}
+      {!open ? (
+        <button
+          ref={launcherRef}
+          type="button"
+          aria-label={role === "learner" ? "Open learning copilot" : "Open course assistant"}
+          aria-expanded={false}
+          aria-controls="course-copilot-panel"
+          title={role === "learner" ? "Learning copilot" : "Course assistant"}
+          onClick={() => setOpen(true)}
+          className="fixed right-5 z-40 rounded-full border border-slate-200 bg-white p-1 shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-slate-500"
+          style={{ bottom: `calc(${aboveFooter ? "5rem" : "1.25rem"} + env(safe-area-inset-bottom))` }}
+        >
+          {role === "learner" ? <LearnerCopilotAvatar size={52} /> : <Bot className="m-3 h-7 w-7 text-slate-700" />}
+          <span className="absolute -left-1 -top-1 rounded-full bg-slate-950 p-1 text-white shadow" aria-hidden="true">
+            <Sparkles className="h-3 w-3" />
+          </span>
+        </button>
+      ) : (
+        <aside
+          id="course-copilot-panel"
+          role="dialog"
+          aria-label={role === "learner" ? "Learning copilot" : "Course assistant"}
+          aria-modal={false}
+          className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-slate-200 bg-white text-slate-950 shadow-xl sm:w-[380px]"
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !event.defaultPrevented && (event.target as HTMLElement).closest('[role="dialog"]') === event.currentTarget) {
+              event.preventDefault(); setOpen(false);
+            }
+          }}
+        >
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 px-3">
+            {role === "learner" ? <LearnerCopilotAvatar size={34} /> : <Bot className="h-7 w-7 text-slate-500" />}
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-medium">{role === "learner" ? "Learning copilot" : activeAgent.name}</h2>
+              <p className="mt-0.5 truncate text-[11px] text-slate-500" title={context.title}>{context.title || "Help with this course"}</p>
             </div>
-
-            <form onSubmit={sendMessage} className="border-t border-slate-100 p-3">
-              <div className="flex items-end gap-2 rounded-lg border border-slate-200 bg-white p-2">
-                <MessageSquare className="mt-2 h-4 w-4 flex-shrink-0 text-slate-400" />
-                <textarea
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  placeholder="Ask for help with this page..."
-                  rows={2}
-                  className="max-h-28 min-h-10 flex-1 resize-none border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
-                />
-                <button
-                  type="submit"
-                  disabled={loading || input.trim().length === 0}
-                  aria-label="Send message"
-                  className="rounded-md bg-slate-950 p-2 text-white disabled:opacity-40"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
+            {role === "learner" ? (
+              <button type="button" onClick={() => setProfileOpen(true)} aria-label="Personalize my guidance" title="Personalize my guidance" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+                <Settings2 className="h-4 w-4" />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              aria-label="New chat"
+              title="New chat"
+              disabled={loading}
+              onClick={() => { setMessages([]); setInput(""); inputRef.current?.focus(); }}
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-35"
+            >
+              <MessageSquarePlus className="h-4 w-4" />
+            </button>
+            <button type="button" aria-label="Close copilot" title="Close copilot" onClick={() => setOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+              <X className="h-4 w-4" />
+            </button>
+          </header>
+          {availableAgents.length > 1 ? (
+            <div className="border-b border-slate-100 px-3 py-2">
+              <select aria-label="Course assistant" value={activeAgent.id} disabled={loading} onChange={(event) => setAgentId(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
+                {availableAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+              </select>
+            </div>
+          ) : null}
+          <div ref={conversationRef} role="log" aria-label="Copilot conversation" aria-live="polite" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4">
+            {messages.length === 0 ? (
+              <div className="flex min-h-full flex-col items-center justify-center py-6 text-center">
+                {role === "learner" ? <LearnerCopilotAvatar size={96} /> : <Sparkles className="mb-3 h-6 w-6 text-slate-400" />}
+                <p className="mt-4 text-base font-medium">{role === "learner" ? "Let’s work through this together." : "Ask from this exact view."}</p>
+                <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-500">{role === "learner" ? "Ask about this activity, practise an idea, or find your next step." : "Ask for help with the course and what’s on this page."}</p>
+                {role === "learner" ? (
+                  <div className="mt-5 grid w-full gap-2 text-left">
+                    <Starter icon={Brain} label="Check my understanding" onClick={() => sendContent("Check my understanding of this lesson. Ask me one question at a time and use hints before explaining.")} />
+                    <Starter icon={Target} label="Help me practise" onClick={() => sendContent("Give me a small, ungraded practice step for the idea on this page, then wait for my attempt.")} />
+                    <Starter icon={Compass} label="What should I do next?" onClick={() => sendContent("Based on this lesson and my progress, guide me to the most useful next step.")} />
+                  </div>
+                ) : null}
               </div>
-            </form>
-          </aside>
-        </div>
+            ) : (
+              <div className="space-y-4">
+                {messages.map((message, index) => (
+                  <div key={`${message.role}-${index}`} className={cn("whitespace-pre-wrap rounded-xl px-3 py-2.5 text-sm leading-6", message.role === "user" ? "ml-7 bg-slate-950 text-white" : "mr-5 bg-slate-50 text-slate-700")}>
+                    {message.content}
+                  </div>
+                ))}
+                {loading ? <div className="flex items-center gap-2 px-2 text-xs text-slate-500"><LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Thinking…</div> : null}
+              </div>
+            )}
+          </div>
+          <form onSubmit={sendMessage} className="shrink-0 border-t border-slate-200 bg-white px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white p-2 focus-within:border-slate-400">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault(); void sendContent(input.trim());
+                  }
+                }}
+                aria-label="Message your copilot"
+                placeholder="Ask your copilot…"
+                rows={2}
+                className="max-h-28 min-h-10 min-w-0 flex-1 resize-none border-0 bg-transparent px-1 py-1 text-sm outline-none placeholder:text-slate-400"
+              />
+              <button type="submit" disabled={loading || input.trim().length === 0} aria-label="Send message" className="rounded-lg bg-slate-950 p-2 text-white disabled:opacity-35"><Send className="h-4 w-4" /></button>
+            </div>
+            <p className="mt-2 text-center text-[10px] text-slate-400">Enter to send · Shift + Enter for a new line</p>
+          </form>
+        </aside>
       )}
+      {role === "learner" ? <LearnerProfileDialog controlledOpen={profileOpen} onControlledOpenChange={setProfileOpen} showTrigger={false} /> : null}
     </>
   );
+}
+
+function LearnerCopilotAvatar({ size }: { size: number }) {
+  return <Image src="/learner-copilot-mascot.png" alt="" width={size} height={size} className="shrink-0 rounded-full bg-white object-contain" />;
 }
 
 function Starter({

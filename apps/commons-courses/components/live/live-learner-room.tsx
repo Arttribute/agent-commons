@@ -15,6 +15,9 @@ import {
   BookOpen,
   Check,
   CheckCircle2,
+  ChevronDown,
+  Folder,
+  FolderOpen,
   Clock3,
   Download,
   ExternalLink,
@@ -88,6 +91,7 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
   );
   const [enrolling, setEnrolling] = useState(false);
   const [workbookOpen, setWorkbookOpen] = useState(false);
+  const closeWorkbook = useCallback(() => setWorkbookOpen(false), []);
   const [connection, setConnection] = useState<
     "connecting" | "synced" | "reconnecting" | "offline"
   >("connecting");
@@ -301,15 +305,6 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
     }, 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    if (!workbookOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setWorkbookOpen(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [workbookOpen]);
 
   const activity = session?.activities.find((item) => item.id === selectedId);
   const { activePart, activeActivities } = useMemo(() => {
@@ -604,36 +599,20 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
           <button
             type="button"
             onClick={() => setWorkbookOpen(true)}
+            aria-label="Open workbook navigation"
+            aria-haspopup="dialog"
             aria-expanded={workbookOpen}
             aria-controls="live-workbook-drawer"
             className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-[var(--course-surface)] px-2.5 text-xs hover:border-slate-300"
           >
             <BookOpen className="h-4 w-4" />
-            <span className="hidden sm:inline">Workbook</span>
+            <span>Workbook</span>
             <span className="rounded bg-[var(--course-background)] px-1.5 py-0.5 text-[10px]">
               {activityPosition || "–"}/{activeActivities.length}
             </span>
+            <ChevronDown className="h-3 w-3 opacity-45" />
           </button>
         </div>
-        {session.parts.length ? (
-          <ProgrammePartStrip
-            session={session}
-            activePartId={activePart?.id}
-            onSelect={(partId) => {
-              const part = session.parts.find((item) => item.id === partId);
-              const firstAvailable = part?.activityIds
-                .map((id) => session.activities.find((item) => item.id === id))
-                .find(
-                  (item) =>
-                    item &&
-                    (item.status === "open" ||
-                      item.id === session.currentActivityId ||
-                      Boolean(session.responses[item.id])),
-                );
-              if (firstAvailable) setSelectedId(firstAvailable.id);
-            }}
-          />
-        ) : null}
       </header>
 
       {activity ? (
@@ -717,21 +696,23 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      <WorkbookDrawer
-        open={workbookOpen}
-        session={session}
-        selectedId={activity?.id}
-        onClose={() => setWorkbookOpen(false)}
-        onSelect={(activityId) => {
-          setSelectedId(activityId);
-          setWorkbookOpen(false);
-        }}
-        onDownload={() => downloadWorkbook()}
-      />
+      {workbookOpen ? (
+        <WorkbookDrawer
+          session={session}
+          selectedId={activity?.id}
+          onClose={closeWorkbook}
+          onSelect={(activityId) => {
+            setSelectedId(activityId);
+            setWorkbookOpen(false);
+          }}
+          onDownload={() => downloadWorkbook()}
+        />
+      ) : null}
       {session.settings.learnerCopilot.enabled ? (
         <CourseAgentDrawer
           courseSlug={session.courseSlug}
           role="learner"
+          aboveFooter={Boolean(paceNav)}
           context={{
             page: "live_session",
             liveSessionId: session.id,
@@ -743,54 +724,6 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
         />
       ) : null}
     </main>
-  );
-}
-
-function ProgrammePartStrip({
-  session,
-  activePartId,
-  onSelect,
-}: {
-  session: LearnerLiveSession;
-  activePartId?: string;
-  onSelect: (partId: string) => void;
-}) {
-  return (
-    <nav
-      aria-label="Programme sessions"
-      className="flex items-center gap-1.5 overflow-x-auto border-t border-slate-200 px-3 py-2 sm:px-6"
-    >
-      {session.parts.map((part, index) => {
-        const active = part.id === activePartId && part.status === "open";
-        const closed = part.status === "closed";
-        return (
-          <button
-            type="button"
-            key={part.id}
-            disabled={closed}
-            title={
-              closed
-                ? "Not open yet"
-                : part.pace === "learner"
-                  ? "Move at your own pace"
-                  : "Facilitator guided"
-            }
-            onClick={() => onSelect(part.id)}
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition",
-              active
-                ? "border-[var(--course-primary)] bg-[var(--course-primary)] text-[var(--course-on-primary)]"
-                : "border-slate-200 bg-[var(--course-surface)] opacity-70 hover:opacity-100",
-              closed && "cursor-default opacity-40",
-            )}
-          >
-            <span className="tabular-nums">{index + 1}</span>
-            <span className="max-w-32 truncate sm:max-w-44">{part.title}</span>
-            {closed ? <LockKeyhole className="h-3 w-3 shrink-0" /> : null}
-          </button>
-        );
-      })}
-    </nav>
   );
 }
 
@@ -869,189 +802,184 @@ function EnrollmentRequired({
 }
 
 function WorkbookDrawer({
-  open,
   session,
   selectedId,
   onClose,
   onSelect,
   onDownload,
 }: {
-  open: boolean;
   session: LearnerLiveSession;
   selectedId?: string;
   onClose: () => void;
   onSelect: (activityId: string) => void;
   onDownload: () => void;
 }) {
-  if (!open) return null;
+  const parts = session.parts.length ? session.parts : [{
+    id: "all-activities", title: "Activities", status: "open" as const,
+    pace: session.pace, activityIds: session.activities.map((item) => item.id),
+  }];
+  const initialPart = parts.find((part) => part.activityIds.includes(selectedId || "")) ||
+    parts.find((part) => part.id === session.currentPartId) ||
+    parts.find((part) => part.status === "open") || parts[0];
+  const [folderId, setFolderId] = useState(initialPart.id);
+  const drawerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    setFolderId(initialPart.id);
+  }, [initialPart.id]);
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const drawer = drawerRef.current;
+    const focusable = () => Array.from(drawer?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled):not([tabindex="-1"]), [tabindex="0"]',
+    ) || []).filter((item) => item.getClientRects().length > 0);
+    (drawer?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') || focusable()[0])?.focus();
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onClose(); }
+      if (event.key !== "Tab") return;
+      const items = focusable(), first = items[0], last = items[items.length - 1];
+      if (!drawer?.contains(document.activeElement)) {
+        event.preventDefault(); first?.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first?.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => { document.removeEventListener("keydown", handleKey); previousFocus?.focus(); };
+  }, [onClose]);
+  const folder = parts.find((part) => part.id === folderId) || initialPart;
+  const activities = folder.activityIds.flatMap((id) => {
+    const item = session.activities.find((activity) => activity.id === id);
+    return item ? [item] : [];
+  });
+  const guidedActivity = activities.find((item) => item.id === session.currentActivityId && item.status !== "draft") ||
+    activities.find((item) => item.status === "open");
   const responseCount = Object.keys(session.responses).length;
   return (
-    <div
-      className="fixed inset-0 z-50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="workbook-title"
-    >
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
-        aria-label="Close activities"
-      />
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="workbook-title">
+      <button type="button" onClick={onClose} className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" aria-hidden="true" tabIndex={-1} />
       <section
+        ref={drawerRef}
         id="live-workbook-drawer"
-        className="absolute inset-x-0 bottom-0 flex max-h-[82dvh] flex-col rounded-t-3xl border border-slate-200 bg-[var(--course-surface)] text-[var(--course-text)] shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[390px] sm:rounded-none sm:rounded-l-3xl"
+        className="absolute inset-y-0 right-0 flex w-full flex-col bg-[var(--course-surface)] text-[var(--course-text)] shadow-2xl sm:max-w-[700px] sm:rounded-l-2xl sm:border-l sm:border-slate-200"
       >
-        <div className="flex items-start gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--course-primary)] text-[var(--course-on-primary)]">
-            <BookOpen className="h-4 w-4" />
-          </span>
+        <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 px-5 py-4">
+          <BookOpen className="h-5 w-5 opacity-55" />
           <div className="min-w-0 flex-1">
-            <h2 id="workbook-title" className="font-semibold">
-              Activities
-            </h2>
-            <p className="mt-1 text-xs opacity-55">
-              {(session.parts.find((part) => part.status === "open")?.pace ||
-                session.pace) === "facilitator"
-                ? "Your facilitator controls what appears next."
-                : "Move through the available workbook activities."}
-            </p>
+            <h2 id="workbook-title" className="text-base font-semibold">Workbook</h2>
+            <p className="mt-0.5 text-xs opacity-55">{session.parts.length ? "Choose a block to see its activities." : "Your session activities."}</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200"
-            aria-label="Close activities"
-          >
+          <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-[var(--course-background)]" aria-label="Close workbook">
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="border-b border-slate-200 px-4 py-3 sm:px-6">
-          <button
-            type="button"
-            onClick={onDownload}
-            disabled={!responseCount}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--course-primary)] px-4 py-3 text-xs font-semibold text-[var(--course-on-primary)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            <Download className="h-4 w-4" />
-            Download my workbook
-            {responseCount ? (
-              <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px]">
-                {responseCount}
-              </span>
-            ) : null}
-          </button>
-          <p className="mt-2 text-center text-[10px] leading-4 opacity-50">
-            Includes your saved responses and works offline.
-          </p>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-4">
-          <div className="space-y-4">
-            {(session.parts.length
-              ? session.parts
-              : [
-                  {
-                    id: "all-activities",
-                    title: "Activities",
-                    status: "open" as const,
-                    pace: session.pace,
-                    activityIds: session.activities.map((item) => item.id),
-                  },
-                ]
-            ).map((part) => (
-              <section key={part.id}>
-                {session.parts.length ? (
-                  <div className="mb-2 flex items-center gap-2 px-2">
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-semibold">
-                        {part.title}
-                      </span>
-                      <span className="text-[10px] opacity-50">
-                        {part.status === "closed"
-                          ? "Not open yet"
-                          : part.pace === "learner"
-                            ? "Self-guided"
-                            : "Facilitator guided"}
-                      </span>
-                    </span>
-                    {part.status === "closed" ? (
-                      <LockKeyhole className="h-3.5 w-3.5 opacity-40" />
-                    ) : (
-                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+          {session.parts.length ? (
+            <div
+              role="tablist"
+              aria-label="Course blocks"
+              aria-orientation="vertical"
+              className="grid max-h-[34dvh] shrink-0 grid-cols-2 gap-1 overflow-y-auto border-b border-slate-200 bg-[var(--course-background)] p-3 sm:flex sm:max-h-none sm:w-56 sm:flex-col sm:overflow-y-auto sm:border-b-0 sm:border-r"
+              onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+                const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+                const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
+                const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 :
+                  (index + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1) + tabs.length) % tabs.length;
+                event.preventDefault(); tabs[next]?.focus(); tabs[next]?.click();
+              }}
+            >
+              {parts.map((part) => {
+                const active = part.id === folder.id;
+                const Icon = active ? FolderOpen : Folder;
+                return (
+                  <button
+                    key={part.id}
+                    id={`workbook-tab-${part.id}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-controls="workbook-block-panel"
+                    tabIndex={active ? 0 : -1}
+                    onClick={() => setFolderId(part.id)}
+                    title={part.title}
+                    className={cn(
+                      "flex min-w-0 shrink-0 items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-xs transition sm:items-start sm:py-3",
+                      active ? "border-slate-200 bg-[var(--course-surface)] shadow-sm" : "border-transparent hover:bg-[var(--course-surface)]",
                     )}
-                  </div>
-                ) : null}
-                {part.status === "open" ? (
-                  <div className="space-y-1.5">
-                    {part.activityIds.flatMap((activityId) => {
-                      const item = session.activities.find(
-                        (activity) => activity.id === activityId,
-                      );
-                      if (!item) return [];
-                      const index = session.activities.findIndex(
-                        (activity) => activity.id === item.id,
-                      );
-                      const locked = item.status === "draft";
-                      const selected = item.id === selectedId;
-                      const done = Boolean(session.responses[item.id]);
-                      const canSelect =
-                        selected ||
-                        (part.pace === "learner" &&
-                          !locked &&
-                          (item.status === "open" || done));
-                      return [
-                        <button
-                          key={item.id}
-                          type="button"
-                          disabled={!canSelect}
-                          onClick={() => onSelect(item.id)}
-                          className={cn(
-                            "flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition",
-                            selected
-                              ? "border-transparent bg-[var(--course-primary)] text-[var(--course-on-primary)]"
-                              : "border-transparent hover:border-slate-200 hover:bg-[var(--course-background)]",
-                            !canSelect &&
-                              !selected &&
-                              "cursor-default opacity-45",
-                          )}
-                        >
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-current/10 text-[10px] font-semibold">
-                            {String(index + 1).padStart(2, "0")}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-sm font-semibold leading-5">
-                              {item.title || `Activity ${index + 1}`}
-                            </span>
-                            <span className="mt-0.5 block text-[10px] font-medium opacity-50">
-                              {selected
-                                ? "Showing now"
-                                : done
-                                  ? "Completed"
-                                  : locked
-                                    ? "Upcoming"
-                                    : item.status === "closed"
-                                      ? "Closed"
-                                      : labelFor(item.type)}
-                            </span>
-                          </span>
-                          {locked ? (
-                            <LockKeyhole className="h-3.5 w-3.5 shrink-0" />
-                          ) : done ? (
-                            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                          ) : null}
-                        </button>,
-                      ];
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-slate-200 px-4 py-4 text-xs leading-5 opacity-55">
-                    This session is visible in your programme and will unlock
-                    when your educator opens it.
-                  </div>
-                )}
-              </section>
-            ))}
+                  >
+                    <Icon className={cn("h-4 w-4 shrink-0 sm:mt-0.5", active ? "text-[var(--course-primary)]" : "opacity-40")} />
+                    <span className="min-w-0 flex-1 truncate font-medium sm:whitespace-normal sm:leading-5">{part.title}</span>
+                    {part.status === "closed" ? <LockKeyhole className="mt-0.5 h-3 w-3 shrink-0 opacity-35" aria-label="Not open yet" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          <div
+            id="workbook-block-panel"
+            role={session.parts.length ? "tabpanel" : undefined}
+            aria-labelledby={session.parts.length ? `workbook-tab-${folder.id}` : undefined}
+            tabIndex={0}
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5"
+          >
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold leading-6">{folder.title}</h3>
+              <p className="mt-1 text-xs opacity-50">
+                {folder.status === "closed" ? "Not open yet" : `${activities.length} activities · ${folder.pace === "learner" ? "At your own pace" : "Facilitator guided"}`}
+              </p>
+            </div>
+            {folder.status === "closed" ? (
+              <div className="rounded-xl bg-[var(--course-background)] px-5 py-8 text-center">
+                <LockKeyhole className="mx-auto h-5 w-5 opacity-30" />
+                <p className="mt-3 text-sm font-medium">This block opens later</p>
+                <p className="mt-2 text-xs leading-5 opacity-55">Your facilitator will open it when it’s time.</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {activities.map((item, index) => {
+                  const selected = item.id === selectedId;
+                  const done = Boolean(session.responses[item.id]);
+                  const locked = item.status === "draft";
+                  const canSelect = selected || (!locked && (folder.pace === "learner"
+                    ? item.status === "open" || done
+                    : item.id === guidedActivity?.id));
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled={!canSelect}
+                      aria-current={selected ? "step" : undefined}
+                      onClick={() => onSelect(item.id)}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition",
+                        selected ? "border-slate-200 bg-[var(--course-background)]" : "border-transparent hover:bg-[var(--course-background)]",
+                        !canSelect && !selected && "cursor-default opacity-45",
+                      )}
+                    >
+                      <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-medium", selected ? "bg-[var(--course-primary)] text-[var(--course-on-primary)]" : "bg-[var(--course-background)] opacity-65")}>
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium leading-5">{item.title || `Activity ${index + 1}`}</span>
+                        <span className="mt-1 block text-[10px] opacity-55">
+                          {selected ? "Showing now" : done ? "Completed" : locked ? "Not open yet" : item.status === "closed" ? "Closed" : labelFor(item.type)}
+                        </span>
+                      </span>
+                      {locked ? <LockKeyhole className="h-3.5 w-3.5 shrink-0 opacity-50" /> : done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
+        </div>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
+          <span className="text-[11px] opacity-50">{responseCount ? `${responseCount} saved · Offline copy` : "Your responses are saved here"}</span>
+          <button type="button" onClick={onDownload} disabled={!responseCount} className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium hover:bg-[var(--course-background)] disabled:opacity-35">
+            <Download className="h-3.5 w-3.5" /> Download my workbook
+          </button>
         </div>
       </section>
     </div>
