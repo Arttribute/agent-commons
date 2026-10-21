@@ -58,8 +58,14 @@ export function StudyShell({
   const surfaceChangeRef = useRef(onSurfaceChange);
   surfaceChangeRef.current = onSurfaceChange;
   useEffect(() => {
-    surfaceChangeRef.current?.(split && window.matchMedia("(min-width: 1024px)").matches ? activeStageKey : "workbook");
-  }, [activeStageKey, split]);
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const updateSurface = () => surfaceChangeRef.current?.(
+      split && desktop.matches ? activeStageKey : view === "content" ? "workbook" : view,
+    );
+    updateSurface();
+    desktop.addEventListener("change", updateSurface);
+    return () => desktop.removeEventListener("change", updateSurface);
+  }, [activeStageKey, split, view]);
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
