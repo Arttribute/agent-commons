@@ -58,7 +58,11 @@ export function LearnerLabWorkspace({
         if (!response.ok)
           throw new Error(body.error || "Could not open this lab.");
         if (!active) return;
-        const next = body.workspace as LabWorkspaceRecord;
+        const received = body.workspace as LabWorkspaceRecord;
+        const next = {
+          ...received,
+          files: received.files.filter((file) => file.audience === "learner"),
+        };
         const entry = resolveLabWorkspaceEntry(next.files, entryPath);
         setError("");
         setWorkspace(next);
