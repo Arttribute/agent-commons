@@ -478,7 +478,7 @@ try {
         file.audience === "facilitator"
           ? "educator_private"
           : "course_enrolled",
-        `/courses/${slug}/labs/${workspace._id}`,
+        `/courses/${slug}/learn`,
         { filePath: file.path, audience: file.audience },
       );
     }
