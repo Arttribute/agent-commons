@@ -157,7 +157,7 @@ jobs:
       - name: Test migrated computer approval proposals in PostgreSQL
         env:
           RESOURCE_UPGRADE_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
-        run: pnpm --filter commons-api exec jest --runInBand src/computer/resource-upgrade.integration.spec.ts
+        run: pnpm --filter commons-api exec jest --runInBand src/computer/resource-upgrade.integration.spec.ts src/tool/tool-key.integration.spec.ts
 
 
       - name: Build API and test session context, model and Python contracts
