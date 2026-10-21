@@ -14,6 +14,11 @@ import {
 import { Request } from 'express';
 import { ToolKeyService, KeyOwner } from './tool-key.service';
 import { resolveCallerId, type ApiKeyPrincipal } from '~/modules/auth';
+import {
+  requestDigiTaxWithKey,
+  digitaxRequestTarget,
+  type DigiTaxKeyRequest,
+} from './digitax-key-request';
 
 /**
  * Resolve the owning principal for a tool-key operation from the auth context.
@@ -40,6 +45,27 @@ function keyOwner(req: Request): KeyOwner {
 @Controller({ version: '1', path: 'tool-keys' })
 export class ToolKeyController {
   constructor(private readonly toolKeyService: ToolKeyService) {}
+
+  /** Execute a restricted provider request without returning the stored credential. */
+  @Post(':keyId/digitax/request')
+  async requestDigiTax(
+    @Param('keyId') keyId: string,
+    @Body() body: DigiTaxKeyRequest,
+    @Req() req: Request,
+  ) {
+    digitaxRequestTarget(body);
+    const owner = keyOwner(req);
+    const metadata = await this.toolKeyService.getKeyMetadata(keyId, owner);
+    if (
+      !metadata.keyName.startsWith('common-business:digitax:') ||
+      metadata.keyType !== 'api-key'
+    )
+      throw new ForbiddenException(
+        'This credential is not enabled for DigiTax',
+      );
+    const key = await this.toolKeyService.getDecryptedKey(keyId);
+    return requestDigiTaxWithKey(key, body);
+  }
 
   /**
    * POST /v1/tool-keys
