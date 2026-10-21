@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +35,7 @@ export function StudyShell({
   footer,
   children,
   contentWidth = "md",
+  onSurfaceChange,
 }: {
   rail?: ReactNode;
   stage?: StudyStage[];
@@ -45,6 +46,7 @@ export function StudyShell({
   footer?: ReactNode;
   children: ReactNode;
   contentWidth?: "md" | "wide" | "full";
+  onSurfaceChange?: (surface: string) => void;
 }) {
   const stages = stage.filter(Boolean);
   const [stageKey, setStageKey] = useState(stages[0]?.key || "");
@@ -53,6 +55,11 @@ export function StudyShell({
   const activeStageKey = stages.some((item) => item.key === stageKey)
     ? stageKey
     : stages[0]?.key || "";
+  const surfaceChangeRef = useRef(onSurfaceChange);
+  surfaceChangeRef.current = onSurfaceChange;
+  useEffect(() => {
+    surfaceChangeRef.current?.(split && window.matchMedia("(min-width: 1024px)").matches ? activeStageKey : "workbook");
+  }, [activeStageKey, split]);
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -71,7 +78,7 @@ export function StudyShell({
           >
             <ViewTab
               active={view === "content"}
-              onClick={() => setView("content")}
+              onClick={() => { setView("content"); surfaceChangeRef.current?.("workbook"); }}
               icon={ContentIcon}
               label={contentLabel}
             />
@@ -79,7 +86,7 @@ export function StudyShell({
               <ViewTab
                 key={item.key}
                 active={view === item.key}
-                onClick={() => setView(item.key)}
+                onClick={() => { setView(item.key); surfaceChangeRef.current?.(item.key); }}
                 icon={item.icon}
                 label={item.label}
               />
@@ -92,6 +99,8 @@ export function StudyShell({
             <section
               key={item.key}
               aria-label={item.label}
+              onPointerDownCapture={() => surfaceChangeRef.current?.(item.key)}
+              onFocusCapture={() => surfaceChangeRef.current?.(item.key)}
               className={cn(
                 "min-h-0 min-w-0 flex-1 flex-col border-border bg-page",
                 split && "lg:border-r",
@@ -106,7 +115,7 @@ export function StudyShell({
                     <button
                       key={option.key}
                       type="button"
-                      onClick={() => setStageKey(option.key)}
+                      onClick={() => { setStageKey(option.key); surfaceChangeRef.current?.(option.key); }}
                       className={cn(
                         "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors",
                         option.key === activeStageKey
@@ -125,6 +134,8 @@ export function StudyShell({
           ))}
 
           <div
+            onPointerDownCapture={() => surfaceChangeRef.current?.("workbook")}
+            onFocusCapture={() => surfaceChangeRef.current?.("workbook")}
             className={cn(
               "min-h-0 min-w-0 flex-col bg-white",
               split

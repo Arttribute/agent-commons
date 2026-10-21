@@ -18,6 +18,7 @@ import {
   presentationProgressStorageKey,
   resolvePresentationSlideIndex,
 } from "@/lib/presentation-progress";
+import { presentationSlides } from "@/lib/presentation-content";
 
 type PresentationSyncMode = "controller" | "follower" | "off";
 
@@ -39,6 +40,7 @@ export function CourseMaterialViewer({
   initialSlide = 1,
   progressKey,
   syncMode = "controller",
+  onSlideChange,
 }: {
   materialId: string;
   compact?: boolean;
@@ -49,10 +51,13 @@ export function CourseMaterialViewer({
   progressKey?: string;
   /** Controls whether this viewer drives, follows, or ignores presenter-window sync. */
   syncMode?: PresentationSyncMode;
+  onSlideChange?: (position: { materialId: string; number: number; total: number }) => void;
 }) {
   const [material, setMaterial] = useState<MaterialData | null>(null);
   const [error, setError] = useState("");
   const [slide, setSlide] = useState(0);
+  const slideChangeRef = useRef(onSlideChange);
+  slideChangeRef.current = onSlideChange;
   const [full, setFull] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [presenterNotice, setPresenterNotice] = useState("");
@@ -121,6 +126,11 @@ export function CourseMaterialViewer({
   const visualSlideCount = material?.imageUrls.length || 0;
   const isSlideDeck = material?.kind === "presentation" || visualSlideCount > 0;
   const presentationSlideCount = visualSlideCount || slides.length || 1;
+  useEffect(() => {
+    if (material && isSlideDeck && readyProgressKey === storageKey && slide < presentationSlideCount) {
+      slideChangeRef.current?.({ materialId, number: slide + 1, total: presentationSlideCount });
+    }
+  }, [isSlideDeck, material, materialId, presentationSlideCount, readyProgressKey, slide, storageKey]);
   useEffect(() => {
     if (!material) return;
     setSlide((value) => Math.max(0, Math.min(presentationSlideCount - 1, value)));
@@ -569,11 +579,7 @@ export function CourseMaterialViewer({
 }
 
 function splitSlides(content: string) {
-  const matches = content
-    .split(/--- Slide \d+ ---/i)
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return matches.length ? matches : content ? [content] : [];
+  return presentationSlides(content).map((slide) => slide.text);
 }
 
 function isEditableTarget(target: EventTarget | null) {

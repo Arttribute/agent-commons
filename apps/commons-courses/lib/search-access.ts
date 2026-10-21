@@ -86,6 +86,7 @@ export async function buildSearchScope({
   const enrollment = await Enrollment.findOne({
     userId: session.user.id,
     courseId: course._id,
+    status: { $ne: "cancelled" },
   })
     .select("_id")
     .lean();

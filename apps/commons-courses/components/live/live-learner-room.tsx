@@ -70,6 +70,7 @@ import type {
   LiveWorksheetField,
 } from "@/types/live-session";
 import type { LiveSessionState } from "@/types/live-session";
+import type { CourseAgentViewContext } from "@/types/course-agent";
 
 type EnrollmentGate = {
   courseId?: string;
@@ -82,6 +83,9 @@ type EnrollmentGate = {
 export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<LearnerLiveSession | null>(null);
   const [selectedId, setSelectedId] = useState("");
+  const [viewedSlide, setViewedSlide] = useState<{ activityId: string; slide: NonNullable<CourseAgentViewContext["slide"]> } | null>(null);
+  const [viewedLab, setViewedLab] = useState<{ activityId: string; lab: NonNullable<CourseAgentViewContext["lab"]> } | null>(null);
+  const [viewedSurface, setViewedSurface] = useState<{ activityId: string; surface: CourseAgentViewContext["surface"] } | null>(null);
   const [values, setValues] = useState<Record<string, LiveResponseValue>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -517,6 +521,9 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             progressKey={activity.id}
             syncMode="off"
             compact
+            onSlideChange={(slide) => setViewedSlide((current) =>
+              current?.activityId === activity.id && current.slide.materialId === slide.materialId && current.slide.number === slide.number && current.slide.total === slide.total
+                ? current : { activityId: activity.id, slide })}
           />
         </div>
       ),
@@ -534,6 +541,9 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
             workspaceId={activity.labWorkspaceId}
             entryPath={activity.labEntryPath}
             compact
+            onContextChange={(lab) => setViewedLab((current) =>
+              current?.activityId === activity.id && JSON.stringify(current.lab) === JSON.stringify(lab)
+                ? current : { activityId: activity.id, lab })}
           />
         </div>
       ),
@@ -618,6 +628,9 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
       {activity ? (
         <StudyShell
           key={activity.id}
+          onSurfaceChange={(surface) => {
+            if (surface === "slides" || surface === "lab" || surface === "workbook") setViewedSurface((current) => current?.activityId === activity.id && current.surface === surface ? current : { activityId: activity.id, surface });
+          }}
           stage={stages}
           layout={structuredResponse ? "tabs" : "split"}
           contentLabel="Task"
@@ -716,6 +729,11 @@ export function LiveLearnerRoom({ sessionId }: { sessionId: string }) {
           context={{
             page: "live_session",
             liveSessionId: session.id,
+            activityId: activity?.id,
+            surface: viewedSurface?.activityId === activity?.id ? viewedSurface?.surface : undefined,
+            slide: viewedSlide?.activityId === activity?.id ? viewedSlide?.slide : undefined,
+            lab: viewedLab?.activityId === activity?.id ? viewedLab?.lab : undefined,
+            workbookDraft: activity ? values[activity.id] : undefined,
             title: activity?.title || session.title,
             visibleText: [activity?.prompt, activity?.instructions, activity?.successCriteria]
               .filter(Boolean)
