@@ -66,22 +66,24 @@ try {
     const profile = await db
       .collection("educatorprofiles")
       .findOne({ userId: owner._id });
-    course = await db.collection("courses").findOneAndUpdate(
-      { slug },
-      {
-        $setOnInsert: {
-          title,
-          published: false,
-          createdAt: now,
-          educator: {
-            userId: owner._id,
-            name: profile?.displayName || owner.name,
-            plan: profile?.plan || "free",
+    course = await db
+      .collection("courses")
+      .findOneAndUpdate(
+        { slug },
+        {
+          $setOnInsert: {
+            title,
+            published: false,
+            createdAt: now,
+            educator: {
+              userId: owner._id,
+              name: profile?.displayName || owner.name,
+              plan: profile?.plan || "free",
+            },
           },
         },
-      },
-      { upsert: true, returnDocument: "after" },
-    );
+        { upsert: true, returnDocument: "after" },
+      );
     const materialsBucket = new mongo.GridFSBucket(db, {
         bucketName: "courseMaterials",
       }),
@@ -228,11 +230,13 @@ try {
       await db.collection("coursematerials").insertOne(doc);
       return doc;
     };
-    let educatorDeck = await db.collection("coursematerials").findOne({
-      courseId: course._id,
-      visibility: "educator",
-      kind: "presentation",
-    });
+    let educatorDeck = await db
+      .collection("coursematerials")
+      .findOne({
+        courseId: course._id,
+        visibility: "educator",
+        kind: "presentation",
+      });
     const imageIds =
       educatorDeck?.slideGridFsIds ||
       (await pool(manifest.images, async (p, i) =>
@@ -425,36 +429,38 @@ try {
       for (let offset = 0; offset < text.length; offset += 3200) {
         const chunk = text.slice(offset, offset + 3600);
         if (!chunk.trim()) continue;
-        await db.collection("searchindexitems").updateOne(
-          {
-            courseId: course._id,
-            sourceKind: "resource",
-            sourceId,
-            sourcePath: sourcePath + "#" + offset,
-          },
-          {
-            $set: {
-              title: name,
-              text: chunk,
-              mediaType: "document",
-              mimeType: "text/plain",
-              url,
-              contentHash: hash(chunk),
-              embedding: embedding(name + "\n\n" + chunk),
-              embeddingModel: "deterministic-local-1536",
-              visibility,
-              accessKeys: [
-                `course:${course._id}:${visibility === "educator_private" ? "educators" : "enrolled"}`,
-              ],
-              educatorId: owner._id,
-              metadata,
-              indexedAt: now,
-              updatedAt: now,
+        await db
+          .collection("searchindexitems")
+          .updateOne(
+            {
+              courseId: course._id,
+              sourceKind: "resource",
+              sourceId,
+              sourcePath: sourcePath + "#" + offset,
             },
-            $setOnInsert: { createdAt: now },
-          },
-          { upsert: true },
-        );
+            {
+              $set: {
+                title: name,
+                text: chunk,
+                mediaType: "document",
+                mimeType: "text/plain",
+                url,
+                contentHash: hash(chunk),
+                embedding: embedding(name + "\n\n" + chunk),
+                embeddingModel: "deterministic-local-1536",
+                visibility,
+                accessKeys: [
+                  `course:${course._id}:${visibility === "educator_private" ? "educators" : "enrolled"}`,
+                ],
+                educatorId: owner._id,
+                metadata,
+                indexedAt: now,
+                updatedAt: now,
+              },
+              $setOnInsert: { createdAt: now },
+            },
+            { upsert: true },
+          );
         chunks++;
       }
     };
@@ -509,74 +515,76 @@ try {
         throw Error("Missing slide mapping");
     }
     const base = process.env.NEXT_PUBLIC_BASE_URL.replace(/\/$/, "");
-    await db.collection("courses").updateOne(
-      { _id: course._id },
-      {
-        $set: {
-          title,
-          tagline:
-            "Turn everyday leadership work into reusable Skills, whole tasks, shared tools, and a company brain.",
-          description:
-            "A hands-on live workshop for senior leaders: ask well, run the desk, create Projects and artifacts, test Skills, maintain a company brain, and delegate responsibly.",
-          longDescription:
-            "<p>Practise on supplied fictional company files and leave with reusable requests, a tested Skill, a Project or artifact, a company-brain starter, and a first-week plan.</p><p>Thursday 22 October 2026 · 8:30 AM–5:30 PM · Africa/Nairobi. Materials are available for preparation; live activities open under educator control.</p>",
-          price: 0,
-          currency: "KES",
-          isFree: true,
-          courseType: "live",
-          level: "beginner",
-          duration: "1 day · 8:30 AM–5:30 PM EAT",
-          lessonsCount: 8,
-          modulesCount: 8,
-          instructor: "Jessica Francisca Colaço & Bashy Baranaba",
-          modules,
-          agents,
-          published: true,
-          catalogVisibility: "private",
-          collaborators: [],
-          tags: [
-            "Claude",
-            "Senior leadership",
-            "Everyday work",
-            "Live workshop",
-            "Skills",
-            "Company brain",
-          ],
-          nextSessionDate: start,
-          sessionDates: [start],
-          liveSchedule: {
-            cadence: "custom",
-            dayOfWeek: "thursday",
-            time: "08:30",
-            timezone: "Africa/Nairobi",
-            sessionsCount: 1,
+    await db
+      .collection("courses")
+      .updateOne(
+        { _id: course._id },
+        {
+          $set: {
+            title,
+            tagline:
+              "Turn everyday leadership work into reusable Skills, whole tasks, shared tools, and a company brain.",
             description:
-              "Thursday 22 October 2026, 8:30 AM–5:30 PM EAT; includes breaks and lunch.",
+              "A hands-on live workshop for senior leaders: ask well, run the desk, create Projects and artifacts, test Skills, maintain a company brain, and delegate responsibly.",
+            longDescription:
+              "<p>Practise on supplied fictional company files and leave with reusable requests, a tested Skill, a Project or artifact, a company-brain starter, and a first-week plan.</p><p>Thursday 22 October 2026 · 8:30 AM–5:30 PM · Africa/Nairobi. Materials are available for preparation; live activities open under educator control.</p>",
+            price: 0,
+            currency: "KES",
+            isFree: true,
+            courseType: "live",
+            level: "beginner",
+            duration: "1 day · 8:30 AM–5:30 PM EAT",
+            lessonsCount: 8,
+            modulesCount: 8,
+            instructor: "Jessica Francisca Colaço & Bashy Baranaba",
+            modules,
+            agents,
+            published: true,
+            catalogVisibility: "private",
+            collaborators: [],
+            tags: [
+              "Claude",
+              "Senior leadership",
+              "Everyday work",
+              "Live workshop",
+              "Skills",
+              "Company brain",
+            ],
+            nextSessionDate: start,
+            sessionDates: [start],
+            liveSchedule: {
+              cadence: "custom",
+              dayOfWeek: "thursday",
+              time: "08:30",
+              timezone: "Africa/Nairobi",
+              sessionsCount: 1,
+              description:
+                "Thursday 22 October 2026, 8:30 AM–5:30 PM EAT; includes breaks and lunch.",
+            },
+            liveSessionUrl: `${base}/live/${session._id}`,
+            theme: {
+              primary: "#302A27",
+              accent: "#C66E43",
+              highlight: "#E7D9C8",
+              background: "#F7F3EE",
+              surface: "#FFFFFF",
+              text: "#302A27",
+            },
+            isFeatured: false,
+            isMainFeatured: false,
+            emailSettings: {
+              welcomeEnabled: false,
+              enrollmentEnabled: false,
+              assignmentCreatedEnabled: false,
+              assignmentUpdatedEnabled: false,
+              courseUpdateEnabled: false,
+              agentManaged: false,
+            },
+            importFingerprint: fingerprint,
+            updatedAt: now,
           },
-          liveSessionUrl: `${base}/live/${session._id}`,
-          theme: {
-            primary: "#302A27",
-            accent: "#C66E43",
-            highlight: "#E7D9C8",
-            background: "#F7F3EE",
-            surface: "#FFFFFF",
-            text: "#302A27",
-          },
-          isFeatured: false,
-          isMainFeatured: false,
-          emailSettings: {
-            welcomeEnabled: false,
-            enrollmentEnabled: false,
-            assignmentCreatedEnabled: false,
-            assignmentUpdatedEnabled: false,
-            courseUpdateEnabled: false,
-            agentManaged: false,
-          },
-          importFingerprint: fingerprint,
-          updatedAt: now,
         },
-      },
-    );
+      );
     const result = {
       courseId: String(course._id),
       slug,
