@@ -187,7 +187,11 @@ export async function POST(req: NextRequest) {
     const reply = await runCourseAgent({
       course,
       courseId: String(course._id),
-      actor: { userId: session.user.id, principalId: session.user.identityUserId, workspaceId: session.user.identityWorkspaceId },
+      actor: {
+        userId: session.user.id,
+        principalId: session.user.identityUserId,
+        workspaceId: session.user.identityWorkspaceId,
+      },
       agent,
       role,
       message: body.message,
@@ -203,6 +207,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ reply });
   } catch (error) {
     console.error("[course-copilot] run failed", error);
-    return NextResponse.json({ error: "Your learning copilot could not connect. Sign in with Commons, then retry." }, { status: 503 });
+    return NextResponse.json(
+      {
+        error:
+          "Your learning copilot could not connect. Sign in with Commons, then retry.",
+      },
+      { status: 503 },
+    );
   }
 }
