@@ -119,6 +119,7 @@ export function CourseMaterialViewer({
     [material?.content],
   );
   const visualSlideCount = material?.imageUrls.length || 0;
+  const isSlideDeck = material?.kind === "presentation" || visualSlideCount > 0;
   const presentationSlideCount = visualSlideCount || slides.length || 1;
   useEffect(() => {
     if (!material) return;
@@ -127,7 +128,7 @@ export function CourseMaterialViewer({
   useEffect(() => {
     if (
       !material ||
-      material.kind !== "presentation" ||
+      !isSlideDeck ||
       readyProgressKey !== storageKey
     )
       return;
@@ -136,7 +137,7 @@ export function CourseMaterialViewer({
     } catch {
       // Session storage can be disabled without affecting presentation controls.
     }
-  }, [material, readyProgressKey, slide, storageKey]);
+  }, [isSlideDeck, material, readyProgressKey, slide, storageKey]);
   useEffect(() => {
     if (!material?.imageUrls.length) return;
     const nearby = [slide - 1, slide + 1, slide + 2]
@@ -294,7 +295,7 @@ export function CourseMaterialViewer({
     }
   }
   useEffect(() => {
-    if (material?.kind !== "presentation") return;
+    if (!isSlideDeck) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) return;
       if (["ArrowLeft", "PageUp"].includes(event.key)) {
@@ -334,7 +335,7 @@ export function CourseMaterialViewer({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [broadcastState, material?.kind, presentationSlideCount]);
+  }, [broadcastState, isSlideDeck, presentationSlideCount]);
   if (error)
     return (
       <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
@@ -347,23 +348,26 @@ export function CourseMaterialViewer({
         <LoaderCircle className="h-5 w-5 animate-spin text-slate-300" />
       </div>
     );
-  const stage =
-    material.kind === "pdf" && material.downloadUrl ? (
-      <iframe
-        title={material.name}
-        src={`${material.downloadUrl}#toolbar=0&view=FitH`}
-        className={cn(
-          "w-full border-0 bg-slate-100",
-          full || presenter ? "h-dvh" : compact ? "h-[58vh]" : "h-[72vh]",
-        )}
-      />
-    ) : material.kind === "presentation" && visualSlideCount ? (
+  const stage = visualSlideCount ? (
+      // Prefer rendered slides over the original file, whose download URL may
+      // send Content-Disposition: attachment even for a PDF.
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={material.imageUrls[Math.min(slide, visualSlideCount - 1)]}
         alt={`${material.name}, slide ${slide + 1}`}
         className={cn(
           "mx-auto w-full bg-slate-950 object-contain",
+          full || presenter ? "h-dvh" : compact ? "h-[58vh]" : "h-[72vh]",
+        )}
+      />
+    ) : material.kind === "pdf" &&
+      material.downloadUrl &&
+      material.embeddable !== false ? (
+      <iframe
+        title={material.name}
+        src={`${material.downloadUrl}#toolbar=0&view=FitH`}
+        className={cn(
+          "w-full border-0 bg-slate-100",
           full || presenter ? "h-dvh" : compact ? "h-[58vh]" : "h-[72vh]",
         )}
       />
@@ -425,7 +429,7 @@ export function CourseMaterialViewer({
         >
           {material.name}
         </p>
-        {material.kind === "presentation" ? (
+        {isSlideDeck ? (
           <button
             onClick={() => {
               setPointerEnabled((value) => {
@@ -443,7 +447,7 @@ export function CourseMaterialViewer({
             <MousePointer2 className="h-4 w-4" />
           </button>
         ) : null}
-        {material.kind === "presentation" && !presenter && syncMode !== "off" ? (
+        {isSlideDeck && !presenter && syncMode !== "off" ? (
           <button
             onClick={openPresenterWindow}
             className="inline-flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100"
@@ -476,10 +480,10 @@ export function CourseMaterialViewer({
       <div
         className={cn(
           "relative",
-          pointerEnabled && material.kind === "presentation" && "cursor-none",
+          pointerEnabled && isSlideDeck && "cursor-none",
         )}
         onPointerMove={(event) => {
-          if (!pointerEnabled || material.kind !== "presentation") return;
+          if (!pointerEnabled || !isSlideDeck) return;
           const bounds = event.currentTarget.getBoundingClientRect();
           const nextPointer = {
             x: ((event.clientX - bounds.left) / bounds.width) * 100,
@@ -502,7 +506,7 @@ export function CourseMaterialViewer({
           />
         ) : null}
       </div>
-      {material.kind === "presentation" &&
+      {isSlideDeck &&
       (visualSlideCount > 0 ||
         !material.downloadUrl ||
         material.embeddable === false) ? (
