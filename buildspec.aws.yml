@@ -193,7 +193,7 @@ phases:
             --output text \
             --region "$AWS_REGION")
           SEARCH_ENDPOINT="https://${SEARCH_ENDPOINT#https://}"
-        curl --fail --show-error --silent --retry 12 --retry-delay 5 \
+          curl --fail --show-error --silent --retry 12 --retry-delay 5 \
             --header "X-Agent-Commons-Search-Key: $SEARCH_SHARED_KEY" \
             --get "${SEARCH_ENDPOINT%/}/search" \
             --data-urlencode "q=Agent Commons" \
