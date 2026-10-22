@@ -16,8 +16,16 @@ function git(root, ...args) {
 // Exit 0 means skip in Vercel's Ignored Build Step; exit 1 means build.
 // Compare with this project's last successful deployment on this branch, not
 // HEAD^: a release can contain many commits, and staging syncs have no changes.
-export function buildDecision({ root, project, previous, current = 'HEAD', force = false }) {
+export function buildDecision({ root, project, previous, current = 'HEAD', force = false, deployment = {} }) {
   if (force) return { build: true, reason: 'Explicit build override' };
+  // This project has a custom `staging` environment bound to the staging
+  // branch. A release PR otherwise builds the same commit again in ordinary
+  // Preview. Scope this to the verified project, so forks and other apps keep
+  // their normal Preview deployments. VERCEL_ENV alone cannot distinguish them.
+  if (project === 'apps/commons-app' && deployment.projectId === 'prj_cZWEhK1nT3lBQM32PDJHGRioU6Xt' &&
+      deployment.branch === 'staging' && deployment.target === 'preview') {
+    return { build: false, reason: 'The staging branch already deploys to its custom staging environment' };
+  }
   if (!previous) return { build: true, reason: 'First deployment on this branch' };
   try {
     // Vercel shallow-clones only recent commits. A rarely changed app may have
@@ -75,7 +83,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const decision = buildDecision({ root, project: process.argv[2],
       previous: process.env.VERCEL_GIT_PREVIOUS_SHA,
       current: process.env.VERCEL_GIT_COMMIT_SHA || 'HEAD',
-      force: process.env.VERCEL_FORCE_BUILD === '1' });
+      force: process.env.VERCEL_FORCE_BUILD === '1',
+      deployment: { projectId: process.env.VERCEL_PROJECT_ID,
+        branch: process.env.VERCEL_GIT_COMMIT_REF, target: process.env.VERCEL_TARGET_ENV } });
     console.log(`${decision.build ? 'BUILD' : 'SKIP'}: ${decision.reason}`);
     process.exitCode = decision.build ? 1 : 0;
   } catch (error) {
