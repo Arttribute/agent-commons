@@ -2,5 +2,9 @@
   "buildCommand": "pnpm build",
   "outputDirectory": ".next",
   "installCommand": "cd ../.. && corepack pnpm@9.15.3 install --frozen-lockfile",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "ignoreCommand": "node ../../scripts/vercel-ignore-build.mjs apps/commons-courses",
+  "git": {
+    "deploymentEnabled": { "**": false, "main": true, "staging": true }
+  }
 }
