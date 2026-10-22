@@ -109,3 +109,21 @@ test('a shallow clone fetches the actual previous deployment before skipping', (
   assert.throws(() => execFileSync('git', ['cat-file', '-e', `${source.previous}^{commit}`], { cwd: clone, stdio: 'pipe' }));
   assert.equal(buildDecision({ root: clone, project: 'apps/commons-app', previous: source.previous }).build, false);
 });
+
+test('release PRs skip only the redundant Preview of the custom-staging project', (t) => {
+  const f = fixture(t);
+  const deployment = { projectId: 'prj_cZWEhK1nT3lBQM32PDJHGRioU6Xt', branch: 'staging', target: 'preview' };
+  // Even a first ordinary Preview is redundant; the custom environment owns it.
+  assert.equal(f.decision('apps/commons-app', { previous: undefined, deployment }).build, false);
+  assert.equal(f.decision('apps/commons-app', { previous: undefined, deployment, force: true }).build, true);
+  for (const actual of [
+    { ...deployment, target: 'staging' },
+    { ...deployment, target: 'production', branch: 'main' },
+    { ...deployment, target: undefined },
+    { ...deployment, projectId: 'a-fork-with-no-custom-staging' },
+    { ...deployment, branch: 'a-manual-review' },
+  ]) {
+    assert.equal(f.decision('apps/commons-app', { previous: undefined, deployment: actual }).build, true);
+  }
+  assert.equal(f.decision('apps/commons-courses', { previous: undefined, deployment }).build, true);
+});
