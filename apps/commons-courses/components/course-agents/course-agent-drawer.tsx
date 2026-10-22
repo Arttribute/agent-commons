@@ -18,6 +18,7 @@ import {
 import { defaultCourseAgents } from "@/lib/course-agent-defaults";
 import { cn } from "@/lib/utils";
 import { LearnerProfileDialog } from "@/components/learning/learner-profile-dialog";
+import { CourseAgentMessageContent } from "./course-agent-message";
 import type {
   CourseAgentConfig,
   CourseAgentMessage,
@@ -162,6 +163,7 @@ export function CourseAgentDrawer({
             <div className="min-w-0 flex-1">
               <h2 className="truncate text-sm font-medium">{role === "learner" ? "Learning copilot" : activeAgent.name}</h2>
               <p className="mt-0.5 truncate text-[11px] text-slate-500" title={context.title}>{context.title || "Help with this course"}</p>
+              {context.surface === "lab" ? <p className="mt-0.5 text-[10px] text-slate-400">Lab workspace</p> : context.surface === "workbook" ? <p className="mt-0.5 text-[10px] text-slate-400">Workbook</p> : context.slide ? <p className="mt-0.5 text-[10px] text-slate-400">Slide {context.slide.number}{context.slide.total ? ` of ${context.slide.total}` : ""}</p> : null}
             </div>
             {role === "learner" ? (
               <button type="button" onClick={() => setProfileOpen(true)} aria-label="Personalize my guidance" title="Personalize my guidance" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
@@ -206,8 +208,8 @@ export function CourseAgentDrawer({
             ) : (
               <div className="space-y-4">
                 {messages.map((message, index) => (
-                  <div key={`${message.role}-${index}`} className={cn("whitespace-pre-wrap rounded-xl px-3 py-2.5 text-sm leading-6", message.role === "user" ? "ml-7 bg-slate-950 text-white" : "mr-5 bg-slate-50 text-slate-700")}>
-                    {message.content}
+                  <div key={`${message.role}-${index}`} className={cn("min-w-0 rounded-xl px-3 py-2.5 text-sm leading-6", message.role === "user" ? "ml-7 whitespace-pre-wrap bg-slate-950 text-white" : "bg-slate-50 text-slate-700")}>
+                    {message.role === "assistant" ? <CourseAgentMessageContent content={message.content} /> : message.content}
                   </div>
                 ))}
                 {loading ? <div className="flex items-center gap-2 px-2 text-xs text-slate-500"><LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Thinking…</div> : null}

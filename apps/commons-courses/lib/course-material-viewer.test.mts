@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
+import { presentationSlides } from "./presentation-content.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -35,6 +36,7 @@ function renderMaterial(overrides: Record<string, unknown> = {}) {
       if (id === "lucide-react") return new Proxy({}, { get: () => () => null });
       if (id === "@/lib/utils") return { cn: (...classes: unknown[]) => classes.filter(Boolean).join(" ") };
       if (id === "@/lib/presentation-progress") return { presentationProgressStorageKey: () => "deck" };
+      if (id === "@/lib/presentation-content") return { presentationSlides };
       return require(id);
     }, module, module.exports,
   );
