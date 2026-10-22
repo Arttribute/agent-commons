@@ -62,6 +62,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Test Vercel build selection
+        run: node --test scripts/vercel-ignore-build.test.mjs
+
       - name: Build packages
         run: pnpm --filter './packages/*' run build
 

@@ -2,5 +2,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
   "installCommand": "npm install",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "ignoreCommand": "node ../../scripts/vercel-ignore-build.mjs apps/commons-docs",
+  "git": {
+    "deploymentEnabled": { "**": false, "main": true, "staging": true }
+  }
 }
