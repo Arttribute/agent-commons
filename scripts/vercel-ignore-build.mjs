@@ -10,7 +10,7 @@ const sharedFiles = new Set([
 ]);
 
 function git(root, ...args) {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  return execFileSync('git', args, { cwd: root, timeout: 15_000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
 // Exit 0 means skip in Vercel's Ignored Build Step; exit 1 means build.
@@ -20,8 +20,15 @@ export function buildDecision({ root, project, previous, current = 'HEAD', force
   if (force) return { build: true, reason: 'Explicit build override' };
   if (!previous) return { build: true, reason: 'First deployment on this branch' };
   try {
-    // Missing shallow-clone history must build safely. Never substitute HEAD^.
-    git(root, 'cat-file', '-e', `${previous}^{commit}`);
+    // Vercel shallow-clones only recent commits. A rarely changed app may have
+    // last deployed much earlier: fetch that exact commit, never replace it
+    // with HEAD^. If fetching is unavailable, the catch below builds safely.
+    try { git(root, 'cat-file', '-e', `${previous}^{commit}`); }
+    catch (error) {
+      if (!/^[a-f0-9]{40}$/i.test(previous)) throw error;
+      git(root, 'fetch', '--no-tags', '--depth=1', 'origin', previous);
+      git(root, 'cat-file', '-e', `${previous}^{commit}`);
+    }
     git(root, 'cat-file', '-e', `${current}^{commit}`);
     const packages = new Map();
     for (const group of ['apps', 'packages']) {

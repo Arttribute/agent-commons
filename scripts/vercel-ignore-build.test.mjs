@@ -100,3 +100,12 @@ test('the CLI uses Vercel exit codes from the app working directory', (t) => {
     assert.equal(result.status, status, result.stdout + result.stderr);
   }
 });
+
+test('a shallow clone fetches the actual previous deployment before skipping', (t) => {
+  const source = fixture(t); source.write('infra/aws/template.yml'); source.commit();
+  const clone = mkdtempSync(resolve(tmpdir(), 'vercel-shallow-policy-'));
+  t.after(() => rmSync(clone, { recursive: true, force: true }));
+  execFileSync('git', ['clone', '-q', '--depth=1', `file://${source.root}`, clone]);
+  assert.throws(() => execFileSync('git', ['cat-file', '-e', `${source.previous}^{commit}`], { cwd: clone, stdio: 'pipe' }));
+  assert.equal(buildDecision({ root: clone, project: 'apps/commons-app', previous: source.previous }).build, false);
+});
