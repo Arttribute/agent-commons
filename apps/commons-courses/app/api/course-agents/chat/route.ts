@@ -15,10 +15,14 @@ import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import LearnerProfile from "@/models/LearnerProfile";
 import LiveSession from "@/models/LiveSession";
+import LiveParticipant from "@/models/LiveParticipant";
+import { buildLiveLearnerContext } from "@/lib/course-agent-live-context";
+import type { CopilotLiveSession } from "@/lib/live-copilot-context";
 import { normalizeLiveLearnerCopilotPolicy } from "@/lib/live-copilot-policy";
 import type {
   CourseAgentConfig,
   CourseAgentMessage,
+  CourseAgentViewContext,
 } from "@/types/course-agent";
 import type { LearnerProfileData } from "@/types/learner-profile";
 import type { LiveLearnerCopilotPolicy } from "@/types/live-session";
@@ -29,14 +33,7 @@ type ChatBody = {
   role?: "learner" | "educator";
   message?: string;
   messages?: CourseAgentMessage[];
-  context?: {
-    page: string;
-    liveSessionId?: string;
-    title?: string;
-    moduleIndex?: number;
-    lessonIndex?: number;
-    visibleText?: string;
-  };
+  context?: CourseAgentViewContext;
 };
 
 type CourseAgentDocument = RuntimeCourse & {
@@ -52,6 +49,12 @@ type LearnerProgress = {
   accessLevel?: string;
 };
 
+type LiveContextSession = CopilotLiveSession & {
+  settings?: { learnerCopilot?: Partial<LiveLearnerCopilotPolicy> };
+  access?: string;
+  invitedEmails?: string[];
+};
+
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
@@ -61,7 +64,13 @@ export async function POST(req: NextRequest) {
   }
 
   const body = (await req.json()) as ChatBody;
-  if (!body.courseSlug || !body.agentId || !body.message || !body.context) {
+  if (
+    !body.courseSlug ||
+    !body.agentId ||
+    typeof body.message !== "string" ||
+    !body.message.trim() ||
+    !body.context
+  ) {
     return NextResponse.json(
       { error: "courseSlug, agentId, message, and context are required." },
       { status: 400 },
@@ -96,6 +105,7 @@ export async function POST(req: NextRequest) {
   }
 
   let liveCopilotPolicy = null;
+  let liveSession: LiveContextSession | null = null;
   if (role === "learner" && body.context.page === "live_session") {
     if (
       !body.context.liveSessionId ||
@@ -106,18 +116,35 @@ export async function POST(req: NextRequest) {
         { status: 403 },
       );
     }
-    const liveSession = (await LiveSession.findOne({
+    liveSession = (await LiveSession.findOne({
       _id: body.context.liveSessionId,
       courseSlug: body.courseSlug,
     })
-      .select("settings.learnerCopilot")
-      .lean()) as {
-      settings?: { learnerCopilot?: Partial<LiveLearnerCopilotPolicy> };
-    } | null;
+      .select(
+        "_id courseId title status pace parts currentActivityId currentPartId activities access invitedEmails settings.learnerCopilot",
+      )
+      .lean()) as LiveContextSession | null;
     if (!liveSession) {
       return NextResponse.json(
         { error: "Live session not found." },
         { status: 404 },
+      );
+    }
+    if (
+      liveSession.status === "draft" ||
+      (!ownsCourse &&
+        liveSession.access === "invited" &&
+        !liveSession.invitedEmails?.includes(
+          session.user.email?.trim().toLowerCase() || "",
+        )) ||
+      !(await LiveParticipant.exists({
+        sessionId: liveSession._id,
+        userId: session.user.id,
+      }))
+    ) {
+      return NextResponse.json(
+        { error: "Open the live room to use its learning copilot." },
+        { status: 403 },
       );
     }
     liveCopilotPolicy = normalizeLiveLearnerCopilotPolicy(
@@ -166,22 +193,51 @@ export async function POST(req: NextRequest) {
           )
           .lean()) as Partial<LearnerProfileData> | null)
       : null;
+  const liveContext =
+    liveSession && liveCopilotPolicy
+      ? await buildLiveLearnerContext({
+          session: liveSession,
+          userId: session.user.id,
+          courseId: String(course._id),
+          view: body.context,
+          policy: {
+            ...liveCopilotPolicy,
+            useCourseMaterials:
+              liveCopilotPolicy.useCourseMaterials &&
+              agent.dataScope !== "course_overview",
+          },
+        })
+      : null;
+  const currentActivity = liveContext?.activity as
+    | { id: string; title?: string }
+    | undefined;
+  const currentSlide = liveContext?.slide as { text?: string } | undefined;
   const searchResults =
     liveCopilotPolicy?.useCourseMaterials === false
       ? []
       : await scopedVectorSearch({
           scope: searchScope,
-          query: body.message,
+          query: [
+            body.message,
+            currentActivity?.title,
+            currentSlide?.text?.slice(0, 300),
+          ]
+            .filter(Boolean)
+            .join("\n"),
           limit: 5,
         });
   const educatorAnalytics =
     role === "educator"
       ? await buildCourseAnalyticsForAgent(course._id as never)
       : null;
-  const agentContext =
-    liveCopilotPolicy?.explainCurrentActivity === false
-      ? { ...body.context, visibleText: undefined }
-      : body.context;
+  const agentContext = liveSession
+    ? {
+        page: "live_session",
+        liveSessionId: String(liveSession._id),
+        activityId: currentActivity?.id,
+        title: currentActivity?.title || liveSession.title,
+      }
+    : body.context;
 
   try {
     const reply = await runCourseAgent({
@@ -198,6 +254,7 @@ export async function POST(req: NextRequest) {
       messages: body.messages || [],
       context: agentContext,
       liveCopilotPolicy,
+      liveContext,
       searchResults,
       learnerProgress,
       learnerProfile,

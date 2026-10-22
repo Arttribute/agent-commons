@@ -25,6 +25,16 @@ export interface CourseAgentConfig {
 export interface CourseAgentViewContext {
   page: string;
   liveSessionId?: string;
+  activityId?: string;
+  surface?: "slides" | "lab" | "workbook";
+  slide?: { materialId: string; number: number; total?: number };
+  lab?: {
+    workspaceId: string;
+    folderPath?: string;
+    fileId?: string;
+    draft?: string;
+  };
+  workbookDraft?: unknown;
   title?: string;
   moduleIndex?: number;
   lessonIndex?: number;

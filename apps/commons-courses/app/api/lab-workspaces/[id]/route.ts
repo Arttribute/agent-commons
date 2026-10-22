@@ -11,9 +11,7 @@ export async function GET(
   if (result.error) return result.error;
   return NextResponse.json(
     {
-      workspace: serializeLabWorkspace(result.workspace, {
-        educator: result.manages,
-      }),
+      workspace: serializeLabWorkspace(result.workspace),
     },
     { headers: { "Cache-Control": "private, no-store" } },
   );

@@ -28,6 +28,7 @@ import type {
   LabWorkspaceFileRecord,
   LabWorkspaceRecord,
 } from "@/types/lab-workspace";
+import type { CourseAgentViewContext } from "@/types/course-agent";
 
 type FolderIndex = Map<
   string,
@@ -38,10 +39,12 @@ export function LearnerLabWorkspace({
   workspaceId,
   entryPath,
   compact = false,
+  onContextChange,
 }: {
   workspaceId: string;
   entryPath?: string;
   compact?: boolean;
+  onContextChange?: (context: NonNullable<CourseAgentViewContext["lab"]>) => void;
 }) {
   const [workspace, setWorkspace] = useState<LabWorkspaceRecord | null>(null);
   const [folderPath, setFolderPath] = useState("");
@@ -49,6 +52,17 @@ export function LearnerLabWorkspace({
   const [workingCopy, setWorkingCopy] = useState("");
   const [folderDrawerOpen, setFolderDrawerOpen] = useState(false);
   const [error, setError] = useState("");
+  const contextChangeRef = useRef(onContextChange);
+  contextChangeRef.current = onContextChange;
+  useEffect(() => {
+    if (!workspace) return;
+    contextChangeRef.current?.({
+      workspaceId,
+      folderPath,
+      fileId: openFile?.id,
+      draft: openFile?.editable && workingCopy !== (openFile.preview || "") ? workingCopy : undefined,
+    });
+  }, [folderPath, openFile, workingCopy, workspace, workspaceId]);
 
   useEffect(() => {
     let active = true;
@@ -58,7 +72,11 @@ export function LearnerLabWorkspace({
         if (!response.ok)
           throw new Error(body.error || "Could not open this lab.");
         if (!active) return;
-        const next = body.workspace as LabWorkspaceRecord;
+        const received = body.workspace as LabWorkspaceRecord;
+        const next = {
+          ...received,
+          files: received.files.filter((file) => file.audience === "learner"),
+        };
         const entry = resolveLabWorkspaceEntry(next.files, entryPath);
         setError("");
         setWorkspace(next);

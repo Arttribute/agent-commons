@@ -20,9 +20,9 @@ export function serializeLabWorkspace(
     learnerFileCount: workspace.files.filter(
       (file) => file.audience === "learner",
     ).length,
-    facilitatorFileCount: workspace.files.filter(
-      (file) => file.audience === "facilitator",
-    ).length,
+    facilitatorFileCount: options.educator
+      ? workspace.files.filter((file) => file.audience === "facilitator").length
+      : 0,
     learnerPackSize: workspace.learnerPackSize,
     learnerPackDownloadUrl: `/api/lab-workspaces/${workspace._id}/download`,
     facilitatorPackDownloadUrl: options.educator
