@@ -371,14 +371,14 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
               Open for joining
             </Button>
           ) : null}
-          {session.status === "lobby" || (session.status === "live" && !current) ? (
+          {session.status === "lobby" || session.status === "ended" || (session.status === "live" && !current) ? (
             <Button
               variant="primary"
               icon={Play}
               onClick={() => command("start")}
               disabled={running || !session.activities.length}
             >
-              {session.status === "live" ? "Restore activity" : "Start"}
+              {session.status === "ended" ? "Restart session" : session.status === "live" ? "Restore activity" : "Start"}
             </Button>
           ) : null}
           {session.status === "live" ? (
@@ -533,9 +533,9 @@ export function LiveFacilitatorStudio({ sessionId }: { sessionId: string }) {
                     <Button variant="primary" icon={MonitorUp} onClick={() => command("open_lobby")}>
                       Open lobby
                     </Button>
-                  ) : session.status === "lobby" || session.status === "live" ? (
-                    <Button variant="primary" icon={Play} onClick={() => command("start")}>
-                      {session.status === "live" ? "Restore first activity" : "Start first activity"}
+                  ) : session.status === "lobby" || session.status === "live" || session.status === "ended" ? (
+                    <Button variant="primary" icon={Play} onClick={() => command("start")} disabled={running || !session.activities.length}>
+                      {session.status === "ended" ? "Restart session" : session.status === "live" ? "Restore first activity" : "Start first activity"}
                     </Button>
                   ) : null}
                 </div>
