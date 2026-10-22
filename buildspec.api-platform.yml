@@ -69,6 +69,19 @@ phases:
         GATEWAY_ENDPOINT=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`GatewayEndpoint`].OutputValue' --output text --region "$AWS_REGION")
         curl --fail --silent --show-error --retry 20 --retry-delay 10 --retry-all-errors "https://${IDENTITY_ENDPOINT#https://}/health"
         curl --fail --silent --show-error --retry 20 --retry-delay 10 --retry-all-errors "https://${GATEWAY_ENDPOINT#https://}/health"
+        # Liveness does not exercise the gateway's identity connection. An
+        # invalid opaque token must reach introspection and return 401, not
+        # fail with 500 because its identity URL cannot resolve.
+        curl --fail --silent --show-error "https://${IDENTITY_ENDPOINT#https://}/api/auth/.well-known/jwks.json" >/dev/null
+        auth_status=$(curl --silent --show-error --max-time 20 \
+          --output /tmp/gateway-auth-probe.json --write-out '%{http_code}' \
+          --header 'Authorization: Bearer deployment-invalid-token' \
+          "https://${GATEWAY_ENDPOINT#https://}/v1/identity")
+        if [ "$auth_status" != "401" ]; then
+          echo "Gateway identity probe expected HTTP 401, received $auth_status"
+          cat /tmp/gateway-auth-probe.json
+          exit 1
+        fi
         printf '{"identityEndpoint":"%s","gatewayEndpoint":"%s","environment":"%s"}\n' "$IDENTITY_ENDPOINT" "$GATEWAY_ENDPOINT" "$ENVIRONMENT" > deployment.json
 
 artifacts:

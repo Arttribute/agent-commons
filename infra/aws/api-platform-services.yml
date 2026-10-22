@@ -82,11 +82,12 @@ Resources:
           - { Name: NODE_ENV, Value: production }
           - { Name: PORT, Value: "8080" }
           - { Name: COMMONS_IDENTITY_ISSUER, Value: !Ref IdentityIssuerUrl }
+          # ECS Express Endpoint is already an absolute HTTPS URL.
           - Name: COMMONS_IDENTITY_JWKS_URL
-            Value: !Sub "https://${IdentityService.Endpoint}/api/auth/.well-known/jwks.json"
+            Value: !Sub "${IdentityService.Endpoint}/api/auth/.well-known/jwks.json"
           - { Name: COMMONS_IDENTITY_AUDIENCE, Value: commons-platform }
           - Name: COMMONS_IDENTITY_PLATFORM_URL
-            Value: !Sub "https://${IdentityService.Endpoint}/api/platform"
+            Value: !Sub "${IdentityService.Endpoint}/api/platform"
           - { Name: AGENT_COMMONS_INTERNAL_URL, Value: !Ref AgentCommonsInternalUrl }
           - { Name: COMMON_OS_INTERNAL_URL, Value: !Ref CommonOsInternalUrl }
           - { Name: RATE_LIMIT_PER_MINUTE, Value: "600" }
