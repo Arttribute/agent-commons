@@ -5,14 +5,13 @@ import bcrypt from "bcryptjs";
 import { consumeAccountToken } from "@/lib/account-tokens";
 import { connectDB } from "@/lib/db";
 import User from "@/models/User";
+import { commonsIdentityConfigured, linkedIdentityForSession } from "@/lib/auth-routing";
 
 const googleEnabled =
   Boolean(process.env.GOOGLE_CLIENT_ID) &&
   Boolean(process.env.GOOGLE_CLIENT_SECRET);
 const authSecret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
-const commonsIdentityEnabled =
-  Boolean(process.env.COMMONS_IDENTITY_ISSUER) &&
-  Boolean(process.env.COMMONS_IDENTITY_CLIENT_ID);
+const commonsIdentityEnabled = commonsIdentityConfigured(process.env);
 const AUTH_SESSION_VERSION = (
   process.env.COMMONS_AUTH_SESSION_VERSION ?? "v2"
 ).replace(/[^a-zA-Z0-9_-]/g, "-");
@@ -152,7 +151,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           },
         ]
       : []),
-    ...(googleEnabled
+    ...(googleEnabled && !commonsIdentityEnabled
       ? [
           Google({
             clientId: process.env.GOOGLE_CLIENT_ID,
@@ -337,6 +336,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.workspaceId = token.identityWorkspaceId;
         if (user.image) token.picture = user.image;
         token.emailVerifiedAt = (user as { emailVerifiedAt?: Date }).emailVerifiedAt;
+      }
+      // Sessions opened before reconciliation retain their local Mongo ID.
+      // Read only the verified link for that exact account; never guess by email.
+      if (!token.identityUserId && typeof token.id === "string" && /^[a-f\d]{24}$/i.test(token.id)
+        && (!token.identityLinkRetryAt || Date.now() >= Number(token.identityLinkRetryAt))) {
+        await connectDB();
+        const profile = await User.findById(token.id).select("email emailVerifiedAt identityUserId identityWorkspaceId").lean();
+        const link = linkedIdentityForSession(token.email, profile as Parameters<typeof linkedIdentityForSession>[1]);
+        if (link) Object.assign(token, link, { identityLinkRetryAt: undefined });
+        else token.identityLinkRetryAt = Date.now() + REFRESH_RETRY_MS;
       }
       const updatedRole = (
         session as

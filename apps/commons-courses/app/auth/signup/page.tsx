@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FlaskConical } from "lucide-react";
 import { safeAuthCallback } from "@/lib/auth-callback";
 import { SignUpClient } from "./signup-client";
+import { shouldUseDirectGoogle } from "@/lib/auth-routing";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -35,7 +36,7 @@ export default async function SignUpPage({ searchParams }: Props) {
             appUrl={appUrl}
             callbackUrl={callbackUrl}
             initialOauthQuery={oauthQuery}
-            directGoogle={callbackUrl.startsWith("/live/") && Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)}
+            directGoogle={shouldUseDirectGoogle(callbackUrl, process.env)}
           />
         </div>
       </section>

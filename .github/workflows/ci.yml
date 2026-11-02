@@ -87,6 +87,11 @@ jobs:
       - name: Test identity client address resolution
         run: node --experimental-strip-types --test apps/commons-identity/lib/client-ip.test.mjs
 
+      - name: Test CommonLab identity reconciliation and replay safety
+        env:
+          COMMONLAB_RECONCILIATION_TEST_DB: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
+        run: node --test scripts/lib/commonlab-identity.test.mjs
+
       # Identity has no staging deployment, so these are its only check before
       # production: OAuth, platform keys, and every way to sign in or sign up
       # (Google, email and password, and mixes of the two).
