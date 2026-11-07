@@ -33,6 +33,7 @@
     "@rrweb/replay": "^2.1.1"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "@types/react": "19.0.10"
   }
 }

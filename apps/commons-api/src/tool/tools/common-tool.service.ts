@@ -2894,12 +2894,18 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    return this.codeProjects.writeFiles({
+    const project = await this.codeProjects.writeFiles({
       ...props,
       agentId,
       runId: metadata?.runId,
       toolCallId: metadata?.toolCallId,
     });
+    return {
+      ...project,
+      files: project.files.map(file => file.content.startsWith('base64:')
+        ? {...file, content: '[Binary asset preserved in storage]', binary: true}
+        : file),
+    };
   }
 
   async readCodeProject(
@@ -2907,7 +2913,13 @@ export class CommonToolService {
     metadata?: ToolExecutionMetadata,
   ) {
     const agentId = this.requireToolAgentId(props.agentId, metadata);
-    return this.codeProjects.get(agentId, props.projectId);
+    const project = await this.codeProjects.get(agentId, props.projectId);
+    return {
+      ...project,
+      files: project.files.map(file => file.content.startsWith('base64:')
+        ? {...file, content: '[Binary asset preserved in storage]', binary: true}
+        : file),
+    };
   }
 
   async publishCodeProject(

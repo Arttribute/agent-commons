@@ -917,6 +917,31 @@ export const project = pgTable(
   }),
 );
 
+/** Custom browser pages linked to a workspace project; live metadata is a snapshot. */
+export const projectPage = pgTable('project_page', {
+  pageId: uuid('page_id').default(sql`gen_random_uuid()`).primaryKey(),
+  projectId: uuid('project_id').notNull().references(() => project.projectId, { onDelete: 'cascade' }),
+  codeProjectId: uuid('code_project_id').notNull().references(() => codeProject.projectId, { onDelete: 'cascade' }),
+  ownerUserId: text('owner_user_id').notNull(),
+  slug: text('slug').notNull(),
+  surface: text('surface').notNull().default('commons'),
+  status: text('status').notNull().default('draft'),
+  revision: integer('revision').notNull().default(0),
+  assetsEnabled: pgBoolean('assets_enabled').notNull().default(false),
+  draftConfig: jsonb('draft_config').$type<{title: string; description: string; publicContext: string; chatEnabled: boolean; imageUrl?: string}>().notNull().default({title: '', description: '', publicContext: '', chatEnabled: false}),
+  publishedConfig: jsonb('published_config').$type<{title: string; description: string; publicContext: string; chatEnabled: boolean; imageUrl?: string}>(),
+  publishedDeploymentId: uuid('published_deployment_id'),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  deploymentFk: foreignKey({ columns: [table.publishedDeploymentId, table.codeProjectId], foreignColumns: [codeProjectDeployment.deploymentId, codeProjectDeployment.projectId], name: 'project_page_deployment_fk' }),
+  slugIdx: uniqueIndex('project_page_slug_idx').on(table.slug),
+  codeIdx: uniqueIndex('project_page_code_idx').on(table.codeProjectId),
+  ownerIdx: index('project_page_owner_idx').on(table.ownerUserId, table.projectId),
+}));
+
 /* ─────────────────────────  ARTIFACT LIBRARY  ───────────────────────── */
 
 /**

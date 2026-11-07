@@ -89,7 +89,7 @@ export function createGatewayApp() {
     const url = new URL(targetPath, `${baseUrl.replace(/\/$/, "")}/`);
     const incoming = new URL(c.req.url);
     url.search = incoming.search;
-    const headers = isPluginFrame
+    const headers = (isPluginFrame || /^\/v1\/project-pages\/[^/]+$/.test(targetPath))
       ? publicAssetRequestHeaders(c.req.raw.headers)
       : new Headers(c.req.raw.headers);
     headers.delete("host");
@@ -182,6 +182,13 @@ export function createGatewayApp() {
       process.env.AGENT_COMMONS_INTERNAL_URL,
       c.req.path,
     ),
+  );
+  app.get("/v1/project-page-sdk.js", (c) =>
+    publicProxy(c, "agent-commons", process.env.AGENT_COMMONS_INTERNAL_URL, c.req.path),
+  );
+  // Read-only published page metadata; no owner or source data is returned.
+  app.get("/v1/project-pages/:slug", (c) =>
+    publicProxy(c, "agent-commons", process.env.AGENT_COMMONS_INTERNAL_URL, c.req.path),
   );
   // A revocable, expiring artifact capability is authenticated by its opaque
   // token downstream. It must remain reachable to signed-out recipients; the
@@ -437,6 +444,7 @@ export default app;
 
 function isPluginFramePath(path: string) {
   return (
+    path === "/v1/project-page-sdk.js" ||
     path === "/v1/ui-plugin-host" ||
     path === "/v1/previews" ||
     path.startsWith("/v1/previews/")

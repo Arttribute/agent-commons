@@ -880,6 +880,9 @@ importers:
       '@agent-commons/sdk':
         specifier: workspace:*
         version: link:../../packages/commons-sdk
+      '@agent-commons/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@aws-sdk/client-s3':
         specifier: ^3.1073.0
         version: 3.1073.0
@@ -1285,6 +1288,9 @@ importers:
         specifier: '>=18'
         version: 19.2.4(react@19.2.4)
     devDependencies:
+      '@types/react':
+        specifier: 19.0.10
+        version: 19.0.10
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12
