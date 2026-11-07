@@ -47,6 +47,7 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
   // bearer credentials against identity; other APIs still require the cookie.
   if (["/api/referrals", "/api/referrals/email", "/api/referrals/qr"].includes(request.nextUrl.pathname)
     && request.headers.get('authorization')?.startsWith('Bearer ')) return NextResponse.next();
+  if (request.method === 'GET' && /^\/api\/project-pages\/[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(request.nextUrl.pathname)) return NextResponse.next();
   return cloudAuthMiddleware(request, event as never);
 }
 

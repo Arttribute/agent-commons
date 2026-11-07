@@ -78,6 +78,11 @@ jobs:
       # without a credential, but nothing here used to exercise it — a broken
       # public-route list reached production unnoticed. Staging cannot catch
       # this either: it has no gateway in front of it.
+      - name: Test custom project pages
+        run: |
+          NODE_OPTIONS=--experimental-vm-modules pnpm --filter commons-api exec jest --runInBand --globals='{"ts-jest":{"isolatedModules":true}}' --runTestsByPath src/project-page/static-import.spec.ts src/project-page/project-page.service.spec.ts src/project-page/templates.spec.ts src/code-project/code-project.builder.spec.ts src/code-project/code-project.service.spec.ts
+          node --experimental-strip-types --test packages/ui/src/page-bridge.test.mts
+
       - name: Test API gateway
         run: pnpm --filter commons-api-gateway run test
 

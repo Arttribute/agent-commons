@@ -4,6 +4,43 @@ import { CodeProjectBuilder } from './code-project.builder';
 describe('CodeProjectBuilder', () => {
   const builder = new CodeProjectBuilder();
 
+  it('keeps binary image imports relative to the HTML and usable in inline previews', async () => {
+    const files = [
+      {
+        path: 'app/page.tsx',
+        content: `import './globals.css'; import image from '../assets/mark.png'; export default function Page(){return <img src={image} alt="Mark"/>}`,
+      },
+      { path: 'assets/mark.png', content: 'base64:iVBORw0KGgo=' },
+      { path: 'assets/font.ttf', content: 'base64:AAECAwQFBgc=' },
+      {
+        path: 'app/globals.css',
+        content:
+          '@font-face{font-family:Mark;src:url(../assets/font.ttf)}body{margin:0;background:white;font-family:Mark}img{max-width:100%;height:auto}',
+      },
+    ];
+    const built = await builder.build({
+      name: 'Image test',
+      entryFile: 'app/page.tsx',
+      files,
+    });
+    const image = built.assets.find((asset) => asset.path.endsWith('.png'))!;
+    const javascript = built.assets.find((asset) =>
+      asset.path.endsWith('.js'),
+    )!;
+    expect(
+      typeof javascript.content === 'string'
+        ? javascript.content
+        : Buffer.from(javascript.content).toString(),
+    ).toContain('./' + image.path);
+    const inline = await builder.buildInlinePreview({
+      name: 'Image test',
+      entryFile: 'app/page.tsx',
+      files,
+    });
+    expect(inline.html).toContain('data:image/png;base64,iVBORw0KGgo=');
+    expect(inline.html).toContain('data:font/ttf;base64,AAECAwQFBgc=');
+  });
+
   it('bundles React, local modules, and CSS without executing project code', async () => {
     const result = await builder.build({
       name: 'Small prototype',

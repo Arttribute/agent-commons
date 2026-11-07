@@ -330,9 +330,11 @@ const DESKTOP_PARENT_SOURCES = ['http://localhost:*', 'http://127.0.0.1:*'];
 
 function pluginFrameAncestors(includeSelf: boolean) {
   const configured = pluginParentOrigins();
+  const pageHosts = (process.env.PROJECT_PAGE_HOST_ORIGINS || 'https://www.agentcommons.io,https://staging.agentcommons.io,https://commonlab.agentcommons.io').split(/[\s,]+/).flatMap(value=>{try{const u=new URL(value);return ['https:','http:'].includes(u.protocol)?[u.origin]:[];}catch{return [];}});
   const sources = [
     ...(includeSelf ? ["'self'"] : []),
     ...configured,
+    ...pageHosts,
     ...DESKTOP_PARENT_SOURCES,
   ];
   return sources.length

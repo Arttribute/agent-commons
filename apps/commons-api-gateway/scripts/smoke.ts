@@ -67,6 +67,8 @@ await expectStatus("GET /health", app.request("/health"), 200);
 const publicRoutes: Array<[string, RequestInit?]> = [
   ["/v1/desktop-search/search?q=python"],
   ["/v1/billing/catalog"],
+  ["/v1/project-pages/ai-kids-hacker-camp"],
+  ["/v1/project-page-sdk.js"],
   ["/v1/oauth/providers"],
   ["/v1/oauth/providers/google"],
   ["/v1/oauth/callback/google"],
@@ -88,6 +90,8 @@ for (const [path, init] of publicRoutes) {
   );
 }
 
+await expectStatus('page metadata is read-only', app.request('/v1/project-pages/camp', {method:'POST'}), 401);
+
 const desktopCors = await app.request("/v1/files/upload-direct?ticket=invalid", { method: "OPTIONS", headers: { origin: "http://localhost:3100", "access-control-request-method": "POST" } });
 if (desktopCors.headers.get("access-control-allow-origin") !== "http://localhost:3100") failures.push("Desktop Cloud upload preflight must allow the loopback app origin");
 
@@ -95,6 +99,8 @@ if (desktopCors.headers.get("access-control-allow-origin") !== "http://localhost
 const protectedRoutes = [
   "/v1/identity",
   "/v1/agents",
+  "/v1/project-pages",
+  "/v1/projects/00000000-0000-4000-8000-000000000000/pages",
   "/v1/flags",
   "/v1/billing/subscription",
   "/v1/billing/entitlements",

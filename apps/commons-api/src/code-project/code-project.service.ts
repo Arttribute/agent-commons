@@ -20,11 +20,12 @@ import type {
 } from './code-project.types';
 import { CodeProjectVerifier } from './code-project.verifier';
 import { OAuthTokenInjectionService } from '~/oauth/oauth-token-injection.service';
+import { isBinarySiteFile, decodeSiteFile } from './site-files';
 import { verificationCoversManifest } from '~/ui-plugin/ui-plugin.policy';
 
 const MAX_FILES = 80;
 const MAX_FILE_BYTES = 250_000;
-const MAX_PROJECT_BYTES = 1_500_000;
+const MAX_PROJECT_BYTES = 6_000_000;
 
 @Injectable()
 export class CodeProjectService {
@@ -249,7 +250,9 @@ export class CodeProjectService {
         headers,
         body: JSON.stringify({
           message: `Update ${file.path} from Agent Commons`,
-          content: Buffer.from(file.content).toString('base64'),
+          content: isBinarySiteFile(file.path)
+            ? file.content.slice(7)
+            : Buffer.from(file.content).toString('base64'),
           sha: existing?.sha,
         }),
       });
@@ -292,11 +295,16 @@ export class CodeProjectService {
     projectId: string;
     files: CodeProjectFileInput[];
     replace?: boolean;
+    framework?: 'nextjs' | 'static';
     runId?: string;
     toolCallId?: string;
   }) {
-    await this.assertProject(args.agentId, args.projectId);
-    const files = validateFiles(args.files);
+    const existingProject = await this.assertProject(
+      args.agentId,
+      args.projectId,
+    );
+    const framework = args.framework ?? existingProject.framework;
+    const files = validateFiles(args.files, framework);
     const current = await this.db.query.codeProjectFile.findMany({
       where: (table) => eq(table.projectId, args.projectId),
     });
@@ -305,6 +313,7 @@ export class CodeProjectService {
     for (const file of files) merged.set(file.path, file.content);
     validateFiles(
       [...merged.entries()].map(([path, content]) => ({ path, content })),
+      framework,
     );
 
     this.emit(
@@ -363,7 +372,17 @@ export class CodeProjectService {
       }
       await tx
         .update(schema.codeProject)
-        .set({ status: 'draft', updatedAt: new Date() })
+        .set({
+          status: 'draft',
+          ...(args.framework
+            ? {
+                framework: args.framework,
+                entryFile:
+                  args.framework === 'static' ? 'index.html' : 'app/page.tsx',
+              }
+            : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(schema.codeProject.projectId, args.projectId));
       const project = await tx.query.codeProject.findFirst({
         where: (table) => eq(table.projectId, args.projectId),
@@ -451,6 +470,11 @@ export class CodeProjectService {
     try {
       const built = await this.builder.build({
         name: project.name,
+        framework: project.framework,
+        publicBaseUrl: this.deploymentUrl(
+          project.slug,
+          deployment.deploymentId,
+        ),
         entryFile: project.entryFile,
         files: files.map((file) => ({
           path: file.path,
@@ -720,6 +744,7 @@ export class CodeProjectService {
     const filePayload = project.files.map((file: any) => ({
       path: `${directory}/${file.path}`,
       content: file.content,
+      encoding: isBinarySiteFile(file.path) ? 'base64-prefixed' : 'utf8',
     }));
     const response = await this.computers.sendInstruction({
       agentId: args.agentId,
@@ -728,7 +753,7 @@ export class CodeProjectService {
       eventType: 'workspace.write',
       summary: `Export ${filePayload.length} project files to ${directory}`,
       instruction: [
-        'Use cli_write_file to write every file below exactly as provided.',
+        'Write UTF-8 files with cli_write_file exactly as provided. For encoding base64-prefixed, remove the base64: prefix and decode to binary bytes using a computer command; do not write the encoded text as the asset.',
         'Create parent directories as needed. Do not abbreviate or replace content.',
         'After writing, use cli_list_directory to verify the project directory and report all paths.',
         '',
@@ -759,6 +784,21 @@ export class CodeProjectService {
         and(eq(table.slug, slug), eq(table.visibility, 'public')),
     });
     if (!project?.latestDeploymentId) throw new NotFoundException();
+    const [page] = await this.db
+      .select({
+        assetsEnabled: schema.projectPage.assetsEnabled,
+        deletedAt: schema.projectPage.deletedAt,
+        parentDeletedAt: schema.project.deletedAt,
+      })
+      .from(schema.projectPage)
+      .innerJoin(
+        schema.project,
+        eq(schema.project.projectId, schema.projectPage.projectId),
+      )
+      .where(eq(schema.projectPage.codeProjectId, project.projectId))
+      .limit(1);
+    if (page && (!page.assetsEnabled || page.deletedAt || page.parentDeletedAt))
+      throw new NotFoundException();
     const selectedDeploymentId = deploymentId ?? project.latestDeploymentId;
     const deployment = await this.db.query.codeProjectDeployment.findFirst({
       where: (table) =>
@@ -773,13 +813,14 @@ export class CodeProjectService {
     const asset = await this.storage
       .get(deployment.storagePrefix, path)
       .catch(() => null);
-    if (asset) return asset;
+    if (asset) return page ? { ...asset, cacheControl: 'no-store' } : asset;
     if (!posixHasExtension(path)) {
       const fallback = await this.storage.get(
         deployment.storagePrefix,
         'index.html',
       );
-      if (fallback) return fallback;
+      if (fallback)
+        return page ? { ...fallback, cacheControl: 'no-store' } : fallback;
     }
     throw new NotFoundException();
   }
@@ -849,13 +890,18 @@ export class CodeProjectService {
   }
 }
 
-function validateFiles(files: CodeProjectFileInput[]) {
+export function validateFiles(
+  files: CodeProjectFileInput[],
+  framework = 'nextjs',
+) {
+  const maxFiles = framework === 'static' ? 400 : MAX_FILES;
+  const maxProject = framework === 'static' ? 12_000_000 : MAX_PROJECT_BYTES;
   if (!Array.isArray(files) || files.length === 0) {
     throw new BadRequestException('files must contain at least one file');
   }
-  if (files.length > MAX_FILES) {
+  if (files.length > maxFiles) {
     throw new BadRequestException(
-      `A project can contain at most ${MAX_FILES} files`,
+      `A project can contain at most ${maxFiles} files`,
     );
   }
   let total = 0;
@@ -869,14 +915,21 @@ function validateFiles(files: CodeProjectFileInput[]) {
       throw new BadRequestException(`File content must be text: ${path}`);
     }
     const bytes = Buffer.byteLength(file.content);
-    if (bytes > MAX_FILE_BYTES) {
+    const maxFile =
+      framework === 'static' || isBinarySiteFile(path)
+        ? 4_000_032
+        : MAX_FILE_BYTES;
+    if (isBinarySiteFile(path)) decodeSiteFile({ path, content: file.content });
+    if (bytes > maxFile) {
       throw new BadRequestException(`File is too large: ${path}`);
     }
     total += bytes;
     return { path, content: file.content };
   });
-  if (total > MAX_PROJECT_BYTES) {
-    throw new BadRequestException('Project source exceeds the 1.5 MB limit');
+  if (total > maxProject) {
+    throw new BadRequestException(
+      `Project files exceed the ${maxProject / 1_000_000} MB limit`,
+    );
   }
   return normalized;
 }

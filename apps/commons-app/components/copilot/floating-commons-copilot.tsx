@@ -159,6 +159,7 @@ function FloatingCommonsCopilotInner() {
       pathname.startsWith("/studio/canvas") ||
       // Chat surfaces: the copilot is one of the agents there already.
       pathname === "/new" ||
+      pathname.startsWith("/p/") ||
       /^\/studio\/agents(\/|$)/.test(pathname),
     [authenticated, pathname, ready]
   );
