@@ -11,10 +11,11 @@ describe('CodeProjectBuilder', () => {
         content: `import './globals.css'; import image from '../assets/mark.png'; export default function Page(){return <img src={image} alt="Mark"/>}`,
       },
       { path: 'assets/mark.png', content: 'base64:iVBORw0KGgo=' },
+      { path: 'assets/font.ttf', content: 'base64:AAECAwQFBgc=' },
       {
         path: 'app/globals.css',
         content:
-          'body{margin:0;background:white}img{max-width:100%;height:auto}',
+          '@font-face{font-family:Mark;src:url(../assets/font.ttf)}body{margin:0;background:white;font-family:Mark}img{max-width:100%;height:auto}',
       },
     ];
     const built = await builder.build({
@@ -26,15 +27,18 @@ describe('CodeProjectBuilder', () => {
     const javascript = built.assets.find((asset) =>
       asset.path.endsWith('.js'),
     )!;
-    expect((typeof javascript.content === 'string' ? javascript.content : Buffer.from(javascript.content).toString())).toContain(
-      './' + image.path,
-    );
+    expect(
+      typeof javascript.content === 'string'
+        ? javascript.content
+        : Buffer.from(javascript.content).toString(),
+    ).toContain('./' + image.path);
     const inline = await builder.buildInlinePreview({
       name: 'Image test',
       entryFile: 'app/page.tsx',
       files,
     });
     expect(inline.html).toContain('data:image/png;base64,iVBORw0KGgo=');
+    expect(inline.html).toContain('data:font/ttf;base64,AAECAwQFBgc=');
   });
 
   it('bundles React, local modules, and CSS without executing project code', async () => {

@@ -377,7 +377,10 @@ function replaceAssetReference(
   replacement: string,
 ) {
   return source.replace(
-    new RegExp(`(?:\\./)?${escapeRegExp(path)}`, 'g'),
+    new RegExp(
+      `(?:\\./)?(?:${escapeRegExp(path)}|${escapeRegExp(posix.basename(path))})`,
+      'g',
+    ),
     replacement,
   );
 }
