@@ -1,5 +1,11 @@
 # @agent-commons/ui
 
+## 0.4.0
+
+### Minor Changes
+
+- 0ab3ee6: Add a sandboxed ProjectPageFrame with a source-checked, nonce-bound bridge that can request a reviewed chat draft without exposing host credentials or running an agent.
+
 ## 0.3.0
 
 ### Minor Changes
