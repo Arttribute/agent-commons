@@ -67,6 +67,8 @@ import { AgentAvatar } from "@/components/agents/agent-avatar";
 import { InfoHint } from "@/components/ui/info-hint";
 import { ProjectNavigationToggle } from "./project-navigation";
 
+import { ProjectPagesSection } from "@/components/project-pages/project-pages-section";
+
 type ProjectSession = Awaited<ReturnType<typeof projectsApi.sessions>>[number];
 
 export function ProjectView({ projectId }: { projectId: string }) {
@@ -262,6 +264,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
           </PanelSection>
 
           <ContextSection project={project} local={local} onChange={update} onReload={load} />
+          {!local && <ProjectPagesSection projectId={project.projectId} projectName={project.name} preferredAgentId={project.agentId} agents={launcherAgents} />}
 
           <PanelSection
             title="Scheduled"

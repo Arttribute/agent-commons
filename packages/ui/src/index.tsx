@@ -208,3 +208,6 @@ export function AnnotationLayer({
     </div>
   );
 }
+
+export { ProjectPageFrame } from './project-page';
+export type { ProjectPageFrameData } from './page-bridge';

@@ -7,6 +7,7 @@ import {
   CreditCard,
   FileText,
   GraduationCap,
+  Globe,
   House,
   LayoutDashboard,
   Library,
@@ -214,6 +215,7 @@ export type ConsoleSection = {
 export const consoleSections: ConsoleSection[] = [
   { label: "Home", href: "/educator", icon: House, exact: true, purpose: "copilot launcher and shortcuts" },
   { label: "Courses", href: "/educator/courses", icon: Library, purpose: "all courses you manage" },
+  { label: "Project pages", href: "/educator/pages", icon: Globe, purpose: "custom programme sites linked to Commons projects; import builds from any coding tool" },
   { label: "Skill badges", href: "/educator/skills", icon: Award, purpose: "skill paths across courses" },
   { label: "Analytics", href: "/educator/analytics", icon: BarChart3, purpose: "portfolio analytics" },
   { label: "Create with AI", href: "/educator/copilot", icon: Sparkles, purpose: "turn uploaded material into a draft course, workbook or skill pack" },

@@ -7,6 +7,15 @@ import {
   type Plugin,
 } from 'esbuild';
 import { posix } from 'node:path';
+import {
+  buildStaticSite,
+  decodeSiteFile,
+  isBinarySiteFile,
+} from './site-files';
+import {
+  COMMONS_PAGE_MODULE,
+  COMMONS_PAGE_RUNTIME,
+} from '../project-page/page-runtime';
 import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import type { BuildResult, CodeProjectFileInput } from './code-project.types';
@@ -18,6 +27,7 @@ import {
 
 const ALLOWED_IMPORTS = new Set([
   COMMONS_UI_MODULE,
+  COMMONS_PAGE_MODULE,
   'react',
   'react/jsx-runtime',
   'react/jsx-dev-runtime',
@@ -64,7 +74,11 @@ export class CodeProjectBuilder {
     name: string;
     entryFile: string;
     files: CodeProjectFileInput[];
+    framework?: string;
+    publicBaseUrl?: string;
   }): Promise<BuildResult> {
+    if (args.framework === 'static')
+      return buildStaticSite(args.files, args.publicBaseUrl);
     const files = new Map(args.files.map((file) => [file.path, file.content]));
     const resolvedEntry = resolveProjectFile(files, args.entryFile);
     const nextEntry = '__agent_commons_entry.tsx';
@@ -116,6 +130,24 @@ export class CodeProjectBuilder {
           cacheControl: 'public, max-age=31536000, immutable',
         };
       });
+      // File-loader imports become strings used by DOM attributes. They resolve
+      // from the document, whereas CSS URLs resolve from the stylesheet.
+      const binaryAssets = outputAssets.filter(
+        (asset) => !/\.(js|css)$/.test(asset.path),
+      );
+      for (const javascript of outputAssets.filter((asset) =>
+        asset.path.endsWith('.js'),
+      )) {
+        let content = Buffer.from(javascript.content).toString('utf8');
+        for (const binary of binaryAssets) {
+          for (const quote of ['\"', "'"])
+            content = content.replaceAll(
+              quote + './' + posix.basename(binary.path) + quote,
+              quote + './' + binary.path + quote,
+            );
+        }
+        javascript.content = Buffer.from(content);
+      }
       const js = outputAssets.find((asset) => asset.path.endsWith('.js'));
       if (!js) throw new Error('Build did not produce a JavaScript entry');
       const css = outputAssets.find((asset) => asset.path.endsWith('.css'));
@@ -345,7 +377,10 @@ function replaceAssetReference(
   replacement: string,
 ) {
   return source.replace(
-    new RegExp(`(?:\\./)?${escapeRegExp(path)}`, 'g'),
+    new RegExp(
+      `(?:\\./)?(?:${escapeRegExp(path)}|${escapeRegExp(posix.basename(path))})`,
+      'g',
+    ),
     replacement,
   );
 }
@@ -398,6 +433,8 @@ function virtualProjectPlugin(files: Map<string, string>): Plugin {
                 ],
               };
             }
+            if (args.path === COMMONS_PAGE_MODULE)
+              return { path: COMMONS_PAGE_MODULE, namespace: 'commons-page' };
             if (args.path === COMMONS_UI_MODULE) {
               return { path: COMMONS_UI_MODULE, namespace: 'commons-ui' };
             }
@@ -422,6 +459,11 @@ function virtualProjectPlugin(files: Map<string, string>): Plugin {
         },
       );
 
+      buildApi.onLoad({ filter: /.*/, namespace: 'commons-page' }, () => ({
+        contents: COMMONS_PAGE_RUNTIME,
+        loader: 'js',
+      }));
+
       buildApi.onLoad({ filter: /.*/, namespace: 'commons-ui' }, () => ({
         contents: COMMONS_UI_RUNTIME_SOURCE,
         loader: 'tsx',
@@ -439,8 +481,8 @@ function virtualProjectPlugin(files: Map<string, string>): Plugin {
           return { errors: [{ text: `Unsupported file type: ${extension}` }] };
         }
         return {
-          contents,
-          loader,
+          contents: decodeSiteFile({ path: args.path, content: contents }),
+          loader: isBinarySiteFile(args.path) ? 'file' : loader,
           resolveDir: posix.join('/', posix.dirname(args.path)),
         };
       });

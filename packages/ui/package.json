@@ -1,6 +1,6 @@
 {
   "name": "@agent-commons/ui",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Shared Commons canvas, compiled preview and annotation primitives",
   "license": "MIT",
   "repository": {
@@ -33,6 +33,7 @@
     "@rrweb/replay": "^2.1.1"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "@types/react": "19.0.10"
   }
 }

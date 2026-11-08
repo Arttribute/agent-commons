@@ -12,11 +12,13 @@ async function forward(request: NextRequest, context: Context) {
     ? undefined
     : await request.json().catch(() => ({}));
   return proxyBackend(`/v1/projects/${path.map(encodeURIComponent).join("/")}`, {
-    method: request.method as "GET" | "PATCH" | "DELETE",
+    method: request.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     body,
   });
 }
 
 export const GET = forward;
+export const POST = forward;
+export const PUT = forward;
 export const PATCH = forward;
 export const DELETE = forward;
