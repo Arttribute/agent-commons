@@ -11,6 +11,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.tsx",
+    "./page-bridge": "./src/page-bridge.ts",
     "./styles.css": "./src/styles.css"
   },
   "files": [

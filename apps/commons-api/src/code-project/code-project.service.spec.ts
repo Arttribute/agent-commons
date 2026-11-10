@@ -61,6 +61,33 @@ describe('linked page asset revocation', () => {
       'public, max-age=31536000',
     );
   });
+  it('lets only the visitor browser keep files of a pinned deployment', async () => {
+    const { service, storage } = setup({ assetsEnabled: true });
+    storage.get.mockResolvedValue({
+      bytes: Buffer.from('image'),
+      contentType: 'image/webp',
+      cacheControl: 'public, max-age=31536000, immutable',
+    });
+    expect(
+      (await service.publicAsset('slug', 'assets/hero.webp', 'version'))
+        .cacheControl,
+    ).toBe('private, max-age=31536000, immutable');
+    // The latest alias moves on every publish, so it is never cached.
+    expect(
+      (await service.publicAsset('slug', 'assets/hero.webp')).cacheControl,
+    ).toBe('no-store');
+  });
+  it('never caches page HTML, even inside a pinned deployment', async () => {
+    expect(
+      (
+        await setup({ assetsEnabled: true }).service.publicAsset(
+          'slug',
+          undefined,
+          'version',
+        )
+      ).cacheControl,
+    ).toBe('no-store');
+  });
 });
 
 describe('CodeProjectService verification persistence', () => {

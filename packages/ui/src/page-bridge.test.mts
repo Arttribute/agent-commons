@@ -3,7 +3,37 @@ import assert from "node:assert/strict";
 import {
   isProjectPageChatRequest,
   projectPageFrameUrl,
+  projectPageRequestOrigin,
 } from "./page-bridge.ts";
+test("a server host derives the visitor origin from its proxy headers", () => {
+  const origin = (values: Record<string, string>) =>
+    projectPageRequestOrigin(new Headers(values));
+  assert.equal(
+    origin({
+      host: "internal:3000",
+      "x-forwarded-host": "commonlab.agentcommons.io",
+      "x-forwarded-proto": "https",
+    }),
+    "https://commonlab.agentcommons.io",
+  );
+  assert.equal(
+    origin({ host: "localhost:3002", "x-forwarded-proto": "http" }),
+    "http://localhost:3002",
+  );
+  assert.equal(origin({ host: "Example.test" }), "https://example.test");
+  assert.equal(
+    origin({ "x-forwarded-host": "a.test, b.test", host: "c.test" }),
+    "https://a.test",
+  );
+  for (const values of [
+    {},
+    { host: "user@evil.test" },
+    { host: "evil.test/path" },
+    { host: "a.test", "x-forwarded-proto": "javascript" },
+    { host: "a.test:99999" },
+  ])
+    assert.equal(origin(values), "");
+});
 test("a frame can only request chat with its source and nonce", () => {
   const frame = {},
     data = { type: "commons-page:chat", nonce: "nonce", id: "request-1" };

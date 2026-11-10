@@ -4,6 +4,7 @@ import {
   transform,
   type Loader,
   type Message,
+  type Metafile,
   type Plugin,
 } from 'esbuild';
 import { posix } from 'node:path';
@@ -68,6 +69,14 @@ const LOADERS: Record<string, Loader> = {
 
 const RESOLVE_EXTENSIONS = Object.keys(LOADERS);
 
+/**
+ * `import hero from './hero.webp?preload'` asks the generated HTML to start
+ * downloading that image with the script instead of after the first render.
+ * Use it for the one or two images visible on load, such as a hero.
+ */
+const PRELOAD_SUFFIX = '?preload';
+const PRELOADABLE_IMAGE = /\.(?:png|jpe?g|gif|webp)$/i;
+
 @Injectable()
 export class CodeProjectBuilder {
   async build(args: {
@@ -95,6 +104,7 @@ export class CodeProjectBuilder {
     }
 
     try {
+      const preloadSources = new Set<string>();
       const result = await build({
         absWorkingDir: process.cwd(),
         bundle: true,
@@ -112,17 +122,13 @@ export class CodeProjectBuilder {
         sourcemap: false,
         splitting: false,
         logLevel: 'silent',
+        metafile: true,
         loader: LOADERS,
-        plugins: [virtualProjectPlugin(files)],
+        plugins: [virtualProjectPlugin(files, preloadSources)],
       });
 
       const outputAssets = result.outputFiles.map((file) => {
-        // esbuild may resolve the absolute outdir beneath absWorkingDir even
-        // when the configured path begins with `/`. Persist only the stable
-        // deployment-relative suffix, never a machine-local build path.
-        const path = file.path
-          .replace(/^.*[\\/]prototype-dist[\\/]/, '')
-          .replaceAll('\\', '/');
+        const path = deploymentPath(file.path);
         return {
           path,
           content: file.contents,
@@ -164,6 +170,7 @@ export class CodeProjectBuilder {
         name: args.name,
         jsPath: js.path,
         cssPaths: [commonsCssAsset.path],
+        preloadImagePaths: preloadedImagePaths(result.metafile, preloadSources),
       });
       const assets = [
         {
@@ -257,10 +264,36 @@ export class CodeProjectBuilder {
   }
 }
 
+/** esbuild may place the absolute outdir beneath absWorkingDir. Keep only the deployment-relative suffix, never a machine-local path. */
+function deploymentPath(outputPath: string) {
+  return outputPath
+    .replace(/^(?:.*[\\/])?prototype-dist[\\/]/, '')
+    .replaceAll('\\', '/');
+}
+
+/** Emitted image files for local imports that opted in with `?preload`. */
+function preloadedImagePaths(
+  metafile: Metafile | undefined,
+  sources: Set<string>,
+) {
+  if (!metafile || !sources.size) return [];
+  const inputs = new Set([...sources].map((source) => `project:${source}`));
+  return Object.entries(metafile.outputs)
+    .filter(([, output]) =>
+      Object.keys(output.inputs).some((input) => inputs.has(input)),
+    )
+    .map(([path]) => deploymentPath(path))
+    .filter((path) => PRELOADABLE_IMAGE.test(path));
+}
+
 function inlineBuildAssets(assets: BuildResult['assets']) {
   const htmlAsset = assets.find((asset) => asset.path === 'index.html');
   if (!htmlAsset) throw new Error('Build did not produce an HTML entry');
-  let html = assetText(htmlAsset.content);
+  // Inline previews embed every image, so a preload would only duplicate it.
+  let html = assetText(htmlAsset.content).replace(
+    /\n?[ \t]*<link rel="preload" as="image"[^>]*>/g,
+    '',
+  );
   const binaryAssets = assets.filter(
     (asset) =>
       asset !== htmlAsset &&
@@ -410,7 +443,10 @@ function escapeStyle(value: string) {
   return value.replace(/<\/style/gi, '<\\/style');
 }
 
-function virtualProjectPlugin(files: Map<string, string>): Plugin {
+function virtualProjectPlugin(
+  files: Map<string, string>,
+  preloads = new Set<string>(),
+): Plugin {
   return {
     name: 'agent-commons-code-project',
     setup(buildApi) {
@@ -423,6 +459,27 @@ function virtualProjectPlugin(files: Map<string, string>): Plugin {
       buildApi.onResolve(
         { filter: /.*/, namespace: 'project' },
         async (args) => {
+          if (args.path.endsWith(PRELOAD_SUFFIX)) {
+            const image = args.path.slice(0, -PRELOAD_SUFFIX.length);
+            if (isBareImport(image) || !PRELOADABLE_IMAGE.test(image)) {
+              return {
+                errors: [
+                  {
+                    text: `"${PRELOAD_SUFFIX}" applies only to local PNG, JPEG, GIF or WebP imports, such as './hero.webp${PRELOAD_SUFFIX}'`,
+                  },
+                ],
+              };
+            }
+            const resolved = resolveProjectFile(
+              files,
+              posix.normalize(posix.join(args.resolveDir, image)),
+            );
+            if (!resolved) {
+              return { errors: [{ text: `Could not resolve "${image}"` }] };
+            }
+            preloads.add(resolved);
+            return { path: resolved, namespace: 'project' };
+          }
           if (isBareImport(args.path)) {
             if (!isAllowedImport(args.path)) {
               return {
@@ -536,7 +593,12 @@ function renderHtml(args: {
   name: string;
   jsPath: string;
   cssPaths: string[];
+  preloadImagePaths?: string[];
 }) {
+  const preloads = (args.preloadImagePaths ?? []).map(
+    (path) =>
+      `<link rel="preload" as="image" href="./${escapeHtml(path)}" fetchpriority="high" />\n    `,
+  );
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -546,7 +608,7 @@ function renderHtml(args: {
     <meta name="agent-commons-runtime" content="2" />
     <link rel="icon" href="data:," />
     <title>${escapeHtml(args.name)}</title>
-    ${args.cssPaths.map((path) => `<link rel="stylesheet" href="./${path}" />`).join('\n    ')}
+    ${preloads.join('')}${args.cssPaths.map((path) => `<link rel="stylesheet" href="./${path}" />`).join('\n    ')}
     <script>
       (() => {
         const query = new URLSearchParams(window.location.search);
