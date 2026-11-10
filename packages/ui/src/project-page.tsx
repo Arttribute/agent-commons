@@ -4,18 +4,30 @@ import {
   isProjectPageChatRequest,
   projectPageFrameUrl,
   type ProjectPageFrameData,
+  type ProjectPageFrameSession,
 } from "./page-bridge";
-/** An opaque frame with an opt-in chat-draft bridge. No agent or credential is exposed. */
+/**
+ * An opaque frame with an opt-in chat-draft bridge. No agent or credential is exposed.
+ * Pass a server-created `session` so the frame is in the server HTML and starts
+ * loading immediately; without one, the frame appears after hydration.
+ */
 export function ProjectPageFrame({
   page,
   onChatDraftRequest,
+  session,
 }: {
   page: ProjectPageFrameData;
   onChatDraftRequest: () => void;
+  session?: ProjectPageFrameSession;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const [nonce, setNonce] = useState("");
-  useEffect(() => setNonce(crypto.randomUUID()), []);
+  const [nonce, setNonce] = useState(session?.nonce ?? "");
+  const [hostOrigin, setHostOrigin] = useState(session?.hostOrigin ?? "");
+  useEffect(() => {
+    setNonce((current) => current || crypto.randomUUID());
+    // The browser's origin is authoritative if a proxy reported another one.
+    setHostOrigin(window.location.origin);
+  }, []);
   useEffect(() => {
     if (!nonce) return;
     const receive = (event: MessageEvent) => {
@@ -53,11 +65,11 @@ export function ProjectPageFrame({
   let url = "";
   let error = "";
   try {
-    if (nonce)
+    if (nonce && hostOrigin)
       url = projectPageFrameUrl(
         page.entryUrl,
         page.slug,
-        window.location.origin,
+        hostOrigin,
         nonce,
         page.chatEnabled,
       );

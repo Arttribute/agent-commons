@@ -40,6 +40,12 @@ Management endpoints require the owner’s user credential. `GET /v1/project-pag
 
 Set `PROJECT_PAGE_HOST_ORIGINS` on the API to the exact deployed Commons / CommonLab origins if they differ from the defaults. Set `NEXT_PUBLIC_AGENT_COMMONS_APP_URL` on CommonLab when the Commons editor is on a different environment. CommonLab uses the educator’s own identity access token for management and never falls back to a platform service key.
 
-Publication uses a revision check so an older in-flight build cannot undo an unpublish or overwrite a newer saved draft. Page assets also check the page’s revocation flag and its parent project. Responses for linked page assets use `no-store`; assets previously downloaded by a visitor cannot be recalled.
+Publication uses a revision check so an older in-flight build cannot undo an unpublish or overwrite a newer saved draft. Page assets also check the page’s revocation flag and its parent project. A linked page’s HTML and its moving latest-deployment alias use `no-store`. Scripts, styles, images and fonts under a pinned deployment URL never change, so they use `private, max-age=31536000, immutable`: the visitor’s own browser may reuse them, while CloudFront and other shared caches never store them, so unpublishing still revokes them for everyone who has not already downloaded them. Assets previously downloaded by a visitor cannot be recalled.
+
+## Loading speed
+
+The Commons and CommonLab hosts render the sandboxed frame in their server HTML, with a fresh per-request nonce and the request’s origin, so the page starts loading with the host document rather than after hydration. The frame corrects the origin from `window.location` after hydration if a proxy reported a different one. Never serve these host routes from a shared cache, because the nonce must stay unique per response.
+
+A React page can mark the image visible on load with an import suffix, `import hero from '../assets/hero.webp?preload'`. The builder then adds `<link rel="preload" as="image" fetchpriority="high">` to the generated HTML, so the image downloads alongside the script instead of after the first render. The suffix applies only to local PNG, JPEG, GIF and WebP imports; inline previews leave it out because they embed every image.
 
 The new gateway public routes can only be verified through the production gateway after promotion because the gateway has no staging deployment. Check signed-out GET metadata / SDK, anonymous private-list rejection, live assets and unpublication immediately after deployment.

@@ -4,6 +4,70 @@ import { CodeProjectBuilder } from './code-project.builder';
 describe('CodeProjectBuilder', () => {
   const builder = new CodeProjectBuilder();
 
+  describe('image preloads', () => {
+    const files = (page: string) => [
+      { path: 'app/page.tsx', content: page },
+      { path: 'assets/hero.webp', content: 'base64:UklGRgAAAABXRUJQ' },
+      { path: 'assets/logo.png', content: 'base64:iVBORw0KGgo=' },
+      {
+        path: 'app/globals.css',
+        content: 'body{margin:0;background:white}img{max-width:100%}',
+      },
+    ];
+    const text = (content: string | Uint8Array) =>
+      typeof content === 'string' ? content : Buffer.from(content).toString();
+
+    it('starts an opted-in image with the script and leaves other images alone', async () => {
+      const built = await builder.build({
+        name: 'Preload test',
+        entryFile: 'app/page.tsx',
+        files: files(
+          `import './globals.css'; import hero from '../assets/hero.webp?preload'; import again from '../assets/hero.webp'; import logo from '../assets/logo.png'; export default function Page(){return <main><img src={hero} alt="Hero"/><img src={again} alt=""/><img src={logo} alt="Logo"/></main>}`,
+        ),
+      });
+      const html = text(
+        built.assets.find((asset) => asset.path === 'index.html')!.content,
+      );
+      const hero = built.assets.filter((asset) => asset.path.endsWith('.webp'));
+      // Both import forms share one emitted file.
+      expect(hero).toHaveLength(1);
+      expect(html).toContain(
+        `<link rel="preload" as="image" href="./${hero[0].path}" fetchpriority="high" />`,
+      );
+      expect(html.match(/rel="preload"/g)).toHaveLength(1);
+      const javascript = text(
+        built.assets.find((asset) => asset.path.endsWith('.js'))!.content,
+      );
+      expect(javascript).toContain(`./${hero[0].path}`);
+
+      const inline = await builder.buildInlinePreview({
+        name: 'Preload test',
+        entryFile: 'app/page.tsx',
+        files: files(
+          `import './globals.css'; import hero from '../assets/hero.webp?preload'; export default function Page(){return <img src={hero} alt="Hero"/>}`,
+        ),
+      });
+      expect(inline.html).not.toContain('<link rel="preload"');
+    });
+
+    it.each([
+      `import x from 'react?preload'`,
+      `import x from './globals.css?preload'`,
+      `import x from '../assets/missing.webp?preload'`,
+    ])('rejects a preload that is not a local image: %s', async (line) => {
+      await expect(
+        builder.build({
+          name: 'Bad preload',
+          entryFile: 'app/page.tsx',
+          files: files(
+            // esbuild drops unused TypeScript imports, so the page uses `x`.
+            `import './globals.css'; ${line}; export default function Page(){return <main>{String(x)}</main>}`,
+          ),
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
   it('keeps binary image imports relative to the HTML and usable in inline previews', async () => {
     const files = [
       {
