@@ -813,7 +813,16 @@ export class CodeProjectService {
     const asset = await this.storage
       .get(deployment.storagePrefix, path)
       .catch(() => null);
-    if (asset) return page ? { ...asset, cacheControl: 'no-store' } : asset;
+    if (asset)
+      return page
+        ? {
+            ...asset,
+            cacheControl: linkedPageCacheControl(
+              asset.contentType,
+              deploymentId,
+            ),
+          }
+        : asset;
     if (!posixHasExtension(path)) {
       const fallback = await this.storage.get(
         deployment.storagePrefix,
@@ -974,6 +983,22 @@ function normalizePublicPath(value?: string) {
 
 function posixHasExtension(path: string) {
   return /\.[a-z0-9]+$/i.test(path);
+}
+
+/**
+ * Cache policy for a file linked to a project page. A pinned deployment never
+ * changes, so the visitor's own browser may keep its scripts, styles, images
+ * and fonts. `private` keeps CloudFront and other shared caches from storing
+ * them, so unpublishing still revokes them for everyone who has not already
+ * downloaded them. HTML and the moving latest-deployment alias are never cached.
+ */
+export function linkedPageCacheControl(
+  contentType: string,
+  deploymentId?: string,
+) {
+  return deploymentId && !contentType.startsWith('text/html')
+    ? 'private, max-age=31536000, immutable'
+    : 'no-store';
 }
 
 function checksum(content: string) {

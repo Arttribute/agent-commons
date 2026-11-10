@@ -5,6 +5,35 @@ export type ProjectPageFrameData = {
   entryUrl: string;
   chatEnabled: boolean;
 };
+/**
+ * Per-request frame values a server host renders into the iframe address, so
+ * the page starts loading with the host HTML instead of after hydration. The
+ * nonce must be fresh for every response; never render it into a cached page.
+ */
+export type ProjectPageFrameSession = { nonce: string; hostOrigin: string };
+/**
+ * The visitor-facing origin of a server request, from the proxy headers.
+ * A wrong value only stops this response's own chat bridge (the browser
+ * enforces the postMessage target), and the frame corrects it after hydration.
+ */
+export function projectPageRequestOrigin(headers: {
+  get(name: string): string | null;
+}) {
+  const first = (name: string) =>
+    (headers.get(name) ?? "").split(",")[0]!.trim().toLowerCase();
+  const host = first("x-forwarded-host") || first("host");
+  const protocol = first("x-forwarded-proto") || "https";
+  if (
+    !/^[a-z0-9.-]+(?::\d{1,5})?$/.test(host) ||
+    !["http", "https"].includes(protocol)
+  )
+    return "";
+  try {
+    return new URL(`${protocol}://${host}`).origin;
+  } catch {
+    return "";
+  }
+}
 export function isProjectPageChatRequest(
   event: { source: unknown; origin: string; data: any },
   frame: unknown,
