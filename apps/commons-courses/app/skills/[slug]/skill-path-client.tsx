@@ -493,6 +493,7 @@ export default function SkillPathClient({
                         key: "visual",
                         label: "Visual",
                         icon: ImageIcon,
+                        inline: true,
                         node: <StageMedia src={challenge.assetUrl} alt={challenge.assetAlt} />,
                       },
                     ]
