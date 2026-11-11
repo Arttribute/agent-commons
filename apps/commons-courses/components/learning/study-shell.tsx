@@ -14,7 +14,8 @@ import { cn } from "@/lib/utils";
  * `split` puts the stage beside the reading column on wide screens, for when
  * the learner reads or answers briefly while looking at something.
  * `tabs` gives each surface the full width, for when the task itself is a
- * workspace. Either way, small screens show one surface at a time.
+ * workspace. Either way, small screens show one surface at a time, unless a
+ * stage is `inline`.
  */
 export type StudyStage = {
   key: string;
@@ -23,6 +24,14 @@ export type StudyStage = {
   node: ReactNode;
   /** Stage fills its pane edge to edge instead of being padded. */
   flush?: boolean;
+  /**
+   * Put the stage at the top of the reading column, scrolling with it,
+   * wherever it would otherwise sit behind a tab. In a split layout that means
+   * small screens only; wide screens still show it beside the reading. Suits
+   * a visual the reading follows on from, like a lesson image. Keep
+   * workspaces as tabs.
+   */
+  inline?: boolean;
 };
 
 export function StudyShell({
@@ -55,6 +64,11 @@ export function StudyShell({
   const activeStageKey = stages.some((item) => item.key === stageKey)
     ? stageKey
     : stages[0]?.key || "";
+  const inlineStages = stages.filter((item) => item.inline);
+  const tabStages = stages.filter((item) => !item.inline);
+  // Wide split screens give every stage a pane; otherwise inline stages live
+  // in the reading column instead.
+  const paneStages = split ? stages : tabStages;
   const surfaceChangeRef = useRef(onSurfaceChange);
   surfaceChangeRef.current = onSurfaceChange;
   useEffect(() => {
@@ -74,7 +88,7 @@ export function StudyShell({
       ) : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {stages.length ? (
+        {tabStages.length ? (
           <nav
             aria-label="Views"
             className={cn(
@@ -88,7 +102,7 @@ export function StudyShell({
               icon={ContentIcon}
               label={contentLabel}
             />
-            {stages.map((item) => (
+            {tabStages.map((item) => (
               <ViewTab
                 key={item.key}
                 active={view === item.key}
@@ -101,7 +115,7 @@ export function StudyShell({
         ) : null}
 
         <div className={cn("flex min-h-0 flex-1 flex-col", split && "lg:flex-row")}>
-          {stages.map((item) => (
+          {paneStages.map((item) => (
             <section
               key={item.key}
               aria-label={item.label}
@@ -111,7 +125,7 @@ export function StudyShell({
                 "min-h-0 min-w-0 flex-1 flex-col border-border bg-page",
                 split && "lg:border-r",
                 item.flush ? "" : "p-4 sm:p-6",
-                view === item.key ? "flex" : "hidden",
+                !item.inline && view === item.key ? "flex" : "hidden",
                 split && (activeStageKey === item.key ? "lg:flex" : "lg:hidden"),
               )}
             >
@@ -149,7 +163,7 @@ export function StudyShell({
                   ? "lg:w-[34rem] lg:shrink-0"
                   : "lg:w-[26rem] lg:shrink-0"
                 : "flex-1",
-              view === "content" || !stages.length ? "flex" : "hidden",
+              view === "content" || !tabStages.length ? "flex" : "hidden",
               split && "lg:flex",
             )}
           >
@@ -164,6 +178,15 @@ export function StudyShell({
                   !split && contentWidth === "full" && "mx-auto w-full max-w-6xl",
                 )}
               >
+                {inlineStages.length ? (
+                  <div className={cn("mb-6 space-y-4", split && "lg:hidden")}>
+                    {inlineStages.map((item) => (
+                      <section key={item.key} aria-label={item.label}>
+                        {item.node}
+                      </section>
+                    ))}
+                  </div>
+                ) : null}
                 {children}
               </div>
             </div>
