@@ -4,19 +4,17 @@ import { notFound } from "next/navigation";
 import { projectPageRequestOrigin } from "@agent-commons/ui/page-bridge";
 import { publicProjectPage, commonsWebUrl } from "@/lib/project-pages";
 import { ProjectPageHost } from "@/components/project-page-host";
+import { getAppBaseUrl } from "@/lib/app-url";
+import { programmeMetadata } from "@/lib/programme-metadata";
+import { shareForPage } from "@/lib/programme-share";
 type Props = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const page = await publicProjectPage((await params).slug);
   return page
-    ? {
-        title: { absolute: page.title },
-        description: page.description,
-        openGraph: {
-          title: page.title,
-          description: page.description,
-          ...(page.imageUrl ? { images: [page.imageUrl] } : {}),
-        },
-      }
+    ? programmeMetadata(await shareForPage(page), {
+        baseUrl: getAppBaseUrl(),
+        path: `/p/${page.slug}`,
+      })
     : { title: "Page not found" };
 }
 export default async function Page({ params }: Props) {

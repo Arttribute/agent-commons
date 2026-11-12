@@ -261,6 +261,25 @@ function PricingView({
                 }
               />
             </Field>
+            <Field
+              label="Programme page"
+              optional
+              info="Enter the part after /p/ in the published page’s URL to use its sharing preview for registration."
+            >
+              <Input
+                maxLength={64}
+                placeholder="your-programme"
+                value={course.registration.pageSlug || ""}
+                onChange={(e) =>
+                  patch({
+                    registration: {
+                      ...course.registration,
+                      pageSlug: e.target.value || undefined,
+                    },
+                  })
+                }
+              />
+            </Field>
             <Field label="Booking information">
               <Textarea
                 rows={3}
