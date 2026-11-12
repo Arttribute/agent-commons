@@ -68,6 +68,7 @@ const publicRoutes: Array<[string, RequestInit?]> = [
   ["/v1/desktop-search/search?q=python"],
   ["/v1/billing/catalog"],
   ["/v1/project-pages/ai-kids-hacker-camp"],
+  ["/v1/project-pages/ai-kids-hacker-camp/chat", { method: "POST" }],
   ["/v1/project-page-sdk.js"],
   ["/v1/oauth/providers"],
   ["/v1/oauth/providers/google"],
@@ -90,10 +91,47 @@ for (const [path, init] of publicRoutes) {
   );
 }
 
-await expectStatus('page metadata is read-only', app.request('/v1/project-pages/camp', {method:'POST'}), 401);
+await expectStatus(
+  "page metadata is read-only",
+  app.request("/v1/project-pages/camp", { method: "POST" }),
+  401,
+);
 
-const desktopCors = await app.request("/v1/files/upload-direct?ticket=invalid", { method: "OPTIONS", headers: { origin: "http://localhost:3100", "access-control-request-method": "POST" } });
-if (desktopCors.headers.get("access-control-allow-origin") !== "http://localhost:3100") failures.push("Desktop Cloud upload preflight must allow the loopback app origin");
+await expectStatus(
+  "guest guide preflight",
+  app.request("/v1/project-pages/camp/chat", {
+    method: "OPTIONS",
+    headers: {
+      origin: "https://commonlab.agentcommons.io",
+      "access-control-request-method": "POST",
+    },
+  }),
+  204,
+);
+const guestCors = await app.request("/v1/project-pages/camp/chat", {
+  method: "POST",
+  headers: { origin: "https://commonlab.agentcommons.io" },
+});
+if (guestCors.headers.get("access-control-allow-origin") !== "*")
+  failures.push("Guest guide must allow public page origins");
+
+const desktopCors = await app.request(
+  "/v1/files/upload-direct?ticket=invalid",
+  {
+    method: "OPTIONS",
+    headers: {
+      origin: "http://localhost:3100",
+      "access-control-request-method": "POST",
+    },
+  },
+);
+if (
+  desktopCors.headers.get("access-control-allow-origin") !==
+  "http://localhost:3100"
+)
+  failures.push(
+    "Desktop Cloud upload preflight must allow the loopback app origin",
+  );
 
 /** Routes that carry user data and must stay behind the credential check. */
 const protectedRoutes = [
@@ -110,15 +148,38 @@ for (const path of protectedRoutes) {
   await expectStatus(`protected GET ${path}`, app.request(path), 401);
 }
 
-await expectStatus("identity rejects unverified legacy credentials", app.request("/v1/identity", {headers:{authorization:"Bearer sk-ac-not-a-real-key"}}),401);
+await expectStatus(
+  "identity rejects unverified legacy credentials",
+  app.request("/v1/identity", {
+    headers: { authorization: "Bearer sk-ac-not-a-real-key" },
+  }),
+  401,
+);
 const nativeFetch = globalThis.fetch;
-process.env.COMMONS_IDENTITY_PLATFORM_URL="https://identity.invalid";
-process.env.COMMONS_GATEWAY_INTERNAL_SECRET="smoke-test-only";
-globalThis.fetch=(async()=>Response.json({active:true,actorId:"usr_verified",actorType:"user",scopes:["agents:read"],credentialType:"oauth"})) as typeof fetch;
-const identityResponse=await app.request("/v1/identity",{headers:{authorization:"Bearer opaque-smoke-token"}});
-const identity=await identityResponse.json();
-if(identityResponse.status!==200 || identity.actorId!=="usr_verified" || identity.scopes[0]!=="agents:read" || "legacyToken" in identity) failures.push("identity must return only the authenticated principal and grants");
-globalThis.fetch=nativeFetch;
+process.env.COMMONS_IDENTITY_PLATFORM_URL = "https://identity.invalid";
+process.env.COMMONS_GATEWAY_INTERNAL_SECRET = "smoke-test-only";
+globalThis.fetch = (async () =>
+  Response.json({
+    active: true,
+    actorId: "usr_verified",
+    actorType: "user",
+    scopes: ["agents:read"],
+    credentialType: "oauth",
+  })) as typeof fetch;
+const identityResponse = await app.request("/v1/identity", {
+  headers: { authorization: "Bearer opaque-smoke-token" },
+});
+const identity = await identityResponse.json();
+if (
+  identityResponse.status !== 200 ||
+  identity.actorId !== "usr_verified" ||
+  identity.scopes[0] !== "agents:read" ||
+  "legacyToken" in identity
+)
+  failures.push(
+    "identity must return only the authenticated principal and grants",
+  );
+globalThis.fetch = nativeFetch;
 delete process.env.COMMONS_IDENTITY_PLATFORM_URL;
 delete process.env.COMMONS_GATEWAY_INTERNAL_SECRET;
 

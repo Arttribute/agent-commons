@@ -85,7 +85,10 @@ function earlyDiscountIsRedeemable(rule: EarlyPaymentDiscountRule, now: Date) {
   return new Date(rule.deadline).getTime() >= now.getTime();
 }
 
-function findAccessCode(program: CourseAccessProgram | undefined, code?: string | null) {
+function findAccessCode(
+  program: CourseAccessProgram | undefined,
+  code?: string | null,
+) {
   const normalized = cleanCode(code);
   if (!normalized) return null;
   const groups: Array<[AccessCodeKind, AccessCodeRule[] | undefined]> = [
@@ -101,12 +104,15 @@ function findAccessCode(program: CourseAccessProgram | undefined, code?: string 
   return null;
 }
 
-function findAffiliate(program: CourseAccessProgram | undefined, code?: string | null) {
+function findAffiliate(
+  program: CourseAccessProgram | undefined,
+  code?: string | null,
+) {
   const normalized = cleanCode(code);
   if (!normalized) return null;
   return (
     program?.affiliates?.find(
-      (item) => item.active !== false && cleanCode(item.code) === normalized
+      (item) => item.active !== false && cleanCode(item.code) === normalized,
     ) || null
   );
 }
@@ -118,7 +124,10 @@ function calculateDiscount(amount: number, rule: AccessCodeRule) {
   return Math.min(amount, amount * (Math.max(0, rule.amount || 0) / 100));
 }
 
-function calculateEarlyDiscount(amount: number, rule: EarlyPaymentDiscountRule) {
+function calculateEarlyDiscount(
+  amount: number,
+  rule: EarlyPaymentDiscountRule,
+) {
   if ((rule.amountType || "percent") === "fixed") {
     return Math.min(amount, Math.max(0, rule.amount || 0));
   }
@@ -166,7 +175,7 @@ export function priceCourseAccess(params: {
     ...earlyCandidates,
   ];
   const bestDiscount = candidates.sort(
-    (a, b) => b.discountAmount - a.discountAmount
+    (a, b) => b.discountAmount - a.discountAmount,
   )[0];
   const discountAmount = bestDiscount?.discountAmount || 0;
   const finalAmount = Math.max(0, originalAmount - discountAmount);
@@ -193,13 +202,16 @@ export async function recordAccessProgramConversion(params: {
   accessCode?: string;
   accessCodeType?: AccessCodeKind;
   affiliateCode?: string;
+  session?: import("mongoose").ClientSession;
 }) {
   const updates: Record<string, number> = {};
   const arrayFilters: Record<string, string | undefined>[] = [];
   if (params.accessCode && params.accessCodeType) {
     const field = getAccessProgramField(params.accessCodeType);
     updates[`accessProgram.${field}.$[access].redeemedCount`] = 1;
-    arrayFilters.push({ [getAccessProgramMatchField(params.accessCodeType)]: params.accessCode });
+    arrayFilters.push({
+      [getAccessProgramMatchField(params.accessCodeType)]: params.accessCode,
+    });
   }
   if (params.affiliateCode) {
     updates["accessProgram.affiliates.$[affiliate].conversions"] = 1;
@@ -210,7 +222,7 @@ export async function recordAccessProgramConversion(params: {
   await Course.updateOne(
     { _id: params.courseId },
     { $inc: updates },
-    { arrayFilters }
+    { arrayFilters, ...(params.session ? { session: params.session } : {}) },
   );
 }
 

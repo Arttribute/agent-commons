@@ -74,6 +74,21 @@ jobs:
       - name: Test Common Courses certificate delivery and course policies
         run: pnpm --filter commons-courses test
 
+      - name: Test unified Common Courses registration and payments
+        run: |
+          docker run -d --name commonlab-registration-mongo -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          trap 'docker rm -f commonlab-registration-mongo' EXIT
+          for attempt in $(seq 1 40); do
+            if docker exec commonlab-registration-mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec commonlab-registration-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for attempt in $(seq 1 40); do
+            if docker exec commonlab-registration-mongo mongosh --quiet --eval 'if(!db.hello().isWritablePrimary)quit(1)' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          MONGODB_TEST_URI='mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true' node --test apps/commons-courses/scripts/course-registration.test.cjs
+
       # The gateway fronts every /v1/* request and decides what is reachable
       # without a credential, but nothing here used to exercise it — a broken
       # public-route list reached production unnoticed. Staging cannot catch
@@ -85,6 +100,12 @@ jobs:
 
       - name: Test API gateway
         run: pnpm --filter commons-api-gateway run test
+
+      - name: Test event registration and verified payments
+        env:
+          EVENT_REGISTRATION_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
+        run: |
+          NODE_OPTIONS=--experimental-vm-modules pnpm --filter commons-api exec jest --runInBand --globals='{"ts-jest":{"isolatedModules":true}}' --runTestsByPath src/project-page/public-page-chat.service.spec.ts
 
       # Better Auth rate limits per client address. Identity sits behind
       # CloudFront and a load balancer, and an unresolved address puts every
@@ -171,7 +192,6 @@ jobs:
         env:
           RESOURCE_UPGRADE_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
         run: pnpm --filter commons-api exec jest --runInBand src/computer/resource-upgrade.integration.spec.ts src/tool/tool-key.integration.spec.ts
-
 
       - name: Build API and test session context, model and Python contracts
         run: |

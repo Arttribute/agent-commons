@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
-import {
-  PaystackEvent,
-  verifyPaystackWebhookSignature,
-} from "@/lib/paystack";
+import { PaystackEvent, verifyPaystackWebhookSignature } from "@/lib/paystack";
 import { connectDB } from "@/lib/db";
 import { fulfillCompletedPayment } from "@/lib/payment-fulfillment";
 import { trackAnalyticsEvent } from "@/lib/analytics";
@@ -27,7 +24,7 @@ export async function POST(req: NextRequest) {
     event = stripe.webhooks.constructEvent(
       body,
       sig,
-      process.env.STRIPE_WEBHOOK_SECRET!
+      process.env.STRIPE_WEBHOOK_SECRET!,
     );
   } catch {
     return NextResponse.json({ error: "Invalid signature." }, { status: 400 });
@@ -100,6 +97,7 @@ async function handlePaystackWebhook(body: string, signature: string) {
   const result = await fulfillCompletedPayment({
     provider: "paystack",
     providerReference: reference,
+    verified: event.data,
     channel: channel || "unknown",
     fallback: {
       userId,

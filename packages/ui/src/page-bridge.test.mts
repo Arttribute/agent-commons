@@ -2,9 +2,46 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   isProjectPageChatRequest,
+  isProjectPageRegistrationRequest,
   projectPageFrameUrl,
   projectPageRequestOrigin,
 } from "./page-bridge.ts";
+test("registration requests require the same frame, origin and nonce as chat", () => {
+  const frame = {},
+    data = { type: "commons-page:register", nonce: "secret", id: "request" };
+  assert.equal(
+    isProjectPageRegistrationRequest(
+      { source: frame, origin: "null", data },
+      frame,
+      "secret",
+      "https://assets.test",
+    ),
+    true,
+  );
+  const browserEvent = Object.defineProperties({}, {
+    source: { value: frame }, origin: { value: 'null' }, data: { value: data },
+  });
+  assert.equal(isProjectPageRegistrationRequest(browserEvent as any, frame, 'secret', 'https://assets.test'), true);
+  for (const event of [
+    { source: {}, origin: "null", data },
+    { source: frame, origin: "https://attacker.test", data },
+    { source: frame, origin: "null", data: { ...data, nonce: "wrong" } },
+    {
+      source: frame,
+      origin: "null",
+      data: { ...data, type: "commons-page:chat" },
+    },
+  ])
+    assert.equal(
+      isProjectPageRegistrationRequest(
+        event,
+        frame,
+        "secret",
+        "https://assets.test",
+      ),
+      false,
+    );
+});
 test("a server host derives the visitor origin from its proxy headers", () => {
   const origin = (values: Record<string, string>) =>
     projectPageRequestOrigin(new Headers(values));

@@ -210,6 +210,10 @@ export function AnnotationLayer({
 }
 
 export { ProjectPageFrame } from './project-page';
+export { EventRegistration, eventMoney } from './event-registration';
+export type { PublicEvent, RegistrationField } from './event-registration';
+export { PublicPageChat, EventRegistrationExperience } from './public-page-chat';
+export type { PublicGuidePage } from './public-page-chat';
 export type {
   ProjectPageFrameData,
   ProjectPageFrameSession,

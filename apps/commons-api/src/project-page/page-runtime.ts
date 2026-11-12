@@ -5,7 +5,7 @@ export function pageContext() {
   const hash = new URLSearchParams(window.location.hash.slice(1));
   return { slug: hash.get('commonsPage'), hostOrigin: hash.get('commonsHost'), nonce: hash.get('commonsNonce'), chatEnabled: hash.get('commonsChat') === '1' };
 }
-export function openChat() {
+function requestAction(action) {
   const context = pageContext();
   if (window.parent === window || !context.hostOrigin || !context.nonce) return Promise.reject(new Error('Open this page through its Commons project link to use chat.'));
   return new Promise((resolve, reject) => {
@@ -17,7 +17,9 @@ export function openChat() {
     };
     const timer = setTimeout(() => { cleanup(); reject(new Error('The Commons page host did not respond.')); }, 8000);
     window.addEventListener('message', receive);
-    window.parent.postMessage({ type: 'commons-page:chat', id, nonce: context.nonce }, context.hostOrigin);
+    window.parent.postMessage({ type: 'commons-page:' + action, id, nonce: context.nonce }, context.hostOrigin);
   });
 }
+export function openChat() { return requestAction('chat'); }
+export function openRegistration() { return requestAction('register'); }
 `;

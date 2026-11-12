@@ -366,6 +366,12 @@ export class ProjectPageService {
       description: config.description,
       publicContext: config.publicContext,
       chatEnabled: config.chatEnabled,
+      chatName: config.chatName,
+      chatAvatarUrl: config.chatAvatarUrl,
+      chatGreeting: config.chatGreeting,
+      registrationUrl: config.registrationSlug
+        ? `/register/${config.registrationSlug}`
+        : undefined,
       imageUrl: config.imageUrl,
       entryUrl: deployment.publicUrl,
       publishedAt: page.publishedAt,

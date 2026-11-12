@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CreditCard } from "lucide-react";
 import { requireEducatorCourse } from "@/lib/educator-auth";
@@ -7,17 +8,28 @@ import { CourseSectionHeader } from "@/components/educator/course-section-header
 import { PaymentsTabs } from "@/components/educator/payments-tabs";
 import { EmptyState, StatStrip } from "@/components/ui/surface";
 
-export default async function CoursePaymentsPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function CoursePaymentsPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
   const { slug } = await params;
   const result = await requireEducatorCourse(slug);
   if (result.error) redirect("/educator");
 
   const [payments, ledger] = await Promise.all([
-    Payment.find({ courseId: result.course._id }).populate("userId", "name email").sort({ createdAt: -1 }).lean(),
-    PayoutLedger.find({ courseId: result.course._id }).sort({ createdAt: -1 }).lean(),
+    Payment.find({ courseId: result.course._id })
+      .populate("userId", "name email")
+      .sort({ createdAt: -1 })
+      .lean(),
+    PayoutLedger.find({ courseId: result.course._id })
+      .sort({ createdAt: -1 })
+      .lean(),
   ]);
   const currency = result.course.currency;
-  const completed = payments.filter((payment) => payment.status === "completed");
+  const completed = payments.filter(
+    (payment) => payment.status === "completed",
+  );
   const gross = completed.reduce((sum, payment) => sum + payment.amount, 0);
   const platformFeePercent = result.course.educator?.platformFeePercent ?? 20;
   const platformFees = gross * (platformFeePercent / 100);
@@ -26,14 +38,25 @@ export default async function CoursePaymentsPage({ params }: { params: Promise<{
     const user = payment.userId as unknown as { name?: string; email?: string };
     return {
       id: String(payment._id),
-      name: user?.name || user?.email || "Learner",
+      name:
+        payment.metadata?.registration?.contact?.name ||
+        user?.name ||
+        user?.email ||
+        "Learner",
       reference: payment.providerReference || "",
-      codes: [payment.accessCode, payment.affiliateCode].filter(Boolean).join(" · "),
+      codes: [payment.accessCode, payment.affiliateCode]
+        .filter(Boolean)
+        .join(" · "),
       amount: formatMoney(payment.amount, payment.currency),
-      discount: payment.discountAmount ? `-${formatMoney(payment.discountAmount, payment.currency)}` : "",
+      discount: payment.discountAmount
+        ? `-${formatMoney(payment.discountAmount, payment.currency)}`
+        : "",
       provider: payment.provider,
       status: payment.status,
       date: payment.createdAt ? new Date(payment.createdAt).toISOString() : "",
+      registration: payment.metadata?.registration
+        ? JSON.parse(JSON.stringify(payment.metadata.registration))
+        : undefined,
     };
   });
   const entries = ledger.map((entry) => ({
@@ -47,12 +70,38 @@ export default async function CoursePaymentsPage({ params }: { params: Promise<{
   return (
     <div>
       <CourseSectionHeader section="sales" />
+      {result.course.registration?.enabled && (
+        <div className="mb-5 flex flex-wrap items-center gap-4 text-sm">
+          <Link className="underline" href={"/register/" + slug}>
+            Open registration page
+          </Link>
+          <span>
+            {payments
+              .filter(
+                (p) =>
+                  p.status === "completed" &&
+                  p.metadata?.registration?.status === "confirmed",
+              )
+              .reduce(
+                (n, p) => n + Number(p.metadata.registration.quantity),
+                0,
+              )}{" "}
+            / {result.course.maxEnrollments || "Unlimited"} places confirmed
+          </span>
+        </div>
+      )}
       <StatStrip
         className="mb-6"
         items={[
           { label: "Gross", value: formatMoney(gross, currency) },
-          { label: `Platform fee (${platformFeePercent}%)`, value: formatMoney(platformFees, currency) },
-          { label: "Estimated net", value: formatMoney(gross - platformFees, currency) },
+          {
+            label: `Platform fee (${platformFeePercent}%)`,
+            value: formatMoney(platformFees, currency),
+          },
+          {
+            label: "Estimated net",
+            value: formatMoney(gross - platformFees, currency),
+          },
         ]}
       />
       {transactions.length || entries.length ? (
@@ -66,5 +115,8 @@ export default async function CoursePaymentsPage({ params }: { params: Promise<{
 
 function formatMoney(amount: number, currency?: string) {
   const code = (currency || "USD").toUpperCase();
-  return new Intl.NumberFormat(code === "KES" ? "en-KE" : "en-US", { style: "currency", currency: code }).format(amount);
+  return new Intl.NumberFormat(code === "KES" ? "en-KE" : "en-US", {
+    style: "currency",
+    currency: code,
+  }).format(amount);
 }

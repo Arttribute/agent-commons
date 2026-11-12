@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   isProjectPageChatRequest,
+  isProjectPageRegistrationRequest,
   projectPageFrameUrl,
   type ProjectPageFrameData,
   type ProjectPageFrameSession,
@@ -35,6 +36,32 @@ export function ProjectPageFrame({
       try {
         origin = new URL(page.entryUrl).origin;
       } catch {
+        return;
+      }
+      if (
+        isProjectPageRegistrationRequest(
+          event,
+          frame.current?.contentWindow,
+          nonce,
+          origin,
+        )
+      ) {
+        // The frame cannot supply a destination. Only the owner's validated
+        // same-project registration path may navigate the top-level page.
+        const path = page.registrationUrl;
+        if (path && /^\/register\/[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(path))
+          window.location.assign(path);
+        else
+          (event.source as Window).postMessage(
+            {
+              type: "commons-page:reply",
+              nonce,
+              id: event.data.id,
+              ok: false,
+              error: "Registration is unavailable.",
+            },
+            "*",
+          );
         return;
       }
       if (
