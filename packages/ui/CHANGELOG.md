@@ -1,5 +1,11 @@
 # @agent-commons/ui
 
+## 0.7.0
+
+### Minor Changes
+
+- 3c7710f: Show configurable registration headings and receipt verification QR codes on branded programme registration pages.
+
 ## 0.6.1
 
 ### Patch Changes
