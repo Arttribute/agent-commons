@@ -7,7 +7,7 @@ import {
 import "@agent-commons/ui/styles.css";
 type Props = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ reference?: string }>;
+  searchParams: Promise<{ reference?: string | string[] }>;
 };
 const base = () =>
   (
@@ -42,11 +42,15 @@ export async function generateMetadata({
 export default async function Page({ params, searchParams }: Props) {
   const event = await load((await params).slug);
   if (!event) notFound();
+  const candidate = (await searchParams).reference;
+  const reference = Array.isArray(candidate) ? candidate[0] : candidate;
   return (
-    <EventRegistrationExperience
-      event={event}
-      apiBase={base()}
-      reference={(await searchParams).reference}
-    />
+    <div className="h-dvh overflow-y-auto print:h-auto print:overflow-visible">
+      <EventRegistrationExperience
+        event={event}
+        apiBase={base()}
+        reference={reference}
+      />
+    </div>
   );
 }
