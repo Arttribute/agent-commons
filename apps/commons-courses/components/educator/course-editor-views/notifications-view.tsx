@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Field, FieldGrid, Input, SwitchRow, Textarea } from "@/components/ui/field";
+import {
+  Field,
+  FieldGrid,
+  Input,
+  SwitchRow,
+  Textarea,
+} from "@/components/ui/field";
 import { Badge, Card, SectionTitle } from "@/components/ui/surface";
 import { Segmented } from "@/components/ui/tabs";
 import { MediaField } from "./media-field";
@@ -19,7 +25,10 @@ export function NotificationsView({
   const [view, setView] = useState<"emails" | "branding">("emails");
   const settings = course.emailSettings;
   const patch = (value: Partial<EmailSettings>) =>
-    setCourse((current) => ({ ...current, emailSettings: { ...current.emailSettings, ...value } }));
+    setCourse((current) => ({
+      ...current,
+      emailSettings: { ...current.emailSettings, ...value },
+    }));
   const patchBranding = (value: Partial<EmailSettings["branding"]>) =>
     setCourse((current) => ({
       ...current,
@@ -42,6 +51,30 @@ export function NotificationsView({
 
       {view === "emails" ? (
         <>
+          <Card className="space-y-4">
+            <SectionTitle
+              title="Receipts"
+              info="Receipt emails are sent after payment verification. You can also send them from Payments."
+            />
+            <SwitchRow
+              label="Email receipts automatically"
+              checked={settings.receiptEnabled}
+              onChange={(receiptEnabled) => patch({ receiptEnabled })}
+            />
+            <SwitchRow
+              label="Include a verification QR code"
+              checked={settings.receiptQrEnabled}
+              onChange={(receiptQrEnabled) => patch({ receiptQrEnabled })}
+            />
+            <Field label="Receipt note" optional>
+              <Textarea
+                rows={2}
+                maxLength={300}
+                value={settings.receiptNote || ""}
+                onChange={(e) => patch({ receiptNote: e.target.value })}
+              />
+            </Field>
+          </Card>
           <Card className="divide-y divide-border py-2">
             <SwitchRow
               label="Enrollment confirmations"
@@ -51,12 +84,16 @@ export function NotificationsView({
             <SwitchRow
               label="New assignment emails"
               checked={settings.assignmentCreatedEnabled}
-              onChange={(assignmentCreatedEnabled) => patch({ assignmentCreatedEnabled })}
+              onChange={(assignmentCreatedEnabled) =>
+                patch({ assignmentCreatedEnabled })
+              }
             />
             <SwitchRow
               label="Assignment update emails"
               checked={settings.assignmentUpdatedEnabled}
-              onChange={(assignmentUpdatedEnabled) => patch({ assignmentUpdatedEnabled })}
+              onChange={(assignmentUpdatedEnabled) =>
+                patch({ assignmentUpdatedEnabled })
+              }
             />
             <SwitchRow
               label="Course update emails"
@@ -78,7 +115,11 @@ export function NotificationsView({
                 onChange={(event) => patch({ replyTo: event.target.value })}
               />
             </Field>
-            <Field label="Enrollment email intro" optional info="A short personal note added to the enrollment email.">
+            <Field
+              label="Enrollment email intro"
+              optional
+              info="A short personal note added to the enrollment email."
+            >
               <Textarea
                 rows={3}
                 value={settings.customIntro || ""}
@@ -92,7 +133,11 @@ export function NotificationsView({
           <SectionTitle
             title="Custom email branding"
             info="Use your logo, accent color, sender name and footer on learner emails."
-            action={customEmailBranding ? null : <Badge tone="warning">Paid plans</Badge>}
+            action={
+              customEmailBranding ? null : (
+                <Badge tone="warning">Paid plans</Badge>
+              )
+            }
           />
           {!customEmailBranding ? (
             <p className="rounded-lg bg-muted px-3 py-2 text-sm text-stone-600">
@@ -115,7 +160,9 @@ export function NotificationsView({
                   maxLength={80}
                   placeholder="Your organization"
                   value={settings.branding.senderName}
-                  onChange={(event) => patchBranding({ senderName: event.target.value })}
+                  onChange={(event) =>
+                    patchBranding({ senderName: event.target.value })
+                  }
                 />
               </Field>
               <Field label="Accent color">
@@ -123,11 +170,15 @@ export function NotificationsView({
                   <input
                     type="color"
                     value={settings.branding.accentColor}
-                    onChange={(event) => patchBranding({ accentColor: event.target.value })}
+                    onChange={(event) =>
+                      patchBranding({ accentColor: event.target.value })
+                    }
                     className="h-6 w-8 cursor-pointer border-0 bg-transparent p-0"
                     aria-label="Accent color"
                   />
-                  <span className="text-xs text-muted-foreground">{settings.branding.accentColor}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {settings.branding.accentColor}
+                  </span>
                 </div>
               </Field>
             </FieldGrid>
@@ -148,7 +199,9 @@ export function NotificationsView({
                 maxLength={240}
                 placeholder="A short organization or support message"
                 value={settings.branding.footerText}
-                onChange={(event) => patchBranding({ footerText: event.target.value })}
+                onChange={(event) =>
+                  patchBranding({ footerText: event.target.value })
+                }
               />
             </Field>
           </fieldset>

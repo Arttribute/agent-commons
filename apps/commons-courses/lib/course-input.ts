@@ -114,6 +114,9 @@ export type CourseInput = {
     affiliates?: AffiliateInput[];
   };
   emailSettings?: {
+    receiptEnabled?: boolean;
+    receiptQrEnabled?: boolean;
+    receiptNote?: string;
     welcomeEnabled?: boolean;
     enrollmentEnabled?: boolean;
     assignmentCreatedEnabled?: boolean;
@@ -751,6 +754,10 @@ export function normalizeCourseInput(input: CourseInput) {
     },
     accessProgram: normalizeAccessProgramInput(input.accessProgram),
     emailSettings: {
+      receiptEnabled: Boolean(input.emailSettings?.receiptEnabled),
+      receiptQrEnabled: input.emailSettings?.receiptQrEnabled !== false,
+      receiptNote:
+        input.emailSettings?.receiptNote?.trim().slice(0, 300) || undefined,
       welcomeEnabled: input.emailSettings?.welcomeEnabled !== false,
       enrollmentEnabled: input.emailSettings?.enrollmentEnabled !== false,
       assignmentCreatedEnabled:

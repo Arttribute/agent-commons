@@ -43,6 +43,7 @@
     "mongoose": "^8.24.1",
     "next": "16.3.6",
     "next-auth": "5.0.0-beta.32",
+    "qrcode": "1.5.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",

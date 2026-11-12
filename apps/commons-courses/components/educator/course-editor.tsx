@@ -90,6 +90,9 @@ const emptyCourse: CourseForm = {
   },
   accessProgram: normalizeAccessProgramForm(),
   emailSettings: {
+    receiptEnabled: false,
+    receiptQrEnabled: true,
+    receiptNote: "",
     welcomeEnabled: true,
     enrollmentEnabled: true,
     assignmentCreatedEnabled: true,
