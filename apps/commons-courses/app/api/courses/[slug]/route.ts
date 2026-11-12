@@ -55,8 +55,15 @@ export async function GET(
     const startStatus = getCourseStartStatus(
       course.startDate as Date | undefined,
     );
+    // Promo rules and collaborator contacts belong to the educator API.
+    const {
+      accessProgram: _codes,
+      collaborators: _staff,
+      registrationRevision: _revision,
+      ...publicCourse
+    } = course;
     return NextResponse.json({
-      ...course,
+      ...publicCourse,
       hasStarted: startStatus.started,
       startDateLabel: startStatus.label,
     });

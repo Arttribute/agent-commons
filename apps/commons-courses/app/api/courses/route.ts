@@ -9,7 +9,7 @@ export async function GET() {
       published: true,
       catalogVisibility: { $ne: "private" },
     })
-      .select("-modules")
+      .select("-modules -accessProgram -collaborators -registrationRevision")
       .sort({ createdAt: -1 })
       .lean();
     return NextResponse.json(courses);
