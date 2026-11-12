@@ -60,3 +60,23 @@ CREATE TABLE IF NOT EXISTS public_page_chat_usage (
   PRIMARY KEY(bucket, usage_day)
 );
 ALTER TABLE public_page_chat_usage ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS event_discount (
+  discount_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid NOT NULL REFERENCES project_event(event_id),
+  code text NOT NULL,
+  label text NOT NULL DEFAULT '',
+  active boolean NOT NULL DEFAULT true,
+  amount_type text NOT NULL CHECK (amount_type IN ('percent', 'fixed')),
+  amount numeric(12,2) NOT NULL CHECK (amount > 0),
+  max_redemptions integer CHECK (max_redemptions > 0),
+  expires_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(event_id, code)
+);
+ALTER TABLE event_discount ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_registration ADD COLUMN IF NOT EXISTS discount_id uuid REFERENCES event_discount(discount_id);
+ALTER TABLE event_registration ADD COLUMN IF NOT EXISTS discount_code text;
+ALTER TABLE event_registration ADD COLUMN IF NOT EXISTS original_amount_minor bigint;
+ALTER TABLE event_registration ADD COLUMN IF NOT EXISTS discount_amount_minor bigint NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS event_discount_usage_idx ON event_registration(discount_id, status, expires_at);

@@ -240,4 +240,146 @@ const url = process.env.EVENT_REGISTRATION_TEST_DATABASE_URL;
       'confirmed',
     );
   });
+  it('quotes percent and fixed discounts on the server and binds the final payment amount', async () => {
+    const e = await event({ capacity: 10 });
+    await service.saveDiscount(owner, projectId, e.eventId, {
+      code: 'team90',
+      amountType: 'percent',
+      amount: 90,
+      maxRedemptions: 5,
+    });
+    const q = await service.quote(e.slug, { quantity: 2, code: ' team90 ' });
+    expect(q).toMatchObject({
+      amountMinor: 160000,
+      originalAmountMinor: 1600000,
+      discountAmountMinor: 1440000,
+      discountCode: 'TEAM90',
+    });
+    expect(q).not.toHaveProperty('discountId');
+    const r = await service.checkout(e.slug, {
+      ...checkout(2),
+      discountCode: 'team90',
+      expectedAmountMinor: q.amountMinor,
+    });
+    expect(r.amountMinor).toBe(160000);
+    expect((await service.verify(e.slug, r.reference)).status).toBe(
+      'confirmed',
+    );
+    await service.saveDiscount(owner, projectId, e.eventId, {
+      code: 'FIXED',
+      amountType: 'fixed',
+      amount: 1000,
+    });
+    expect(
+      (await service.quote(e.slug, { quantity: 2, code: 'FIXED' })).amountMinor,
+    ).toBe(1500000);
+    await expect(
+      service.checkout(e.slug, {
+        ...checkout(),
+        discountCode: 'TEAM90',
+        expectedAmountMinor: 1,
+      }),
+    ).rejects.toThrow('price changed');
+    expect(await service.publicEvent(e.slug)).not.toHaveProperty('discounts');
+  });
+  it('serializes the last discount redemption, releasing expired holds without over-redeeming', async () => {
+    const e = await event({ capacity: 10 });
+    await service.saveDiscount(owner, projectId, e.eventId, {
+      code: 'LIMITED',
+      amountType: 'percent',
+      amount: 90,
+      maxRedemptions: 1,
+    });
+    const body = () => ({
+      ...checkout(),
+      discountCode: 'LIMITED',
+      expectedAmountMinor: 80000,
+    });
+    const results = await Promise.allSettled(
+      Array.from({ length: 6 }, () => service.checkout(e.slug, body())),
+    );
+    expect(results.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
+    const first = results.find(
+      (x) => x.status === 'fulfilled',
+    ) as PromiseFulfilledResult<any>;
+    await client`UPDATE event_registration SET expires_at=now()-interval '1 minute' WHERE reference=${first.value.reference}`;
+    const second = await service.checkout(e.slug, body());
+    expect(second.amountMinor).toBe(80000);
+    expect((await service.verify(e.slug, first.value.reference)).status).toBe(
+      'review',
+    );
+  });
+  it('rejects invalid, expired and disabled codes and confirms a full discount without Paystack', async () => {
+    const e = await event({ capacity: 10 });
+    await expect(
+      service.quote(e.slug, { quantity: 1, code: 'MISSING' }),
+    ).rejects.toThrow('not available');
+    await service.saveDiscount(owner, projectId, e.eventId, {
+      code: 'EXPIRED',
+      amountType: 'percent',
+      amount: 25,
+      expiresAt: '2020-01-01T00:00:00Z',
+    });
+    await expect(
+      service.quote(e.slug, { quantity: 1, code: 'EXPIRED' }),
+    ).rejects.toThrow('not available');
+    await service.saveDiscount(owner, projectId, e.eventId, {
+      code: 'DISABLED',
+      amountType: 'percent',
+      amount: 25,
+      active: false,
+    });
+    await expect(
+      service.quote(e.slug, { quantity: 1, code: 'DISABLED' }),
+    ).rejects.toThrow('not available');
+    await expect(
+      service.saveDiscount(other, projectId, e.eventId, {
+        code: 'BAD',
+        amountType: 'percent',
+        amount: 100,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await service.saveDiscount(owner, projectId, e.eventId, {
+      code: 'GIFT',
+      amountType: 'fixed',
+      amount: 999999,
+    });
+    const r = await service.checkout(e.slug, {
+      ...checkout(),
+      discountCode: 'GIFT',
+      expectedAmountMinor: 0,
+    });
+    expect(r).toMatchObject({
+      status: 'confirmed',
+      paymentStatus: 'free',
+      amountMinor: 0,
+      discountAmountMinor: 800000,
+    });
+  });
+  it('can reduce one KSh 8,000 registration to exactly KSh 10 for a live team test', async () => {
+    const e = await event();
+    await service.saveDiscount(owner, projectId, e.eventId, {
+      code: 'CAMPTEAM10',
+      label: 'Team checkout test',
+      amountType: 'fixed',
+      amount: 7990,
+      maxRedemptions: 5,
+    });
+    const q = await service.quote(e.slug, { quantity: 1, code: 'campteam10' });
+    expect(q.amountMinor).toBe(1000);
+    const r = await service.checkout(e.slug, {
+      ...checkout(),
+      discountCode: q.discountCode,
+      expectedAmountMinor: q.amountMinor,
+    });
+    expect(r).toMatchObject({
+      amountMinor: 1000,
+      originalAmountMinor: 800000,
+      discountAmountMinor: 799000,
+      discountCode: 'CAMPTEAM10',
+    });
+    expect((await service.verify(e.slug, r.reference)).paymentStatus).toBe(
+      'paid',
+    );
+  });
 });

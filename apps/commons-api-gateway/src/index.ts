@@ -274,6 +274,7 @@ export function createGatewayApp() {
   }
   for (const path of [
     "/v1/public-events/:slug/checkout",
+    "/v1/public-events/:slug/quote",
     "/v1/public-events/:slug/payments/:reference/verify",
     "/v1/event-payments/paystack/:accountId",
     "/v1/project-pages/:slug/chat",
@@ -563,7 +564,7 @@ export function publicAssetRequestHeaders(input: HeadersInit) {
 
 function isAnonymousPageApi(path: string) {
   return (
-    /^\/v1\/public-events\/[^/]+(?:\/checkout|\/payments\/[^/]+(?:\/verify)?)?$/.test(
+    /^\/v1\/public-events\/[^/]+(?:\/checkout|\/quote|\/payments\/[^/]+(?:\/verify)?)?$/.test(
       path,
     ) || /^\/v1\/project-pages\/[^/]+\/chat$/.test(path)
   );

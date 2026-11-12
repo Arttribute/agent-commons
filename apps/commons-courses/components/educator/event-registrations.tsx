@@ -22,6 +22,8 @@ import {
   type EventSettings,
 } from "@/lib/project-events-client";
 
+import { EventDiscounts } from "./event-discounts";
+
 const inputClass =
   "mt-1 h-9 w-full rounded-lg border border-border bg-white px-3 text-sm";
 const message = (e: unknown) =>
@@ -78,7 +80,11 @@ function EventForm({
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const set = (key: string, value: unknown) =>
-    setV((old) => ({ ...old, config: { ...old.config, [key]: value } }));
+    setV((old) => {
+      const config = { ...old.config, [key]: value };
+      if (editingAdvanced) setAdvanced(JSON.stringify(config, null, 2));
+      return { ...old, config };
+    });
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -207,7 +213,13 @@ function EventForm({
           aria-label="Programme configuration JSON"
           className="min-h-80 w-full rounded-lg border p-3 font-mono text-xs"
           value={advanced}
-          onChange={(e) => setAdvanced(e.target.value)}
+          onChange={(e) => {
+            setAdvanced(e.target.value);
+            try {
+              const config = JSON.parse(e.target.value);
+              setV((old) => ({ ...old, config }));
+            } catch {}
+          }}
         />
       </details>
       {error && (
@@ -344,7 +356,7 @@ export function EducatorEvent({
     [key, setKey] = useState(""),
     [signing, setSigning] = useState("");
   const [tab, setTab] = useQueryTab(
-    ["registrations", "details", "payments"] as const,
+    ["registrations", "details", "discounts", "payments"] as const,
     "registrations",
   );
   const path = base(projectId);
@@ -426,6 +438,7 @@ export function EducatorEvent({
         items={[
           { value: "registrations", label: "Registrations" },
           { value: "details", label: "Programme details" },
+          { value: "discounts", label: "Discount codes" },
           { value: "payments", label: "Payment connection" },
         ]}
         value={tab}
@@ -474,6 +487,13 @@ export function EducatorEvent({
               </ButtonLink>
             )}
           </>
+        ) : tab === "discounts" ? (
+          <EventDiscounts
+            projectId={projectId}
+            eventId={eventId}
+            currency={event.config.currency}
+            price={event.config.amountMinor}
+          />
         ) : tab === "payments" ? (
           <div className="max-w-lg space-y-5">
             <p className="text-sm">
@@ -642,6 +662,7 @@ export function EducatorEvent({
                 ["Phone", selected.contact.phone],
                 ["Registration", selected.status],
                 ["Payment", selected.payment_status],
+                ["Discount code", selected.discount_code || "None"],
                 [
                   "Total",
                   eventMoney(Number(selected.amount_minor), selected.currency),

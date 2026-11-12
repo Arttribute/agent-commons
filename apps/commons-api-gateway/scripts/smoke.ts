@@ -71,6 +71,7 @@ const publicRoutes: Array<[string, RequestInit?]> = [
   ["/v1/project-pages/ai-kids-hacker-camp/chat", { method: "POST" }],
   ["/v1/public-events/ai-kids-hacker-camp"],
   ["/v1/public-events/ai-kids-hacker-camp/checkout", { method: "POST" }],
+  ["/v1/public-events/ai-kids-hacker-camp/quote", { method: "POST" }],
   ["/v1/public-events/ai-kids-hacker-camp/payments/ac_evt_example"],
   [
     "/v1/public-events/ai-kids-hacker-camp/payments/ac_evt_example/verify",

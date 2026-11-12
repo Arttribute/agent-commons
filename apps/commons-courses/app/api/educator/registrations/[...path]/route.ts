@@ -20,7 +20,7 @@ async function proxy(
   const uuid = "[0-9a-fA-F-]{36}";
   if (
     !new RegExp(
-      `^${uuid}/events(?:/paystack|/${uuid}(?:/registrations)?)?$`,
+      `^${uuid}/events(?:/paystack|/${uuid}(?:/(?:registrations|discounts))?)?$`,
     ).test(path.join("/"))
   )
     return NextResponse.json({ error: "Not found." }, { status: 404 });

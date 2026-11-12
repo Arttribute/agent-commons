@@ -19,6 +19,8 @@ export type Booking = {
   payment_status: string;
   quantity: number;
   amount_minor: string;
+  discount_code?: string;
+  discount_amount_minor?: string;
   currency: string;
   contact: { name: string; email: string; phone: string };
   participants: Array<Record<string, unknown>>;
@@ -72,6 +74,8 @@ export function bookingsCsv(items: Booking[]) {
       "Amount",
       "Currency",
       "Paid at",
+      "Discount code",
+      "Discount",
     ],
     ...items.map((b) => [
       b.reference,
@@ -84,6 +88,8 @@ export function bookingsCsv(items: Booking[]) {
       Number(b.amount_minor) / 100,
       b.currency,
       b.paid_at,
+      b.discount_code,
+      Number(b.discount_amount_minor || 0) / 100,
     ]),
   ]
     .map((row) => row.map(cell).join(","))

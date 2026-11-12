@@ -32,6 +32,25 @@ function caller(req: Request) {
 @Controller({ version: '1', path: 'projects/:projectId/events' })
 export class ProjectEventController {
   constructor(private readonly events: EventRegistrationService) {}
+  @Get(':eventId/discounts') discounts(
+    @Req() req: Request,
+    @Param('projectId') id: string,
+    @Param('eventId') event: string,
+  ) {
+    return this.events
+      .discounts(caller(req), id, event)
+      .then((data) => ({ data }));
+  }
+  @Post(':eventId/discounts') discount(
+    @Req() req: Request,
+    @Param('projectId') id: string,
+    @Param('eventId') event: string,
+    @Body() body: unknown,
+  ) {
+    return this.events
+      .saveDiscount(caller(req), id, event, body)
+      .then((data) => ({ data }));
+  }
   @Get() list(@Req() req: Request, @Param('projectId') id: string) {
     return this.events.list(caller(req), id).then((data) => ({ data }));
   }
@@ -84,6 +103,12 @@ export class ProjectEventController {
 @Controller({ version: '1', path: 'public-events' })
 export class PublicEventController {
   constructor(private readonly events: EventRegistrationService) {}
+  @Post(':slug/quote')
+  @Header('Cache-Control', 'no-store')
+  @RateLimit({ limit: 20, windowMs: 60000, keyStrategy: 'ip' })
+  quote(@Param('slug') slug: string, @Body() body: unknown) {
+    return this.events.quote(slug, body).then((data) => ({ data }));
+  }
   @Get(':slug')
   @Header('Cache-Control', 'no-store')
   @RateLimit({ limit: 120, windowMs: 60000, keyStrategy: 'ip' })

@@ -19,6 +19,7 @@ import {
   pgSchema,
   primaryKey,
   date,
+  numeric,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { relations } from 'drizzle-orm';
@@ -975,6 +976,10 @@ export const eventRegistration = pgTable('event_registration', {
   paymentStatus: text('payment_status').notNull().default('unpaid'),
   quantity: integer('quantity').notNull(),
   amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  discountId: uuid('discount_id').references(() => eventDiscount.discountId),
+  discountCode: text('discount_code'),
+  originalAmountMinor: bigint('original_amount_minor', { mode: 'number' }),
+  discountAmountMinor: bigint('discount_amount_minor', { mode: 'number' }).notNull().default(0),
   currency: text('currency').notNull(),
   contact: jsonb('contact').notNull(),
   participants: jsonb('participants').notNull(),
@@ -4091,3 +4096,13 @@ export const publicPageChatUsage = pgTable('public_page_chat_usage', {
   usageDay: date('usage_day').notNull().default(sql`CURRENT_DATE`),
   requests: integer('requests').notNull().default(0),
 }, (t) => [primaryKey({ columns: [t.bucket, t.usageDay] })]);
+
+export const eventDiscount = pgTable('event_discount', {
+  discountId: uuid('discount_id').defaultRandom().primaryKey(),
+  eventId: uuid('event_id').notNull().references(() => projectEvent.eventId),
+  code: text('code').notNull(), label: text('label').notNull().default(''),
+  active: pgBoolean('active').notNull().default(true),
+  amountType: text('amount_type').notNull(), amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  maxRedemptions: integer('max_redemptions'), expiresAt: timestamp('expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [uniqueIndex('event_discount_event_code_idx').on(t.eventId, t.code)]);

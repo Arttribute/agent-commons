@@ -51,6 +51,9 @@ type Receipt = {
   paymentStatus: string;
   quantity: number;
   amountMinor: number;
+  originalAmountMinor?: number;
+  discountAmountMinor?: number;
+  discountCode?: string | null;
   currency: string;
   checkoutUrl: string | null;
   paidAt: string | null;
@@ -89,6 +92,19 @@ export function EventRegistration({
     [receipt, setReceipt] = useState<Receipt | null>(null);
   const [checking, setChecking] = useState(Boolean(reference)),
     [copied, setCopied] = useState(false);
+  const [code, setCode] = useState(""),
+    [quote, setQuote] = useState<{
+      amountMinor: number;
+      originalAmountMinor: number;
+      discountAmountMinor: number;
+      discountCode: string;
+    } | null>(null),
+    [codeError, setCodeError] = useState("");
+  useEffect(() => {
+    setQuote(null);
+    setCodeError("");
+    key.current = "";
+  }, [participants.length]);
   const key = useRef(""),
     active = useRef(true);
   const root = `${apiBase.replace(/\/$/, "")}/v1/public-events/${encodeURIComponent(event.slug)}`;
@@ -99,7 +115,10 @@ export function EventRegistration({
     "--acer-paper": event.theme.background,
     "--acer-ink": event.theme.ink,
   } as CSSProperties;
-  async function request(path: string, body?: unknown) {
+  async function request<T = Receipt>(
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const r = await fetch(root + path, {
       method: body === undefined ? "GET" : "POST",
       cache: "no-store",
@@ -114,7 +133,7 @@ export function EventRegistration({
           ? j.message
           : "We could not complete that request. Please try again.",
       );
-    return j.data as Receipt;
+    return j.data as T;
   }
   useEffect(() => {
     active.current = true;
@@ -160,14 +179,43 @@ export function EventRegistration({
     key.current = "";
     setReceipt(null);
     setError("");
+    setCode("");
+    setQuote(null);
+    setCodeError("");
     window.history.replaceState({}, "", window.location.pathname);
   };
+  async function applyDiscount() {
+    setBusy(true);
+    setCodeError("");
+    setError("");
+    try {
+      const result = await request<{
+        amountMinor: number;
+        originalAmountMinor: number;
+        discountAmountMinor: number;
+        discountCode: string;
+      }>("/quote", { quantity: participants.length, code });
+      setQuote(result);
+      setCode(result.discountCode || "");
+      key.current = "";
+    } catch (e) {
+      setQuote(null);
+      setCodeError(e instanceof Error ? e.message : "Please check the code.");
+    } finally {
+      setBusy(false);
+    }
+  }
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (busy || full) return;
     setBusy(true);
     setError("");
     const data = new FormData(e.currentTarget);
+    if (code.trim() && !quote) {
+      setError("Apply or remove the discount code before continuing.");
+      setBusy(false);
+      return;
+    }
     key.current ||= crypto.randomUUID();
     const input = {
       idempotencyKey: key.current,
@@ -177,6 +225,8 @@ export function EventRegistration({
       agreed: data.get("agreed") === "on",
       website: data.get("website") || "",
       participants,
+      discountCode: quote?.discountCode || "",
+      expectedAmountMinor: quote?.amountMinor,
     };
     try {
       let result = await request("/checkout", input);
@@ -216,7 +266,7 @@ export function EventRegistration({
       setBusy(false);
     }
   };
-  const total = event.amountMinor * participants.length;
+  const total = quote?.amountMinor ?? event.amountMinor * participants.length;
   const confirmed = receipt?.status === "confirmed";
   return (
     <div className="acer" style={style}>
@@ -312,6 +362,18 @@ export function EventRegistration({
                       )}
                     </dd>
                   </div>
+                  {Boolean(receipt.discountAmountMinor) && (
+                    <div>
+                      <dt>Discount {receipt.discountCode}</dt>
+                      <dd>
+                        −
+                        {eventMoney(
+                          receipt.discountAmountMinor!,
+                          receipt.currency,
+                        )}
+                      </dd>
+                    </div>
+                  )}
                   <div>
                     <dt>
                       {receipt.quantity > 1
@@ -540,6 +602,72 @@ export function EventRegistration({
                       + Add another {event.participantLabel.toLowerCase()}
                     </button>
                   )}
+                  {event.amountMinor > 0 && (
+                    <details className="acer-code">
+                      <summary>Have a discount code?</summary>
+                      <div className="acer-field">
+                        <label htmlFor="acer-code">Discount code</label>
+                        <div className="acer-code-input">
+                          <input
+                            id="acer-code"
+                            value={code}
+                            maxLength={32}
+                            autoComplete="off"
+                            onChange={(e) => {
+                              setCode(e.target.value.toUpperCase());
+                              setQuote(null);
+                              setCodeError("");
+                              key.current = "";
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                void applyDiscount();
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="acer-secondary"
+                            disabled={busy || !code.trim()}
+                            onClick={() => void applyDiscount()}
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                      {codeError && (
+                        <p className="acer-error" role="alert">
+                          {codeError}
+                        </p>
+                      )}
+                      {quote && (
+                        <p className="acer-code-success" role="status">
+                          {quote.discountCode} applied. You save{" "}
+                          {eventMoney(
+                            quote.discountAmountMinor,
+                            event.currency,
+                          )}
+                          .<br />
+                          <strong>
+                            Total:{" "}
+                            {eventMoney(quote.amountMinor, event.currency)}
+                          </strong>{" "}
+                          <button
+                            type="button"
+                            className="acer-text-button"
+                            onClick={() => {
+                              setCode("");
+                              setQuote(null);
+                              key.current = "";
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </p>
+                      )}
+                    </details>
+                  )}
                   <label className="acer-agreement">
                     <input type="checkbox" name="agreed" required />
                     <span>{event.agreementText}</span>
@@ -557,7 +685,7 @@ export function EventRegistration({
                   >
                     {busy
                       ? "Preparing checkout…"
-                      : event.amountMinor
+                      : total
                         ? `Register & pay ${eventMoney(total, event.currency)}`
                         : "Confirm registration"}
                     <span aria-hidden="true">↗</span>

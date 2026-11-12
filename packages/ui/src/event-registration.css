@@ -435,3 +435,28 @@
     background: #fff;
   }
 }
+.acer-code {
+  margin: 20px 0;
+  font-size: 13px;
+  color: var(--acer-ink);
+}
+.acer-code summary {
+  cursor: pointer;
+  color: var(--acer-accent);
+}
+.acer-code .acer-field {
+  margin-top: 14px;
+}
+.acer-code-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.acer-code-input input {
+  min-width: 0;
+  flex: 1;
+}
+.acer-code-success {
+  line-height: 1.7;
+  color: var(--acer-accent);
+}

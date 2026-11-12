@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { parseDiscount, priceBooking, quoteInput } from './event-discounts';
 import { sql } from 'drizzle-orm';
 import { DatabaseService } from '~/modules/database/database.service';
 import { EncryptionService } from '~/modules/encryption/encryption.service';
@@ -50,6 +51,10 @@ type Registration = {
   payment_status: string;
   quantity: number;
   amount_minor: string | number;
+  original_amount_minor?: string | number;
+  discount_amount_minor?: string | number;
+  discount_code?: string;
+  discount_id?: string;
   currency: string;
   checkout_url: string | null;
   expires_at: Date;
@@ -264,6 +269,9 @@ export class EventRegistrationService {
       paymentStatus: r.payment_status,
       quantity: r.quantity,
       amountMinor: Number(r.amount_minor),
+      originalAmountMinor: Number(r.original_amount_minor ?? r.amount_minor),
+      discountAmountMinor: Number(r.discount_amount_minor || 0),
+      discountCode: r.discount_code || null,
       currency: r.currency,
       paidAt: r.paid_at,
       expiresAt: r.expires_at,
@@ -326,7 +334,18 @@ export class EventRegistrationService {
         throw new ConflictException(
           'There are not enough places available for this booking',
         );
-      const amount = current.config.amountMinor * quantity;
+      const pricing = await priceBooking(
+        tx,
+        current.event_id,
+        current.config.amountMinor,
+        quantity,
+        valid.discountCode,
+      );
+      const amount = pricing.amountMinor;
+      if (valid.discountCode && valid.expectedAmountMinor !== amount)
+        throw new ConflictException(
+          'The price changed. Please apply the discount code again.',
+        );
       const account = amount
         ? await this.activeAccount(current.project_id, tx)
         : null;
@@ -343,7 +362,7 @@ export class EventRegistrationService {
       created = true;
       return rows<Registration>(
         await tx.execute(
-          sql`INSERT INTO event_registration (registration_id,event_id,account_id,reference,idempotency_key,request_hash,status,payment_status,quantity,amount_minor,currency,contact,participants,agreement_snapshot,expires_at) VALUES (${id}::uuid,${event.event_id}::uuid,${account?.account_id || null}::uuid,${reference},${valid.idempotencyKey},${valid.hash},${amount ? 'pending' : 'confirmed'},${amount ? 'unpaid' : 'free'},${quantity},${amount},${current.config.currency},${JSON.stringify(valid.contact)}::jsonb,${JSON.stringify(valid.participants)}::jsonb,${JSON.stringify({ text: current.config.agreementText, terms: current.config.terms, agreedAt: new Date().toISOString() })}::jsonb,now()+interval '20 minutes') RETURNING *`,
+          sql`INSERT INTO event_registration (registration_id,event_id,account_id,reference,idempotency_key,request_hash,status,payment_status,quantity,amount_minor,currency,contact,participants,agreement_snapshot,expires_at,discount_id,discount_code,original_amount_minor,discount_amount_minor) VALUES (${id}::uuid,${event.event_id}::uuid,${account?.account_id || null}::uuid,${reference},${valid.idempotencyKey},${valid.hash},${amount ? 'pending' : 'confirmed'},${amount ? 'unpaid' : 'free'},${quantity},${amount},${current.config.currency},${JSON.stringify(valid.contact)}::jsonb,${JSON.stringify(valid.participants)}::jsonb,${JSON.stringify({ text: current.config.agreementText, terms: current.config.terms, agreedAt: new Date().toISOString() })}::jsonb,now()+interval '20 minutes',${pricing.discountId}::uuid,${pricing.discountCode},${pricing.originalAmountMinor},${pricing.discountAmountMinor}) RETURNING *`,
         ),
       )[0];
     });
@@ -467,11 +486,32 @@ export class EventRegistrationService {
         (await this.occupied(tx, event.event_id, current.registration_id)) +
           current.quantity <=
           latest.config.capacity;
+      let discountSpace = true;
+      if (current.discount_id) {
+        const [discount] = rows<{ max_redemptions: number | null }>(
+          await tx.execute(
+            sql`SELECT max_redemptions FROM event_discount WHERE discount_id=${current.discount_id}::uuid`,
+          ),
+        );
+        if (
+          discount?.max_redemptions !== null &&
+          discount?.max_redemptions !== undefined
+        ) {
+          const [used] = rows<{ count: string }>(
+            await tx.execute(
+              sql`SELECT count(*)::text AS count FROM event_registration WHERE discount_id=${current.discount_id}::uuid AND registration_id!=${current.registration_id}::uuid AND (status='confirmed' OR (status='pending' AND expires_at>now()))`,
+            ),
+          );
+          discountSpace = Number(used.count) < discount.max_redemptions;
+        }
+      }
       const reason = !amountMatches
         ? 'The received payment does not match the booking amount or currency'
         : !space
           ? 'Payment arrived after the hold and all places were taken'
-          : null;
+          : !discountSpace
+            ? 'Payment arrived after the discount hold and its booking limit was reached'
+            : null;
       return rows<Registration>(
         await tx.execute(
           sql`UPDATE event_registration SET status=${reason ? 'review' : 'confirmed'},payment_status='paid',paid_at=now(),provider_transaction_id=${String(charge.id)},payment_details=${JSON.stringify({ reason, amountMinor: charge.amount, currency: charge.currency })}::jsonb,updated_at=now() WHERE registration_id=${current.registration_id}::uuid RETURNING *`,
@@ -523,6 +563,64 @@ export class EventRegistrationService {
       await this.fulfill(config, booking, account, charge);
     return { received: true };
   }
+  async discounts(ownerId: string, projectId: string, eventId: string) {
+    await this.owned(ownerId, projectId, eventId);
+    return rows(
+      await this.db.execute(
+        sql`SELECT d.*, (SELECT count(*)::integer FROM event_registration r WHERE r.discount_id=d.discount_id AND (r.status='confirmed' OR (r.status='pending' AND r.expires_at>now()))) AS reserved_or_redeemed FROM event_discount d WHERE d.event_id=${eventId}::uuid ORDER BY d.created_at DESC`,
+      ),
+    );
+  }
+  async saveDiscount(
+    ownerId: string,
+    projectId: string,
+    eventId: string,
+    body: unknown,
+  ) {
+    await this.owned(ownerId, projectId, eventId);
+    const d = parseDiscount(body);
+    try {
+      await this.db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT event_id FROM project_event WHERE event_id=${eventId}::uuid FOR UPDATE`,
+        );
+        if (d.discountId) {
+          const updated = rows(
+            await tx.execute(
+              sql`UPDATE event_discount SET code=${d.code},label=${d.label},active=${d.active},amount_type=${d.amountType},amount=${d.amount},max_redemptions=${d.maxRedemptions},expires_at=${d.expiresAt}::timestamptz WHERE event_id=${eventId}::uuid AND discount_id=${d.discountId}::uuid RETURNING discount_id`,
+            ),
+          );
+          if (!updated.length)
+            throw new NotFoundException('Discount code not found');
+        } else
+          await tx.execute(
+            sql`INSERT INTO event_discount (event_id,code,label,active,amount_type,amount,max_redemptions,expires_at) VALUES (${eventId}::uuid,${d.code},${d.label},${d.active},${d.amountType},${d.amount},${d.maxRedemptions},${d.expiresAt}::timestamptz)`,
+          );
+      });
+    } catch (e) {
+      if (uniqueViolation(e))
+        throw new ConflictException(
+          'That discount code already exists for this programme',
+        );
+      throw e;
+    }
+    return this.discounts(ownerId, projectId, eventId);
+  }
+  async quote(slug: string, body: unknown) {
+    const event = await this.published(slug),
+      input = parse(quoteInput, body);
+    if (event.status !== 'open' || input.quantity > event.config.maxPerOrder)
+      throw new BadRequestException('Please check the number of places');
+    const pricing = await priceBooking(
+      this.db,
+      event.event_id,
+      event.config.amountMinor,
+      input.quantity,
+      input.code,
+    );
+    const { discountId: _private, ...quote } = pricing;
+    return { ...quote, currency: event.config.currency };
+  }
   async registrations(
     ownerId: string,
     projectId: string,
@@ -534,7 +632,7 @@ export class EventRegistrationService {
       throw new BadRequestException('Invalid page');
     const list = rows(
       await this.db.execute(
-        sql`SELECT registration_id,reference,status,payment_status,quantity,amount_minor,currency,contact,participants,paid_at,payment_details,created_at FROM event_registration WHERE event_id=${eventId}::uuid ORDER BY created_at DESC,registration_id DESC LIMIT 100 OFFSET ${offset}`,
+        sql`SELECT registration_id,reference,status,payment_status,quantity,amount_minor,original_amount_minor,discount_amount_minor,discount_code,currency,contact,participants,paid_at,payment_details,created_at FROM event_registration WHERE event_id=${eventId}::uuid ORDER BY created_at DESC,registration_id DESC LIMIT 100 OFFSET ${offset}`,
       ),
     );
     return {

@@ -91,6 +91,8 @@ const checkoutSchema = z.object({
     .min(1)
     .max(10),
   agreed: z.literal(true),
+  discountCode: z.string().trim().toUpperCase().max(32).default(''),
+  expectedAmountMinor: z.number().int().min(0).optional(),
   website: z.string().max(0).optional(),
 });
 
@@ -132,6 +134,7 @@ export function checkoutInput(config: EventConfig, input: unknown) {
   const hash = createHash('sha256')
     .update(
       JSON.stringify({
+        discountCode: value.discountCode,
         contact,
         participants,
         agreement: config.agreementText,
@@ -141,7 +144,14 @@ export function checkoutInput(config: EventConfig, input: unknown) {
       }),
     )
     .digest('hex');
-  return { idempotencyKey: value.idempotencyKey, contact, participants, hash };
+  return {
+    idempotencyKey: value.idempotencyKey,
+    contact,
+    participants,
+    hash,
+    discountCode: value.discountCode,
+    expectedAmountMinor: value.expectedAmountMinor,
+  };
 }
 export function publicEventOrigin(surface: string) {
   const fallback =

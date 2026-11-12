@@ -64,3 +64,21 @@ read project files or inspect personal registrations. Conversations live only in
 the visitor's page memory. Per-IP limits and transactional daily page, owner and
 platform budgets bound anonymous model use. Guide name, image and greeting are
 owner-configurable; unavailable guides leave programme and registration usable.
+
+## Discount codes
+
+CommonLab's **Discount codes** tab supports the existing course pattern: percent
+or fixed reductions, active state, booking limits and an optional expiry. A fixed
+amount applies once to the total booking. Codes remain private to the owner.
+`/<eventId>/discounts` (GET, POST) lists or creates/updates rules. POST accepts
+`{ discountId?, code, label?, amountType: 'percent' | 'fixed', amount, active?,
+maxRedemptions?, expiresAt? }`; fixed amounts use main currency units.
+
+`POST /v1/public-events/<slug>/quote` with `{ quantity, code }` returns the current
+subtotal, reduction and total. Include the returned `discountCode` and
+`expectedAmountMinor` at checkout. The server recalculates under the event lock;
+a changed total requires the customer to apply the code again. Unexpired holds
+and confirmed bookings consume a redemption, including full-discount bookings.
+Expired holds release it. A late payment that loses its discount allocation goes
+to review without confirming an additional discounted place. Owner records and
+exports retain the code and reduction.
