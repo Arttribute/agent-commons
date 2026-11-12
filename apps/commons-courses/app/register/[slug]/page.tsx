@@ -8,7 +8,7 @@ import "@agent-commons/ui/styles.css";
 import { commonsApiUrl } from "@/lib/project-pages";
 type Props = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ reference?: string }>;
+  searchParams: Promise<{ reference?: string | string[] }>;
 };
 async function load(slug: string): Promise<PublicEvent | null> {
   if (!/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(slug)) return null;
@@ -36,11 +36,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function Page({ params, searchParams }: Props) {
   const event = await load((await params).slug);
   if (!event) notFound();
+  const candidate = (await searchParams).reference;
+  const reference = Array.isArray(candidate) ? candidate[0] : candidate;
   return (
     <EventRegistrationExperience
       event={event}
       apiBase={commonsApiUrl()}
-      reference={(await searchParams).reference}
+      reference={reference}
     />
   );
 }
