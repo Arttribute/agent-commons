@@ -4,6 +4,10 @@ export type ProjectPageFrameData = {
   title: string;
   entryUrl: string;
   chatEnabled: boolean;
+  chatName?: string;
+  chatAvatarUrl?: string;
+  chatGreeting?: string;
+  registrationUrl?: string;
 };
 /**
  * Per-request frame values a server host renders into the iframe address, so
@@ -48,6 +52,22 @@ export function isProjectPageChatRequest(
       event.data?.nonce === nonce &&
       typeof event.data?.id === "string" &&
       event.data.id.length <= 100,
+  );
+}
+export function isProjectPageRegistrationRequest(
+  event: { source: unknown; origin: string; data: any },
+  frame: unknown,
+  nonce: string,
+  assetOrigin: string,
+) {
+  return (
+    event.data?.type === "commons-page:register" &&
+    isProjectPageChatRequest(
+      { source: event.source, origin: event.origin, data: { ...event.data, type: "commons-page:chat" } },
+      frame,
+      nonce,
+      assetOrigin,
+    )
   );
 }
 export function projectPageFrameUrl(

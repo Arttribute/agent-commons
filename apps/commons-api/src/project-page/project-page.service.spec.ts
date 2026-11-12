@@ -128,7 +128,7 @@ describe('project pages ownership and publication', () => {
         instructions: 'secret',
         ownerToken: 'secret',
       } as any),
-    ).toEqual(config);
+    ).toEqual({ ...config, chatName: 'Page guide', chatGreeting: 'Hi! What would you like to know?', chatAvatarUrl: undefined, registrationSlug: undefined });
     expect(() => pageSlug('../parent')).toThrow();
     expect(() => pageSlug('templates')).toThrow();
     expect(() =>

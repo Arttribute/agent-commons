@@ -369,9 +369,15 @@ export function ProjectPageEditor({
                 }
               />
               <Label htmlFor="settings-chat">
-                Allow visitors to open a Commons chat draft
+                Allow visitors to ask the guide on this page
               </Label>
             </div>
+            {config.chatEnabled && <div className="space-y-4 rounded-xl border p-4">
+              <div><Label htmlFor="settings-guide-name">Guide name</Label><Input id="settings-guide-name" className="mt-2" value={config.chatName || ''} placeholder="Page guide" maxLength={80} onChange={(e) => setConfig({ ...config, chatName: e.target.value })} /></div>
+              <div><Label htmlFor="settings-guide-avatar">Guide image URL</Label><Input id="settings-guide-avatar" className="mt-2" value={config.chatAvatarUrl || ''} type="url" onChange={(e) => setConfig({ ...config, chatAvatarUrl: e.target.value })} /></div>
+              <div><Label htmlFor="settings-guide-greeting">Welcome message</Label><Textarea id="settings-guide-greeting" className="mt-2" value={config.chatGreeting || ''} maxLength={400} onChange={(e) => setConfig({ ...config, chatGreeting: e.target.value })} /></div>
+            </div>}
+            <div><Label htmlFor="settings-registration">Linked registration address</Label><Input id="settings-registration" className="mt-2" value={config.registrationSlug || ''} placeholder="your-programme" onChange={(e) => setConfig({ ...config, registrationSlug: e.target.value })} /><p className="mt-1 text-xs text-muted-foreground">Choose a registration from this project. Your custom page can call openRegistration() to open it in the same tab.</p></div>
             <div>
               <Label htmlFor="settings-context">
                 Published information for chat

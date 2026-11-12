@@ -1,0 +1,278 @@
+.acpg-trigger {
+  position: fixed;
+  z-index: 90;
+  bottom: 22px;
+  right: 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d7dfe9;
+  border-radius: 40px;
+  padding: 7px 15px 7px 7px;
+  background: #fffdf8;
+  color: #21314b;
+  box-shadow: 0 6px 25px #21314b19;
+  font:
+    600 13px/1.4 var(--font-space-grotesk),
+    Arial,
+    sans-serif;
+  cursor: pointer;
+}
+.acpg-avatar {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #f6e8a6;
+  flex-shrink: 0;
+}
+.acpg-avatar-fallback {
+  display: grid;
+  place-items: center;
+  color: #325ad2;
+  font-size: 28px;
+}
+.acpg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  color: #21314b;
+  font-family: var(--font-space-grotesk), Arial, sans-serif;
+}
+.acpg-overlay * {
+  box-sizing: border-box;
+}
+.acpg-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #13233f30;
+  cursor: default;
+}
+.acpg-drawer {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 420px;
+  max-width: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #faf8f2;
+  box-shadow: -12px 0 50px #21314b15;
+}
+.acpg-header {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 22px;
+  border-bottom: 1px solid #e2e4e7;
+  background: #fffdf8;
+  flex-shrink: 0;
+}
+.acpg-header h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.025em;
+}
+.acpg-header p {
+  margin: 3px 0 0;
+  color: #6d7789;
+  font-size: 11px;
+}
+.acpg-close {
+  margin-left: auto;
+  border: 1px solid #e2e6ec;
+  background: transparent;
+  border-radius: 50%;
+  height: 32px;
+  width: 32px;
+  color: #536078;
+  font: 24px/1 Arial;
+  cursor: pointer;
+}
+.acpg-messages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 24px 22px;
+  scroll-behavior: smooth;
+}
+.acpg-welcome {
+  text-align: center;
+  margin: 4px auto 28px;
+  max-width: 310px;
+}
+.acpg-avatar-large {
+  width: 98px;
+  height: 98px;
+  background: transparent;
+  border-radius: 20px;
+}
+.acpg-welcome h3 {
+  font-size: 21px;
+  line-height: 1.18;
+  letter-spacing: -0.035em;
+  margin: 15px 0 10px;
+  font-weight: 600;
+}
+.acpg-welcome p {
+  font-size: 13px;
+  color: #657084;
+  line-height: 1.65;
+  margin: 0;
+}
+.acpg-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 18px 0 30px;
+}
+.acpg-suggestions button {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid #e0e4eb;
+  border-radius: 10px;
+  padding: 13px 14px;
+  color: #21314b;
+  text-align: left;
+  font: 13px/1.4 inherit;
+  cursor: pointer;
+}
+.acpg-suggestions button span {
+  color: #325ad2;
+}
+.acpg-message {
+  font-size: 14px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 94%;
+  padding: 12px 15px;
+  margin: 12px 0;
+  border-radius: 14px;
+}
+.acpg-user {
+  background: #325ad2;
+  color: #fff;
+  margin-left: auto;
+  border-bottom-right-radius: 3px;
+}
+.acpg-assistant {
+  background: #fff;
+  border: 1px solid #e1e5ec;
+  border-bottom-left-radius: 3px;
+}
+.acpg-thinking {
+  font-size: 12px;
+  color: #6d7789;
+  padding: 0 3px;
+}
+.acpg-error {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8a3826;
+  background: #fff0ea;
+  border: 1px solid #f0c9bb;
+  border-radius: 10px;
+  padding: 13px;
+  margin: 14px 0;
+}
+.acpg-footer {
+  padding: 15px 18px;
+  border-top: 1px solid #e0e4eb;
+  background: #fffdf8;
+  flex-shrink: 0;
+}
+.acpg-footer form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  border: 1px solid #ccd6e5;
+  border-radius: 12px;
+  background: #fff;
+  padding: 9px;
+}
+.acpg-footer textarea {
+  resize: none;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 5px;
+  font: 14px/1.55 inherit;
+  background: transparent;
+  color: #21314b;
+  max-height: 120px;
+}
+.acpg-footer textarea:focus {
+  outline: 0;
+}
+.acpg-footer form:focus-within {
+  outline: 2px solid #325ad2;
+  outline-offset: 2px;
+}
+.acpg-footer form > button {
+  border: 0;
+  border-radius: 8px;
+  width: 35px;
+  height: 35px;
+  flex-shrink: 0;
+  background: #325ad2;
+  color: #fff;
+  font: 24px/1 Arial;
+  cursor: pointer;
+}
+.acpg-footer button:disabled {
+  opacity: 0.4;
+  cursor: wait;
+}
+.acpg-footer > p {
+  font-size: 10px;
+  line-height: 1.4;
+  color: #8590a1;
+  margin: 10px 2px 0;
+}
+.acpg-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.acpg-trigger:focus-visible,
+.acpg-drawer button:focus-visible {
+  outline: 2px solid #325ad2;
+  outline-offset: 3px;
+}
+@media (max-width: 500px) {
+  .acpg-trigger {
+    right: 15px;
+    bottom: 15px;
+  }
+  .acpg-drawer {
+    width: 100%;
+    box-shadow: none;
+  }
+  .acpg-header {
+    padding: 19px;
+  }
+  .acpg-messages {
+    padding: 20px 18px;
+  }
+}
+@media print {
+  .acpg-trigger,
+  .acpg-overlay {
+    display: none !important;
+  }
+}

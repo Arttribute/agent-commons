@@ -1,20 +1,15 @@
 "use client";
 import { useCallback, useState } from "react";
-import { ProjectPageFrame, type ProjectPageFrameSession } from "@agent-commons/ui";
-import type { PublicProjectPage } from "@/lib/public-project-page";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+  ProjectPageFrame,
+  PublicPageChat,
+  type ProjectPageFrameSession,
+} from "@agent-commons/ui";
+import "@agent-commons/ui/styles.css";
+import type { PublicProjectPage } from "@/lib/public-project-page";
 export function PublicPageHost({
   page,
   session,
-  commonsBase = "",
 }: {
   page: PublicProjectPage;
   session?: ProjectPageFrameSession;
@@ -29,31 +24,15 @@ export function PublicPageHost({
         session={session}
         onChatDraftRequest={request}
       />
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Ask about {page.title}</DialogTitle>
-            <DialogDescription>
-              Open a chat in your Commons account with this page’s published
-              information. Review the draft before sending it.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button asChild>
-              <a
-                href={`${commonsBase}/p/${page.slug}/chat`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Continue in Commons
-              </a>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PublicPageChat
+        page={page}
+        open={open}
+        onOpenChange={setOpen}
+        apiBase={
+          process.env.NEXT_PUBLIC_NEST_API_BASE_URL ||
+          "https://api.agentcommons.io"
+        }
+      />
     </div>
   );
 }

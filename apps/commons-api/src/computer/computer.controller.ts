@@ -10,7 +10,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { OwnerGuard, OwnerOnly, RateLimit, resolveCallerId } from '~/modules/auth';
 import { ComputerService } from './computer.service';
 import { ResourceUpgradeService } from './resource-upgrade.service';

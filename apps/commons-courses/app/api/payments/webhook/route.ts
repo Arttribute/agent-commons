@@ -8,11 +8,15 @@ import { connectDB } from "@/lib/db";
 import { fulfillCompletedPayment } from "@/lib/payment-fulfillment";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import type Stripe from "stripe";
+import { relayEventPayment } from '@/lib/event-payments';
+import { commonsApiUrl } from '@/lib/project-pages';
 
 export async function POST(req: NextRequest) {
   const body = await req.text();
   const sig = req.headers.get("stripe-signature");
   const paystackSig = req.headers.get("x-paystack-signature");
+  const eventReply = await relayEventPayment(body, req.headers, commonsApiUrl());
+  if (eventReply) return eventReply;
 
   if (paystackSig) {
     return handlePaystackWebhook(body, paystackSig);

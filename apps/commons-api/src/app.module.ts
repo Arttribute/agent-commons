@@ -39,6 +39,7 @@ import { BrainModule } from './brain';
 import { ProjectModule } from './project';
 import { ProjectPageModule } from './project-page/project-page.module';
 import { MediaModule } from './media';
+import { EventRegistrationModule } from './event-registration/event-registration.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { MediaModule } from './media';
     ProjectModule,
     ProjectPageModule,
     MediaModule,
+    EventRegistrationModule,
 
     // Feature modules
     AgentModule,

@@ -2,8 +2,13 @@
 import { useEffect, useState } from "react";
 import maker from "./assets/makers.png";
 import nodeLogo from "./assets/node.png";
+import campBrand from "./assets/camp-wordmark.svg";
 import settings from "./camp.config.json";
-import { openChat, pageContext } from "@/lib/project-page-client";
+import {
+  openChat,
+  openRegistration,
+  pageContext,
+} from "@/lib/project-page-client";
 import "./camp.css";
 const src = (image: unknown) =>
   typeof image === "string" ? image : (image as { src: string }).src;
@@ -22,9 +27,7 @@ export default function CampPage() {
   const [chat, setChat] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => setChat(pageContext().chatEnabled), []);
-  const formUrl = /^https:\/\/(?:docs\.google\.com\/forms\/|forms\.gle\/)/.test(
-    settings.registrationUrl,
-  )
+  const formUrl = /^https:\/\//.test(settings.registrationUrl)
     ? settings.registrationUrl
     : "";
   const faq = [
@@ -42,7 +45,11 @@ export default function CampPage() {
     ],
     [
       "What does the fee cover?",
-      "The confirmed fee is KSh 5,000 per child for all three mornings. The organiser will share the confirmed equipment, materials, food arrangements and cancellation terms before requesting payment.",
+      "The confirmed fee is KSh 8,000 per child for all three mornings. Registration covers all three camp mornings. Equipment, food arrangements and joining details will be confirmed by the organisers.",
+    ],
+    [
+      "What do I need to register?",
+      "A parent or guardian’s name, email and phone number, plus each child’s age band and activity preference. Payment happens securely through Paystack. No child account is needed.",
     ],
     [
       "What about photos, privacy and consent?",
@@ -56,7 +63,7 @@ export default function CampPage() {
     ],
     [
       "How is a place confirmed?",
-      "Register your interest first. The team checks space, sends a written offer, and then reviews enrolment, required permissions and payment. A place is confirmed separately by the organiser.",
+      "Choose the number of children, complete the short registration and pay KSh 8,000 per child through Paystack. Your place is confirmed after the payment is verified. Save the booking link and reference shown after checkout. There are 30 places across both making paths.",
     ],
   ];
   return (
@@ -65,8 +72,18 @@ export default function CampPage() {
         Skip to the programme
       </a>
       <header className="camp-nav">
-        <a href="#top" aria-label="AI Kids Hacker Camp home">
-          <img className="camp-logo" src={src(nodeLogo)} alt="NODE NBO" />
+        <a
+          className="camp-brand"
+          href="#top"
+          aria-label="AI Kids Hacker Camp home"
+        >
+          <img
+            className="camp-brand-logo"
+            src={src(campBrand)}
+            alt="AI Kids Hacker Camp"
+            width="207.48"
+            height="54"
+          />
         </a>
         <nav aria-label="Camp navigation">
           <a href="#programme">The programme</a>
@@ -102,6 +119,8 @@ export default function CampPage() {
           <span className="camp-art-label">Create · Code · Play</span>
           <img
             src={src(maker)}
+            width="1280"
+            height="854"
             alt="Two young makers developing a storyboard and a project at a shared table"
             fetchPriority="high"
           />
@@ -302,7 +321,7 @@ export default function CampPage() {
         </div>
         <div className="camp-join-card">
           <div className="camp-fee">
-            <strong>KSh 5,000</strong>
+            <strong>KSh 8,000</strong>
             <span>
               per child
               <br />
@@ -314,14 +333,19 @@ export default function CampPage() {
               <a
                 className="camp-button"
                 href={formUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+                onClick={(e) => {
+                  if (!pageContext().nonce) return;
+                  e.preventDefault();
+                  setError("");
+                  void openRegistration().catch(() =>
+                    window.open(formUrl, "_blank", "noopener,noreferrer"),
+                  );
+                }}
               >
-                Register your interest <span aria-hidden>↗</span>
+                Register now <span aria-hidden>↗</span>
               </a>
               <p className="camp-small">
-                Opens the parent / guardian interest form. The organiser
-                confirms places separately.
+                30 places · KSh 8,000 per child · Secure payment
               </p>
             </>
           ) : (
@@ -333,12 +357,20 @@ export default function CampPage() {
             </>
           )}
           {settings.bookingContact && (
-            <p className="camp-small">Questions? {settings.bookingContact}</p>
+            <p className="camp-small camp-contact">
+              Questions? Call{" "}
+              <a href={`tel:${settings.bookingContact.replace(/[^+\d]/g, "")}`}>
+                {settings.bookingContact}
+              </a>
+            </p>
           )}
         </div>
       </section>
       <footer className="camp-footer camp-wrap">
-        <img className="camp-logo" src={src(nodeLogo)} alt="NODE NBO" />
+        <figure className="camp-venue">
+          <figcaption>Hosted at</figcaption>
+          <img className="camp-logo" src={src(nodeLogo)} alt="NODE NBO" />
+        </figure>
         <p>
           AI Kids Hacker Camp
           <br />
@@ -353,7 +385,7 @@ export default function CampPage() {
               }}
               className="camp-text-link"
             >
-              Ask in Commons ↗
+              Ask Pip ↗
             </button>
             {error && (
               <p role="alert" className="camp-small">

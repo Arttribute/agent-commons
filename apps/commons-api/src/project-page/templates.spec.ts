@@ -10,7 +10,7 @@ describe('camp starter', () => {
       name: 'AI Kids Hacker Camp',
       entryFile: 'app/page.tsx',
       files,
-    });
+    }).catch(e => { throw new Error(JSON.stringify(e.getResponse?.() || e.message)); });
     expect(built.assets.some((f) => f.path.endsWith('.png'))).toBe(true);
     expect(built.assets.some((f) => f.path.endsWith('.ttf'))).toBe(true);
     const js = built.assets
@@ -18,7 +18,7 @@ describe('camp starter', () => {
       .map((f) => String(f.content))
       .join('');
     expect(js).toContain('Comics &');
-    expect(js).toContain('KSh 5,000');
+    expect(js).toContain('KSh 8,000');
     expect(js).toContain('Registration opens soon.');
     expect(js).not.toContain('price and booking details to be confirmed');
   }, 30000);

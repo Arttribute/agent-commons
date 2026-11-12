@@ -18,6 +18,8 @@ import {
   check,
   pgSchema,
   primaryKey,
+  date,
+  numeric,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { relations } from 'drizzle-orm';
@@ -941,6 +943,55 @@ export const projectPage = pgTable('project_page', {
   codeIdx: uniqueIndex('project_page_code_idx').on(table.codeProjectId),
   ownerIdx: index('project_page_owner_idx').on(table.ownerUserId, table.projectId),
 }));
+
+/** Payment credentials are private to a project and encrypted at rest. */
+export const eventPaymentAccount = pgTable('event_payment_account', {
+  accountId: uuid('account_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull().references(() => project.projectId),
+  ownerUserId: text('owner_user_id').notNull(),
+  provider: text('provider').notNull().default('paystack'),
+  mode: text('mode').notNull(),
+  credentials: jsonb('credentials').notNull(),
+  active: pgBoolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({ activeIdx: uniqueIndex('event_payment_account_active_idx').on(t.projectId).where(sql`${t.active}`) }));
+export const projectEvent = pgTable('project_event', {
+  eventId: uuid('event_id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull().references(() => project.projectId),
+  ownerUserId: text('owner_user_id').notNull(),
+  slug: text('slug').notNull().unique(),
+  status: text('status').notNull().default('draft'),
+  config: jsonb('config').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+export const eventRegistration = pgTable('event_registration', {
+  registrationId: uuid('registration_id').defaultRandom().primaryKey(),
+  eventId: uuid('event_id').notNull().references(() => projectEvent.eventId),
+  accountId: uuid('account_id').references(() => eventPaymentAccount.accountId),
+  reference: text('reference').notNull().unique(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  requestHash: text('request_hash').notNull(),
+  status: text('status').notNull().default('pending'),
+  paymentStatus: text('payment_status').notNull().default('unpaid'),
+  quantity: integer('quantity').notNull(),
+  amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+  discountId: uuid('discount_id').references(() => eventDiscount.discountId),
+  discountCode: text('discount_code'),
+  originalAmountMinor: bigint('original_amount_minor', { mode: 'number' }),
+  discountAmountMinor: bigint('discount_amount_minor', { mode: 'number' }).notNull().default(0),
+  currency: text('currency').notNull(),
+  contact: jsonb('contact').notNull(),
+  participants: jsonb('participants').notNull(),
+  agreementSnapshot: jsonb('agreement_snapshot').notNull(),
+  checkoutUrl: text('checkout_url'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  paymentDetails: jsonb('payment_details'),
+  providerTransactionId: text('provider_transaction_id').unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({ retryIdx: uniqueIndex('event_registration_event_id_idempotency_key_key').on(t.eventId, t.idempotencyKey) }));
 
 /* ─────────────────────────  ARTIFACT LIBRARY  ───────────────────────── */
 
@@ -4039,3 +4090,19 @@ export const apiKey = pgTable('api_keys', {
 
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
 });
+
+export const publicPageChatUsage = pgTable('public_page_chat_usage', {
+  bucket: text('bucket').notNull(),
+  usageDay: date('usage_day').notNull().default(sql`CURRENT_DATE`),
+  requests: integer('requests').notNull().default(0),
+}, (t) => [primaryKey({ columns: [t.bucket, t.usageDay] })]);
+
+export const eventDiscount = pgTable('event_discount', {
+  discountId: uuid('discount_id').defaultRandom().primaryKey(),
+  eventId: uuid('event_id').notNull().references(() => projectEvent.eventId),
+  code: text('code').notNull(), label: text('label').notNull().default(''),
+  active: pgBoolean('active').notNull().default(true),
+  amountType: text('amount_type').notNull(), amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  maxRedemptions: integer('max_redemptions'), expiresAt: timestamp('expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [uniqueIndex('event_discount_event_code_idx').on(t.eventId, t.code)]);

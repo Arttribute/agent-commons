@@ -26,6 +26,7 @@ import {
   type ApiKeyPrincipal,
 } from '~/modules/auth';
 import { ProjectPageService } from './project-page.service';
+import { PublicPageChatService } from './public-page-chat.service';
 import type { CreatePageInput, PageInput } from './page-input';
 import type { CodeProjectFileInput } from '~/code-project/code-project.types';
 function owner(req: Request) {
@@ -139,7 +140,7 @@ export class ProjectPageController {
 }
 @Controller({ version: '1', path: 'project-pages' })
 export class ProjectPagesController {
-  constructor(private readonly pages: ProjectPageService) {}
+  constructor(private readonly pages: ProjectPageService, private readonly chat: PublicPageChatService) {}
   @Get() list(@Req() req: Request, @Query('surface') surface?: string) {
     return this.pages
       .list(owner(req), undefined, surface)
@@ -151,6 +152,13 @@ export class ProjectPagesController {
   @RateLimit({ limit: 90, windowMs: 60000, keyStrategy: 'ip' })
   publicPage(@Param('slug') slug: string) {
     return this.pages.publicPage(slug).then((data) => ({ data }));
+  }
+  @Public()
+  @Post(':slug/chat')
+  @Header('Cache-Control', 'no-store')
+  @RateLimit({ limit: 8, windowMs: 60000, keyStrategy: 'ip' })
+  publicChat(@Param('slug') slug: string, @Body() body: unknown) {
+    return this.chat.answer(slug, body).then((data) => ({ data }));
   }
 }
 
