@@ -167,6 +167,9 @@ export interface ICourse extends Document {
   sessionDates?: Date[];
   liveSchedule?: ICourseLiveSchedule;
   maxEnrollments?: number;
+  /** Optional branded programme registration. Price and codes use this course. */
+  registration?: Record<string, any>;
+  registrationRevision?: number;
   liveSessionUrl?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -793,6 +796,8 @@ const CourseSchema = new Schema<ICourse>(
     sessionDates: [Date],
     liveSchedule: CourseLiveScheduleSchema,
     maxEnrollments: Number,
+    registration: { type: Schema.Types.Mixed },
+    registrationRevision: { type: Number, default: 0 },
     liveSessionUrl: String,
   },
   { timestamps: true },

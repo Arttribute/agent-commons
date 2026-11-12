@@ -8,7 +8,8 @@ import { trackAnalyticsEvent } from "@/lib/analytics";
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const reference = url.searchParams.get("reference") || url.searchParams.get("trxref");
+  const reference =
+    url.searchParams.get("reference") || url.searchParams.get("trxref");
 
   if (!reference) {
     return redirectError(req, "missing_reference");
@@ -30,6 +31,7 @@ export async function GET(req: NextRequest) {
   const result = await fulfillCompletedPayment({
     provider: "paystack",
     providerReference: transaction.reference,
+    verified: transaction,
     channel: transaction.channel || "unknown",
     fallback: {
       userId: transaction.metadata?.userId as string | undefined,
@@ -38,6 +40,12 @@ export async function GET(req: NextRequest) {
       metadata: transaction.metadata,
     },
   });
+
+  if (result.payment?.metadata?.registration) {
+    const target = new URL("/register/" + result.course.slug, req.url);
+    target.searchParams.set("reference", transaction.reference);
+    return NextResponse.redirect(target);
+  }
 
   if (!result.fulfilled) {
     await trackAnalyticsEvent({
@@ -67,14 +75,18 @@ export async function GET(req: NextRequest) {
     finalAmount: result.payment.amount,
     discountAmount: result.payment.discountAmount,
     currency: result.payment.currency,
-    metadata: { providerReference: transaction.reference, channel: transaction.channel },
+    metadata: {
+      providerReference: transaction.reference,
+      channel: transaction.channel,
+    },
     request: req,
   });
 
   return redirectAfterPayment(req, {
     userId: result.payment.userId.toString(),
     courseSlug: result.course.slug,
-    canUseCheckoutSignIn: result.payment.metadata?.checkoutSignin === true ||
+    canUseCheckoutSignIn:
+      result.payment.metadata?.checkoutSignin === true ||
       result.payment.metadata?.checkoutSignin === "1",
   });
 }
@@ -88,7 +100,7 @@ function redirectError(req: NextRequest, code: string) {
 
 async function redirectAfterPayment(
   req: NextRequest,
-  params: { userId: string; courseSlug: string; canUseCheckoutSignIn: boolean }
+  params: { userId: string; courseSlug: string; canUseCheckoutSignIn: boolean },
 ) {
   const session = await auth();
   if (session?.user?.id) {
@@ -97,7 +109,10 @@ async function redirectAfterPayment(
 
   if (!params.canUseCheckoutSignIn) {
     const signInUrl = new URL("/auth/signin", req.url);
-    signInUrl.searchParams.set("callbackUrl", `/courses/${params.courseSlug}/learn`);
+    signInUrl.searchParams.set(
+      "callbackUrl",
+      `/courses/${params.courseSlug}/learn`,
+    );
     return NextResponse.redirect(signInUrl);
   }
 
@@ -108,6 +123,9 @@ async function redirectAfterPayment(
   });
   const signInUrl = new URL("/auth/checkout", req.url);
   signInUrl.searchParams.set("token", token);
-  signInUrl.searchParams.set("callbackUrl", `/courses/${params.courseSlug}/learn`);
+  signInUrl.searchParams.set(
+    "callbackUrl",
+    `/courses/${params.courseSlug}/learn`,
+  );
   return NextResponse.redirect(signInUrl);
 }

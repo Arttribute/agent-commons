@@ -7,7 +7,13 @@ import { CourseCollaborators } from "@/components/educator/course-collaborators"
 import { normalizeAccessProgramForm } from "@/components/educator/access-program-types";
 import { useToast } from "@/components/toast-provider";
 import { Button } from "@/components/ui/button";
-import { Field, FieldGrid, Input, Select, Textarea } from "@/components/ui/field";
+import {
+  Field,
+  FieldGrid,
+  Input,
+  Select,
+  Textarea,
+} from "@/components/ui/field";
 import { Card } from "@/components/ui/surface";
 import { SaveBar } from "@/components/ui/save-bar";
 import { defaultCourseAgents } from "@/lib/course-agent-defaults";
@@ -135,7 +141,7 @@ export function CourseEditor({
   const [course, setCourse] = useState<CourseForm>(emptyCourse);
   const [loaded, setLoaded] = useState(!slug);
   const [savedSectionSnapshot, setSavedSectionSnapshot] = useState(() =>
-    stringifySectionSnapshot(emptyCourse, section)
+    stringifySectionSnapshot(emptyCourse, section),
   );
   const [saving, setSaving] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState<string | null>(null);
@@ -146,7 +152,7 @@ export function CourseEditor({
   const sectionLabel = getSectionLabel(section);
   const currentSectionSnapshot = useMemo(
     () => stringifySectionSnapshot(course, section),
-    [course, section]
+    [course, section],
   );
   const hasUnsavedChanges = currentSectionSnapshot !== savedSectionSnapshot;
 
@@ -179,7 +185,9 @@ export function CourseEditor({
 
   useEffect(() => {
     if (!slug) return;
-    void fetch(`/api/educator/courses/${slug}/lab-workspaces`, { cache: "no-store" })
+    void fetch(`/api/educator/courses/${slug}/lab-workspaces`, {
+      cache: "no-store",
+    })
       .then((response) => (response.ok ? response.json() : null))
       .then((body) => setLabWorkspaces(body?.workspaces || []));
   }, [slug]);
@@ -192,7 +200,7 @@ export function CourseEditor({
         JSON.stringify({
           savedAt: new Date().toISOString(),
           snapshot: getSectionSnapshot(course, section),
-        })
+        }),
       );
       setDraftSavedAt(new Date());
     }, 1800);
@@ -229,12 +237,18 @@ export function CourseEditor({
         .map((tag) => tag.trim())
         .filter(Boolean),
     };
-    const res = await fetch(slug ? `/api/educator/courses/${slug}` : "/api/educator/courses", {
-      method: slug ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await readJsonResponse<{ error?: string; course?: CourseResponse }>(res);
+    const res = await fetch(
+      slug ? `/api/educator/courses/${slug}` : "/api/educator/courses",
+      {
+        method: slug ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    const data = await readJsonResponse<{
+      error?: string;
+      course?: CourseResponse;
+    }>(res);
     setSaving(false);
     if (!res.ok) {
       setError(data.error || "Could not save course.");
@@ -255,12 +269,19 @@ export function CourseEditor({
     toast({
       tone: "success",
       title: slug ? `${sectionLabel} saved` : "Course created",
-      description: slug ? "Your changes are live for this course." : "Keep building from the course overview.",
+      description: slug
+        ? "Your changes are live for this course."
+        : "Keep building from the course overview.",
     });
     if (slug) {
       const savedSlug = data.course?.slug || slug;
       if (savedSlug !== slug) {
-        router.push(pathname.replace(`/educator/courses/${slug}`, `/educator/courses/${savedSlug}`));
+        router.push(
+          pathname.replace(
+            `/educator/courses/${slug}`,
+            `/educator/courses/${savedSlug}`,
+          ),
+        );
         return;
       }
       router.refresh();
@@ -317,25 +338,42 @@ export function CourseEditor({
     );
   }
 
-  const viewProps: CourseViewProps = { course, setCourse, uploadingMedia, uploadMedia };
+  const viewProps: CourseViewProps = {
+    course,
+    setCourse,
+    uploadingMedia,
+    uploadMedia,
+  };
   const notice = (title: string) =>
     toast({ title, description: "Save to apply this change.", tone: "info" });
 
   return (
     <form onSubmit={onSubmit}>
-      {error ? <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+      {error ? (
+        <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
       {!loaded ? (
         <div className="h-64 animate-pulse rounded-xl border border-border bg-white" />
       ) : section === "info" ? (
         <DetailsView {...viewProps} />
       ) : section === "content" ? (
-        <ModulesView course={course} setCourse={setCourse} labWorkspaces={labWorkspaces} onNotice={notice} />
+        <ModulesView
+          course={course}
+          setCourse={setCourse}
+          labWorkspaces={labWorkspaces}
+          onNotice={notice}
+        />
       ) : section === "skills" ? (
         <SkillsView {...viewProps} onNotice={notice} />
       ) : section === "access" ? (
         <SalesView course={course} setCourse={setCourse} />
       ) : section === "notifications" ? (
-        <NotificationsView {...viewProps} customEmailBranding={customEmailBranding} />
+        <NotificationsView
+          {...viewProps}
+          customEmailBranding={customEmailBranding}
+        />
       ) : section === "agents" ? (
         <AgentsView course={course} setCourse={setCourse} courseSlug={slug} />
       ) : null}
@@ -367,7 +405,8 @@ function NewCourseForm({
   error: string;
   onSubmit: (event?: FormEvent) => void;
 }) {
-  const patch = (value: Partial<CourseForm>) => setCourse((current) => ({ ...current, ...value }));
+  const patch = (value: Partial<CourseForm>) =>
+    setCourse((current) => ({ ...current, ...value }));
   return (
     <form onSubmit={onSubmit}>
       <Card className="space-y-5">
@@ -380,8 +419,15 @@ function NewCourseForm({
             onChange={(event) => patch({ title: event.target.value })}
           />
         </Field>
-        <Field label="Tagline" info="One line that says what learners will be able to do.">
-          <Input required value={course.tagline} onChange={(event) => patch({ tagline: event.target.value })} />
+        <Field
+          label="Tagline"
+          info="One line that says what learners will be able to do."
+        >
+          <Input
+            required
+            value={course.tagline}
+            onChange={(event) => patch({ tagline: event.target.value })}
+          />
         </Field>
         <Field label="Short description">
           <Textarea
@@ -395,7 +441,11 @@ function NewCourseForm({
           <Field label="Format">
             <Select
               value={course.courseType}
-              onChange={(event) => patch({ courseType: event.target.value as CourseForm["courseType"] })}
+              onChange={(event) =>
+                patch({
+                  courseType: event.target.value as CourseForm["courseType"],
+                })
+              }
             >
               <option value="self-paced">Self-paced</option>
               <option value="live">Live</option>
@@ -404,7 +454,9 @@ function NewCourseForm({
           <Field label="Level">
             <Select
               value={course.level}
-              onChange={(event) => patch({ level: event.target.value as CourseForm["level"] })}
+              onChange={(event) =>
+                patch({ level: event.target.value as CourseForm["level"] })
+              }
             >
               <option value="beginner">Beginner</option>
               <option value="intermediate">Intermediate</option>
@@ -412,10 +464,19 @@ function NewCourseForm({
             </Select>
           </Field>
         </FieldGrid>
-        {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+        {error ? (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </p>
+        ) : null}
       </Card>
       <div className="mt-5 flex justify-end">
-        <Button type="submit" variant="primary" loading={saving} icon={ArrowRight}>
+        <Button
+          type="submit"
+          variant="primary"
+          loading={saving}
+          icon={ArrowRight}
+        >
           Create course
         </Button>
       </div>
@@ -423,7 +484,11 @@ function NewCourseForm({
   );
 }
 
-function applyUploadedUrl(course: CourseForm, field: UploadField, url: string): CourseForm {
+function applyUploadedUrl(
+  course: CourseForm,
+  field: UploadField,
+  url: string,
+): CourseForm {
   if (field === "emailSettings.logoUrl") {
     return {
       ...course,
@@ -439,7 +504,11 @@ function applyUploadedUrl(course: CourseForm, field: UploadField, url: string): 
   if (field.startsWith("skillPack.")) {
     const challengeIndex = Number(field.split(".")[1]);
     const challenges = [...(course.skillPack.challenges || [])];
-    challenges[challengeIndex] = { ...challenges[challengeIndex], assetUrl: url, day: challengeIndex + 1 };
+    challenges[challengeIndex] = {
+      ...challenges[challengeIndex],
+      assetUrl: url,
+      day: challengeIndex + 1,
+    };
     return { ...course, skillPack: { ...course.skillPack, challenges } };
   }
   if (field.startsWith("skillPacks.")) {
@@ -453,7 +522,11 @@ function applyUploadedUrl(course: CourseForm, field: UploadField, url: string): 
     } else if (maybeField === "assetUrl") {
       const challengeIndex = Number(coverOrChallenge);
       const challenges = [...(pack.challenges || [])];
-      challenges[challengeIndex] = { ...challenges[challengeIndex], assetUrl: url, day: challengeIndex + 1 };
+      challenges[challengeIndex] = {
+        ...challenges[challengeIndex],
+        assetUrl: url,
+        day: challengeIndex + 1,
+      };
       skillPacks[packIndex] = { ...pack, challenges };
     }
     return { ...course, skillPacks };
@@ -462,7 +535,7 @@ function applyUploadedUrl(course: CourseForm, field: UploadField, url: string): 
 }
 
 async function readJsonResponse<T>(res: Response): Promise<T> {
-  return res.json().catch(() => ({} as T));
+  return res.json().catch(() => ({}) as T);
 }
 
 function getSectionLabel(section: CourseEditorSection) {
@@ -491,7 +564,9 @@ function hydrateCourse(course: CourseResponse): CourseForm {
     },
     sessionDatesText: Array.isArray(course.sessionDates)
       ? course.sessionDates
-          .map((value) => toDateTimeInputValue(value) || toDateInputValue(value))
+          .map(
+            (value) => toDateTimeInputValue(value) || toDateInputValue(value),
+          )
           .filter(Boolean)
           .join("\n")
       : "",
@@ -579,6 +654,8 @@ function getSectionSnapshot(course: CourseForm, section: CourseEditorSection) {
         paymentProviders: payload.paymentProviders,
         installmentPlan: payload.installmentPlan,
         accessProgram: payload.accessProgram,
+        registration: payload.registration,
+        maxEnrollments: payload.maxEnrollments,
       };
     case "notifications":
       return payload.emailSettings;
@@ -599,7 +676,10 @@ function getSectionSnapshot(course: CourseForm, section: CourseEditorSection) {
   }
 }
 
-function stringifySectionSnapshot(course: CourseForm, section: CourseEditorSection) {
+function stringifySectionSnapshot(
+  course: CourseForm,
+  section: CourseEditorSection,
+) {
   return JSON.stringify(getSectionSnapshot(course, section));
 }
 
@@ -620,4 +700,3 @@ function toDateTimeInputValue(value?: string | Date | null) {
   if (Number.isNaN(date.getTime())) return "";
   return date.toISOString().slice(0, 16);
 }
-

@@ -16,6 +16,13 @@ export function createGatewayApp() {
 
   const securityHeaders = secureHeaders();
   app.use("*", (c, next) => {
+    if (/^\/v1\/project-pages\/[^/]+\/chat$/.test(c.req.path)) {
+      c.header("access-control-allow-origin", "*");
+      c.header("access-control-allow-methods", "POST, OPTIONS");
+      c.header("access-control-allow-headers", "content-type");
+      if (c.req.method === "OPTIONS") return c.body(null, 204);
+      return next();
+    }
     // Published code-project previews provide their own deliberately strict
     // sandbox policy. The gateway default includes X-Frame-Options:
     // SAMEORIGIN, which prevents these cross-origin previews from loading in
@@ -41,18 +48,18 @@ export function createGatewayApp() {
     ],
     exposeHeaders: ["x-request-id", "x-commons-service"],
   });
-  app.use("*", async (c, next) => {
-    // A sandboxed plugin frame intentionally has an opaque `null` origin.
-    // Public preview modules therefore need wildcard CORS and no credentials;
-    // the preview proxy below applies that narrower policy.
-    if (isPluginFramePath(c.req.path)) return next();
-    if (isAnonymousPageApi(c.req.path)) {
+  app.use("*", (c, next) => {
+    if (/^\/v1\/project-pages\/[^/]+\/chat$/.test(c.req.path)) {
       c.header("access-control-allow-origin", "*");
-      c.header("access-control-allow-methods", "GET, POST, OPTIONS");
+      c.header("access-control-allow-methods", "POST, OPTIONS");
       c.header("access-control-allow-headers", "content-type");
       if (c.req.method === "OPTIONS") return c.body(null, 204);
       return next();
     }
+    // A sandboxed plugin frame intentionally has an opaque `null` origin.
+    // Public preview modules therefore need wildcard CORS and no credentials;
+    // the preview proxy below applies that narrower policy.
+    if (isPluginFramePath(c.req.path)) return next();
     return crossOriginHeaders(c, next);
   });
   app.use("*", async (c, next) => {
@@ -101,9 +108,7 @@ export function createGatewayApp() {
     url.search = incoming.search;
     const headers =
       isPluginFrame ||
-      isAnonymousPageApi(targetPath) ||
-      /^\/v1\/event-payments\/paystack\/[^/]+$/.test(targetPath) ||
-      /^\/v1\/project-pages\/[^/]+$/.test(targetPath)
+      /^\/v1\/project-pages\/[^/]+(?:\/chat)?$/.test(targetPath)
         ? publicAssetRequestHeaders(c.req.raw.headers)
         : new Headers(c.req.raw.headers);
     headers.delete("host");
@@ -121,7 +126,7 @@ export function createGatewayApp() {
       duplex: "half",
     } as RequestInit);
     const outputHeaders = new Headers(response.headers);
-    if (isAnonymousPageApi(targetPath)) {
+    if (/^\/v1\/project-pages\/[^/]+\/chat$/.test(targetPath)) {
       outputHeaders.set("access-control-allow-origin", "*");
       outputHeaders.delete("access-control-allow-credentials");
       outputHeaders.set("cache-control", "no-store");
@@ -224,6 +229,14 @@ export function createGatewayApp() {
       c.req.path,
     ),
   );
+  app.post("/v1/project-pages/:slug/chat", (c) =>
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
+  );
   // A revocable, expiring artifact capability is authenticated by its opaque
   // token downstream. It must remain reachable to signed-out recipients; the
   // Nest service applies token hashing, expiry, revocation, and rate limits.
@@ -256,38 +269,6 @@ export function createGatewayApp() {
       c.req.path,
     ),
   );
-
-  // Public forms and guest questions carry no Commons credential. Private
-  // event configuration and registrant data stay behind the guard below.
-  for (const path of [
-    "/v1/public-events/:slug",
-    "/v1/public-events/:slug/payments/:reference",
-  ]) {
-    app.get(path, (c) =>
-      publicProxy(
-        c,
-        "agent-commons",
-        process.env.AGENT_COMMONS_INTERNAL_URL,
-        c.req.path,
-      ),
-    );
-  }
-  for (const path of [
-    "/v1/public-events/:slug/checkout",
-    "/v1/public-events/:slug/quote",
-    "/v1/public-events/:slug/payments/:reference/verify",
-    "/v1/event-payments/paystack/:accountId",
-    "/v1/project-pages/:slug/chat",
-  ]) {
-    app.post(path, (c) =>
-      publicProxy(
-        c,
-        "agent-commons",
-        process.env.AGENT_COMMONS_INTERNAL_URL,
-        c.req.path,
-      ),
-    );
-  }
 
   app.use("/v1/*", async (c, next) => {
     const principal = await authenticate(c.req.header("authorization"));
@@ -412,6 +393,11 @@ export function createGatewayApp() {
       duplex: "half",
     } as RequestInit);
     const outputHeaders = new Headers(response.headers);
+    if (/^\/v1\/project-pages\/[^/]+\/chat$/.test(targetPath)) {
+      outputHeaders.set("access-control-allow-origin", "*");
+      outputHeaders.delete("access-control-allow-credentials");
+      outputHeaders.set("cache-control", "no-store");
+    }
     outputHeaders.set("x-request-id", c.get("requestId"));
     outputHeaders.set("x-commons-service", service);
     void recordUsage({
@@ -560,14 +546,6 @@ export function publicAssetRequestHeaders(input: HeadersInit) {
     headers.delete(name);
   }
   return headers;
-}
-
-function isAnonymousPageApi(path: string) {
-  return (
-    /^\/v1\/public-events\/[^/]+(?:\/checkout|\/quote|\/payments\/[^/]+(?:\/verify)?)?$/.test(
-      path,
-    ) || /^\/v1\/project-pages\/[^/]+\/chat$/.test(path)
-  );
 }
 
 function requiredScope(method: string, path: string) {

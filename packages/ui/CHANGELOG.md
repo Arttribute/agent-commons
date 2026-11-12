@@ -4,7 +4,7 @@
 
 ### Minor Changes
 
-- 8a6d4c3: Add configurable event registration, verified payment receipts and an embedded public programme guide for custom project pages.
+- 8a6d4c3: Add configurable programme registration, verified payment receipts and an embedded public programme guide for custom project pages.
 
 ## 0.5.0
 

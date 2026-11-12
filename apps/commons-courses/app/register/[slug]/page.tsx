@@ -5,22 +5,20 @@ import {
   type PublicEvent,
 } from "@agent-commons/ui";
 import "@agent-commons/ui/styles.css";
-import { commonsApiUrl } from "@/lib/project-pages";
+import { publicRegistration } from "@/lib/course-registration";
+import { RegistrationError } from "@/lib/registration-policy";
 type Props = {
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ reference?: string | string[] }>;
 };
 async function load(slug: string): Promise<PublicEvent | null> {
   if (!/^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/.test(slug)) return null;
-  const r = await fetch(`${commonsApiUrl()}/v1/public-events/${slug}`, {
-    cache: "no-store",
-  });
-  if (r.status === 404) return null;
-  if (!r.ok)
-    throw new Error(
-      "Registration is temporarily unavailable. Please try again.",
-    );
-  return (await r.json()).data;
+  try {
+    return await publicRegistration(slug);
+  } catch (error) {
+    if (error instanceof RegistrationError && error.status === 404) return null;
+    throw error;
+  }
 }
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const event = await load((await params).slug);
@@ -41,7 +39,7 @@ export default async function Page({ params, searchParams }: Props) {
   return (
     <EventRegistrationExperience
       event={event}
-      apiBase={commonsApiUrl()}
+      apiBase="/api"
       reference={reference}
     />
   );

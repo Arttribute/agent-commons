@@ -18,7 +18,9 @@ export type PaystackInitializeTransactionInput = {
   currency: string;
   reference: string;
   callback_url: string;
-  channels?: Array<"card" | "bank" | "ussd" | "qr" | "mobile_money" | "bank_transfer">;
+  channels?: Array<
+    "card" | "bank" | "ussd" | "qr" | "mobile_money" | "bank_transfer"
+  >;
   subaccount?: string;
   bearer?: "account" | "subaccount";
   transaction_charge?: number;
@@ -35,6 +37,8 @@ export type PaystackEvent = {
   event: string;
   data: {
     reference: string;
+    id?: number | string;
+    domain?: "live" | "test";
     status: string;
     amount: number;
     currency: string;
@@ -54,7 +58,7 @@ function getPaystackSecretKey() {
 }
 
 export async function initializePaystackTransaction(
-  input: PaystackInitializeTransactionInput
+  input: PaystackInitializeTransactionInput,
 ) {
   const res = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
     method: "POST",
@@ -67,19 +71,30 @@ export async function initializePaystackTransaction(
 
   const json = await res.json();
   if (!res.ok || !json.status) {
-    throw new Error(json.message || "Paystack transaction initialization failed.");
+    throw new Error(
+      json.message || "Paystack transaction initialization failed.",
+    );
   }
 
   return json.data as PaystackInitializeTransaction;
 }
 
-export function verifyPaystackWebhookSignature(body: string, signature: string) {
+export function verifyPaystackWebhookSignature(
+  body: string,
+  signature: string,
+) {
   const hash = crypto
     .createHmac("sha512", getPaystackSecretKey())
     .update(body)
     .digest("hex");
 
-  return /^[a-f0-9]{128}$/i.test(signature) && crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(signature, 'hex'));
+  return (
+    /^[a-f0-9]{128}$/i.test(signature) &&
+    crypto.timingSafeEqual(
+      Buffer.from(hash, "hex"),
+      Buffer.from(signature, "hex"),
+    )
+  );
 }
 
 export async function verifyPaystackTransaction(reference: string) {
@@ -90,12 +105,14 @@ export async function verifyPaystackTransaction(reference: string) {
         Authorization: `Bearer ${getPaystackSecretKey()}`,
       },
       cache: "no-store",
-    }
+    },
   );
 
   const json = await res.json();
   if (!res.ok || !json.status) {
-    throw new Error(json.message || "Paystack transaction verification failed.");
+    throw new Error(
+      json.message || "Paystack transaction verification failed.",
+    );
   }
 
   return json.data as PaystackVerifiedTransaction;

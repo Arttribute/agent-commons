@@ -41,6 +41,7 @@ export type CourseForm = {
   sessionDatesText: string;
   liveSchedule: LiveSchedule;
   maxEnrollments?: number;
+  registration?: Record<string, any>;
   liveSessionUrl?: string;
   duration: string;
   instructor: string;

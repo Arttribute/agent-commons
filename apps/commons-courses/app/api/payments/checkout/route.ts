@@ -9,10 +9,7 @@ import {
   type PaystackCustomField,
 } from "@/lib/paystack";
 import { connectDB } from "@/lib/db";
-import {
-  sendEnrollmentEmail,
-  sendVerificationEmail,
-} from "@/lib/email/resend";
+import { sendEnrollmentEmail, sendVerificationEmail } from "@/lib/email/resend";
 import Course from "@/models/Course";
 import Enrollment from "@/models/Enrollment";
 import Payment from "@/models/Payment";
@@ -45,9 +42,13 @@ interface CheckoutCourse {
     enabled?: boolean;
     installmentAmount?: number;
     installmentCount?: number;
-    releaseAccess?: "full_after_first_payment" | "module_by_module" | "full_after_completion";
+    releaseAccess?:
+      | "full_after_first_payment"
+      | "module_by_module"
+      | "full_after_completion";
   };
   accessProgram?: CourseAccessProgram;
+  registration?: { enabled?: boolean };
   emailSettings?: {
     enrollmentEnabled?: boolean;
     replyTo?: string;
@@ -84,12 +85,13 @@ function getCourseCurrency(currency?: string) {
 function getProvider(
   reqProvider: string | null,
   currency: string,
-  enabledProviders: PaymentProvider[]
+  enabledProviders: PaymentProvider[],
 ): PaymentProvider {
   if (currency === "kes") {
     return "paystack";
   }
-  if (reqProvider === "paystack" || reqProvider === "stripe") return reqProvider;
+  if (reqProvider === "paystack" || reqProvider === "stripe")
+    return reqProvider;
   return enabledProviders[0] || "stripe";
 }
 
@@ -99,7 +101,7 @@ function redirectPaymentError(
     code: string;
     courseSlug?: string;
     provider?: string;
-  }
+  },
 ) {
   const url = new URL("/payments/error", req.url);
   url.searchParams.set("code", params.code);
@@ -111,7 +113,7 @@ function redirectPaymentError(
 function logProviderStartFailure(
   provider: PaymentProvider,
   courseSlug: string,
-  err: unknown
+  err: unknown,
 ) {
   console.error("Payment provider checkout failed", {
     provider,
@@ -135,7 +137,10 @@ function getPlanAmount(course: CheckoutCourse, plan: PaymentPlan) {
   return Math.ceil(course.price / (installmentPlan.installmentCount || 4));
 }
 
-function getAccessLevel(course: CheckoutCourse, plan: PaymentPlan): AccessLevel {
+function getAccessLevel(
+  course: CheckoutCourse,
+  plan: PaymentPlan,
+): AccessLevel {
   if (plan === "one_time") return "full";
   return course.installmentPlan?.releaseAccess === "full_after_first_payment"
     ? "full"
@@ -215,7 +220,7 @@ async function resolveCheckoutUser({
   if (!isValidEmail(normalizedEmail) || !acceptedTerms) return null;
 
   const existing = await User.findOne({ email: normalizedEmail }).select(
-    "+password"
+    "+password",
   );
   if (existing) {
     if (!existing.termsAcceptedAt) {
@@ -227,7 +232,9 @@ async function resolveCheckoutUser({
       email: existing.email,
       name: existing.name,
       canUseCheckoutSignIn: !existing.password && !existing.emailVerifiedAt,
-      needsEmailVerification: Boolean(existing.password && !existing.emailVerifiedAt),
+      needsEmailVerification: Boolean(
+        existing.password && !existing.emailVerifiedAt,
+      ),
     };
   }
 
@@ -308,10 +315,13 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const courseSlug = searchParams.get("courseSlug");
   const requestedProvider = searchParams.get("provider");
-  const requestedPlan = searchParams.get("plan") === "installment" ? "installment" : "one_time";
+  const requestedPlan =
+    searchParams.get("plan") === "installment" ? "installment" : "one_time";
   const accessCode = searchParams.get("accessCode") || searchParams.get("code");
-  const affiliateCode = searchParams.get("affiliate") || searchParams.get("ref");
-  const checkoutUserEmail = searchParams.get("email") || searchParams.get("learnerEmail");
+  const affiliateCode =
+    searchParams.get("affiliate") || searchParams.get("ref");
+  const checkoutUserEmail =
+    searchParams.get("email") || searchParams.get("learnerEmail");
   const acceptedTerms = searchParams.get("acceptTerms") === "1";
   if (!courseSlug) {
     await trackAnalyticsEvent({
@@ -342,6 +352,13 @@ export async function GET(req: NextRequest) {
     return redirectPaymentError(req, { code: "course_not_found", courseSlug });
   }
 
+  // A programme uses the same course/payment/codes with its participant form.
+  if (dbCourse.registration?.enabled) {
+    const target = new URL("/register/" + dbCourse.slug, req.url);
+    if (accessCode) target.searchParams.set("code", accessCode);
+    return NextResponse.redirect(target);
+  }
+
   const checkoutUser = await resolveCheckoutUser({
     session,
     email: checkoutUserEmail,
@@ -363,7 +380,7 @@ export async function GET(req: NextRequest) {
     const signinUrl = new URL("/auth/signin", req.url);
     signinUrl.searchParams.set(
       "callbackUrl",
-      `/api/payments/checkout?courseSlug=${encodeURIComponent(courseSlug)}`
+      `/api/payments/checkout?courseSlug=${encodeURIComponent(courseSlug)}`,
     );
     return NextResponse.redirect(signinUrl);
   }
@@ -385,7 +402,10 @@ export async function GET(req: NextRequest) {
     accessCode: accessCode || undefined,
     affiliateCode: affiliateCode || undefined,
     currency: getCourseCurrency(dbCourse.currency),
-    metadata: { acceptedTerms, checkoutSignin: checkoutUser.canUseCheckoutSignIn },
+    metadata: {
+      acceptedTerms,
+      checkoutSignin: checkoutUser.canUseCheckoutSignIn,
+    },
     request: req,
   });
   if (dbCourse.isFree) {
@@ -405,7 +425,7 @@ export async function GET(req: NextRequest) {
         paidAmount: 0,
         totalAmountDue: 0,
       },
-      { upsert: true }
+      { upsert: true },
     );
     if (!existingFreeEnrollment) {
       await sendEnrollmentEmail(
@@ -417,7 +437,7 @@ export async function GET(req: NextRequest) {
           instructor: dbCourse.instructor,
           duration: dbCourse.duration,
           settings: dbCourse.emailSettings,
-        }
+        },
       );
     }
     await trackAnalyticsEvent({
@@ -487,14 +507,14 @@ export async function GET(req: NextRequest) {
         totalAmountDue: dbCourse.price,
         currentInstallment: 0,
       },
-      { upsert: true }
+      { upsert: true },
     );
     await recordAccessProgramConversion({
       courseId: courseMongoId.toString(),
       accessCode: accessPrice.accessCode,
       accessCodeType: accessPrice.accessCodeType,
       affiliateCode: accessPrice.affiliateCode,
-      });
+    });
     await trackAnalyticsEvent({
       eventType: "access_code_enrollment",
       userId: checkoutUser.id,
@@ -521,7 +541,7 @@ export async function GET(req: NextRequest) {
           instructor: dbCourse.instructor,
           duration: dbCourse.duration,
           settings: dbCourse.emailSettings,
-        }
+        },
       );
     }
     return redirectAfterEnrollment({
@@ -536,7 +556,11 @@ export async function GET(req: NextRequest) {
   const courseTitle = dbCourse.title;
   const courseCurrency = getCourseCurrency(dbCourse.currency);
   const enabledProviders = dbCourse.paymentProviders || ["stripe"];
-  const provider = getProvider(requestedProvider, courseCurrency, enabledProviders);
+  const provider = getProvider(
+    requestedProvider,
+    courseCurrency,
+    enabledProviders,
+  );
   if (!enabledProviders.includes(provider)) {
     await trackAnalyticsEvent({
       eventType: "checkout_error",
@@ -567,7 +591,8 @@ export async function GET(req: NextRequest) {
   const continuingInstallment =
     requestedPlan === "installment" &&
     existing?.status !== "cancelled" &&
-    (existing?.paymentStatus === "partial" || existing?.paymentStatus === "overdue") &&
+    (existing?.paymentStatus === "partial" ||
+      existing?.paymentStatus === "overdue") &&
     existingBalanceDue > 0 &&
     (existing?.currentInstallment || 0) <
       (dbCourse.installmentPlan?.installmentCount || 2);
@@ -621,8 +646,8 @@ export async function GET(req: NextRequest) {
             Math.round(
               accessPrice.finalAmount *
                 100 *
-                (dbCourse.educator.platformFeePercent / 100)
-            )
+                (dbCourse.educator.platformFeePercent / 100),
+            ),
           )
         : undefined;
 
