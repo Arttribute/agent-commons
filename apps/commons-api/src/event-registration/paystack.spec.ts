@@ -59,6 +59,11 @@ describe('event payment boundaries', () => {
       ),
     ).toBe(false);
   });
+  it('retains authenticated legacy delivery until a signing secret is configured', () => {
+    const legacy = createHmac('sha512', key).update(raw).digest('hex');
+    expect(validPaystackSignature(raw, { legacy, modern: 't=1,v1=whk_new:unknown' }, key)).toBe(true);
+    expect(validPaystackSignature(raw, { modern: 't=1,v1=whk_new:unknown' }, key)).toBe(false);
+  });
   const config = parse(eventConfigSchema, {
     title: 'Camp',
     amountMinor: 800000,

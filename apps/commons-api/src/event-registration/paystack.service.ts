@@ -25,8 +25,7 @@ export function validPaystackSignature(
   const equal = (a: string, b: string) =>
     /^[a-f0-9]{128}$/i.test(b) &&
     timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
-  if (headers.modern) {
-    if (!signingSecret) return false;
+  if (headers.modern && signingSecret) {
     const fields = headers.modern.split(',').map((s) => s.trim());
     if (fields.filter((s) => s.startsWith('t=')).length !== 1) return false;
     const stamp = fields.find((s) => s.startsWith('t='))?.slice(2);

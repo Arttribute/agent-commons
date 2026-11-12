@@ -63,7 +63,7 @@ export function isProjectPageRegistrationRequest(
   return (
     event.data?.type === "commons-page:register" &&
     isProjectPageChatRequest(
-      { ...event, data: { ...event.data, type: "commons-page:chat" } },
+      { source: event.source, origin: event.origin, data: { ...event.data, type: "commons-page:chat" } },
       frame,
       nonce,
       assetOrigin,

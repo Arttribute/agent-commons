@@ -18,6 +18,10 @@ test("registration requests require the same frame, origin and nonce as chat", (
     ),
     true,
   );
+  const browserEvent = Object.defineProperties({}, {
+    source: { value: frame }, origin: { value: 'null' }, data: { value: data },
+  });
+  assert.equal(isProjectPageRegistrationRequest(browserEvent as any, frame, 'secret', 'https://assets.test'), true);
   for (const event of [
     { source: {}, origin: "null", data },
     { source: frame, origin: "https://attacker.test", data },
