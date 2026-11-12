@@ -247,6 +247,20 @@ function PricingView({
                 />
               </Field>
             </FieldGrid>
+            <Field label="Registration heading" optional>
+              <Input
+                maxLength={80}
+                value={course.registration.registrationHeading || "Register"}
+                onChange={(e) =>
+                  patch({
+                    registration: {
+                      ...course.registration,
+                      registrationHeading: e.target.value,
+                    },
+                  })
+                }
+              />
+            </Field>
             <Field label="Booking information">
               <Textarea
                 rows={3}

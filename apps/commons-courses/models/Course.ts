@@ -67,6 +67,9 @@ export interface ICourseAccessProgram {
 }
 
 export interface ICourseEmailSettings {
+  receiptEnabled?: boolean;
+  receiptQrEnabled?: boolean;
+  receiptNote?: string;
   welcomeEnabled: boolean;
   enrollmentEnabled: boolean;
   assignmentCreatedEnabled: boolean;
@@ -314,6 +317,9 @@ const AccessProgramSchema = new Schema<ICourseAccessProgram>(
 
 const CourseEmailSettingsSchema = new Schema<ICourseEmailSettings>(
   {
+    receiptEnabled: { type: Boolean, default: false },
+    receiptQrEnabled: { type: Boolean, default: true },
+    receiptNote: { type: String, trim: true, maxlength: 300 },
     welcomeEnabled: { type: Boolean, default: true },
     enrollmentEnabled: { type: Boolean, default: true },
     assignmentCreatedEnabled: { type: Boolean, default: true },

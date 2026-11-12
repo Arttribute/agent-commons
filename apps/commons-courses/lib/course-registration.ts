@@ -1,4 +1,9 @@
 import crypto from "node:crypto";
+import {
+  afterPaymentReceipt,
+  ensurePaymentReceipt,
+  receiptUrl,
+} from "@/lib/payment-receipts";
 import mongoose, { type ClientSession } from "mongoose";
 import type { PublicEvent } from "@agent-commons/ui";
 import { connectDB } from "@/lib/db";
@@ -156,6 +161,17 @@ export async function quoteRegistration(slug: string, input: any) {
 export function registrationReceipt(payment: any) {
   const r = payment.metadata.registration;
   return {
+    verificationUrl: payment.metadata?.receipt?.token
+      ? receiptUrl(payment.metadata.receipt.token)
+      : undefined,
+    qrImageUrl:
+      payment.metadata?.receipt?.token &&
+      payment.metadata?.receipt?.qrEnabled !== false
+        ? new URL(
+            "/api/receipts/" + payment.metadata.receipt.token + "/qr",
+            getAppBaseUrl(),
+          ).href
+        : undefined,
     reference: payment.providerReference,
     bookingCode: "AC-" + payment.providerReference.slice(-10).toUpperCase(),
     status: r.status,
@@ -530,6 +546,7 @@ export async function completeRegistration(
   });
   if (result?.payment?.status === "completed")
     await recordSaleLedger(String(result.payment._id));
+  await afterPaymentReceipt(result?.payment, result?.course);
   return result;
 }
 export async function getRegistrationReceipt(
@@ -551,6 +568,12 @@ export async function getRegistrationReceipt(
       await completeRegistration(reference, transaction);
       payment = await Payment.findById(payment._id);
     }
+  }
+  if (["completed", "refunded"].includes(payment.status)) {
+    const receipt = await ensurePaymentReceipt(String(payment._id));
+    if (receipt) payment = receipt.payment;
+    if (verify && payment.status === "completed")
+      await afterPaymentReceipt(payment, course);
   }
   return registrationReceipt(payment);
 }

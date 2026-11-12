@@ -14,6 +14,8 @@ type Transaction = {
   provider: string;
   status: string;
   date: string;
+  email?: string;
+  receiptEmailStatus?: string;
   registration?: {
     status: string;
     quantity: number;
@@ -41,13 +43,47 @@ const statusTone = (status: string) =>
 export function PaymentsTabs({
   transactions,
   ledger,
+  courseSlug,
 }: {
   transactions: Transaction[];
   ledger: LedgerEntry[];
+  courseSlug?: string;
 }) {
   const [view, setView] = useState<"transactions" | "ledger">("transactions");
   const [selected, setSelected] = useState<Transaction | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const [receiptBusy, setReceiptBusy] = useState(false),
+    [receiptMessage, setReceiptMessage] = useState("");
+  async function emailReceipt() {
+    if (!selected || !courseSlug || receiptBusy) return;
+    setReceiptBusy(true);
+    setReceiptMessage("");
+    try {
+      const response = await fetch(
+        `/api/educator/courses/${courseSlug}/payments/${selected.id}/receipt`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resend: selected.receiptEmailStatus === "sent",
+            requestId: crypto.randomUUID(),
+          }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Receipt email could not be sent");
+      setSelected({ ...selected, receiptEmailStatus: "sent" });
+      setReceiptMessage("Receipt emailed to the payer.");
+    } catch (error) {
+      setReceiptMessage(
+        error instanceof Error ? error.message : "Please try again",
+      );
+    } finally {
+      setReceiptBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (selected) dialog.current?.showModal();
   }, [selected]);
@@ -123,7 +159,7 @@ export function PaymentsTabs({
               </button>
             </div>
             <p className="mt-2 text-sm">
-              {selected.registration?.contact.email}
+              {selected.registration?.contact.email || selected.email}
               <br />
               {selected.registration?.contact.phone}
             </p>
@@ -136,6 +172,27 @@ export function PaymentsTabs({
               <p className="my-3 text-sm text-amber-800">
                 {selected.registration.reviewReason}
               </p>
+            )}
+            {courseSlug && selected.status === "completed" && (
+              <div className="my-5">
+                <button
+                  type="button"
+                  disabled={receiptBusy}
+                  onClick={emailReceipt}
+                  className="rounded-lg border px-3 py-2 text-sm"
+                >
+                  {receiptBusy
+                    ? "Sending…"
+                    : selected.receiptEmailStatus === "sent"
+                      ? "Resend receipt"
+                      : "Email receipt"}
+                </button>
+                {receiptMessage && (
+                  <p role="status" className="mt-2 text-sm">
+                    {receiptMessage}
+                  </p>
+                )}
+              </div>
             )}
             <div className="mt-5 space-y-4">
               {selected.registration?.participants.map((fields, i) => (
@@ -168,8 +225,11 @@ export function PaymentsTabs({
           {transactions.map((item) => (
             <ListRow
               key={item.id}
-              chevron={Boolean(item.registration)}
-              onClick={item.registration ? () => setSelected(item) : undefined}
+              chevron={true}
+              onClick={() => {
+                setReceiptMessage("");
+                setSelected(item);
+              }}
               title={item.name}
               meta={[
                 item.date ? formatDate(item.date) : null,

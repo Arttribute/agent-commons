@@ -23,6 +23,7 @@ const field = z.object({
 });
 export const eventConfigSchema = z
   .object({
+    registrationHeading: z.string().trim().max(80).default("Register"),
     title: z.string().trim().min(2).max(120),
     summary: z.string().trim().max(600).default(""),
     when: z.string().trim().max(200).default(""),

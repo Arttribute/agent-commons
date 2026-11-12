@@ -1,9 +1,15 @@
 import "server-only";
+import { receiptMoney, type publicReceipt } from "@/lib/payment-receipt-policy";
 
 import { render } from "@react-email/render";
 import { Resend } from "resend";
 import { getAppBaseUrl } from "@/lib/app-url";
-import { Callout, CommonsEmail, DetailList, Paragraph } from "@/lib/email/templates";
+import {
+  Callout,
+  CommonsEmail,
+  DetailList,
+  Paragraph,
+} from "@/lib/email/templates";
 import { truncateEmailText } from "@/lib/email/truncate";
 import type { EmailBranding } from "@/lib/email/branding";
 import { resolveCourseEmailBranding } from "@/lib/educator-entitlements";
@@ -78,17 +84,23 @@ async function sendEmail({
   react,
   replyTo,
   senderName,
+  attachments,
+  idempotencyKey,
 }: {
   to: string[];
   subject: string;
   react: React.ReactElement;
   replyTo?: string;
   senderName?: string;
+  attachments?: Array<{ filename: string; content: Buffer; contentId: string }>;
+  idempotencyKey?: string;
 }) {
   const recipients = to.filter(Boolean);
   if (!recipients.length) return { skipped: true, reason: "missing_recipient" };
   if (!resend) {
-    console.info(`[email] skipped "${subject}" because RESEND_API_KEY is not set.`);
+    console.info(
+      `[email] skipped "${subject}" because RESEND_API_KEY is not set.`,
+    );
     return { skipped: true, reason: "missing_resend_api_key" };
   }
 
@@ -97,14 +109,18 @@ async function sendEmail({
       render(react, { pretty: true }),
       render(react, { plainText: true }),
     ]);
-    const { data, error } = await resend.emails.send({
-      from: getFromAddress(senderName),
-      to: recipients,
-      subject,
-      html,
-      text,
-      replyTo: replyTo || replyToAddress,
-    });
+    const { data, error } = await resend.emails.send(
+      {
+        from: getFromAddress(senderName),
+        to: recipients,
+        subject,
+        html,
+        text,
+        replyTo: replyTo || replyToAddress,
+        attachments,
+      },
+      idempotencyKey ? { idempotencyKey } : undefined,
+    );
 
     if (error) {
       console.error("[email] resend failed", { subject, error });
@@ -207,7 +223,10 @@ export async function sendPasswordResetEmail({
   });
 }
 
-export async function sendEnrollmentEmail(user: Recipient, course: CourseEmailContext) {
+export async function sendEnrollmentEmail(
+  user: Recipient,
+  course: CourseEmailContext,
+) {
   if (!course.settings?.enrollmentEnabled || !user.email) return;
   const branding = await resolveCourseEmailBranding(
     course.id,
@@ -355,7 +374,9 @@ export async function sendAssignmentNotification({
               </Callout>
             ) : null}
             {assignment.instructions ? (
-              <Paragraph>{truncateEmailText(assignment.instructions, 320)}</Paragraph>
+              <Paragraph>
+                {truncateEmailText(assignment.instructions, 320)}
+              </Paragraph>
             ) : null}
           </CommonsEmail>
         ),
@@ -461,4 +482,82 @@ function getFromAddress(senderName?: string) {
   const address = fromAddress.match(/<([^>]+)>/)?.[1] || fromAddress.trim();
   const safeName = senderName.replace(/[<>\r\n]/g, "").trim();
   return safeName ? `${safeName} <${address}>` : fromAddress;
+}
+
+export async function sendPaymentReceiptEmail(input: {
+  to: string;
+  name?: string;
+  receipt: NonNullable<ReturnType<typeof publicReceipt>>;
+  verificationUrl: string;
+  qr?: Buffer;
+  courseId: string;
+  settings?: CourseEmailSettings;
+  idempotencyKey: string;
+}) {
+  const { receipt } = input;
+  const branding = await resolveCourseEmailBranding(
+    input.courseId,
+    input.settings?.branding,
+  );
+  const result = await sendEmail({
+    to: [input.to],
+    subject: `${receipt.programme}: ${receipt.amountMinor ? "payment receipt" : "registration confirmation"}`,
+    replyTo: input.settings?.replyTo,
+    senderName: branding?.senderName,
+    idempotencyKey: input.idempotencyKey,
+    attachments: input.qr
+      ? [
+          {
+            filename: "receipt-verification.png",
+            content: input.qr,
+            contentId: "receipt-verification",
+          },
+        ]
+      : undefined,
+    react: (
+      <CommonsEmail
+        preview={`${receipt.title}. ${receiptMoney(receipt.amountMinor, receipt.currency)}.`}
+        eyebrow="Receipt"
+        title={receipt.programme}
+        intro={`${input.name ? `Hi ${input.name}, ` : ""}${receipt.title}.`}
+        branding={branding}
+        action={{ label: "Verify receipt", href: input.verificationUrl }}
+      >
+        <DetailList
+          items={[
+            ["Amount", receiptMoney(receipt.amountMinor, receipt.currency)],
+            ["Receipt", receipt.receiptNumber],
+            ["Participants", String(receipt.quantity)],
+            ["When", receipt.when],
+            ["Where", receipt.location],
+            [
+              "Confirmed",
+              new Date(receipt.paidAt).toLocaleString("en-KE", {
+                timeZone: "Africa/Nairobi",
+              }),
+            ],
+          ]}
+        />
+        {input.qr && (
+          <div style={{ textAlign: "center", margin: "24px 0" }}>
+            <img
+              src="cid:receipt-verification"
+              width="160"
+              height="160"
+              alt="Scan to verify this receipt"
+            />
+            <Paragraph>Scan to check this receipt’s current status.</Paragraph>
+          </div>
+        )}
+        <Paragraph>
+          {receipt.note ||
+            "Keep this receipt for your records. The organisers will share joining information."}
+        </Paragraph>
+      </CommonsEmail>
+    ),
+  });
+  if ("data" in result && result.data?.id) return result.data.id;
+  throw new Error(
+    "Receipt email was not accepted. Check the email provider settings and try again.",
+  );
 }
