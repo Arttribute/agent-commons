@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CodeProjectFileInput } from '../code-project/code-project.types';
 export const CAMP_PUBLIC_CONTEXT =
-  'AI Kids Hacker Camp. 9–11 December 2026 (Wednesday–Friday), 9:30 am–12:30 pm daily. Ages 7–13. NODE NBO, Gigiri, Nairobi. KSh 5,000 per child for all three mornings. Activities: comics & filmmaking (6–8 panel comic or a short film / trailer of about 30 seconds); games & simple apps, including interactive stories. Day 1 is shared; making paths start on Day 2. Children start on paper, make decisions, check results and explain their AI choices. Final-day family showcase planned, exact time unconfirmed. Capacity, equipment / food inclusions, payment route and cancellation terms must come from the organiser. Registration and required guardian choices use the organiser’s Google Forms. Do not request children’s personal information in chat. Do not invent availability, payment instructions, facilitator assignments or a booking confirmation.';
+  'AI Kids Hacker Camp. 9–11 December 2026 (Wednesday–Friday), 9:30 am–12:30 pm daily. Ages 7–13. NODE NBO, Gigiri, Nairobi. KSh 8,000 per child for all three mornings. Activities: comics & filmmaking (6–8 panel comic or a short film / trailer of about 30 seconds); games & simple apps, including interactive stories. Day 1 is shared; making paths start on Day 2. Children start on paper, make decisions, check results and explain their AI choices. Final-day family showcase planned, exact time unconfirmed. Capacity is 30 children across both paths. Register and pay through the linked first-party registration page when open. Equipment, food arrangements and cancellation terms must come from the organiser. Optional guardian choices follow separately before camp. Do not request children’s personal information in chat. Do not invent availability, payment instructions, facilitator assignments or a booking confirmation.';
 export function createPageFiles(
   template: string,
   config: { title: string; registrationUrl?: string },
@@ -39,7 +39,7 @@ export function createPageFiles(
           2,
         ),
       },
-      ...['makers.png', 'node.png', 'inter.ttf', 'space.ttf'].map((name) => ({
+      ...['makers.png', 'node.png', 'inter.ttf', 'space.ttf', 'camp-wordmark.svg'].map((name) => ({
         path: 'assets/' + name,
         content: 'base64:' + readFileSync(join(root, name)).toString('base64'),
       })),

@@ -10,7 +10,7 @@ export function pageContext() {
     chatEnabled: hash.get("commonsChat") === "1",
   };
 }
-export function openChat(): Promise<{ opened: true }> {
+function requestAction(action: "chat" | "register"): Promise<{ opened: true }> {
   const context = pageContext();
   if (window.parent === window || !context.hostOrigin || !context.nonce)
     return Promise.reject(
@@ -42,8 +42,15 @@ export function openChat(): Promise<{ opened: true }> {
     }, 8000);
     window.addEventListener("message", receive);
     window.parent.postMessage(
-      { type: "commons-page:chat", id, nonce: context.nonce },
+      { type: "commons-page:" + action, id, nonce: context.nonce },
       context.hostOrigin!,
     );
   });
+}
+
+export function openChat() {
+  return requestAction("chat");
+}
+export function openRegistration() {
+  return requestAction("register");
 }
