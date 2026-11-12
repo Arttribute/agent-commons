@@ -31,10 +31,14 @@ export function programmeShare(
   page: PageShare | null,
   event?: RegistrationShare | null,
 ) {
+  // Only enrich a page with course fields when that page can resolve the same
+  // course itself. An explicitly selected standalone page keeps its own card.
+  const fallback =
+    !page || registrationSlugForPage(page) === event?.slug ? event : undefined;
   return {
-    title: page?.title.trim() || event?.title.trim() || "Programme",
-    description: page?.description?.trim() || event?.summary?.trim() || "",
-    imageUrl: page?.imageUrl?.trim() || event?.theme?.imageUrl?.trim() || "",
+    title: page?.title.trim() || fallback?.title.trim() || "Programme",
+    description: page?.description?.trim() || fallback?.summary?.trim() || "",
+    imageUrl: page?.imageUrl?.trim() || fallback?.theme?.imageUrl?.trim() || "",
   };
 }
 

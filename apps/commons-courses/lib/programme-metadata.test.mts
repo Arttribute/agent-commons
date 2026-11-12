@@ -92,3 +92,16 @@ test("automatic same-slug matching cannot adopt another programme's page", () =>
     undefined,
   );
 });
+
+test("a standalone landing page retains the same preview when selected by a registration", () => {
+  const standalone = {
+    ...page,
+    registrationUrl: undefined,
+    description: "",
+    imageUrl: "",
+  };
+  assert.deepEqual(
+    programmeShare(standalone, { ...event, pageSlug: standalone.slug }),
+    programmeShare(standalone),
+  );
+});
