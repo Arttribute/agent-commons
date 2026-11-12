@@ -1,5 +1,11 @@
 # @agent-commons/ui
 
+## 0.6.0
+
+### Minor Changes
+
+- 8a6d4c3: Add configurable event registration, verified payment receipts and an embedded public programme guide for custom project pages.
+
 ## 0.5.0
 
 ### Minor Changes
