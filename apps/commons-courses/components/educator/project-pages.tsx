@@ -56,6 +56,8 @@ export function EducatorProjectPages({ commonsUrl }: { commonsUrl: string }) {
         title="Project pages"
         info="Your design and code, linked to a Commons project. Use any coding tool, then import its exported web build in the page editor."
         actions={
+          <div className="flex gap-2">
+          <ButtonLink href="/educator/registrations">Registrations</ButtonLink>
           <Button
             icon={Plus}
             onClick={() => {
@@ -65,6 +67,7 @@ export function EducatorProjectPages({ commonsUrl }: { commonsUrl: string }) {
           >
             Create page
           </Button>
+          </div>
         }
       />
       {error && (

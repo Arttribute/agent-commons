@@ -8,6 +8,10 @@ export type PageConfig = {
   publicContext: string;
   chatEnabled: boolean;
   imageUrl?: string;
+  chatName?: string;
+  chatAvatarUrl?: string;
+  chatGreeting?: string;
+  registrationSlug?: string;
 };
 export type PageInput = {
   title?: string;
@@ -15,6 +19,10 @@ export type PageInput = {
   publicContext?: string;
   chatEnabled?: boolean;
   imageUrl?: string;
+  chatName?: string;
+  chatAvatarUrl?: string;
+  chatGreeting?: string;
+  registrationSlug?: string;
 };
 export type CreatePageInput = PageInput & {
   slug?: string;
@@ -96,6 +104,10 @@ export function pageConfig(
       previous?.publicContext,
     ),
     chatEnabled: input.chatEnabled ?? previous?.chatEnabled ?? false,
+    registrationSlug: input.registrationSlug === undefined ? previous?.registrationSlug : input.registrationSlug === '' ? undefined : pageSlug(input.registrationSlug),
+    chatName: pageText(input.chatName, 'Guide name', 80, previous?.chatName || 'Page guide'),
+    chatGreeting: pageText(input.chatGreeting, 'Guide greeting', 400, previous?.chatGreeting || 'Hi! What would you like to know?'),
+    chatAvatarUrl: input.chatAvatarUrl === undefined ? previous?.chatAvatarUrl : publicHttpsUrl(input.chatAvatarUrl, 'Guide image'),
     ...(input.imageUrl === undefined
       ? previous?.imageUrl
         ? { imageUrl: previous.imageUrl }

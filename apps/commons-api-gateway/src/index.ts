@@ -28,7 +28,10 @@ export function createGatewayApp() {
       const allowed = (process.env.CORS_ORIGINS ?? "")
         .split(",")
         .map((value) => value.trim());
-      return allowed.includes(origin) || /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/.test(origin) ? origin : (allowed[0] ?? "");
+      return allowed.includes(origin) ||
+        /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/.test(origin)
+        ? origin
+        : (allowed[0] ?? "");
     },
     allowHeaders: [
       "authorization",
@@ -38,11 +41,18 @@ export function createGatewayApp() {
     ],
     exposeHeaders: ["x-request-id", "x-commons-service"],
   });
-  app.use("*", (c, next) => {
+  app.use("*", async (c, next) => {
     // A sandboxed plugin frame intentionally has an opaque `null` origin.
     // Public preview modules therefore need wildcard CORS and no credentials;
     // the preview proxy below applies that narrower policy.
     if (isPluginFramePath(c.req.path)) return next();
+    if (isAnonymousPageApi(c.req.path)) {
+      c.header("access-control-allow-origin", "*");
+      c.header("access-control-allow-methods", "GET, POST, OPTIONS");
+      c.header("access-control-allow-headers", "content-type");
+      if (c.req.method === "OPTIONS") return c.body(null, 204);
+      return next();
+    }
     return crossOriginHeaders(c, next);
   });
   app.use("*", async (c, next) => {
@@ -89,9 +99,13 @@ export function createGatewayApp() {
     const url = new URL(targetPath, `${baseUrl.replace(/\/$/, "")}/`);
     const incoming = new URL(c.req.url);
     url.search = incoming.search;
-    const headers = (isPluginFrame || /^\/v1\/project-pages\/[^/]+$/.test(targetPath))
-      ? publicAssetRequestHeaders(c.req.raw.headers)
-      : new Headers(c.req.raw.headers);
+    const headers =
+      isPluginFrame ||
+      isAnonymousPageApi(targetPath) ||
+      /^\/v1\/event-payments\/paystack\/[^/]+$/.test(targetPath) ||
+      /^\/v1\/project-pages\/[^/]+$/.test(targetPath)
+        ? publicAssetRequestHeaders(c.req.raw.headers)
+        : new Headers(c.req.raw.headers);
     headers.delete("host");
     headers.delete("content-length");
     headers.delete("authorization");
@@ -107,6 +121,11 @@ export function createGatewayApp() {
       duplex: "half",
     } as RequestInit);
     const outputHeaders = new Headers(response.headers);
+    if (isAnonymousPageApi(targetPath)) {
+      outputHeaders.set("access-control-allow-origin", "*");
+      outputHeaders.delete("access-control-allow-credentials");
+      outputHeaders.set("cache-control", "no-store");
+    }
     if (isPluginFrame) {
       outputHeaders.set("access-control-allow-origin", "*");
       outputHeaders.delete("access-control-allow-credentials");
@@ -121,7 +140,12 @@ export function createGatewayApp() {
   }
 
   app.get("/v1/desktop-search/search", (c) =>
-    publicProxy(c, "agent-commons", process.env.AGENT_COMMONS_INTERNAL_URL, c.req.path),
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
   );
 
   app.get("/v1/oauth/providers", (c) =>
@@ -184,11 +208,21 @@ export function createGatewayApp() {
     ),
   );
   app.get("/v1/project-page-sdk.js", (c) =>
-    publicProxy(c, "agent-commons", process.env.AGENT_COMMONS_INTERNAL_URL, c.req.path),
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
   );
   // Read-only published page metadata; no owner or source data is returned.
   app.get("/v1/project-pages/:slug", (c) =>
-    publicProxy(c, "agent-commons", process.env.AGENT_COMMONS_INTERNAL_URL, c.req.path),
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
   );
   // A revocable, expiring artifact capability is authenticated by its opaque
   // token downstream. It must remain reachable to signed-out recipients; the
@@ -215,8 +249,44 @@ export function createGatewayApp() {
   // Desktop Cloud uploads use a short-lived HMAC ticket in place of a bearer
   // token so files can bypass the web function's small request-body limit.
   app.post("/v1/files/upload-direct", (c) =>
-    publicProxy(c, "agent-commons", process.env.AGENT_COMMONS_INTERNAL_URL, c.req.path),
+    publicProxy(
+      c,
+      "agent-commons",
+      process.env.AGENT_COMMONS_INTERNAL_URL,
+      c.req.path,
+    ),
   );
+
+  // Public forms and guest questions carry no Commons credential. Private
+  // event configuration and registrant data stay behind the guard below.
+  for (const path of [
+    "/v1/public-events/:slug",
+    "/v1/public-events/:slug/payments/:reference",
+  ]) {
+    app.get(path, (c) =>
+      publicProxy(
+        c,
+        "agent-commons",
+        process.env.AGENT_COMMONS_INTERNAL_URL,
+        c.req.path,
+      ),
+    );
+  }
+  for (const path of [
+    "/v1/public-events/:slug/checkout",
+    "/v1/public-events/:slug/payments/:reference/verify",
+    "/v1/event-payments/paystack/:accountId",
+    "/v1/project-pages/:slug/chat",
+  ]) {
+    app.post(path, (c) =>
+      publicProxy(
+        c,
+        "agent-commons",
+        process.env.AGENT_COMMONS_INTERNAL_URL,
+        c.req.path,
+      ),
+    );
+  }
 
   app.use("/v1/*", async (c, next) => {
     const principal = await authenticate(c.req.header("authorization"));
@@ -271,10 +341,17 @@ export function createGatewayApp() {
   app.get("/v1/identity", (c) => {
     const principal = c.get("principal");
     if (!principal || principal.credentialType === "legacy")
-      return c.json({ error: "A verified Commons identity credential is required" }, 401);
+      return c.json(
+        { error: "A verified Commons identity credential is required" },
+        401,
+      );
     c.header("Cache-Control", "no-store");
-    return c.json({ actorId: principal.actorId, actorType: principal.actorType,
-      scopes: principal.scopes, credentialType: principal.credentialType });
+    return c.json({
+      actorId: principal.actorId,
+      actorType: principal.actorType,
+      scopes: principal.scopes,
+      credentialType: principal.credentialType,
+    });
   });
 
   async function proxy(
@@ -482,6 +559,14 @@ export function publicAssetRequestHeaders(input: HeadersInit) {
     headers.delete(name);
   }
   return headers;
+}
+
+function isAnonymousPageApi(path: string) {
+  return (
+    /^\/v1\/public-events\/[^/]+(?:\/checkout|\/payments\/[^/]+(?:\/verify)?)?$/.test(
+      path,
+    ) || /^\/v1\/project-pages\/[^/]+\/chat$/.test(path)
+  );
 }
 
 function requiredScope(method: string, path: string) {

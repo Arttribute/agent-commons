@@ -79,7 +79,7 @@ export function verifyPaystackWebhookSignature(body: string, signature: string) 
     .update(body)
     .digest("hex");
 
-  return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature));
+  return /^[a-f0-9]{128}$/i.test(signature) && crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(signature, 'hex'));
 }
 
 export async function verifyPaystackTransaction(reference: string) {

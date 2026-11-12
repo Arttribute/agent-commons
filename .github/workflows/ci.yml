@@ -86,6 +86,12 @@ jobs:
       - name: Test API gateway
         run: pnpm --filter commons-api-gateway run test
 
+      - name: Test event registration and verified payments
+        env:
+          EVENT_REGISTRATION_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
+        run: |
+          NODE_OPTIONS=--experimental-vm-modules pnpm --filter commons-api exec jest --runInBand --globals='{"ts-jest":{"isolatedModules":true}}' --runTestsByPath src/event-registration/paystack.spec.ts src/event-registration/event-registration.integration.spec.ts src/project-page/public-page-chat.service.spec.ts
+
       # Better Auth rate limits per client address. Identity sits behind
       # CloudFront and a load balancer, and an unresolved address puts every
       # caller in one shared bucket that 429s token minting platform-wide.

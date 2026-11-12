@@ -6,6 +6,10 @@ export type PageConfig = {
   publicContext: string;
   chatEnabled: boolean;
   imageUrl?: string;
+  chatName?: string;
+  chatAvatarUrl?: string;
+  chatGreeting?: string;
+  registrationSlug?: string;
 };
 export type ProjectPage = {
   pageId: string;

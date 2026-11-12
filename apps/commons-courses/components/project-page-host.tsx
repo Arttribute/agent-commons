@@ -1,13 +1,15 @@
 "use client";
 import { useCallback, useState } from "react";
-import { ProjectPageFrame, type ProjectPageFrameSession } from "@agent-commons/ui";
-import { Drawer } from "@/components/ui/drawer";
-import { Button, ButtonLink } from "@/components/ui/button";
+import {
+  ProjectPageFrame,
+  PublicPageChat,
+  type ProjectPageFrameSession,
+} from "@agent-commons/ui";
+import "@agent-commons/ui/styles.css";
 import type { PublicPage } from "@/lib/project-pages";
 export function ProjectPageHost({
   page,
   session,
-  commonsUrl,
 }: {
   page: PublicPage;
   session?: ProjectPageFrameSession;
@@ -22,29 +24,15 @@ export function ProjectPageHost({
         session={session}
         onChatDraftRequest={request}
       />
-      <Drawer
+      <PublicPageChat
+        page={page}
         open={open}
-        onClose={() => setOpen(false)}
-        title={`Ask about ${page.title}`}
-        description="Open a chat in your Commons account with this page’s published information. Review the draft before sending it."
-        footer={
-          <>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
-            <ButtonLink
-              variant="primary"
-              href={`${commonsUrl}/p/${page.slug}/chat`}
-              external
-            >
-              Continue in Commons
-            </ButtonLink>
-          </>
+        onOpenChange={setOpen}
+        apiBase={
+          process.env.NEXT_PUBLIC_AGENT_COMMONS_API_URL ||
+          "https://api.agentcommons.io"
         }
-      >
-        <p className="text-sm text-muted-foreground">
-          Your conversation uses your own account and agent. This page does not
-          receive your credentials.
-        </p>
-      </Drawer>
+      />
     </div>
   );
 }

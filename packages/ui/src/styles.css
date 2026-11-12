@@ -1,3 +1,5 @@
+@import './event-registration.css';
+@import './public-page-chat.css';
 :root {
   --ac-surface: #fff;
   --ac-canvas: #f3f2ef;

@@ -11,7 +11,7 @@ async function forward(request: NextRequest, context: Context) {
   const body = ["GET", "DELETE"].includes(request.method)
     ? undefined
     : await request.json().catch(() => ({}));
-  return proxyBackend(`/v1/projects/${path.map(encodeURIComponent).join("/")}`, {
+  return proxyBackend(`/v1/projects/${path.map(encodeURIComponent).join("/")}${request.nextUrl.search}`, {
     method: request.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     body,
   });

@@ -6,6 +6,10 @@ export type PublicProjectPage = {
   publicContext: string;
   chatEnabled: boolean;
   imageUrl?: string;
+  chatName?: string;
+  chatAvatarUrl?: string;
+  chatGreeting?: string;
+  registrationUrl?: string;
   entryUrl: string;
   publishedAt: string;
 };
