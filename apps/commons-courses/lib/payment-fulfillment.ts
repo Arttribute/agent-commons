@@ -7,7 +7,8 @@ import { sendEnrollmentEmail } from "@/lib/email/resend";
 import { getNextInstallmentSchedule } from "@/lib/installment-enforcement";
 import { recordSaleLedger } from "@/lib/payout-ledger";
 
-type FulfillmentParams = {
+export type FulfillmentParams = {
+  verified?: import("@/lib/paystack").PaystackVerifiedTransaction;
   provider: "stripe" | "paystack";
   providerReference: string;
   stripePaymentIntentId?: string;
@@ -43,6 +44,13 @@ function getMetadataNumber(metadata: unknown, key: string) {
 }
 
 export async function fulfillCompletedPayment(params: FulfillmentParams) {
+  if (
+    params.provider === "paystack" &&
+    /^ac_evt_[a-f0-9]{48}$/.test(params.providerReference)
+  ) {
+    const { completeRegistration } = await import("@/lib/course-registration");
+    return completeRegistration(params.providerReference, params.verified);
+  }
   const paymentQuery =
     params.provider === "stripe"
       ? { stripeSessionId: params.providerReference }
@@ -55,7 +63,7 @@ export async function fulfillCompletedPayment(params: FulfillmentParams) {
       channel: params.channel || undefined,
       stripePaymentIntentId: params.stripePaymentIntentId,
     },
-    { new: true }
+    { new: true },
   );
   if (updatedPayment?._id) {
     await recordSaleLedger(updatedPayment._id.toString());
@@ -63,14 +71,20 @@ export async function fulfillCompletedPayment(params: FulfillmentParams) {
 
   const payment = updatedPayment || (await Payment.findOne(paymentQuery));
   const metadata = payment?.metadata || params.fallback?.metadata;
-  const courseSlug = getMetadataString(metadata, "courseSlug") || params.fallback?.courseSlug;
+  const courseSlug =
+    getMetadataString(metadata, "courseSlug") || params.fallback?.courseSlug;
   const userId = payment?.userId?.toString() || params.fallback?.userId;
   const course = payment?.courseId
     ? await Course.findById(payment.courseId)
     : await Course.findOne({ slug: courseSlug });
 
   if (!payment || !course || !userId) {
-    return { fulfilled: false, payment, course, reason: "missing_payment_context" };
+    return {
+      fulfilled: false,
+      payment,
+      course,
+      reason: "missing_payment_context",
+    };
   }
 
   const paymentPlan = payment.paymentPlan || "one_time";
@@ -91,7 +105,8 @@ export async function fulfillCompletedPayment(params: FulfillmentParams) {
     payment.installmentNumber ||
     getMetadataNumber(metadata, "installmentNumber") ||
     (paymentPlan === "installment"
-      ? ((existingEnrollment as ExistingEnrollment | null)?.currentInstallment || 0) + 1
+      ? ((existingEnrollment as ExistingEnrollment | null)
+          ?.currentInstallment || 0) + 1
       : 0);
   const paymentStatus =
     paymentPlan === "installment" && nextPaidAmount < course.price
@@ -128,7 +143,7 @@ export async function fulfillCompletedPayment(params: FulfillmentParams) {
         ? { $unset: { nextPaymentDueAt: "", paymentGraceEndsAt: "" } }
         : {}),
     },
-    { upsert: true }
+    { upsert: true },
   );
 
   if (!existingEnrollment) {
@@ -144,7 +159,7 @@ export async function fulfillCompletedPayment(params: FulfillmentParams) {
         instructor: course.instructor,
         duration: course.duration,
         settings: course.emailSettings,
-      }
+      },
     );
   }
 

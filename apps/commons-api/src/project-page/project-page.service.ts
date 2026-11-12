@@ -82,7 +82,6 @@ export class ProjectPageService {
   }
   async create(ownerId: string, projectId: string, input: CreatePageInput) {
     const project = await this.projects.requireProject(ownerId, projectId);
-    await this.checkRegistration(projectId, input.registrationSlug);
     const slug = pageSlug(input?.slug);
     const surface = pageSurface(input.surface);
     const template = input.template ?? 'blank';
@@ -183,7 +182,6 @@ export class ProjectPageService {
     input: PageInput,
   ) {
     const page = await this.requirePage(ownerId, projectId, pageId);
-    await this.checkRegistration(projectId, input.registrationSlug);
     await this.db
       .update(schema.projectPage)
       .set({
@@ -371,17 +369,13 @@ export class ProjectPageService {
       chatName: config.chatName,
       chatAvatarUrl: config.chatAvatarUrl,
       chatGreeting: config.chatGreeting,
-      registrationUrl: config.registrationSlug ? `/register/${config.registrationSlug}` : undefined,
+      registrationUrl: config.registrationSlug
+        ? `/register/${config.registrationSlug}`
+        : undefined,
       imageUrl: config.imageUrl,
       entryUrl: deployment.publicUrl,
       publishedAt: page.publishedAt,
     };
-  }
-  private async checkRegistration(projectId: string, slug?: string) {
-    if (!slug) return;
-    const result = await this.db.execute(sql`SELECT event_id FROM project_event WHERE project_id=${projectId}::uuid AND slug=${pageSlug(slug)}`);
-    const list = Array.isArray(result) ? result : (result as any)?.rows || [];
-    if (!list.length) throw new BadRequestException('Choose a registration belonging to this project');
   }
   private async enableAssets(
     ownerId: string,

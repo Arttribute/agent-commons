@@ -35,6 +35,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Course not found." }, { status: 404 });
     }
 
+    if (course.registration?.enabled) {
+      return NextResponse.json(
+        {
+          error: "Please use the programme registration page",
+          registrationUrl: "/register/" + course.slug,
+        },
+        { status: 409 },
+      );
+    }
+
     if (!course.isFree) {
       return NextResponse.json(
         { error: "This course requires payment." },

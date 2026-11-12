@@ -69,18 +69,6 @@ const publicRoutes: Array<[string, RequestInit?]> = [
   ["/v1/billing/catalog"],
   ["/v1/project-pages/ai-kids-hacker-camp"],
   ["/v1/project-pages/ai-kids-hacker-camp/chat", { method: "POST" }],
-  ["/v1/public-events/ai-kids-hacker-camp"],
-  ["/v1/public-events/ai-kids-hacker-camp/checkout", { method: "POST" }],
-  ["/v1/public-events/ai-kids-hacker-camp/quote", { method: "POST" }],
-  ["/v1/public-events/ai-kids-hacker-camp/payments/ac_evt_example"],
-  [
-    "/v1/public-events/ai-kids-hacker-camp/payments/ac_evt_example/verify",
-    { method: "POST" },
-  ],
-  [
-    "/v1/event-payments/paystack/00000000-0000-4000-8000-000000000000",
-    { method: "POST" },
-  ],
   ["/v1/project-page-sdk.js"],
   ["/v1/oauth/providers"],
   ["/v1/oauth/providers/google"],
@@ -109,6 +97,24 @@ await expectStatus(
   401,
 );
 
+await expectStatus(
+  "guest guide preflight",
+  app.request("/v1/project-pages/camp/chat", {
+    method: "OPTIONS",
+    headers: {
+      origin: "https://commonlab.agentcommons.io",
+      "access-control-request-method": "POST",
+    },
+  }),
+  204,
+);
+const guestCors = await app.request("/v1/project-pages/camp/chat", {
+  method: "POST",
+  headers: { origin: "https://commonlab.agentcommons.io" },
+});
+if (guestCors.headers.get("access-control-allow-origin") !== "*")
+  failures.push("Guest guide must allow public page origins");
+
 const desktopCors = await app.request(
   "/v1/files/upload-direct?ticket=invalid",
   {
@@ -132,9 +138,6 @@ const protectedRoutes = [
   "/v1/identity",
   "/v1/agents",
   "/v1/project-pages",
-  "/v1/projects/00000000-0000-4000-8000-000000000000/events",
-  "/v1/projects/00000000-0000-4000-8000-000000000000/events/paystack",
-  "/v1/projects/00000000-0000-4000-8000-000000000000/events/00000000-0000-4000-8000-000000000000/registrations",
   "/v1/projects/00000000-0000-4000-8000-000000000000/pages",
   "/v1/flags",
   "/v1/billing/subscription",
@@ -203,65 +206,6 @@ if (pluginHostResponse.headers.get("access-control-allow-origin") !== "*") {
 if (pluginHostResponse.headers.has("access-control-allow-credentials")) {
   failures.push("UI plugin host: must not allow credentials");
 }
-
-const publicPreflight = await app.request("/v1/public-events/camp/checkout", {
-  method: "OPTIONS",
-  headers: {
-    origin: "https://custom-event.example",
-    "access-control-request-method": "POST",
-    "access-control-request-headers": "content-type",
-  },
-});
-if (
-  publicPreflight.status !== 204 ||
-  publicPreflight.headers.get("access-control-allow-origin") !== "*" ||
-  publicPreflight.headers.has("access-control-allow-credentials")
-)
-  failures.push("Custom event sites need credential-free public API preflight");
-process.env.AGENT_COMMONS_INTERNAL_URL = "https://upstream.invalid";
-let forwarded: RequestInit | undefined;
-globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
-  forwarded = init;
-  return Response.json({ received: true });
-}) as typeof fetch;
-const rawPayment = '{"event":"charge.success","data":{"reference":"opaque"}}';
-const webhookResponse = await app.request(
-  "/v1/event-payments/paystack/account-id",
-  {
-    method: "POST",
-    body: rawPayment,
-    headers: {
-      "content-type": "application/json",
-      "x-paystack-signature": "signed-by-paystack",
-      "paystack-signature": "t=1,v1=modern",
-      authorization: "Bearer ambient-token",
-      cookie: "session=ambient-cookie",
-    },
-  },
-);
-const paymentHeaders = new Headers(forwarded?.headers);
-if (
-  webhookResponse.status !== 200 ||
-  paymentHeaders.get("x-paystack-signature") !== "signed-by-paystack" ||
-  paymentHeaders.get("paystack-signature") !== "t=1,v1=modern" ||
-  paymentHeaders.has("authorization") ||
-  paymentHeaders.has("cookie") ||
-  (await new Response(forwarded?.body as BodyInit).text()) !== rawPayment
-)
-  failures.push(
-    "Payment proxy must preserve raw body and signatures without ambient credentials",
-  );
-const anonymousResponse = await app.request("/v1/public-events/camp");
-if (
-  anonymousResponse.headers.get("access-control-allow-origin") !== "*" ||
-  anonymousResponse.headers.has("access-control-allow-credentials") ||
-  anonymousResponse.headers.get("cache-control") !== "no-store"
-)
-  failures.push(
-    "Public event responses require wildcard CORS and no shared cache",
-  );
-globalThis.fetch = nativeFetch;
-delete process.env.AGENT_COMMONS_INTERNAL_URL;
 
 if (failures.length > 0) {
   console.error("Gateway smoke test failed:");

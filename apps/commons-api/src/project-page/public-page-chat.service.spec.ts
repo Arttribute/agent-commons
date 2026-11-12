@@ -1,8 +1,5 @@
 import { PublicPageChatService } from './public-page-chat.service';
 jest.mock('./project-page.service', () => ({ ProjectPageService: class {} }));
-jest.mock('~/event-registration/event-registration.service', () => ({
-  EventRegistrationService: class {},
-}));
 jest.mock('~/modules/model-provider/model-provider.factory', () => ({
   ModelProviderFactory: class {},
   DEFAULT_MODEL_CONFIG: { modelId: 'test-model' },
@@ -30,12 +27,7 @@ function setup(enabled = true, quota = true) {
     transaction: (work: any) => work(tx),
   };
   return {
-    service: new PublicPageChatService(
-      pages as any,
-      db as any,
-      models as any,
-      {} as any,
-    ),
+    service: new PublicPageChatService(pages as any, db as any, models as any),
     pages,
     models,
     invoke,

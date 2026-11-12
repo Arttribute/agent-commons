@@ -101,6 +101,11 @@ export function EventRegistration({
     } | null>(null),
     [codeError, setCodeError] = useState("");
   useEffect(() => {
+    const incoming = new URLSearchParams(window.location.search).get("code");
+    if (incoming && incoming.length <= 32)
+      setCode(incoming.trim().toUpperCase());
+  }, []);
+  useEffect(() => {
     setQuote(null);
     setCodeError("");
     key.current = "";

@@ -70,7 +70,7 @@ const PaymentSchema = new Schema<IPayment>(
     },
     metadata: Schema.Types.Mixed,
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 PaymentSchema.index(
@@ -78,7 +78,18 @@ PaymentSchema.index(
   {
     unique: true,
     partialFilterExpression: { stripeSessionId: { $type: "string" } },
-  }
+  },
+);
+
+// The existing payment row is also the programme reservation and receipt.
+PaymentSchema.index(
+  { courseId: 1, "metadata.registration.idempotencyKey": 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      "metadata.registration.idempotencyKey": { $type: "string" },
+    },
+  },
 );
 
 export default mongoose.models.Payment ||

@@ -1,3 +1,4 @@
+import { eventConfigSchema } from "@/lib/registration-policy";
 import { normalizeCourseAgents } from "@/lib/course-agent-defaults";
 import { normalizeCourseTheme, type CourseTheme } from "@/lib/course-theme";
 import {
@@ -63,6 +64,7 @@ export type CourseInput = {
   sessionDates?: Array<string | Date>;
   liveSchedule?: LiveSchedule;
   maxEnrollments?: number;
+  registration?: Record<string, any>;
   liveSessionUrl?: string;
   level?: "beginner" | "intermediate" | "advanced";
   duration?: string;
@@ -147,7 +149,7 @@ function normalizeImageUrl(value?: string) {
   if (!url) return undefined;
   if (/\/api\/media\//i.test(url)) {
     throw new Error(
-      "Course media must be stored in S3. Re-upload this image before saving."
+      "Course media must be stored in S3. Re-upload this image before saving.",
     );
   }
   return url;
@@ -184,7 +186,7 @@ const sandboxTargets: AgentSandboxStepTarget[] = [
 ];
 
 function normalizePracticalSignal(
-  input?: SkillPack["challenges"][number]["practicalSignal"]
+  input?: SkillPack["challenges"][number]["practicalSignal"],
 ) {
   if (!input) return undefined;
   const id = input.id?.trim();
@@ -194,7 +196,9 @@ function normalizePracticalSignal(
 
   const rawPlatform = input.platform?.trim().toLowerCase();
   const platform =
-    rawPlatform === "common_os" || rawPlatform === "common-os" || rawPlatform === "commonos"
+    rawPlatform === "common_os" ||
+    rawPlatform === "common-os" ||
+    rawPlatform === "commonos"
       ? "common_os"
       : rawPlatform === "agent_commons" ||
           rawPlatform === "agent-commons" ||
@@ -222,14 +226,17 @@ function normalizePracticalSignal(
 function normalizeSandboxConfig(input?: AgentSandboxConfig) {
   if (!input?.enabled) return undefined;
   const capabilities = Array.isArray(input.capabilities)
-    ? input.capabilities.filter((capability): capability is AgentSandboxCapability =>
-        sandboxCapabilities.includes(capability)
+    ? input.capabilities.filter(
+        (capability): capability is AgentSandboxCapability =>
+          sandboxCapabilities.includes(capability),
       )
     : [];
 
   return {
     enabled: true,
-    mode: ["simple", "builder", "full"].includes(input.mode) ? input.mode : "builder",
+    mode: ["simple", "builder", "full"].includes(input.mode)
+      ? input.mode
+      : "builder",
     title: input.title?.trim() || "Agent learner sandbox",
     brief: sanitizeRichTextHtml(input.brief) || undefined,
     intro: input.intro
@@ -239,7 +246,9 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
           title: input.intro.title?.trim() || undefined,
           body: input.intro.body?.trim() || undefined,
           expectations: Array.isArray(input.intro.expectations)
-            ? input.intro.expectations.map((item) => item.trim()).filter(Boolean)
+            ? input.intro.expectations
+                .map((item) => item.trim())
+                .filter(Boolean)
             : [],
           infoTitle: input.intro.infoTitle?.trim() || undefined,
           infoBody: input.intro.infoBody?.trim() || undefined,
@@ -258,20 +267,23 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
       ? capabilities
       : ["identity", "system_prompt", "skills", "tools", "chat", "logs"],
     requiredCapabilities: Array.isArray(input.requiredCapabilities)
-      ? input.requiredCapabilities.filter((capability): capability is AgentSandboxCapability =>
-          sandboxCapabilities.includes(capability)
+      ? input.requiredCapabilities.filter(
+          (capability): capability is AgentSandboxCapability =>
+            sandboxCapabilities.includes(capability),
         )
       : ["identity", "system_prompt", "skills", "tools", "chat"],
     guideSteps: Array.isArray(input.guideSteps)
       ? input.guideSteps
           .map((step, index) => ({
             id: step.id?.trim() || `step-${index + 1}`,
-            target: sandboxTargets.includes(step.target) ? step.target : "identity",
+            target: sandboxTargets.includes(step.target)
+              ? step.target
+              : "identity",
             title: step.title?.trim() || `Step ${index + 1}`,
             body: step.body?.trim() || "",
             targetSelector: step.targetSelector?.trim() || undefined,
             placement: ["top", "right", "bottom", "left", "auto"].includes(
-              step.placement || ""
+              step.placement || "",
             )
               ? step.placement
               : "auto",
@@ -366,7 +378,7 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
           .map((memory, index) => ({
             id: memory.id?.trim() || `memory-${index + 1}`,
             type: ["working", "semantic", "episodic", "procedural"].includes(
-              memory.type || ""
+              memory.type || "",
             )
               ? memory.type
               : ("working" as const),
@@ -399,7 +411,7 @@ function normalizeSandboxConfig(input?: AgentSandboxConfig) {
           required: input.review.required !== false,
           targets: Array.isArray(input.review.targets)
             ? input.review.targets.filter((target) =>
-                ["system_prompt", "skills"].includes(target)
+                ["system_prompt", "skills"].includes(target),
               )
             : ["system_prompt"],
           minScore:
@@ -450,13 +462,16 @@ function normalizeSkillPack(input?: SkillPack) {
             ? Math.floor(challenge.points)
             : 10,
         streakBoost:
-          typeof challenge.streakBoost === "number" && challenge.streakBoost >= 0
+          typeof challenge.streakBoost === "number" &&
+          challenge.streakBoost >= 0
             ? Math.floor(challenge.streakBoost)
             : 1,
         assetUrl: normalizeImageUrl(challenge.assetUrl),
         assetAlt: challenge.assetAlt?.trim() || undefined,
         accentColor: challenge.accentColor?.trim() || undefined,
-        audioCue: ["spark", "focus", "complete"].includes(challenge.audioCue || "")
+        audioCue: ["spark", "focus", "complete"].includes(
+          challenge.audioCue || "",
+        )
           ? challenge.audioCue
           : "focus",
         hook: sanitizeRichTextHtml(challenge.hook) || undefined,
@@ -472,10 +487,13 @@ function normalizeSkillPack(input?: SkillPack) {
               id: question.id?.trim() || `q${questionIndex + 1}`,
               prompt: question.prompt?.trim() || "",
               options: Array.isArray(question.options)
-                ? question.options.map((option) => option.trim()).filter(Boolean)
+                ? question.options
+                    .map((option) => option.trim())
+                    .filter(Boolean)
                 : [],
               answerIndex:
-                typeof question.answerIndex === "number" && question.answerIndex >= 0
+                typeof question.answerIndex === "number" &&
+                question.answerIndex >= 0
                   ? Math.floor(question.answerIndex)
                   : 0,
               explanation: question.explanation?.trim() || undefined,
@@ -491,32 +509,31 @@ function normalizeSkillPack(input?: SkillPack) {
               (question) =>
                 question.prompt &&
                 question.options.length >= 2 &&
-                question.answerIndex < question.options.length
-            ))
+                question.answerIndex < question.options.length,
+            )),
       ),
   };
 }
 
 function normalizeSkillPacks(input?: SkillPack[]) {
   if (!Array.isArray(input)) return [];
-  const packs = input
-    .map((pack, index) => {
-      const normalized = normalizeSkillPack(pack);
-      if (!normalized) return null;
-      return {
-        ...normalized,
-        slug:
-          normalized.slug ||
-          normalized.title
-            ?.toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-|-$/g, "") ||
-          `skill-path-${index + 1}`,
-      };
-    });
+  const packs = input.map((pack, index) => {
+    const normalized = normalizeSkillPack(pack);
+    if (!normalized) return null;
+    return {
+      ...normalized,
+      slug:
+        normalized.slug ||
+        normalized.title
+          ?.toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") ||
+        `skill-path-${index + 1}`,
+    };
+  });
 
-  return packs.filter(
-    (pack): pack is Exclude<(typeof packs)[number], null> => Boolean(pack)
+  return packs.filter((pack): pack is Exclude<(typeof packs)[number], null> =>
+    Boolean(pack),
   );
 }
 
@@ -524,7 +541,7 @@ function normalizeAccessCodes(
   items: AccessCodeInput[] | undefined,
   prefix: string,
   fallbackAmountType: "percent" | "fixed",
-  fallbackAmount: number
+  fallbackAmount: number,
 ) {
   if (!Array.isArray(items)) return [];
 
@@ -532,7 +549,8 @@ function normalizeAccessCodes(
     .map((item) => {
       const code = normalizeCode(item.code);
       if (!code) return null;
-      const amountType = item.amountType === "fixed" ? "fixed" : fallbackAmountType;
+      const amountType =
+        item.amountType === "fixed" ? "fixed" : fallbackAmountType;
       const amount =
         typeof item.amount === "number" && Number.isFinite(item.amount)
           ? Math.max(0, item.amount)
@@ -587,7 +605,7 @@ function normalizeAffiliates(items: AffiliateInput[] | undefined) {
 }
 
 function normalizeEarlyPaymentDiscounts(
-  items: EarlyPaymentDiscountInput[] | undefined
+  items: EarlyPaymentDiscountInput[] | undefined,
 ) {
   if (!Array.isArray(items)) return [];
 
@@ -618,17 +636,24 @@ function normalizeEarlyPaymentDiscounts(
     .filter(Boolean);
 }
 
-export function normalizeAccessProgramInput(input: CourseInput["accessProgram"]) {
+export function normalizeAccessProgramInput(
+  input: CourseInput["accessProgram"],
+) {
   return {
-    discounts: normalizeAccessCodes(input?.discounts, "discount", "percent", 10),
+    discounts: normalizeAccessCodes(
+      input?.discounts,
+      "discount",
+      "percent",
+      10,
+    ),
     earlyPaymentDiscounts: normalizeEarlyPaymentDiscounts(
-      input?.earlyPaymentDiscounts
+      input?.earlyPaymentDiscounts,
     ),
     scholarships: normalizeAccessCodes(
       input?.scholarships,
       "scholarship",
       "percent",
-      100
+      100,
     ),
     passes: normalizeAccessCodes(input?.passes, "pass", "percent", 100),
     affiliates: normalizeAffiliates(input?.affiliates),
@@ -644,7 +669,8 @@ export function normalizeCourseInput(input: CourseInput) {
         lessons: Array.isArray(module.lessons)
           ? module.lessons.map((lesson) => ({
               ...lesson,
-              description: sanitizeRichTextHtml(lesson.description) || undefined,
+              description:
+                sanitizeRichTextHtml(lesson.description) || undefined,
               assetUrl: normalizeImageUrl(lesson.assetUrl),
               assetAlt: lesson.assetAlt?.trim() || undefined,
               labWorkspaceId: lesson.labWorkspaceId?.trim() || undefined,
@@ -659,7 +685,7 @@ export function normalizeCourseInput(input: CourseInput) {
     : [];
   const lessonsCount = modules.reduce(
     (sum, module) => sum + (module.lessons?.length || 0),
-    0
+    0,
   );
 
   return {
@@ -678,12 +704,34 @@ export function normalizeCourseInput(input: CourseInput) {
         ? Math.floor(input.maxEnrollments)
         : undefined,
     liveSessionUrl: input.liveSessionUrl?.trim() || undefined,
+    ...(input.registration !== undefined
+      ? {
+          registration: input.registration.enabled
+            ? {
+                ...eventConfigSchema.parse({
+                  ...input.registration,
+                  title: input.title,
+                  amountMinor: Math.round(Number(input.price || 0) * 100),
+                  currency: (input.currency || "KES").toUpperCase(),
+                  capacity: input.maxEnrollments || null,
+                }),
+                enabled: true,
+                status:
+                  input.registration.status === "closed" ? "closed" : "open",
+              }
+            : { enabled: false },
+        }
+      : {}),
     level: input.level || "beginner",
     tags: Array.isArray(input.tags) ? input.tags : [],
     imageUrl: normalizeImageUrl(input.imageUrl),
     bannerImageUrl: normalizeImageUrl(input.bannerImageUrl),
     previewImageUrl: normalizeImageUrl(input.previewImageUrl),
-    catalogVisibility: input.catalogVisibility === "private" || input.catalogVisibility === "public" ? input.catalogVisibility : undefined,
+    catalogVisibility:
+      input.catalogVisibility === "private" ||
+      input.catalogVisibility === "public"
+        ? input.catalogVisibility
+        : undefined,
     theme: input.theme ? normalizeCourseTheme(input.theme) : undefined,
     modules,
     skillPack: normalizeSkillPack(input.skillPack),
@@ -699,8 +747,7 @@ export function normalizeCourseInput(input: CourseInput) {
       label: input.installmentPlan?.label || "Lipa mdogo mdogo",
       installmentAmount: input.installmentPlan?.installmentAmount,
       installmentCount: input.installmentPlan?.installmentCount || 4,
-      releaseAccess:
-        input.installmentPlan?.releaseAccess || "module_by_module",
+      releaseAccess: input.installmentPlan?.releaseAccess || "module_by_module",
     },
     accessProgram: normalizeAccessProgramInput(input.accessProgram),
     emailSettings: {
@@ -722,7 +769,7 @@ export function normalizeCourseInput(input: CourseInput) {
 function normalizeLiveSchedule(input?: LiveSchedule) {
   if (!input) return undefined;
   const cadence = ["weekly", "biweekly", "monthly", "custom"].includes(
-    input.cadence || ""
+    input.cadence || "",
   )
     ? input.cadence
     : "weekly";
