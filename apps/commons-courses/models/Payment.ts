@@ -92,5 +92,13 @@ PaymentSchema.index(
   },
 );
 
+PaymentSchema.index(
+  { "metadata.receipt.token": 1 },
+  {
+    unique: true,
+    partialFilterExpression: { "metadata.receipt.token": { $type: "string" } },
+  },
+);
+
 export default mongoose.models.Payment ||
   mongoose.model<IPayment>("Payment", PaymentSchema);

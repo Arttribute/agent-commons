@@ -38,6 +38,8 @@ export default async function CoursePaymentsPage({
     const user = payment.userId as unknown as { name?: string; email?: string };
     return {
       id: String(payment._id),
+      email: user?.email,
+      receiptEmailStatus: payment.metadata?.receipt?.email?.status,
       name:
         payment.metadata?.registration?.contact?.name ||
         user?.name ||
@@ -105,7 +107,11 @@ export default async function CoursePaymentsPage({
         ]}
       />
       {transactions.length || entries.length ? (
-        <PaymentsTabs transactions={transactions} ledger={entries} />
+        <PaymentsTabs
+          transactions={transactions}
+          ledger={entries}
+          courseSlug={slug}
+        />
       ) : (
         <EmptyState icon={CreditCard} title="No payments yet" />
       )}

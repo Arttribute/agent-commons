@@ -12,10 +12,17 @@ const app = path.resolve(__dirname, "..");
 const dbName = "cl_registration_test_" + crypto.randomBytes(6).toString("hex");
 
 const providerCalls = [];
+const receiptEmails = [];
+let rejectReceiptEmail = false;
 const stubs = {
   "@/lib/db": { connectDB: async () => mongoose },
   "@/lib/app-url": { getAppBaseUrl: () => "https://commonlab.example.invalid" },
   "@/lib/email/resend": {
+    sendPaymentReceiptEmail: async (value) => {
+      if (rejectReceiptEmail) throw new Error("Simulated provider outage");
+      receiptEmails.push(value);
+      return "receipt-message-" + value.idempotencyKey;
+    },
     sendEnrollmentEmail: async () => {},
     sendVerificationEmail: async () => {},
   },
@@ -395,4 +402,65 @@ test("a currency mismatch stays in review and the shared ledger records the actu
   assert.equal(stored.currency, "usd");
   assert.equal((await Ledger.findOne({ courseId: c._id })).currency, "usd");
   assert.equal(await Enrollment.countDocuments({ courseId: c._id }), 0);
+});
+
+test("verified payments produce one QR receipt email across duplicate callbacks", async () => {
+  const c = await course({
+      emailSettings: { receiptEnabled: true, receiptQrEnabled: true },
+    }),
+    before = receiptEmails.length;
+  const p = await startRegistration(c.slug, input());
+  await Promise.all([
+    completeRegistration(p.reference, verified(p.reference)),
+    completeRegistration(p.reference, verified(p.reference)),
+  ]);
+  const saved = await Payment.findOne({ providerReference: p.reference });
+  assert.equal(receiptEmails.length, before + 1);
+  assert.equal(saved.metadata.receipt.email.status, "sent");
+  assert.match(saved.metadata.receipt.token, /^[a-f0-9]{48}$/);
+  const sent = receiptEmails.at(-1);
+  assert.equal(sent.to, "parent@example.invalid");
+  assert.equal(sent.qr.subarray(1, 4).toString(), "PNG");
+  assert(
+    sent.verificationUrl.endsWith("/receipts/" + saved.metadata.receipt.token),
+  );
+});
+test("receipt emails respect course settings and pending payments do not get a receipt", async () => {
+  const c = await course({
+      emailSettings: { receiptEnabled: false, receiptQrEnabled: false },
+    }),
+    before = receiptEmails.length;
+  const p = await startRegistration(c.slug, input());
+  assert.equal(
+    (await Payment.findOne({ providerReference: p.reference })).metadata
+      .receipt,
+    undefined,
+  );
+  await completeRegistration(p.reference, verified(p.reference));
+  const saved = await Payment.findOne({ providerReference: p.reference });
+  assert.equal(receiptEmails.length, before);
+  assert.equal(saved.metadata.receipt.qrEnabled, false);
+});
+
+test("email failure keeps payment confirmed and a retry reuses its delivery key", async () => {
+  const c = await course({
+      emailSettings: { receiptEnabled: true, receiptQrEnabled: true },
+    }),
+    p = await startRegistration(c.slug, input());
+  rejectReceiptEmail = true;
+  try {
+    await completeRegistration(p.reference, verified(p.reference));
+  } finally {
+    rejectReceiptEmail = false;
+  }
+  const failed = await Payment.findOne({ providerReference: p.reference });
+  assert.equal(failed.status, "completed");
+  assert.equal(failed.metadata.registration.status, "confirmed");
+  assert.equal(failed.metadata.receipt.email.status, "failed");
+  const operation = failed.metadata.receipt.email.operation;
+  await completeRegistration(p.reference, verified(p.reference));
+  const sent = await Payment.findOne({ providerReference: p.reference });
+  assert.equal(sent.metadata.receipt.email.status, "sent");
+  assert.equal(sent.metadata.receipt.email.operation, operation);
+  assert.equal(receiptEmails.at(-1).idempotencyKey, operation);
 });

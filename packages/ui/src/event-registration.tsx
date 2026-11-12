@@ -18,6 +18,7 @@ export type PublicEvent = {
   slug: string;
   status: string;
   title: string;
+  registrationHeading?: string;
   summary: string;
   when: string;
   location: string;
@@ -55,6 +56,8 @@ type Receipt = {
   discountAmountMinor?: number;
   discountCode?: string | null;
   currency: string;
+  verificationUrl?: string;
+  qrImageUrl?: string;
   checkoutUrl: string | null;
   paidAt: string | null;
   expiresAt: string;
@@ -393,6 +396,19 @@ export function EventRegistration({
                     We’ll use your contact details to share joining information.
                   </p>
                 )}
+                {receipt.verificationUrl && (
+                  <div className="acer-receipt-verification">
+                    {receipt.qrImageUrl && (
+                      <img
+                        src={receipt.qrImageUrl}
+                        alt="QR code to verify this receipt"
+                        width="152"
+                        height="152"
+                      />
+                    )}
+                    <a href={receipt.verificationUrl}>Verify this receipt ↗</a>
+                  </div>
+                )}
                 <div className="acer-actions">
                   <button
                     type="button"
@@ -484,7 +500,7 @@ export function EventRegistration({
             ) : (
               <>
                 <span className="acer-eyebrow">Your place starts here</span>
-                <h2>Register in a moment.</h2>
+                <h2>{event.registrationHeading || "Register"}</h2>
                 <p className="acer-small">
                   Your details, then secure checkout. No account needed.
                 </p>

@@ -61,6 +61,9 @@ export type CourseForm = {
   };
   accessProgram: AccessProgramForm;
   emailSettings: {
+    receiptEnabled: boolean;
+    receiptQrEnabled: boolean;
+    receiptNote?: string;
     welcomeEnabled: boolean;
     enrollmentEnabled: boolean;
     assignmentCreatedEnabled: boolean;

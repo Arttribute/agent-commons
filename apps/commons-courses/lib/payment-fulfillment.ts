@@ -172,5 +172,7 @@ export async function fulfillCompletedPayment(params: FulfillmentParams) {
     });
   }
 
+  const { afterPaymentReceipt } = await import("@/lib/payment-receipts");
+  await afterPaymentReceipt(payment, course);
   return { fulfilled: true, payment, course };
 }
