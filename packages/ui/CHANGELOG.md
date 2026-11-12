@@ -1,5 +1,11 @@
 # @agent-commons/ui
 
+## 0.6.1
+
+### Patch Changes
+
+- c93b8a8: Keep a course promo code when opening its branded programme registration page.
+
 ## 0.6.0
 
 ### Minor Changes
