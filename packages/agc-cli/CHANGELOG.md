@@ -1,5 +1,11 @@
 # @agent-commons/cli
 
+## 0.6.3
+
+### Patch Changes
+
+- 4189382: Use GPT-5.5 by default when creating an agent.
+
 ## 0.6.2
 
 ### Patch Changes
