@@ -144,7 +144,7 @@ const url = process.env.REFERRAL_TEST_DATABASE_URL;
     await credits.getBalance({ principalId: input.principalId });
     // Set the attested ordering explicitly; the database may run on a
     // container whose wall clock differs slightly from the test runner's.
-    await client`update credit_account set created_at=${new Date(Date.parse(input.activatedAt) + 1000)} where principal_id=${input.principalId}`;
+    await client`update credit_account set created_at=${new Date(Date.parse(input.activatedAt) + 1000).toISOString()}::timestamptz where principal_id=${input.principalId}`;
     expect((await referrals.activate(input)).rewarded).toBe(true);
   });
 
