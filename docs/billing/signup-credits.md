@@ -5,6 +5,10 @@ Commons Identity signups from 17 November 2026 at 00:00 Africa/Nairobi
 is created, including email/password and Google signups. This does not change
 their subscription plan or referral rewards.
 
+Automatic welcome funding does not count as earlier product use for referral
+eligibility. Other credit activity before the attested first app activation
+still prevents retroactive referral attribution.
+
 GPT-5.5 is the default for new agents and all existing personal copilots. Free
 users can use this default with credits; other frontier models keep their plan
 requirements. Explicit model overrides in other agents and sessions are retained.

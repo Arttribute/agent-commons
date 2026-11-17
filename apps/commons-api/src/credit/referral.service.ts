@@ -89,11 +89,14 @@ export class ReferralService {
       if (existing.length) return { rewarded: false, alreadyRecorded: true };
       const [referrer] = await tx.select().from(schema.referralProfile).where(eq(schema.referralProfile.code, input.code!));
       if (!referrer?.emailHash || referrer.principalId === input.principalId || referrer.emailHash === emailHash) return { rewarded: false };
-      // Accounts that have already used this product cannot be retroactively
-      // attributed. The app attests first activation before provisioning credits.
+      // Signup now provisions credits before app activation. That automatic
+      // funding is not prior product use; earlier spending or other activity is.
       const [account] = await tx.select({ createdAt: schema.creditAccount.createdAt })
         .from(schema.creditAccount).where(eq(schema.creditAccount.principalId, input.principalId));
-      if (account && account.createdAt < activatedAt) return { rewarded: false };
+      if (account && account.createdAt < activatedAt &&
+        !(await this.credits.hasOnlySignupCreditsBeforeWithTx(tx, input.principalId, activatedAt))) {
+        return { rewarded: false };
+      }
       const ledger = await this.credits.grantReferralWithTx(tx, referrer.principalId, input.principalId);
       await tx.insert(schema.referralSignup).values({
         referredPrincipalId: input.principalId, emailHash,
