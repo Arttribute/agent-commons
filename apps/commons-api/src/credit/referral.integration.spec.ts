@@ -131,7 +131,7 @@ const url = process.env.REFERRAL_TEST_DATABASE_URL;
   it('preserves the referral reward when signup credits arrive before first app activation', async () => {
     const principalId = 'usr_precredited_signup';
     await credits.grantSignupCredits({ principalId, signedUpAt: '2026-11-17T00:00:00+03:00', createdBy: 'signup_service' });
-    const createdAt = (await client`select created_at from credit_account where principal_id=${principalId}`)[0].created_at;
+    const createdAt = new Date((await client`select created_at from credit_account where principal_id=${principalId}`)[0].created_at);
     const input = { ...activation(principalId, 'precredited@example.com'), activatedAt: new Date(createdAt.getTime() + 1000).toISOString() };
     const results = await Promise.all(Array.from({ length: 4 }, () => referrals.activate(input)));
     expect(results.filter((result) => result.rewarded)).toHaveLength(1);
@@ -143,7 +143,7 @@ const url = process.env.REFERRAL_TEST_DATABASE_URL;
     const principalId = 'usr_used_signup_credits';
     await credits.grantSignupCredits({ principalId, signedUpAt: '2026-11-17T00:00:00+03:00', createdBy: 'signup_service' });
     await credits.debit({ principalId, amount: 100, eventType: 'agent_run_usage', sourcePlatform: 'agent_commons', idempotencyKey: 'prior-signup-usage' });
-    const usedAt = (await client`select created_at from credit_ledger_entry where idempotency_key='prior-signup-usage'`)[0].created_at;
+    const usedAt = new Date((await client`select created_at from credit_ledger_entry where idempotency_key='prior-signup-usage'`)[0].created_at);
     expect((await referrals.activate({ ...activation(principalId, 'already-used@example.com'), activatedAt: new Date(usedAt.getTime() + 1000).toISOString() })).rewarded).toBe(false);
     expect((await referrals.summary('usr_referrer')).earned).toBe(0);
   });
@@ -151,7 +151,7 @@ const url = process.env.REFERRAL_TEST_DATABASE_URL;
   it('retries a delayed first activation after later spending without losing the referral reward', async () => {
     const principalId = 'usr_delayed_precredited_signup';
     await credits.grantSignupCredits({ principalId, signedUpAt: '2026-11-17T00:00:00+03:00', createdBy: 'signup_service' });
-    const createdAt = (await client`select created_at from credit_account where principal_id=${principalId}`)[0].created_at;
+    const createdAt = new Date((await client`select created_at from credit_account where principal_id=${principalId}`)[0].created_at);
     const activatedAt = new Date(createdAt.getTime() + 1000).toISOString();
     await credits.debit({ principalId, amount: 100, eventType: 'agent_run_usage', sourcePlatform: 'agent_commons', idempotencyKey: 'later-signup-usage' });
     await client`update credit_ledger_entry set created_at=${new Date(createdAt.getTime() + 2000).toISOString()}::timestamptz where idempotency_key='later-signup-usage'`;
