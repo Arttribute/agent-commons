@@ -94,7 +94,7 @@ export function agentsCommand(): Command {
       "Model provider (openai|anthropic|google|groq|openrouter|xai|ollama|custom)",
       "openai",
     )
-    .option("--model <id>", "Model ID", "gpt-5.4-mini")
+    .option("--model <id>", "Model ID", "gpt-5.5")
     .option("--model-api-key <key>", "Provider API key (BYOK)")
     .option(
       "--model-base-url <url>",

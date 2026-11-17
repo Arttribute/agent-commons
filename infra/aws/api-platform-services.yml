@@ -38,6 +38,7 @@ Resources:
           - { Name: PORT, Value: "8080" }
           - { Name: IDENTITY_DB_SCHEMA, Value: commons_identity }
           - { Name: IDENTITY_DB_SSL, Value: "true" }
+          - { Name: SIGNUP_CREDITS_API_URL, Value: !Ref AgentCommonsInternalUrl }
         Secrets:
           - Name: DATABASE_URL
             ValueFrom: !Sub "${IdentityRuntimeSecretArn}:DATABASE_URL::"
@@ -59,6 +60,10 @@ Resources:
             ValueFrom: !Sub "${IdentityRuntimeSecretArn}:RESEND_API_KEY::"
           - Name: IDENTITY_FROM_EMAIL
             ValueFrom: !Sub "${IdentityRuntimeSecretArn}:IDENTITY_FROM_EMAIL::"
+          - Name: SIGNUP_CREDITS_CLIENT_ID
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:SIGNUP_CREDITS_CLIENT_ID::"
+          - Name: SIGNUP_CREDITS_CLIENT_SECRET
+            ValueFrom: !Sub "${IdentityRuntimeSecretArn}:SIGNUP_CREDITS_CLIENT_SECRET::"
       ScalingTarget:
         MinTaskCount: 1
         MaxTaskCount: 3

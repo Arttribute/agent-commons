@@ -1,4 +1,4 @@
-import { MODEL_REGISTRY } from './model-registry';
+import { DEFAULT_MODEL_ID, MODEL_REGISTRY } from './model-registry';
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ModelConfig, ModelProviderName } from './model-provider.interface';
@@ -11,7 +11,7 @@ import { buildMistralModel } from './providers/mistral.provider';
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   provider: 'openai',
-  modelId: 'gpt-5.4-mini',
+  modelId: DEFAULT_MODEL_ID,
 };
 
 @Injectable()

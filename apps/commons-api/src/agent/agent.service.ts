@@ -73,7 +73,7 @@ import { ToolLoaderService } from '~/tool/tool-loader.service';
 import { Observable } from 'rxjs';
 import { SpaceToolsService } from '~/space/space-tools.service';
 import { UsageService } from '~/modules/usage/usage.service';
-import { calculateCost, HOSTED_FREE_MAX_TOOLS, HOSTED_FREE_MODEL_ID } from '~/modules/model-provider/model-registry';
+import { calculateCost, DEFAULT_MODEL_ID, HOSTED_FREE_MAX_TOOLS, HOSTED_FREE_MODEL_ID } from '~/modules/model-provider/model-registry';
 import { extractTokenUsageFromLLMResult } from '~/modules/usage/token-usage.util';
 import { MemoryService } from '~/memory/memory.service';
 import { WalletService } from '~/wallet/wallet.service';
@@ -292,7 +292,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
 
     const insertValue = { ...props.value };
     insertValue.modelProvider ??= 'openai';
-    insertValue.modelId ??= 'gpt-5.4-mini';
+    insertValue.modelId ??= DEFAULT_MODEL_ID;
     if (insertValue.modelApiKey) {
       insertValue.modelApiKey = this.encryptApiKey(insertValue.modelApiKey);
     }
@@ -943,9 +943,9 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                   projectId: requestedProject?.projectId,
                   model: {
                     source: "agent",
-                    name: agent.modelId ?? 'gpt-5.4-mini', // legacy compat
+                    name: agent.modelId ?? DEFAULT_MODEL_ID, // legacy compat
                     provider: agent.modelProvider ?? 'openai',
-                    modelId: agent.modelId ?? 'gpt-5.4-mini',
+                    modelId: agent.modelId ?? DEFAULT_MODEL_ID,
                     temperature: agent.temperature || 0.7,
                     maxTokens: agent.maxTokens || 2000,
                     topP: agent.topP || 1,
@@ -984,9 +984,9 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                   parentSessionId: parentSessionId ?? undefined,
                   model: {
                     source: "agent",
-                    name: agent.modelId ?? 'gpt-5.4-mini',
+                    name: agent.modelId ?? DEFAULT_MODEL_ID,
                     provider: agent.modelProvider ?? 'openai',
-                    modelId: agent.modelId ?? 'gpt-5.4-mini',
+                    modelId: agent.modelId ?? DEFAULT_MODEL_ID,
                     temperature: agent.temperature || 0.7,
                     maxTokens: agent.maxTokens || 2000,
                     topP: agent.topP || 1,
@@ -1048,7 +1048,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             ? this.modelProviderFactory.resolveRunModel(props.model)
             : this.modelProviderFactory.resolveSessionModel(sessionModel, {
                 provider: (agent.modelProvider as any) ?? 'openai',
-                modelId: agent.modelId ?? 'gpt-5.4-mini',
+                modelId: agent.modelId ?? DEFAULT_MODEL_ID,
                 apiKey: decryptedApiKey,
                 baseUrl: agent.modelBaseUrl ?? undefined,
                 temperature: agent.temperature ?? 0,
@@ -3486,7 +3486,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           copilotScopes: [],
           runtimeType: 'native',
           modelProvider: 'openai',
-          modelId: 'gpt-5.4-mini',
+          modelId: DEFAULT_MODEL_ID,
         },
       });
       await this.skillService.ensurePlatformSkillsForCopilot(

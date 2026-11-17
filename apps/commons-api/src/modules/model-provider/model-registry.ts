@@ -1,5 +1,7 @@
 import { ModelProviderName } from './model-provider.interface';
 
+export const DEFAULT_MODEL_ID = 'gpt-5.5';
+
 export const HOSTED_FREE_MODEL_ID = 'Qwen/Qwen3-1.7B-FP8';
 // Reserve context headroom for tool schemas and tokenizer estimation error.
 export const HOSTED_FREE_MAX_ESTIMATED_TOKENS = 6_000;

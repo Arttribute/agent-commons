@@ -5,10 +5,27 @@ describe('CreditController delegated self-service', () => {
     getSummary: jest.fn().mockResolvedValue({}),
     gift: jest.fn().mockResolvedValue({}),
     claimCampaign: jest.fn().mockResolvedValue({}),
+    grantSignupCredits: jest.fn().mockResolvedValue({}),
   };
   const controller = new CreditController(credits as any);
 
   beforeEach(() => jest.clearAllMocks());
+
+  it('requires an explicitly scoped service for signup grants', async () => {
+    const body = { principalId: 'usr_new', signedUpAt: '2026-11-17T00:00:00+03:00' };
+    for (const principal of [
+      undefined,
+      { principalId: 'usr_caller', principalType: 'user', scopes: ['credits:write'] },
+      { principalId: 'svc_caller', principalType: 'service', scopes: [] },
+    ]) {
+      await expect(controller.signup({ principal }, body)).rejects.toMatchObject({ status: 403 });
+    }
+    expect(credits.grantSignupCredits).not.toHaveBeenCalled();
+    await expect(controller.signup({ principal: { principalId: 'svc_wrong_environment', principalType: 'service', workspaceId: 'signup:other', scopes: ['credits:write'] } }, body)).rejects.toMatchObject({ status: 403 });
+    const workspaceId = `signup:${process.env.APP_ENV || process.env.NODE_ENV || 'development'}`;
+    await controller.signup({ principal: { principalId: 'svc_signup', principalType: 'service', workspaceId, scopes: ['credits:write'] } }, body);
+    expect(credits.grantSignupCredits).toHaveBeenCalledWith({ ...body, createdBy: 'svc_signup' });
+  });
 
   it('attributes a service-proxied summary to the delegated user', async () => {
     await controller.summary({

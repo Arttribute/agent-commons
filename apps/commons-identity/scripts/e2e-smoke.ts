@@ -34,6 +34,7 @@ await database.query(
 );
 
 const { commonsAuthOptions } = await import("../lib/auth-config");
+await database.query(await readFile(resolve("migrations/006-signup-credits.sql"), "utf8"));
 const { ensureOAuthClient } = await import("../lib/oauth-client-store");
 const { PLATFORM_SCOPES } = await import("../lib/platform-api");
 const auth = betterAuth(commonsAuthOptions(database));
