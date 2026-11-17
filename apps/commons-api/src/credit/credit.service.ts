@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, gt, gte, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, isNull, lte, notInArray, or, sql } from 'drizzle-orm';
 import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import type { CreditBalance, CreditLedgerInput } from './credit.types';
@@ -15,6 +15,7 @@ type Tx = any;
 const SIGNUP_CREDIT_GRANT = 100_000;
 const SIGNUP_CREDITS_START_AT = Date.parse('2026-11-17T00:00:00+03:00');
 const NEW_USER_CREDIT_GRANT = 1000;
+const signupWelcomeKey = (principalId: string) => `signup-welcome:2026-11-17:${principalId}`;
 
 @Injectable()
 export class CreditService {
@@ -133,7 +134,7 @@ export class CreditService {
     return this.db.transaction(async (tx) => {
       await this.lockPrincipal(tx, input.principalId);
       await this.ensureAccount(tx, input.principalId);
-      const idempotencyKey = `signup-welcome:2026-11-17:${input.principalId}`;
+      const idempotencyKey = signupWelcomeKey(input.principalId);
       const existing = await tx.query.creditLedgerEntry.findFirst({
         where: eq(schema.creditLedgerEntry.idempotencyKey, idempotencyKey),
       });
@@ -166,6 +167,30 @@ export class CreditService {
 
   async debit(input: Omit<CreditLedgerInput, 'direction'>) {
     return this.record({ ...input, direction: 'debit' });
+  }
+
+  /** Automatic signup funding is not prior product use for referral eligibility. */
+  async hasOnlySignupCreditsBeforeWithTx(tx: Tx, principalId: string, before: Date) {
+    const signup = await tx.query.creditLedgerEntry.findFirst({
+      where: and(
+        eq(schema.creditLedgerEntry.idempotencyKey, signupWelcomeKey(principalId)),
+        eq(schema.creditLedgerEntry.eventType, 'new_user_signup'),
+        isNull(schema.creditLedgerEntry.voidedAt),
+      ),
+    });
+    if (!signup) return false;
+    const [activity] = await tx.select({ entryId: schema.creditLedgerEntry.entryId })
+      .from(schema.creditLedgerEntry)
+      .where(and(
+        eq(schema.creditLedgerEntry.principalId, principalId),
+        lte(schema.creditLedgerEntry.createdAt, before),
+        isNull(schema.creditLedgerEntry.voidedAt),
+        notInArray(schema.creditLedgerEntry.idempotencyKey, [
+          `new-user-welcome:${principalId}`, signupWelcomeKey(principalId),
+        ]),
+      ))
+      .limit(1);
+    return !activity;
   }
 
   /** Convert raw provider cost to credits with a configurable gross-margin multiplier. */
