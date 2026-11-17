@@ -3,6 +3,7 @@ import { UsageService } from './usage.service';
 import { DatabaseService } from '../database/database.service';
 import { CreditService } from '~/credit';
 import { EntitlementsService } from '~/billing/entitlements.service';
+import { PLANS } from '~/billing/plan-catalog';
 
 /* ─── DB mock factory ───────────────────────────────────────────────────── */
 function makeDb(overrides: Partial<Record<string, jest.Mock>> = {}) {
@@ -67,6 +68,15 @@ describe('UsageService', () => {
   });
 
   describe('credit authorization', () => {
+    it('lets Free users run the platform default with credits while other frontier models require an upgrade', async () => {
+      const free = new UsageService(db as any, credits as any, {
+        getEntitlements: async () => PLANS.free.entitlements,
+      } as any);
+      const input = { principalId: 'usr_free', agentId: 'agent-1', traceId: 'default-model', provider: 'openai', modelId: 'gpt-5.5', isByok: false };
+      await expect(free.authorizeAgentRun(input)).resolves.toMatchObject({ reservationId: 'reservation-1' });
+      expect(credits.reserve).toHaveBeenCalledWith(expect.objectContaining({ principalId: 'usr_free' }));
+      await expect(free.authorizeAgentRun({ ...input, modelId: 'gpt-5.4' })).rejects.toMatchObject({ status: 402 });
+    });
     it('reserves hosted free requests and model tokens without touching credits', async () => {
       const previousUrl = process.env.HOSTED_FREE_MODEL_BASE_URL;
       const previousKey = process.env.HOSTED_FREE_MODEL_API_KEY;

@@ -110,8 +110,8 @@ jobs:
       # Better Auth rate limits per client address. Identity sits behind
       # CloudFront and a load balancer, and an unresolved address puts every
       # caller in one shared bucket that 429s token minting platform-wide.
-      - name: Test identity client address resolution
-        run: node --experimental-strip-types --test apps/commons-identity/lib/client-ip.test.mjs
+      - name: Test identity client address resolution and signup credit retries
+        run: node --experimental-strip-types --test apps/commons-identity/lib/client-ip.test.mjs apps/commons-identity/lib/signup-credits.test.mjs
 
       - name: Test CommonLab identity reconciliation and replay safety
         env:
@@ -151,6 +151,11 @@ jobs:
           REFERRAL_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
           NODE_OPTIONS: --experimental-vm-modules --max-old-space-size=4096
         run: pnpm --filter commons-api exec jest --runInBand credit/referral credit/credit.service.spec.ts credit/credit.controller.spec.ts session/session-visibility.integration.spec.ts session/chat-history-page.spec.ts session/session-suggestions.service.spec.ts tool/tools/common-tool.project.spec.ts agent/model-tool-selection.spec.ts
+
+      - name: Test default model authorization and session inheritance
+        env:
+          NODE_OPTIONS: --experimental-vm-modules --max-old-space-size=4096
+        run: pnpm --filter commons-api exec jest --runInBand modules/model-provider/model-provider.factory.spec.ts modules/usage/usage.service.spec.ts session/session-model-inheritance.spec.ts
 
       - name: Test staff billing and reporting authorization
         env:

@@ -209,8 +209,9 @@ function ModelDefaultsSection() {
             if (modelId) setSelectedModel(modelId);
           } catch {}
         } else if (list.length > 0) {
-          setSelectedProvider(list[0].provider);
-          setSelectedModel(list[0].modelId);
+          const defaultModel = list.find((model) => model.provider === "openai" && model.modelId === "gpt-5.5") ?? list[0];
+          setSelectedProvider(defaultModel.provider);
+          setSelectedModel(defaultModel.modelId);
         }
       })
       .catch(() => {})

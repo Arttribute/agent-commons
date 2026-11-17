@@ -63,6 +63,51 @@ const url = process.env.REFERRAL_TEST_DATABASE_URL;
     expect(Number((await client`select lifetime_granted from credit_account where principal_id='usr_existing_customer'`)[0].lifetime_granted)).toBe(500);
   });
 
+  it('grants a total of 100,000 at signup once under concurrent callbacks without refilling spent credits', async () => {
+    const input = { principalId: 'usr_signup_customer', signedUpAt: '2026-11-17T00:00:00+03:00', createdBy: 'signup_service' };
+    const results = await Promise.all(Array.from({ length: 8 }, () => credits.grantSignupCredits(input)));
+    expect(new Set(results.map((entry) => entry.entryId)).size).toBe(1);
+    expect((await credits.getBalance(input)).balance).toBe(100_000);
+    expect(Number((await client`select sum(amount) as total from credit_ledger_entry where principal_id=${input.principalId}`)[0].total)).toBe(100_000);
+    await credits.debit({ principalId: input.principalId, amount: 100, eventType: 'agent_run_usage', sourcePlatform: 'agent_commons', idempotencyKey: 'signup-spend' });
+    await credits.grantSignupCredits(input);
+    expect((await credits.getBalance(input)).balance).toBe(99_900);
+  });
+
+  it('sets the database default to GPT-5.5 without changing existing agents before the API rollout', async () => {
+    await client.unsafe(`create table agent (agent_id text primary key, model_provider text default 'openai', model_id text default 'gpt-5.4-mini', is_default boolean default false);
+      insert into agent (agent_id,is_default,model_id) values ('copilot',true,'gpt-5.4-mini'),('custom',false,'gpt-5.4');`);
+    await client.unsafe(readFileSync('migrations/versioned/049_gpt_55_default.sql', 'utf8'));
+    await client`insert into agent (agent_id) values ('new-agent')`;
+    expect(await client`select agent_id,model_id from agent order by agent_id`).toEqual([
+      { agent_id: 'copilot', model_id: 'gpt-5.4-mini' },
+      { agent_id: 'custom', model_id: 'gpt-5.4' },
+      { agent_id: 'new-agent', model_id: 'gpt-5.5' },
+    ]);
+    await client.unsafe('drop table agent');
+  });
+
+  it('includes earlier welcome credits and preserves unrelated gifts when bringing today’s signup to 100,000', async () => {
+    const input = { principalId: 'usr_signup_early', signedUpAt: '2026-11-17T00:00:00+03:00', createdBy: 'signup_service' };
+    await credits.getBalance(input);
+    await credits.grant({ principalId: input.principalId, amount: 2000, eventType: 'admin_grant', sourcePlatform: 'system', idempotencyKey: 'signup-gift' });
+    await credits.debit({ principalId: input.principalId, amount: 100, eventType: 'agent_run_usage', sourcePlatform: 'agent_commons', idempotencyKey: 'early-signup-spend' });
+    await credits.grantSignupCredits(input);
+    expect((await credits.getBalance(input)).balance).toBe(101_900);
+  });
+
+  it('rejects older or invalid signup dates and non-user principals without creating credit accounts', async () => {
+    for (const input of [
+      { principalId: 'usr_before_cutoff', signedUpAt: '2026-11-16T23:59:59+03:00' },
+      { principalId: 'usr_invalid_date', signedUpAt: 'not-a-date' },
+      { principalId: 'usr_future_date', signedUpAt: '2999-01-01T00:00:00Z' },
+      { principalId: 'svc_signup_service', signedUpAt: '2026-11-17T00:00:00+03:00' },
+    ]) {
+      await expect(credits.grantSignupCredits({ ...input, createdBy: 'signup_service' })).rejects.toMatchObject({ status: 400 });
+      expect((await client`select * from credit_account where principal_id=${input.principalId}`)).toHaveLength(0);
+    }
+  });
+
   it('awards exactly 1,000 credits once under parallel signup callbacks', async () => {
     const results = await Promise.all(Array.from({ length: 8 }, () => referrals.activate(activation())));
     expect(results.filter((result) => result.rewarded)).toHaveLength(1);
@@ -96,8 +141,10 @@ const url = process.env.REFERRAL_TEST_DATABASE_URL;
 
   it('retries an attested signup even if its welcome account was provisioned during an outage', async () => {
     const input = activation();
-    await new Promise((resolve) => setTimeout(resolve, 5));
     await credits.getBalance({ principalId: input.principalId });
+    // Set the attested ordering explicitly; the database may run on a
+    // container whose wall clock differs slightly from the test runner's.
+    await client`update credit_account set created_at=${new Date(Date.parse(input.activatedAt) + 1000).toISOString()}::timestamptz where principal_id=${input.principalId}`;
     expect((await referrals.activate(input)).rewarded).toBe(true);
   });
 

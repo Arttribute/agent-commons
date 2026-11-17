@@ -243,6 +243,31 @@ export class CreditController {
     return { data };
   }
 
+  @Post('signup')
+  @Version('1')
+  @RateLimit({ limit: 60, windowMs: 60_000, keyStrategy: 'user' })
+  async signup(
+    @Req() req: any,
+    @Body() body: { principalId?: string; signedUpAt?: string },
+  ) {
+    const principal = req.principal as Principal | undefined;
+    this.assertCanWrite(principal);
+    if (principal?.principalType !== 'service') {
+      throw new ForbiddenException('Signup credits require a service identity.');
+    }
+    const environment = process.env.APP_ENV || process.env.NODE_ENV || 'development';
+    if (![`signup:${environment}`, `ops:${environment}`].includes(principal.workspaceId ?? '')) {
+      throw new ForbiddenException('Signup credit service environment does not match.');
+    }
+    return {
+      data: await this.credits.grantSignupCredits({
+        principalId: body.principalId ?? '',
+        signedUpAt: body.signedUpAt ?? '',
+        createdBy: principal.principalId,
+      }),
+    };
+  }
+
   @Post('debits')
   @Version('1')
   @RateLimit({ limit: 30, windowMs: 60_000, keyStrategy: 'user' })
