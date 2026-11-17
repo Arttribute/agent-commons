@@ -5,7 +5,7 @@ import * as schema from '#/models/schema';
 import { DatabaseService } from '~/modules/database/database.service';
 import { CreditService } from '~/credit';
 import { EntitlementsService } from '~/billing/entitlements.service';
-import { getModelInfo, HOSTED_FREE_MAX_ESTIMATED_TOKENS } from '~/modules/model-provider/model-registry';
+import { DEFAULT_MODEL_ID, getModelInfo, HOSTED_FREE_MAX_ESTIMATED_TOKENS } from '~/modules/model-provider/model-registry';
 
 type InsertUsageEvent = InferInsertModel<typeof schema.usageEvent>;
 
@@ -58,7 +58,9 @@ export class UsageService {
         HttpStatus.PAYMENT_REQUIRED,
       );
     }
-    if (model && !entitlements.modelTiers.includes(model.tier)) {
+    // Every plan may use the platform default, subject to the credit checks.
+    const isPlatformDefault = input.provider === 'openai' && input.modelId === DEFAULT_MODEL_ID;
+    if (model && !isPlatformDefault && !entitlements.modelTiers.includes(model.tier)) {
       throw new HttpException(
         {
           code: 'upgrade_required',

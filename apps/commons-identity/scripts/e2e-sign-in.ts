@@ -20,6 +20,9 @@ process.env.RETURN_TO_AGENT_COMMONS = `${APP}/login`;
 process.env.GOOGLE_CLIENT_ID = "google-client";
 process.env.GOOGLE_CLIENT_SECRET = "google-secret";
 process.env.RESEND_API_KEY = "test-resend-key";
+process.env.SIGNUP_CREDITS_API_URL = "https://credits.test";
+process.env.SIGNUP_CREDITS_CLIENT_ID = "signup-test-service";
+process.env.SIGNUP_CREDITS_CLIENT_SECRET = "signup-test-secret";
 
 const memory = newDb();
 memory.public.registerFunction({
@@ -36,6 +39,7 @@ for (const migration of [
   "001-commons-identity-domain.sql",
   "002-api-platform.sql",
   "005-profile-overrides.sql",
+  "006-signup-credits.sql",
 ]) {
   await database.query(await readFile(resolve("migrations", migration), "utf8"));
 }
@@ -43,9 +47,19 @@ for (const migration of [
 // Fake Google and the email provider; everything else is never fetched.
 type Sent = { to: string; subject: string; html: string };
 const sent: Sent[] = [];
+const signupCredits: Array<{ principalId: string; signedUpAt: string }> = [];
 let googleProfile: Record<string, unknown> = {};
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input instanceof Request ? input.url : input);
+  if (url === `${IDENTITY}/api/auth/oauth2/token`) {
+    assert(new URLSearchParams(String(init?.body)).get("scope") === "credits:write", "signup service requested unexpected scopes");
+    return Response.json({ access_token: "signup-test-token", expires_in: 600 });
+  }
+  if (url === "https://credits.test/v1/credits/signup") {
+    const body = JSON.parse(String(init?.body));
+    signupCredits.push(body);
+    return Response.json({ data: { principalId: body.principalId, entryId: `signup-${body.principalId}` } });
+  }
   if (url.startsWith("https://oauth2.googleapis.com/token")) {
     const part = (value: object) =>
       Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -508,4 +522,8 @@ await journey("first-time person connects the desktop app after signing up with 
   await connectDevice(go, device);
 });
 
-console.log(JSON.stringify({ passed: Object.keys(results).length }, null, 2));
+const creditDeliveries = await database.query("select user_id, delivered_at from commons_signup_credit_grant");
+assert(creditDeliveries.rows.length > 0, "no signup credit deliveries were queued");
+assert(creditDeliveries.rows.every((row: { delivered_at: unknown }) => row.delivered_at), "signup returned before delivering its welcome credits");
+assert(new Set(signupCredits.map((row) => row.principalId)).size === signupCredits.length, "sign-in or account linking duplicated a signup credit request");
+console.log(JSON.stringify({ passed: Object.keys(results).length, signupCreditDeliveries: signupCredits.length }, null, 2));

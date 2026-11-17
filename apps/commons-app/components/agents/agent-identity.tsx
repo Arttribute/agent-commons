@@ -30,7 +30,7 @@ import { useWorkspaceMode } from "@/context/WorkspaceModeContext";
 import { Separator } from "@/components/ui/separator";
 
 const MODEL_PLACEHOLDERS: Record<string, string> = {
-  openai: "gpt-5.4-mini",
+  openai: "gpt-5.5",
   anthropic: "claude-sonnet-4-6",
   google: "gemini-2.0-flash",
   mistral: "mistral-large-latest",

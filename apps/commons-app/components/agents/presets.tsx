@@ -21,7 +21,7 @@ const MODEL_PROVIDERS = ["openai", "anthropic", "google", "groq", "openrouter", 
 type ModelProvider = typeof MODEL_PROVIDERS[number];
 
 const MODEL_PLACEHOLDERS: Record<ModelProvider, string> = {
-  openai: "gpt-5.4-mini",
+  openai: "gpt-5.5",
   anthropic: "claude-sonnet-4-6",
   google: "gemini-2.0-flash",
   groq: "llama-3.3-70b-versatile",

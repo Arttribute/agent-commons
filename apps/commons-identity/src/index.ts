@@ -10,6 +10,7 @@ import { appEmailBrand, sendIdentityEmail } from "../lib/auth-config.js";
 import { CLIENT_IP_HEADER, resolveClientIp, withClientIp } from "../lib/client-ip.js";
 import { pool } from "../lib/db.js";
 import { createCommonsId } from "../lib/ids.js";
+import { SIGNUP_CREDITS_START_AT, signupCreditDelivery } from "../lib/signup-credits.js";
 import { authErrorMessage, authErrorMessages, deviceErrorMessage, deviceErrorMessages } from "./auth-errors.js";
 import { clientName, escapeHtml, page, safeReturnPath, scopeList } from "./ui.js";
 import { createPlatformRouter } from "./platform.js";
@@ -956,6 +957,23 @@ if (process.env.COMMONS_IDENTITY_NO_LISTEN !== "true") {
     image_url text,
     updated_at timestamptz not null default now()
   )`);
+  await pool.query(`create table if not exists commons_signup_credit_grant (
+    user_id text primary key references "user"(id) on delete cascade,
+    signed_up_at timestamptz not null,
+    delivered_at timestamptz,
+    attempts integer not null default 0,
+    last_attempt_at timestamptz
+  );
+  create index if not exists commons_signup_credit_grant_pending
+    on commons_signup_credit_grant (signed_up_at) where delivered_at is null;`);
+  // Include signups earlier on the policy's first day, before this deploy.
+  await pool.query(`insert into commons_signup_credit_grant (user_id, signed_up_at)
+    select id, "createdAt" from "user" where "createdAt" >= $1
+    on conflict (user_id) do nothing`, [SIGNUP_CREDITS_START_AT]);
+  const deliverSignupCredits = signupCreditDelivery(pool);
+  const signupCreditTimer = setInterval(() => void deliverSignupCredits(), 15_000);
+  signupCreditTimer.unref();
+  void deliverSignupCredits();
   serve({ fetch: app.fetch, port }, () => {
     console.log(`Commons Identity listening on ${baseUrl} (port ${port})`);
   });

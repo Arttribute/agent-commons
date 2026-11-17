@@ -6,6 +6,7 @@ import { decodeJwt } from "jose";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { createCommonsId } from "@/lib/ids";
 import { PLATFORM_SCOPES } from "@/lib/platform-api";
+import { enqueueSignupCredits, signupCreditDelivery } from "@/lib/signup-credits";
 
 const AUTH_SESSION_VERSION = (
   process.env.COMMONS_AUTH_SESSION_VERSION ?? "v2"
@@ -141,6 +142,7 @@ export function commonsAuthOptions(database: unknown) {
     Boolean(process.env.GOOGLE_CLIENT_ID) &&
     Boolean(process.env.GOOGLE_CLIENT_SECRET);
   const db = database as QueryableDatabase;
+  const deliverSignupCredits = signupCreditDelivery(db);
 
   async function sendVerificationLink(
     user: { email: string },
@@ -336,7 +338,7 @@ export function commonsAuthOptions(database: unknown) {
       },
       user: {
         create: {
-          after: async (user: { id: string; name: string; email: string }) => {
+          after: async (user: { id: string; name: string; email: string; createdAt: Date }) => {
             const db = database as QueryableDatabase;
             const client = db.connect ? await db.connect() : null;
             const query = client?.query.bind(client) ?? db.query.bind(db);
@@ -373,6 +375,7 @@ export function commonsAuthOptions(database: unknown) {
                   `default-${crypto.randomUUID().slice(0, 8)}`,
                 ],
               );
+              await enqueueSignupCredits({ query }, user);
               await query("commit");
             } catch (error) {
               await query("rollback");
@@ -380,6 +383,7 @@ export function commonsAuthOptions(database: unknown) {
             } finally {
               client?.release();
             }
+            await deliverSignupCredits(user.id);
           },
         },
       },

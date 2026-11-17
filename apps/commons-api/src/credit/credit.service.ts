@@ -12,6 +12,8 @@ import { DatabaseService } from '~/modules/database/database.service';
 import type { CreditBalance, CreditLedgerInput } from './credit.types';
 
 type Tx = any;
+const SIGNUP_CREDIT_GRANT = 100_000;
+const SIGNUP_CREDITS_START_AT = Date.parse('2026-11-17T00:00:00+03:00');
 const NEW_USER_CREDIT_GRANT = 1000;
 
 @Injectable()
@@ -111,6 +113,55 @@ export class CreditService {
 
   async grant(input: Omit<CreditLedgerInput, 'direction'>) {
     return this.record({ ...input, direction: 'grant' });
+  }
+
+  /** Identity calls at signup; retries never refill credits already spent. */
+  async grantSignupCredits(input: {
+    principalId: string;
+    signedUpAt: string;
+    createdBy: string;
+  }) {
+    const signedUpAt = Date.parse(input.signedUpAt);
+    if (
+      !/^usr_[a-zA-Z0-9_-]+$/.test(input.principalId) ||
+      !Number.isFinite(signedUpAt) ||
+      signedUpAt < SIGNUP_CREDITS_START_AT ||
+      signedUpAt > Date.now()
+    ) {
+      throw new BadRequestException('A qualifying signup is required.');
+    }
+    return this.db.transaction(async (tx) => {
+      await this.lockPrincipal(tx, input.principalId);
+      await this.ensureAccount(tx, input.principalId);
+      const idempotencyKey = `signup-welcome:2026-11-17:${input.principalId}`;
+      const existing = await tx.query.creditLedgerEntry.findFirst({
+        where: eq(schema.creditLedgerEntry.idempotencyKey, idempotencyKey),
+      });
+      if (existing) return existing;
+      const welcome = await tx.query.creditLedgerEntry.findFirst({
+        where: and(
+          eq(schema.creditLedgerEntry.idempotencyKey, `new-user-welcome:${input.principalId}`),
+          isNull(schema.creditLedgerEntry.voidedAt),
+        ),
+      });
+      // Include the legacy initializer's award in the signup total; unrelated
+      // gifts, purchases and any credits already spent remain untouched.
+      const amount = SIGNUP_CREDIT_GRANT - Number(welcome?.amount ?? 0);
+      if (amount <= 0) return welcome;
+      return this.insertLedgerAndApplyAccount(tx, this.normalizeInput({
+        principalId: input.principalId,
+        principalType: 'user',
+        amount,
+        direction: 'grant',
+        eventType: 'new_user_signup',
+        sourcePlatform: 'agent_commons',
+        idempotencyKey,
+        description: 'Signup welcome credits (100,000 total)',
+        metadata: { automatic: true, signedUpAt: new Date(signedUpAt).toISOString() },
+        createdBy: input.createdBy,
+        createdByType: 'service',
+      }));
+    });
   }
 
   async debit(input: Omit<CreditLedgerInput, 'direction'>) {
