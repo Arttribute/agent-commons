@@ -23,6 +23,10 @@ concurrency:
   # cancel a publish halfway.
   cancel-in-progress: ${{ github.ref_name == 'staging' }}
 
+# CI and package release runners use the bundled CPU inference provider.
+env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   version:
     name: Version packages
