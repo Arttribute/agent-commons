@@ -203,8 +203,8 @@ jobs:
           printf '0c1ec0e063d2eae94b6eca4f47e65a3267d3b0081769c5f26e5adc0d95210ed1  %s\n' "$ffmpeg_ci_dir/tools.tar.xz" | sha256sum --check -
           tar -xJf "$ffmpeg_ci_dir/tools.tar.xz" --strip-components=1 -C "$ffmpeg_ci_dir"
           echo "$ffmpeg_ci_dir/bin" >> "$GITHUB_PATH"
-          "$ffmpeg_ci_dir/bin/ffmpeg" -version | head -n 1
-          "$ffmpeg_ci_dir/bin/ffprobe" -version | head -n 1
+          "$ffmpeg_ci_dir/bin/ffmpeg" -version
+          "$ffmpeg_ci_dir/bin/ffprobe" -version
 
       - name: Test migrated computer approval proposals in PostgreSQL
         env:
