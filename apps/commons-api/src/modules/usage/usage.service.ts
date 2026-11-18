@@ -1,3 +1,4 @@
+import { applicationAllowsModel, type ApplicationModelAccess } from '~/modules/model-provider/application-model-access';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InferInsertModel } from 'drizzle-orm';
 import { and, desc, eq, gte, lte, sql, sum } from 'drizzle-orm';
@@ -34,6 +35,7 @@ export class UsageService {
 
   async authorizeAgentRun(input: {
     principalId: string;
+    applicationModelAccess?: ApplicationModelAccess;
     workspaceId?: string | null;
     agentId: string;
     sessionId?: string;
@@ -60,7 +62,7 @@ export class UsageService {
     }
     // Every plan may use the platform default, subject to the credit checks.
     const isPlatformDefault = input.provider === 'openai' && input.modelId === DEFAULT_MODEL_ID;
-    if (model && !isPlatformDefault && !entitlements.modelTiers.includes(model.tier)) {
+    if (model && !isPlatformDefault && !applicationAllowsModel(input.applicationModelAccess, input.provider, input.modelId) && !entitlements.modelTiers.includes(model.tier)) {
       throw new HttpException(
         {
           code: 'upgrade_required',

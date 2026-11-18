@@ -68,6 +68,27 @@ export const MODEL_REGISTRY: ModelRegistryEntry[] = [
   },
   // ── OpenAI ─────────────────────────────────────────────────────────────────
   {
+    provider: 'openai', modelId: 'gpt-6.2-astra', displayName: 'GPT-6.2 Astra',
+    contextWindow: 1050000, supportsTools: true, supportsStreaming: true, supportsVision: true,
+    inputPricePer1kTokens: 0.008, cachedInputPricePer1kTokens: 0.0004, outputPricePer1kTokens: 0.04,
+    longContextThreshold: 272000, longContextInputMultiplier: 2, longContextOutputMultiplier: 1.5,
+    tier: 'frontier',
+  },
+  {
+    provider: 'openai', modelId: 'gpt-6.2-sol', displayName: 'GPT-6.2 Sol',
+    contextWindow: 1050000, supportsTools: true, supportsStreaming: true, supportsVision: true,
+    inputPricePer1kTokens: 0.002, cachedInputPricePer1kTokens: 0.0001, outputPricePer1kTokens: 0.01,
+    longContextThreshold: 272000, longContextInputMultiplier: 2, longContextOutputMultiplier: 1.5,
+    tier: 'frontier',
+  },
+  {
+    provider: 'openai', modelId: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol',
+    contextWindow: 1050000, supportsTools: true, supportsStreaming: true, supportsVision: true,
+    inputPricePer1kTokens: 0.004, cachedInputPricePer1kTokens: 0.0004, outputPricePer1kTokens: 0.02,
+    longContextThreshold: 272000, longContextInputMultiplier: 2, longContextOutputMultiplier: 1.5,
+    tier: 'frontier',
+  },
+  {
     provider: 'openai',
     modelId: 'gpt-5.5',
     displayName: 'GPT-5.5',
