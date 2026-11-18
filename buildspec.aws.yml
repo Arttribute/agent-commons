@@ -24,6 +24,8 @@ phases:
       - if [ -z "${APP_ORIGIN:-}" ]; then if [ "$ENVIRONMENT" = "production" ]; then APP_ORIGIN=https://www.agentcommons.io; else APP_ORIGIN=https://staging.agentcommons.io; fi; fi
       - export APP_ORIGIN
       - export PUPPETEER_SKIP_DOWNLOAD=true
+      # Fargate runs CPU inference; do not download the optional CUDA provider.
+      - export ONNXRUNTIME_NODE_INSTALL_CUDA=skip
       - IMAGE_TAG="${ENVIRONMENT}-${CODEBUILD_RESOLVED_SOURCE_VERSION:-manual}-${CODEBUILD_BUILD_NUMBER}"
       - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
       - SEARCH_IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}-search"
