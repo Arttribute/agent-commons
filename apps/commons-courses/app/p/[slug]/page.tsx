@@ -7,6 +7,7 @@ import { ProjectPageHost } from "@/components/project-page-host";
 import { getAppBaseUrl } from "@/lib/app-url";
 import { programmeMetadata } from "@/lib/programme-metadata";
 import { shareForPage } from "@/lib/programme-share";
+import { projectRegistrationBootstrap } from "@/lib/project-registration-bootstrap";
 type Props = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const page = await publicProjectPage((await params).slug);
@@ -27,11 +28,17 @@ export default async function Page({ params }: Props) {
     nonce: crypto.randomUUID(),
     hostOrigin: projectPageRequestOrigin(await headers()),
   };
+  const registrationBootstrap = projectRegistrationBootstrap(page, session);
   return (
-    <ProjectPageHost
-      page={page}
-      session={session}
-      commonsUrl={commonsWebUrl()}
-    />
+    <>
+      {registrationBootstrap && (
+        <script dangerouslySetInnerHTML={{ __html: registrationBootstrap }} />
+      )}
+      <ProjectPageHost
+        page={page}
+        session={session}
+        commonsUrl={commonsWebUrl()}
+      />
+    </>
   );
 }
