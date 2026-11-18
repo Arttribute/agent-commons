@@ -9,6 +9,7 @@ type ClientInput = {
   clientUri?: string;
   serviceAccountId?: string;
   workspaceId?: string;
+  scopes?: string[];
 };
 
 const clients: ClientInput[] = [
@@ -68,6 +69,13 @@ const clients: ClientInput[] = [
     clientUri: process.env.COMMON_BUSINESS_APP_URL ?? "http://localhost:3004",
   },
   {
+    key: "commonBusinessService",
+    name: "Common Business Service",
+    redirectUris: ["https://invalid.local/service"],
+    serviceAccountId: "svc_common_business",
+    scopes: ["agents:create", "agents:read", "agents:write", "agents:run", "activity:read", "compute:read", "compute:write", "usage:read", "common-business:models"],
+  },
+  {
     key: "coursesVerifier",
     name: "Commons Courses Verifier",
     redirectUris: ["https://invalid.local/service"],
@@ -86,6 +94,7 @@ async function main() {
   for (const client of clients) {
     const created = await ensureOAuthClient(pool, {
       name: client.name,
+      ...(client.scopes ? { scopes: client.scopes } : {}),
       clientUri: client.clientUri,
       redirectUris: client.redirectUris,
       postLogoutRedirectUris: client.postLogoutRedirectUris,
