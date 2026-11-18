@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ProjectPageFrame,
   PublicPageChat,
@@ -17,8 +17,20 @@ export function ProjectPageHost({
 }) {
   const [open, setOpen] = useState(false);
   const request = useCallback(() => setOpen(true), []);
+  useEffect(() => {
+    // The child frame has installed its normal bridge before this effect runs.
+    window.dispatchEvent(
+      new CustomEvent("commons-page:hydrated", {
+        detail: { nonce: session?.nonce },
+      }),
+    );
+  }, [session?.nonce]);
   return (
-    <div className="h-dvh w-full overflow-hidden bg-white">
+    <div
+      data-commons-page-host
+      className="w-full overflow-hidden bg-white supports-[height:100dvh]:[--commons-page-height:100dvh]"
+      style={{ height: "var(--commons-page-height, 100vh)" }}
+    >
       <ProjectPageFrame
         page={page}
         session={session}
@@ -28,10 +40,7 @@ export function ProjectPageHost({
         page={page}
         open={open}
         onOpenChange={setOpen}
-        apiBase={
-          process.env.NEXT_PUBLIC_AGENT_COMMONS_API_URL ||
-          "https://api.agentcommons.io"
-        }
+        apiBase="/api"
       />
     </div>
   );

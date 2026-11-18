@@ -809,8 +809,18 @@ const CourseSchema = new Schema<ICourse>(
   { timestamps: true },
 );
 
-CourseSchema.pre("validate", function normalizeAgents(next) {
+CourseSchema.pre("validate", function normalizeCourseDefaults(next) {
   this.agents = normalizeCourseAgents(this.agents);
+  // Legacy imports used 1 to represent a disabled payment plan. Keep disabled
+  // plans valid so unrelated edits, such as collaborator invites, can save.
+  if (
+    this.installmentPlan &&
+    !this.installmentPlan.enabled &&
+    typeof this.installmentPlan.installmentCount === "number" &&
+    this.installmentPlan.installmentCount < 2
+  ) {
+    this.installmentPlan.installmentCount = 4;
+  }
   next();
 });
 

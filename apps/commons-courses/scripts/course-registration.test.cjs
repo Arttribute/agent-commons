@@ -464,3 +464,46 @@ test("email failure keeps payment confirmed and a retry reuses its delivery key"
   assert.equal(sent.metadata.receipt.email.operation, operation);
   assert.equal(receiptEmails.at(-1).idempotencyKey, operation);
 });
+
+test("collaborator saves repair an invalid legacy disabled installment count", async () => {
+  const created = await course();
+  await Course.collection.updateOne(
+    { _id: created._id },
+    {
+      $set: {
+        installmentPlan: {
+          enabled: false,
+          installmentCount: 1,
+          releaseAccess: "full_after_completion",
+        },
+      },
+    },
+  );
+  const legacy = await Course.findById(created._id);
+  legacy.collaborators.push({
+    id: crypto.randomUUID(),
+    email: "collaborator@example.invalid",
+    role: "editor",
+  });
+  await legacy.save();
+  const saved = await Course.findById(created._id);
+  assert.equal(saved.collaborators.length, 1);
+  assert.equal(saved.installmentPlan.enabled, false);
+  assert.equal(saved.installmentPlan.installmentCount, 4);
+  assert.equal(saved.installmentPlan.releaseAccess, "full_after_completion");
+  assert.equal(saved.price, created.price);
+  assert.equal(await Payment.countDocuments({ courseId: created._id }), 0);
+});
+
+test("enabled installment plans still reject a count below two", async () => {
+  const created = await course();
+  created.installmentPlan = { enabled: true, installmentCount: 1 };
+  await assert.rejects(
+    created.validate(),
+    (error) =>
+      error.errors?.["installmentPlan.installmentCount"]?.kind === "min",
+  );
+  created.installmentPlan = { enabled: false, installmentCount: 8 };
+  await created.validate();
+  assert.equal(created.installmentPlan.installmentCount, 8);
+});
