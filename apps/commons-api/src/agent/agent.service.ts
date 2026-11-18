@@ -1,3 +1,4 @@
+import { APPLICATION_MODEL_ACCESS, type ApplicationModelAccess } from '~/modules/model-provider/application-model-access';
 import { hostApplicationFromContext } from "./host-application";
 import { missingComputedArtifacts, preferManagedArtifactTools } from './computed-artifact-completion';
 import { LiveTurnSteering } from './live-turn-steering';
@@ -803,6 +804,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
     }>;
     /** Optional platform model for this turn, without mutating the agent. */
     model?: { provider: string; modelId: string };
+    [APPLICATION_MODEL_ACCESS]?: ApplicationModelAccess;
     /** Uploaded chat file references. Raw bytes are never passed into LangGraph state. */
     attachments?: Array<{ fileId: string }>;
     /** User selected computer usage for this chat turn. */
@@ -1077,6 +1079,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           if (billingOwnerId) {
             const authorize = () => this.usageService.authorizeAgentRun({
               principalId: billingOwnerId,
+              applicationModelAccess: props[APPLICATION_MODEL_ACCESS],
               workspaceId: agent.workspaceId,
               agentId,
               sessionId: currentSessionId,

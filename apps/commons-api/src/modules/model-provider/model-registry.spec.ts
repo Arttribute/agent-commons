@@ -1,6 +1,12 @@
 import { calculateCost, getModelInfo } from './model-registry';
 
 describe('model registry billing', () => {
+  it('prices the premium GPT families with their published cache and long-context rates', () => {
+    expect(calculateCost('openai', 'gpt-6.2-astra', 1_000_000, 1_000_000)).toBe(76);
+    expect(calculateCost('openai', 'gpt-6.2-sol', 1_000, 1_000)).toBeCloseTo(0.012, 8);
+    expect(calculateCost('openai', 'gpt-5.6-sol', 1_000, 1_000)).toBeCloseTo(0.024, 8);
+    expect(getModelInfo('openai', 'gpt-6.2-astra')?.tier).toBe('frontier');
+  });
   it('uses the current GPT-5.4 mini token prices', () => {
     expect(calculateCost('openai', 'gpt-5.4-mini', 1_000_000, 1_000_000)).toBe(
       5.25,
