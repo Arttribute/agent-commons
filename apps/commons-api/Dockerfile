@@ -13,6 +13,8 @@ RUN corepack enable && corepack prepare pnpm@9.15.3 --activate
 # The runtime image supplies a SHA-verified Chrome for Testing binary below.
 # Puppeteer's install hook must not download and unpack a second browser.
 ENV PUPPETEER_SKIP_DOWNLOAD=true
+# The deployed Fargate task has no GPU. CPU ONNX binaries ship in the package.
+ENV ONNXRUNTIME_NODE_INSTALL_CUDA=skip
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches patches
