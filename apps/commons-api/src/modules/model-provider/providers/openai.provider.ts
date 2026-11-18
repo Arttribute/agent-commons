@@ -40,6 +40,7 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
   if (config.provider === 'custom' && !baseURL) {
     throw new Error('Custom model providers require modelBaseUrl');
   }
+  const isGpt6 = config.provider === 'openai' && /^gpt-6(?:\.|-)/.test(config.modelId);
   const isGpt5 = config.provider === 'openai' && config.modelId.startsWith('gpt-5');
   // gpt-5.1 and later replaced 'minimal' with 'none' and added 'xhigh';
   // the original gpt-5 family only knows minimal→high. Sending an effort a
@@ -50,14 +51,16 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
   // floor is 'low' (no none/minimal like the gpt-5 family).
   const isOSeries =
     config.provider === 'openai' && /^o[134](-|$)/.test(config.modelId);
-  const isReasoningModel = isGpt5 || isOSeries;
+  const isReasoningModel = isGpt5 || isGpt6 || isOSeries;
 
   let reasoningEffort = isReasoningModel
     ? normalizeReasoningEffort(
         config.reasoningEffort ?? process.env.AGENT_OPENAI_REASONING_EFFORT,
       )
     : undefined;
-  if (isOSeries && reasoningEffort) {
+  if (isGpt6 && (reasoningEffort === 'none' || reasoningEffort === 'minimal')) {
+    reasoningEffort = 'low';
+  } else if (isOSeries && reasoningEffort) {
     if (reasoningEffort === 'none' || reasoningEffort === 'minimal') reasoningEffort = 'low';
     if (reasoningEffort === 'xhigh') reasoningEffort = 'high';
   } else if (isVersionedGpt5 && reasoningEffort === 'minimal') {
@@ -66,7 +69,7 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
     if (reasoningEffort === 'none') reasoningEffort = 'minimal';
     if (reasoningEffort === 'xhigh') reasoningEffort = 'high';
   }
-  const verbosity = isGpt5
+  const verbosity = isGpt5 || isGpt6
     ? normalizeVerbosity(
         config.verbosity ?? process.env.AGENT_OPENAI_TEXT_VERBOSITY,
       )

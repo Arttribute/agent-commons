@@ -1,3 +1,4 @@
+import { APPLICATION_MODEL_ACCESS, verifyApplicationModelAccess, type ApplicationModelAccess } from '~/modules/model-provider/application-model-access';
 import {
   BadRequestException,
   Body,
@@ -44,6 +45,7 @@ import { CommonToolService } from '~/tool/tools/common-tool.service';
 import type { ProvenanceRunOptions } from '~/provenance';
 
 interface RunBody {
+  applicationModelAccess?: ApplicationModelAccess;
   model?: { provider: string; modelId: string };
   agentId: string;
   messages: any[];
@@ -147,6 +149,7 @@ export class AgentController {
       this.runtimeDispatcher
         .runAgent({
           ...body,
+          [APPLICATION_MODEL_ACCESS]: verifyApplicationModelAccess(req.principal, body.applicationModelAccess, initiator),
           initiator,
           ...(principal?.principalType === 'user'
             ? { workspaceId: principal.workspaceId ?? undefined }
@@ -189,6 +192,7 @@ export class AgentController {
     const latestUserContent = body.messages?.findLast((message) => message.role === 'user')?.content;
     const source = this.runtimeDispatcher.runAgent({
           ...body,
+          [APPLICATION_MODEL_ACCESS]: verifyApplicationModelAccess(req.principal, body.applicationModelAccess, initiator),
           stream: true,
           initiator,
           consumeSteers: () => this.runStreams.takeSteersShared(runId),

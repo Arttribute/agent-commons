@@ -77,6 +77,13 @@ describe('UsageService', () => {
       expect(credits.reserve).toHaveBeenCalledWith(expect.objectContaining({ principalId: 'usr_free' }));
       await expect(free.authorizeAgentRun({ ...input, modelId: 'gpt-5.4' })).rejects.toMatchObject({ status: 402 });
     });
+    it('accepts a verified Common Business subscription without requiring an Agent Commons subscription', async () => {
+      const free = new UsageService(db as any, credits as any, { getEntitlements: async () => PLANS.free.entitlements } as any);
+      const input = { principalId: 'usr_free', agentId: 'agent-1', traceId: 'common-business-paid', provider: 'openai', modelId: 'gpt-6.2-astra', isByok: false };
+      await expect(free.authorizeAgentRun(input)).rejects.toMatchObject({ status: 402 });
+      await expect(free.authorizeAgentRun({ ...input, applicationModelAccess: { application: 'common-business', access: 'subscription', tenantId: '123456789012345678901234', userId: 'usr_free' } })).resolves.toMatchObject({ reservationId: 'reservation-1' });
+      expect(credits.reserve).toHaveBeenCalledWith(expect.objectContaining({ principalId: 'usr_free' }));
+    });
     it('reserves hosted free requests and model tokens without touching credits', async () => {
       const previousUrl = process.env.HOSTED_FREE_MODEL_BASE_URL;
       const previousKey = process.env.HOSTED_FREE_MODEL_API_KEY;

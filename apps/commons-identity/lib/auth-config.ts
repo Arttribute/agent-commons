@@ -434,6 +434,8 @@ export function commonsAuthOptions(database: unknown) {
           // Keep it out of PLATFORM_SCOPES and ordinary account JWTs.
           "credits:write",
           "ops:read",
+          // Only the Common Business backend is registered for this scope.
+          "common-business:models",
         ],
         validAudiences: ["commons-platform"],
         accessTokenExpiresIn: 15 * 60,
