@@ -77,6 +77,9 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
 
   return new ChatOpenAI({
     model: config.modelId,
+    // Modern reasoning models need Responses for function tools. Keep
+    // OpenAI-compatible third-party endpoints on their existing chat API.
+    useResponsesApi: config.provider === 'openai' && (isGpt5 || isGpt6),
     apiKey,
     // Reasoning models choose their own sampling parameters. Sending legacy
     // temperature/top-p/penalty defaults can make otherwise valid requests
