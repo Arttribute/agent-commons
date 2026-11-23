@@ -22,6 +22,8 @@ export interface ModelConfig {
   frequencyPenalty?: number;
   reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   verbosity?: 'low' | 'medium' | 'high';
+  /** Groups requests that share a prompt prefix so OpenAI can reuse its cache. */
+  promptCacheKey?: string;
 }
 
 export interface StreamEvent {

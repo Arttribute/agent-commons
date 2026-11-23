@@ -11,6 +11,7 @@ import rehypeRaw from "rehype-raw";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { messageTime } from "@/lib/short-time";
+import { messageText } from "@/lib/message-text";
 import { AgentAvatar } from "@/components/agents/agent-avatar";
 import type { StreamActivity } from "@/context/AgentContext";
 import {
@@ -105,7 +106,7 @@ interface AgentOutputProps {
 }
 
 export default function AgentOutput({
-  content,
+  content: rawContent,
   metadata,
   className,
   isStreaming,
@@ -120,6 +121,8 @@ export default function AgentOutput({
   onAppRespond,
   onResourcesApproved,
 }: AgentOutputProps) {
+  // Replies may arrive as content blocks; render their text, never crash.
+  const content = messageText(rawContent);
   const computerToolCalls = getComputerToolCalls(metadata?.toolCalls ?? []);
   const activities = normalizeActivities(
     metadata?.activity,

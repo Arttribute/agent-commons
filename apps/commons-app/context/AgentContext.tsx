@@ -10,6 +10,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { messageText } from "@/lib/message-text";
 
 type Message = {
   role: string;
@@ -195,7 +196,8 @@ export const AgentProvider = ({ children }: { children: ReactNode }) => {
           ...prevMessages.slice(0, -1),
           {
             ...lastMessage,
-            content: content,
+            // Final payloads can carry content blocks; messages hold text.
+            content: messageText(content),
             metadata: mergedMetadata,
             isStreaming: false
           },

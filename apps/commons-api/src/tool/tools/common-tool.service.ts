@@ -3516,10 +3516,8 @@ export class CommonToolService {
         new HumanMessage(userContent),
       ]);
 
-      const result =
-        typeof response.content === 'string'
-          ? response.content
-          : JSON.stringify(response.content);
+      // Responses-API models reply with content blocks; keep only the text.
+      const result = response.text;
 
       return { result, processed: true };
     } catch (error: any) {
