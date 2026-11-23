@@ -255,6 +255,10 @@ jobs:
       # These ran only inside the AWS deploy, after merge. Running them here
       # keeps them as a gate before merge and takes them off the deploy.
       - name: Test Library files, provenance and workflow execution
+        # Document generation loads ES modules dynamically, as the API's own
+        # `test` script allows.
+        env:
+          NODE_OPTIONS: --experimental-vm-modules --max-old-space-size=4096
         run: pnpm --filter commons-api exec jest --runInBand src/files/files.service.spec.ts src/files/library.service.spec.ts src/tool/tools/common-tool.library.spec.ts src/provenance/provenance.service.spec.ts src/tool/workflow-executor.service.spec.ts src/tool/workflow-hitl.integration.spec.ts
 
   # The API build and its contract scripts are independent of the tests
