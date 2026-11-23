@@ -20,8 +20,40 @@ env:
   ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
 jobs:
+  # A promotion PR (staging into main) carries the exact commit CI already
+  # tested when it was pushed to staging. Reuse that result instead of
+  # running the whole suite again before every release.
+  scope:
+    name: Choose CI checks
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          run=true
+          if [ "$EVENT" = "pull_request" ] && [ "$HEAD_REF" = "staging" ]; then
+            passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=staging&event=push&head_sha=$HEAD_SHA&status=success" --jq '.total_count' || echo 0)
+            if [ "${passed:-0}" -gt 0 ]; then
+              run=false
+              echo "CI already passed for $HEAD_SHA on staging." | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   build-and-test:
     name: Build and Test
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -65,6 +97,21 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Locate the Jest cache
+        id: jest-cache
+        run: echo "dir=$(node -p "require('path').join(require('fs').realpathSync(require('os').tmpdir()), 'jest_' + process.getuid().toString(36))")" >> "$GITHUB_OUTPUT"
+
+      # ts-jest caches every compiled module, keyed by its contents and
+      # imports. Starting from the last run's cache recompiles only what
+      # changed instead of type-checking the API again in every Jest step.
+      - name: Restore the Jest cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.jest-cache.outputs.dir }}
+          key: jest-${{ runner.os }}-${{ github.job }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            jest-${{ runner.os }}-${{ github.job }}-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Test Vercel build selection
         run: node --test scripts/vercel-ignore-build.test.mjs
@@ -200,6 +247,70 @@ jobs:
       - name: Test Commons app grants, gateway, data and network guards
         run: pnpm --filter commons-api exec jest --runInBand ui-plugin
 
+      - name: Test migrated computer approval proposals in PostgreSQL
+        env:
+          RESOURCE_UPGRADE_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
+        run: pnpm --filter commons-api exec jest --runInBand src/computer/resource-upgrade.integration.spec.ts src/tool/tool-key.integration.spec.ts
+
+      # These ran only inside the AWS deploy, after merge. Running them here
+      # keeps them as a gate before merge and takes them off the deploy.
+      - name: Test Library files, provenance and workflow execution
+        run: pnpm --filter commons-api exec jest --runInBand src/files/files.service.spec.ts src/files/library.service.spec.ts src/tool/tools/common-tool.library.spec.ts src/provenance/provenance.service.spec.ts src/tool/workflow-executor.service.spec.ts src/tool/workflow-hitl.integration.spec.ts
+
+  # The API build and its contract scripts are independent of the tests
+  # above, so they run alongside them.
+  api-contracts:
+    name: API build and contracts
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "store=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.store }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Locate the Jest cache
+        id: jest-cache
+        run: echo "dir=$(node -p "require('path').join(require('fs').realpathSync(require('os').tmpdir()), 'jest_' + process.getuid().toString(36))")" >> "$GITHUB_OUTPUT"
+
+      # ts-jest caches every compiled module, keyed by its contents and
+      # imports. Starting from the last run's cache recompiles only what
+      # changed instead of type-checking the API again in every Jest step.
+      - name: Restore the Jest cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.jest-cache.outputs.dir }}
+          key: jest-${{ runner.os }}-${{ github.job }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            jest-${{ runner.os }}-${{ github.job }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
+      - name: Build packages
+        run: pnpm --filter './packages/*' run build
+
       - name: Install pinned video tools for real recording checks
         timeout-minutes: 6
         run: |
@@ -214,11 +325,6 @@ jobs:
           echo "$ffmpeg_ci_dir/bin" >> "$GITHUB_PATH"
           "$ffmpeg_ci_dir/bin/ffmpeg" -version
           "$ffmpeg_ci_dir/bin/ffprobe" -version
-
-      - name: Test migrated computer approval proposals in PostgreSQL
-        env:
-          RESOURCE_UPGRADE_TEST_DATABASE_URL: postgres://postgres:local-payment-test@127.0.0.1:15432/arcade_payments
-        run: pnpm --filter commons-api exec jest --runInBand src/computer/resource-upgrade.integration.spec.ts src/tool/tool-key.integration.spec.ts
 
       - name: Build API and test session context, model and Python contracts
         run: |
