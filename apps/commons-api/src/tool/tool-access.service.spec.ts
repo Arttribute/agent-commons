@@ -409,6 +409,7 @@ describe('ToolAccessService', () => {
         publicTool,
         privateTool,
       ]);
+      mockDb.query.toolPermission.findMany.mockResolvedValue([]);
 
       const result = await service.getAccessibleTools('user-123', 'user');
 
@@ -428,9 +429,10 @@ describe('ToolAccessService', () => {
         otherPrivateTool,
       ]);
 
-      // Mock permission check to return true for otherPrivateTool
+      // The subject's grants cover otherPrivateTool
       mockDb.query.toolPermission.findMany.mockResolvedValue([
         {
+          toolId: 'tool-other',
           permission: 'execute',
           expiresAt: null,
         },
@@ -441,6 +443,31 @@ describe('ToolAccessService', () => {
       expect(result.length).toBe(2);
       expect(result).toContainEqual(platformTool);
       expect(result).toContainEqual(otherPrivateTool);
+    });
+
+    it('reads permissions once however many private tools exist', async () => {
+      const others = Array.from({ length: 25 }, (_, index) => ({
+        ...privateTool,
+        toolId: `tool-other-${index}`,
+        owner: 'user-999',
+      }));
+      mockDb.query.tool.findMany.mockResolvedValue([platformTool, ...others]);
+      mockDb.query.toolPermission.findMany.mockResolvedValue([
+        { toolId: 'tool-other-3', permission: 'admin', expiresAt: null },
+        {
+          toolId: 'tool-other-4',
+          permission: 'execute',
+          expiresAt: new Date(Date.now() - 60_000),
+        },
+      ]);
+
+      const result = await service.getAccessibleTools('user-456', 'user');
+
+      expect(mockDb.query.toolPermission.findMany).toHaveBeenCalledTimes(1);
+      expect(result.map((tool: any) => tool.toolId)).toEqual([
+        platformTool.toolId,
+        'tool-other-3',
+      ]);
     });
   });
 

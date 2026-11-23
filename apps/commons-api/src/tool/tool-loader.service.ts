@@ -18,6 +18,14 @@ export interface ToolDefinition extends ChatCompletionTool {
   category?: string;
 }
 
+const KEY_LOOKUP_CONCURRENCY = 8;
+
+function byToolName(a: { name?: string }, b: { name?: string }) {
+  const left = a?.name ?? '';
+  const right = b?.name ?? '';
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 /**
  * ToolLoaderService
  *
@@ -79,23 +87,24 @@ export class ToolLoaderService {
 
     this.logger.debug(`Loaded ${staticDefs.length} static tools`);
 
-    // 2. Load dynamic tools from database with access control
-    const dynamicDefs = await this.loadDynamicTools(agentId, userId, endpoint);
+    // 2-4. Dynamic (access-controlled), agent-specific (agent_tool mapping)
+    // and MCP tools are independent lookups, so load them together. Each
+    // source handles its own errors and returns [] on failure, and the
+    // sources keep their precedence order for de-duplication below.
+    const [dynamicDefs, agentSpecificDefs, mcpDefs] = await Promise.all([
+      this.loadDynamicTools(agentId, userId, endpoint),
+      this.loadAgentSpecificTools(agentId, endpoint),
+      this.loadMcpTools(agentId, userId, endpoint),
+    ]);
+
     toolDefs.push(...dynamicDefs);
 
     this.logger.debug(`Loaded ${dynamicDefs.length} dynamic tools`);
 
-    // 3. Load agent-specific tools (from agent_tool mapping)
-    const agentSpecificDefs = await this.loadAgentSpecificTools(
-      agentId,
-      endpoint,
-    );
     toolDefs.push(...agentSpecificDefs);
 
     this.logger.debug(`Loaded ${agentSpecificDefs.length} agent-specific tools`);
 
-    // 4. Load MCP tools (from MCP servers)
-    const mcpDefs = await this.loadMcpTools(agentId, userId, endpoint);
     toolDefs.push(...mcpDefs);
 
     this.logger.debug(`Loaded ${mcpDefs.length} MCP tools`);
@@ -186,20 +195,13 @@ export class ToolLoaderService {
     endpoint: string,
   ): Promise<ToolDefinition[]> {
     try {
-      // Get all accessible tools for the agent
-      const accessibleTools = await this.toolAccess.getAccessibleTools(
-        agentId,
-        'agent',
-      );
-
-      // Also check user-level access if userId provided
-      let userAccessibleTools: any[] = [];
-      if (userId) {
-        userAccessibleTools = await this.toolAccess.getAccessibleTools(
-          userId,
-          'user',
-        );
-      }
+      // Tools the agent can use, plus the owning user's when provided.
+      const [accessibleTools, userAccessibleTools] = await Promise.all([
+        this.toolAccess.getAccessibleTools(agentId, 'agent'),
+        userId
+          ? this.toolAccess.getAccessibleTools(userId, 'user')
+          : Promise.resolve([] as any[]),
+      ]);
 
       // Combine and deduplicate
       const allAccessible = [
@@ -215,10 +217,12 @@ export class ToolLoaderService {
         return true;
       });
 
-      // Remove duplicates based on toolId
+      // Remove duplicates based on toolId. The catalog query is unordered;
+      // a stable order keeps the model's tool list, and so its cached prompt
+      // prefix, identical from one run to the next.
       const uniqueTools = Array.from(
         new Map(allAccessible.map((t) => [t.toolId, t])).values(),
-      );
+      ).sort(byToolName);
 
       // Build tool definitions
       return uniqueTools.map((tool) => ({
@@ -269,8 +273,10 @@ export class ToolLoaderService {
         },
       });
 
-      // Filter enabled tools
-      const enabledMappings = mappings.filter((m: any) => m.isEnabled);
+      // Filter enabled tools, in a stable order (see loadDynamicTools)
+      const enabledMappings = mappings
+        .filter((m: any) => m.isEnabled && m.tool)
+        .sort((a: any, b: any) => byToolName(a.tool, b.tool));
 
       // Build tool definitions
       return (enabledMappings
@@ -325,27 +331,34 @@ export class ToolLoaderService {
     agentId: string,
     userId?: string,
   ) {
+    const keyed: ToolDefinition[] = [];
     for (const toolDef of toolDefs) {
-      if (!toolDef.requiresKey || !toolDef.toolId) {
-        toolDef.hasKey = false;
-        continue;
-      }
+      if (!toolDef.requiresKey || !toolDef.toolId) toolDef.hasKey = false;
+      else keyed.push(toolDef);
+    }
 
-      try {
-        // Try to resolve key (agent-specific → user-specific → global)
-        const key = await this.toolKey.resolveKeyForTool(
-          toolDef.toolId,
-          agentId,
-          userId,
-        );
+    // Look keys up a few at a time rather than one after another, without
+    // taking over the shared database pool.
+    for (let start = 0; start < keyed.length; start += KEY_LOOKUP_CONCURRENCY) {
+      await Promise.all(
+        keyed.slice(start, start + KEY_LOOKUP_CONCURRENCY).map(async (toolDef) => {
+          try {
+            // Try to resolve key (agent-specific → user-specific → global)
+            const key = await this.toolKey.resolveKeyForTool(
+              toolDef.toolId!,
+              agentId,
+              userId,
+            );
 
-        toolDef.hasKey = !!key;
-      } catch (error: any) {
-        this.logger.warn(
-          `Failed to resolve key for tool ${toolDef.toolId}: ${error.message}`,
-        );
-        toolDef.hasKey = false;
-      }
+            toolDef.hasKey = !!key;
+          } catch (error: any) {
+            this.logger.warn(
+              `Failed to resolve key for tool ${toolDef.toolId}: ${error.message}`,
+            );
+            toolDef.hasKey = false;
+          }
+        }),
+      );
     }
   }
 

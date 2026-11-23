@@ -126,3 +126,34 @@ describe('host-managed team conversation memory', () => {
     expect(buildMemoryBlock).toHaveBeenCalledWith('personal-agent', 'Question');
   });
 });
+
+describe('agent replies from Responses-API models', () => {
+  it('turns content blocks into the reply text clients render', () => {
+    const service = Object.create(AgentService.prototype) as any;
+    expect(
+      service.serializeHistoryContent([
+        { type: 'text', text: 'Here is the video: https://youtu.be/abc123xyz', annotations: [] },
+      ]),
+    ).toBe('Here is the video: https://youtu.be/abc123xyz');
+    expect(service.serializeHistoryContent('Plain reply')).toBe('Plain reply');
+    expect(service.serializeHistoryContent(undefined)).toBe('');
+  });
+});
+
+describe('system prompt caching', () => {
+  it('keeps per-request context after the instructions so the prefix can be cached', () => {
+    const service = Object.create(AgentService.prototype) as any;
+    const agent = { agentId: 'agent-1', name: 'Scout', instructions: 'Be brief.' };
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-23T10:00:00Z'));
+    const first = service.buildSystemPrompt(agent, 'session-a', '', 'Memory A', [], '', '');
+    jest.setSystemTime(new Date('2026-11-23T10:05:00Z'));
+    const second = service.buildSystemPrompt(agent, 'session-b', '', 'Memory B', [], '', '');
+    jest.useRealTimers();
+
+    const context = first.indexOf('## CURRENT CONTEXT');
+    expect(context).toBeGreaterThan(first.indexOf('## PLATFORM CAPABILITIES'));
+    expect(first.indexOf('Current date/time')).toBeGreaterThan(context);
+    expect(first.indexOf('Memory A')).toBeGreaterThan(context);
+    expect(second.slice(0, context)).toBe(first.slice(0, context));
+  });
+});
