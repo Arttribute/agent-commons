@@ -35,5 +35,13 @@ describe('OpenAI reasoning tool transport', () => {
     buildOpenAIModel({ provider: 'openai', modelId: 'gpt-5.6-sol', apiKey: 'test-key', reasoningEffort: 'minimal' });
     expect(ChatOpenAI).toHaveBeenCalledWith(expect.objectContaining({ reasoning: { effort: 'none' }, temperature: undefined }));
   });
+  it('routes an agent\'s OpenAI requests to a shared prompt cache', () => {
+    buildOpenAIModel({ provider: 'openai', modelId: 'gpt-5.5', apiKey: 'test-key', promptCacheKey: 'agent:a1' });
+    expect(ChatOpenAI).toHaveBeenCalledWith(expect.objectContaining({ promptCacheKey: 'agent:a1' }));
+  });
+  it.each(['openrouter', 'xai', 'custom'] as const)('does not send a prompt cache key to %s', (provider) => {
+    buildOpenAIModel({ provider, modelId: 'gpt-5.5', apiKey: 'test-key', baseUrl: 'https://fixture.invalid/v1', promptCacheKey: 'agent:a1' });
+    expect(ChatOpenAI).toHaveBeenCalledWith(expect.objectContaining({ promptCacheKey: undefined }));
+  });
 
 });

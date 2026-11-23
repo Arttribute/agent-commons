@@ -6,6 +6,7 @@ import { ArrowUp, Loader2 } from "lucide-react";
 import { useAgentStream } from "@/hooks/use-agent-stream";
 import AgentOutput from "@/components/sessions/chat/agent-output";
 import InitiatorMessage from "@/components/sessions/chat/initiator-message";
+import { messageText } from "@/lib/message-text";
 
 interface Message {
   role: "user" | "ai";
@@ -49,7 +50,7 @@ export function InteractionInterface({
       scrollToBottom();
     },
     onFinal: (payload) => {
-      const content = payload?.content ?? payload?.data?.content ?? accumulatedRef.current;
+      const content = messageText(payload?.content ?? payload?.data?.content ?? accumulatedRef.current);
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last?.isStreaming) {

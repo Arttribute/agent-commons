@@ -245,44 +245,37 @@ export class ToolAccessService {
    * @returns List of accessible tools
    */
   async getAccessibleTools(subjectId: string, subjectType: 'user' | 'agent') {
-    // Get all tools
-    const allTools = await this.db.query.tool.findMany();
+    // Every agent run calls this. Read the subject's grants once instead of
+    // querying permissions tool by tool, which made run setup slower as the
+    // platform's tool catalog grew.
+    const [allTools, grants] = await Promise.all([
+      this.db.query.tool.findMany(),
+      this.db.query.toolPermission.findMany({
+        where: (p) =>
+          and(
+            eq(p.subjectId, subjectId),
+            eq(p.subjectType, subjectType),
+            // Admin has all permissions
+            or(eq(p.permission, 'execute'), eq(p.permission, 'admin')),
+          ),
+      }),
+    ]);
 
-    // Filter based on access
-    const accessible = [];
+    const now = new Date();
+    const granted = new Set(
+      grants
+        .filter((p) => !p.expiresAt || p.expiresAt > now)
+        .map((p) => p.toolId),
+    );
 
-    for (const tool of allTools) {
-      try {
+    return allTools.filter(
+      (tool) =>
         // Platform and public tools are always accessible
-        if (tool.visibility === 'platform' || tool.visibility === 'public') {
-          accessible.push(tool);
-          continue;
-        }
-
-        // Check if owner
-        if (tool.owner === subjectId && tool.ownerType === subjectType) {
-          accessible.push(tool);
-          continue;
-        }
-
-        // Check explicit permissions
-        const hasAccess = await this.hasPermission(
-          tool.toolId,
-          subjectId,
-          subjectType,
-          'execute',
-        );
-
-        if (hasAccess) {
-          accessible.push(tool);
-        }
-      } catch (error: any) {
-        // Skip tools with errors
-        continue;
-      }
-    }
-
-    return accessible;
+        tool.visibility === 'platform' ||
+        tool.visibility === 'public' ||
+        (tool.owner === subjectId && tool.ownerType === subjectType) ||
+        granted.has(tool.toolId),
+    );
   }
 
   /**

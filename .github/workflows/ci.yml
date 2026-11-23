@@ -144,6 +144,11 @@ jobs:
       - name: Test workspace navigation and new chat suggestions
         run: node --experimental-strip-types --test apps/commons-app/lib/workspace-routes.test.mjs apps/commons-app/lib/start-suggestions.test.mjs apps/commons-app/lib/message-preview.test.mjs apps/commons-app/lib/short-time.test.mjs
 
+      # GPT-5 and later reply with content blocks through the Responses API.
+      # The chat must render their text; an array once crashed the whole page.
+      - name: Test agent reply text
+        run: node --experimental-strip-types --test apps/commons-app/lib/message-text.test.mjs
+
       - name: Test session token refresh backoff
         run: node --experimental-strip-types --test apps/commons-app/lib/token-refresh.test.mjs
 

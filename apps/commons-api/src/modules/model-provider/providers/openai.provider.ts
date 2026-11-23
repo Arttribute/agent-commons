@@ -91,6 +91,9 @@ export function buildOpenAIModel(config: ModelConfig): ChatOpenAI {
     frequencyPenalty: isReasoningModel ? undefined : config.frequencyPenalty,
     reasoning: reasoningEffort ? { effort: reasoningEffort } : undefined,
     verbosity,
+    // OpenAI only: compatible third-party endpoints may reject the field.
+    promptCacheKey:
+      config.provider === 'openai' ? config.promptCacheKey : undefined,
     streaming: true,
     configuration: baseURL ? { baseURL } : undefined,
   });

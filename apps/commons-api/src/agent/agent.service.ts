@@ -47,7 +47,7 @@ import {
   or,
   sql,
 } from 'drizzle-orm';
-import { compact, first, get, map, omit } from 'lodash';
+import { map, omit } from 'lodash';
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,
@@ -482,18 +482,13 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
         `
       : '';
 
+    // Providers cache prompts by exact prefix. Keep the per-agent instructions
+    // first and everything that changes per request (time, memory, tasks)
+    // last, so follow-up turns reuse the cached instructions and tools.
     return dedent`You are an AI agent on the Agent Commons platform.
 
       ${buildAgentIdentityPrompt({ id: agent.agentId, name: agent.name, description: agent.description, persona: agent.persona, instructions: agent.instructions })}
       ${copilotBlock}
-
-      Current date/time: ${currentTime.toISOString()}
-      Session ID: ${sessionId}
-      ${memoryBlock}
-      ${taskBlock}
-      ${computerBlock}
-      ${skillsBlock}
-      ${childSessionsInfo}
 
       ${AUTONOMOUS_EXECUTION_CONTRACT}
 
@@ -513,11 +508,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
 
       ### Agent-to-agent interaction
       - **interactWithAgent** — send a message to another agent and get a response. Pass the returned sessionId to continue the same conversation across calls.
-      - To coordinate groups of agents, use **Spaces** (see below).${
-        childSessionsInfo
-          ? ''
-          : '\n      - You currently have no active agent conversations.'
-      }
+      - To coordinate groups of agents, use **Spaces** (see below).
 
       ### Spaces (multi-agent collaboration)
       Spaces are shared channels where multiple agents and humans can communicate.
@@ -620,6 +611,15 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
       - Be concise but complete. Don't pad responses.
       - Never fabricate tool results or pretend to call a tool you didn't.
       - If a request requires a tool you don't have access to, say so clearly.
+
+      ## CURRENT CONTEXT
+      Current date/time: ${currentTime.toISOString()}
+      Session ID: ${sessionId}
+      ${memoryBlock}
+      ${taskBlock}
+      ${computerBlock}
+      ${skillsBlock}
+      ${childSessionsInfo || 'You currently have no active agent conversations.'}
     `;
   }
 
@@ -1103,6 +1103,17 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             creditReservationId = reservation?.reservationId;
           }
 
+          // A new chat's title comes from a separate model call. Start it now
+          // so it runs alongside the agent instead of delaying the final
+          // reply. It never rejects: failures fall back to a local title.
+          const firstUserTextForTitle = this.contentToText(
+            props.messages?.find((m) => m.role === 'user')?.content,
+          );
+          const pendingSessionTitle =
+            isNewSession && firstUserTextForTitle
+              ? this.generateSessionTitle(firstUserTextForTitle)
+              : undefined;
+
           this.provenanceService.startRun({
             traceId,
             sessionId: currentSessionId,
@@ -1469,7 +1480,12 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
           });
 
           // ── Build LLM from agent/session model config (provider-agnostic) ──
-          const llm = this.modelProviderFactory.build(effectiveModel);
+          // Every run of one agent shares its instructions and tools, so a
+          // per-agent cache key routes those requests to a warm prompt cache.
+          const llm = this.modelProviderFactory.build({
+            ...effectiveModel,
+            promptCacheKey: `agent:${agentId}`,
+          });
 
           // CLI tool schemas to expose to the LLM (only when cliContext is present).
           // When the caller (e.g. the CommonOS daemon) sends its own dynamic
@@ -2430,34 +2446,61 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
             this.contentToText(
               props.messages?.findLast((m) => m.role === 'user')?.content,
             ) || undefined;
-          const memoryBlock = hostApplication ? '' : await this.memoryService
-            .buildMemoryBlock(agentId, latestUserMsg ?? '')
-            .catch(() => '');
-          const copilotContext =
-            agent.isDefault && agent.isSystemManaged
-              ? await this.copilotService
-                  .buildRunContext(agentId, initiator, props.uiContext)
-                  .catch(
-                    (error) =>
-                      `## Commons Copilot context\nLive context lookup failed: ${error.message}`,
-                  )
-              : '';
           const canvasRequest = canvasContextRequest(props.uiContext);
           const canvasPrincipal = {
             principalId: initiator,
             principalType: 'user' as const,
             workspaceId: null,
           };
-          let canvasContext = canvasRequest
-            ? await this.canvas
-                ?.buildAgentContext(canvasRequest, canvasPrincipal)
-                .catch((error) => {
-                  this.logger.warn(
-                    `Canvas context unavailable: ${error.message}`,
-                  );
-                  return null;
-                })
-            : null;
+          // Memory, Copilot, Canvas and project context are independent
+          // lookups that all finish before the first model call, so run them
+          // together instead of one after another.
+          const [memoryBlock, copilotContext, initialCanvasContext, projectContext] =
+            await Promise.all([
+              hostApplication
+                ? ''
+                : this.memoryService
+                    .buildMemoryBlock(agentId, latestUserMsg ?? '')
+                    .catch(() => ''),
+              agent.isDefault && agent.isSystemManaged
+                ? this.copilotService
+                    .buildRunContext(agentId, initiator, props.uiContext)
+                    .catch(
+                      (error) =>
+                        `## Commons Copilot context\nLive context lookup failed: ${error.message}`,
+                    )
+                : '',
+              canvasRequest
+                ? this.canvas
+                    ?.buildAgentContext(canvasRequest, canvasPrincipal)
+                    .catch((error) => {
+                      this.logger.warn(
+                        `Canvas context unavailable: ${error.message}`,
+                      );
+                      return null;
+                    })
+                : null,
+              this.projects
+                ? this.session
+                    .getSession({ id: currentSessionId! })
+                    .then((row: any) => row?.projectId)
+                    .catch(() => null)
+                    .then((projectId) =>
+                      this.projects!.buildRunContext(
+                        projectId ?? null,
+                        initiator,
+                        agentId,
+                        knowledgeMode !== "off",
+                        knowledgeMode === "selected" ? knowledgeSpaceIds ?? [] : undefined,
+                      ),
+                    )
+                    .catch((error) => {
+                      this.logger.warn(`Project context unavailable: ${error.message}`);
+                      return null;
+                    })
+                : undefined,
+            ]);
+          let canvasContext = initialCanvasContext;
           // Show vision models exactly what attached notes mark.
           if (
             canvasContext &&
@@ -2481,21 +2524,6 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               );
             }
           }
-          const projectContext = await this.projects
-            ?.buildRunContext(
-              (await this.session
-                .getSession({ id: currentSessionId! })
-                .then((row: any) => row?.projectId)
-                .catch(() => null)) ?? null,
-              initiator,
-              agentId,
-              knowledgeMode !== "off",
-              knowledgeMode === "selected" ? knowledgeSpaceIds ?? [] : undefined,
-            )
-            .catch((error) => {
-              this.logger.warn(`Project context unavailable: ${error.message}`);
-              return null;
-            });
           const selectedKnowledgeSpaceIds = [
             ...new Set(
               (knowledgeSpaceIds ?? [])
@@ -2703,11 +2731,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
                       m.getType?.() === 'ai' || m._getType?.() === 'ai',
                   );
                 const responseText =
-                  typeof lastAi?.content === 'string'
-                    ? lastAi.content
-                    : lastAi?.content
-                      ? JSON.stringify(lastAi.content)
-                      : 'Task completed';
+                  this.serializeHistoryContent(lastAi?.content) ||
+                  'Task completed';
                 await this.db
                   .update(schema.task)
                   .set({
@@ -2795,19 +2820,19 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
 
           const resolvedAgentCalls = await Promise.all(agentCalls);
 
-          const last = messages.at(-1)!;
-          const finalText =
-            typeof last === 'object' &&
-            last !== null &&
-            'content' in last &&
-            typeof last.content === 'string'
-              ? last.content
-              : typeof last === 'object' && 'content' in last
-                ? compact(
-                    map((last as any).content, (_) => get(_, 'text')),
-                  ).join('\n')
-                : '';
-          const lastMessage = finalResult?.messages?.at(-1)?.toDict() ?? {};
+          const last = messages.at(-1) as any;
+          // Responses-API models (GPT-5 and later) reply with content blocks
+          // rather than a string. Every client renders text, so the final
+          // payload carries the reply exactly as the saved history does.
+          const finalText = this.serializeHistoryContent(last?.content);
+          const lastMessageDict: any =
+            finalResult?.messages?.at(-1)?.toDict() ?? {};
+          const lastMessage = lastMessageDict.data
+            ? {
+                ...lastMessageDict,
+                data: { ...lastMessageDict.data, content: finalText },
+              }
+            : lastMessageDict;
           const firstUserMessage = props.messages?.find(
             (m) => m.role === 'user',
           );
@@ -2820,6 +2845,7 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               : 'New Session';
           const buildFinalPayload = (title = sessionTitle) => ({
             ...lastMessage,
+            content: finalText,
             sessionId: currentSessionId,
             title: title ?? 'New Session',
             traceId,
@@ -2860,12 +2886,8 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
               throw new BadRequestException('Session not found');
             }
 
-            if (isNewSession && props.messages?.length) {
-              if (firstUserMessage?.content) {
-                sessionTitle = await this.generateSessionTitle(
-                  this.contentToText(firstUserMessage.content),
-                );
-              }
+            if (pendingSessionTitle) {
+              sessionTitle = await pendingSessionTitle;
             }
 
             // Get existing history to preserve agent_speech entries added by other agents
@@ -3274,6 +3296,9 @@ export class AgentService implements OnModuleInit, OnModuleDestroy {
         modelId: 'gpt-5.4-mini',
         temperature: 0.3,
         maxTokens: 20,
+        // A six-word title needs no reasoning, and reasoning tokens would
+        // spend the 20-token budget before any title text is written.
+        reasoningEffort: 'none',
       });
 
       const response = await titleLlm.invoke([
