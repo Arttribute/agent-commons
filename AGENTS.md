@@ -10,7 +10,7 @@ Follow this route for every change, including small fixes and hotfixes:
 
 1. Branch from `staging`: `git switch -c <type>/<short-name> origin/staging`.
 2. Open the pull request against `staging`, never against `main`.
-3. Wait for CI. The PR needs `Build and Test` and `API build and contracts`, which run side by side. When it touches the desktop app, its contract, `packages/commons-agent-core` or the lockfile, the `Desktop` workflow installs and launches the packaged app on Windows, macOS and Linux. A PR that only changes the web app gets a quicker Desktop check: it builds the bundled web app and launches it on Linux. Release tags always run the full Desktop suite.
+3. Wait for CI. The PR needs `Build and Test`, `API unit tests` and `API build and contracts`, which run side by side. When it touches the desktop app, its contract, `packages/commons-agent-core` or the lockfile, the `Desktop` workflow installs and launches the packaged app on Windows, macOS and Linux. A PR that only changes the web app gets a quicker Desktop check: it builds the bundled web app and launches it on Linux. Release tags always run the full Desktop suite.
 4. Merge into `staging`, then verify the change on staging.agentcommons.io or the staging API.
 5. Promote with one pull request from `staging` into `main`, titled `Release YYYY-MM-DD` and listing the PRs it contains. Merge it with a merge commit, not a squash, so the two branches keep the same history. CI and Desktop do not run again on the promotion when the same `staging` commit already passed CI; wait for `Main only accepts staging`.
 
