@@ -60,22 +60,35 @@ phases:
           fi
         done
         echo "Layer cache sources: ${recent_caches:-none found}"
-        if docker buildx create --name commons-api --driver docker-container \
+        # A plain single-platform image, not an index with a provenance
+        # attestation: ECR scans and ECS deploys that image directly. If the
+        # cached build fails for any reason, the deploy still goes ahead with
+        # the plain build, so the cache can only make deploys faster.
+        # Production builds without the cache for now: its cached builds failed
+        # twice on 2026-11-24 after about five minutes, and the cause is not
+        # visible from GitHub. Remove this condition once a production
+        # CodeBuild log shows the cause and it is fixed.
+        if [ "$ENVIRONMENT" != "production" ] \
+           && docker buildx create --name commons-api --driver docker-container \
              --driver-opt image=public.ecr.aws/vend/moby/buildkit:buildx-stable-1 --use \
-           && docker buildx inspect --bootstrap > /dev/null; then
-          # A plain single-platform image, not an index with a provenance
-          # attestation: ECR scans and ECS deploys that image directly.
-          docker buildx build --platform linux/amd64 -f apps/commons-api/Dockerfile \
-            -t "$IMAGE_URI" "${cache_args[@]}" --provenance=false --push .
+           && docker buildx inspect --bootstrap > /dev/null \
+           && docker buildx build --platform linux/amd64 -f apps/commons-api/Dockerfile \
+                -t "$IMAGE_URI" "${cache_args[@]}" --provenance=false --push .; then
           IMAGE_PUSHED=true
         else
-          echo "BuildKit builder unavailable; building without the layer cache."
+          echo "The cached BuildKit build failed or is unavailable; building without the layer cache."
           docker build --platform linux/amd64 -f apps/commons-api/Dockerfile -t "$IMAGE_URI" .
           IMAGE_PUSHED=false
         fi
         export IMAGE_PUSHED
       - docker run --rm --entrypoint node "$IMAGE_URI" scripts/smoke-browser-runtime.mjs
-      - if [ "${IMAGE_PUSHED:-false}" != "true" ]; then docker push "$IMAGE_URI"; fi
+      # ECR tags are immutable: a cached build that pushed its image before
+      # failing already wrote this tag, so push only when the tag is absent.
+      - |
+        if [ "${IMAGE_PUSHED:-false}" != "true" ] && ! aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+             --region "$AWS_REGION" --image-ids imageTag="$IMAGE_TAG" > /dev/null 2>&1; then
+          docker push "$IMAGE_URI"
+        fi
       # ECR scans the API image while the search image builds and pushes.
       - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker build --platform linux/amd64 -f infra/searxng/Dockerfile -t "$SEARCH_IMAGE_URI" infra/searxng; fi
       - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker push "$SEARCH_IMAGE_URI"; fi
