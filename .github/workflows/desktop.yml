@@ -10,17 +10,10 @@ on:
       - packages/agc-cli/src/local-tools.ts
       - pnpm-lock.yaml
       - .github/workflows/desktop.yml
+  # Each change is proven on its pull request. Pushes to staging and main
+  # carry the same trees, so only release tags rebuild the full suite.
   push:
-    branches: [main, staging]
     tags: ["desktop-v*"]
-    paths:
-      - apps/commons-desktop/**
-      - apps/commons-app/**
-      - packages/commons-desktop-contract/**
-      - packages/commons-agent-core/**
-      - packages/agc-cli/src/local-tools.ts
-      - pnpm-lock.yaml
-      - .github/workflows/desktop.yml
   workflow_dispatch:
     inputs:
       local_image_inference:
@@ -34,16 +27,70 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
+
+concurrency:
+  group: desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Decide how much of the suite a run needs. The full suite installs and
+  # launches packaged apps on every platform; it runs for release tags, manual
+  # runs and pull requests that change the desktop app or its dependencies.
+  # Pull requests that only change the bundled web app build and launch the
+  # unified app on Linux. Promotions from staging repeat trees already proven
+  # on their own pull requests, so they skip the suite.
+  scope:
+    name: Choose desktop checks
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+      full: ${{ steps.scope.outputs.full }}
+      os: ${{ steps.scope.outputs.os }}
+    steps:
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          run=true
+          full=true
+          if [ "$EVENT" = "pull_request" ]; then
+            if [ "$HEAD_REF" = "staging" ]; then
+              run=false
+            else
+              files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename')
+              if ! grep -qE '^(apps/commons-desktop/|packages/commons-desktop-contract/|packages/commons-agent-core/|packages/agc-cli/src/local-tools\.ts$|pnpm-lock\.yaml$|\.github/workflows/desktop\.yml$)' <<<"$files"; then
+                full=false
+              fi
+            fi
+          fi
+          if [ "$full" = true ]; then
+            os='["macos-latest","windows-latest","ubuntu-latest"]'
+          else
+            os='["ubuntu-latest"]'
+          fi
+          {
+            echo "run=$run"
+            echo "full=$full"
+            echo "os=$os"
+          } >> "$GITHUB_OUTPUT"
+          echo "Desktop checks: run=$run full=$full os=$os" | tee -a "$GITHUB_STEP_SUMMARY"
+
   build:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     env:
       MAC_SIGNING_ENABLED: ${{ secrets.MAC_CSC_LINK != '' }}
       WINDOWS_SIGNING_ENABLED: ${{ secrets.WIN_CSC_LINK != '' }}
+      FULL_SUITE: ${{ needs.scope.outputs.full }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: ${{ fromJSON(needs.scope.outputs.os) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -116,6 +163,16 @@ jobs:
         run: |
           pnpm --filter commons-desktop exec tsup src/local-voice.ts src/local-transcription.ts --format cjs --platform node --out-dir .speech-smoke --no-splitting
           node apps/commons-desktop/scripts/smoke-speech-inference.mjs
+      # Next.js reuses compiled modules from the last build on this platform,
+      # so only changed pages and their imports are rebuilt.
+      - name: Restore the web app build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/commons-app/.next/cache
+          key: desktop-next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            desktop-next-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            desktop-next-${{ runner.os }}-
       - run: pnpm --filter commons-desktop build:commons-app
       - run: pnpm --filter commons-desktop build
       - name: Smoke test unified desktop (Linux)
@@ -153,9 +210,10 @@ jobs:
         if: runner.os == 'Windows' && env.WINDOWS_SIGNING_ENABLED != 'true'
         run: pnpm --filter commons-desktop exec electron-builder --win --publish never
       - name: Package Linux
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && env.FULL_SUITE == 'true'
         run: pnpm --filter commons-desktop exec electron-builder --linux --publish never
       - name: Report installer and installed sizes
+        if: env.FULL_SUITE == 'true'
         shell: bash
         run: |
           cd apps/commons-desktop/release
@@ -203,7 +261,7 @@ jobs:
           $env:COMMONS_DESKTOP_SMOKE_EXECUTABLE = $installed
           pnpm --filter commons-desktop smoke
       - name: Smoke test installed Linux desktop
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && env.FULL_SUITE == 'true'
         timeout-minutes: 6
         run: |
           appimage="$PWD/apps/commons-desktop/release/Agent-Commons-linux-x86_64.AppImage"
@@ -213,7 +271,7 @@ jobs:
           test -x "$desktop_executable"
           COMMONS_DESKTOP_SMOKE_EXECUTABLE="$desktop_executable" xvfb-run -a pnpm --filter commons-desktop smoke
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && env.FULL_SUITE == 'true'
         with:
           name: desktop-${{ runner.os }}
           path: |
@@ -228,7 +286,8 @@ jobs:
   # The macOS build job runs on Apple silicon, so it can only launch the arm64
   # app. Install and launch the Intel disk image on an Intel Mac as well.
   smoke-intel-mac:
-    needs: build
+    needs: [scope, build]
+    if: needs.scope.outputs.full == 'true'
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -261,7 +320,8 @@ jobs:
   # upgrading over it left Next.js unable to find styled-jsx. Upgrade from it
   # with this build and start the bundled server the way the app does.
   upgrade-windows:
-    needs: build
+    needs: [scope, build]
+    if: needs.scope.outputs.full == 'true'
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
