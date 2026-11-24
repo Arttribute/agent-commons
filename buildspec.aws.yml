@@ -64,7 +64,12 @@ phases:
         # attestation: ECR scans and ECS deploys that image directly. If the
         # cached build fails for any reason, the deploy still goes ahead with
         # the plain build, so the cache can only make deploys faster.
-        if docker buildx create --name commons-api --driver docker-container \
+        # Production builds without the cache for now: its cached builds failed
+        # twice on 2026-11-24 after about five minutes, and the cause is not
+        # visible from GitHub. Remove this condition once a production
+        # CodeBuild log shows the cause and it is fixed.
+        if [ "$ENVIRONMENT" != "production" ] \
+           && docker buildx create --name commons-api --driver docker-container \
              --driver-opt image=public.ecr.aws/vend/moby/buildkit:buildx-stable-1 --use \
            && docker buildx inspect --bootstrap > /dev/null \
            && docker buildx build --platform linux/amd64 -f apps/commons-api/Dockerfile \
