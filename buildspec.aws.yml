@@ -32,23 +32,53 @@ phases:
       - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
   build:
     commands:
-      - pnpm install --filter commons-api... --frozen-lockfile
-      - >-
-        pnpm --filter commons-api test -- --runInBand --forceExit
-        src/files/files.service.spec.ts
-        src/files/library.service.spec.ts
-        src/tool/tools/common-tool.library.spec.ts
-        src/code-project/code-project.builder.spec.ts
-        src/code-project/code-project.service.spec.ts
-        src/provenance/provenance.service.spec.ts
-        src/media/media-model.registry.spec.ts
-        src/tool/workflow-executor.service.spec.ts
-        src/tool/workflow-hitl.integration.spec.ts
-        src/skill/skill.controller.spec.ts
-        src/skill/skill.service.spec.ts
-      - docker build --platform linux/amd64 -f apps/commons-api/Dockerfile -t "$IMAGE_URI" .
+      # These specs run in CI before every merge (ci.yml), so the deploy no
+      # longer installs dependencies and repeats them before building.
+      #
+      # BuildKit reuses unchanged layers (system packages, the dependency
+      # install, the browser download, the compiled API) from recent builds,
+      # so a deploy rebuilds only what changed. A promotion builds exactly the
+      # source staging just built, so builds read the newest cache from either
+      # environment. ECR tags are immutable, so each build writes its own tag.
+      # BuildKit pushes the image itself, skipping layers the cache already
+      # uploaded. Without a BuildKit builder this falls back to a plain build.
+      - |
+        set -euo pipefail
+        CACHE_REF="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+        cache_args=(--cache-to "type=registry,ref=${CACHE_REF}:buildcache-${ENVIRONMENT}-${CODEBUILD_BUILD_NUMBER},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true")
+        recent_caches=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --region "$AWS_REGION" \
+            --filter tagStatus=TAGGED --query 'imageDetails[].[imagePushedAt, join(`,`, imageTags)]' --output text 2>/dev/null \
+          | awk -F '\t' '{ n = split($2, tags, ","); for (i = 1; i <= n; i++) if (tags[i] ~ /^buildcache-/) print $1 "\t" tags[i] }' \
+          | sort -r | awk 'NR <= 2' | cut -f 2) || recent_caches=""
+        for tag in $recent_caches; do
+          cache_args+=(--cache-from "type=registry,ref=${CACHE_REF}:${tag}")
+        done
+        for back in 1 2 3; do
+          previous=$((CODEBUILD_BUILD_NUMBER - back))
+          if [ "$previous" -gt 0 ]; then
+            cache_args+=(--cache-from "type=registry,ref=${CACHE_REF}:buildcache-${ENVIRONMENT}-${previous}")
+          fi
+        done
+        echo "Layer cache sources: ${recent_caches:-none found}"
+        if docker buildx create --name commons-api --driver docker-container \
+             --driver-opt image=public.ecr.aws/vend/moby/buildkit:buildx-stable-1 --use \
+           && docker buildx inspect --bootstrap > /dev/null; then
+          # A plain single-platform image, not an index with a provenance
+          # attestation: ECR scans and ECS deploys that image directly.
+          docker buildx build --platform linux/amd64 -f apps/commons-api/Dockerfile \
+            -t "$IMAGE_URI" "${cache_args[@]}" --provenance=false --push .
+          IMAGE_PUSHED=true
+        else
+          echo "BuildKit builder unavailable; building without the layer cache."
+          docker build --platform linux/amd64 -f apps/commons-api/Dockerfile -t "$IMAGE_URI" .
+          IMAGE_PUSHED=false
+        fi
+        export IMAGE_PUSHED
       - docker run --rm --entrypoint node "$IMAGE_URI" scripts/smoke-browser-runtime.mjs
-      - docker push "$IMAGE_URI"
+      - if [ "${IMAGE_PUSHED:-false}" != "true" ]; then docker push "$IMAGE_URI"; fi
+      # ECR scans the API image while the search image builds and pushes.
+      - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker build --platform linux/amd64 -f infra/searxng/Dockerfile -t "$SEARCH_IMAGE_URI" infra/searxng; fi
+      - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker push "$SEARCH_IMAGE_URI"; fi
       - |
         scan_status=""
         for attempt in $(seq 1 60); do
@@ -79,8 +109,6 @@ phases:
         test "$scan_status" = "COMPLETE"
         critical=$(jq -r '.critical // 0' <<<"$scan_json")
         test "$critical" -eq 0
-      - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker build --platform linux/amd64 -f infra/searxng/Dockerfile -t "$SEARCH_IMAGE_URI" infra/searxng; fi
-      - if [ "$WEB_SEARCH_PROVIDER" = "searxng" ]; then docker push "$SEARCH_IMAGE_URI"; fi
   post_build:
     commands:
       - test "${CODEBUILD_BUILD_SUCCEEDING:-0}" = "1"
