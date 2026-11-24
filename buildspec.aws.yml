@@ -63,8 +63,10 @@ phases:
         if docker buildx create --name commons-api --driver docker-container \
              --driver-opt image=public.ecr.aws/vend/moby/buildkit:buildx-stable-1 --use \
            && docker buildx inspect --bootstrap > /dev/null; then
+          # A plain single-platform image, not an index with a provenance
+          # attestation: ECR scans and ECS deploys that image directly.
           docker buildx build --platform linux/amd64 -f apps/commons-api/Dockerfile \
-            -t "$IMAGE_URI" "${cache_args[@]}" --push .
+            -t "$IMAGE_URI" "${cache_args[@]}" --provenance=false --push .
           IMAGE_PUSHED=true
         else
           echo "BuildKit builder unavailable; building without the layer cache."
