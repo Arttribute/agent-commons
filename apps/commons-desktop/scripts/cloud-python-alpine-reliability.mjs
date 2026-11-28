@@ -117,7 +117,7 @@ Path('/acceptance/replacement-verified.json').write_text(json.dumps({'replacemen
     // Public ECR's anonymous quota is shared by hosted runners. Only a pull
     // rate limit permits the same official version from Docker Hub; bootstrap
     // and regression failures below still fail the check normally.
-    if (!/toomanyrequests|rate exceeded|too many requests/i.test(String(error.stderr ?? error.message))) throw error;
+    if (!/toomanyrequests|rate exceeded|too many requests|data limit exceeded/i.test(String(error.stderr ?? error.message))) throw error;
     image = 'docker.io/library/alpine:3.24.2';
     console.log('Public ECR pull rate limited; using the same official Alpine version from Docker Hub.');
     await promisify(execFile)('docker', ['pull', image], { timeout: 120_000, maxBuffer: 1_000_000 });
