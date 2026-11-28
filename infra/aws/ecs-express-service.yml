@@ -237,8 +237,8 @@ Resources:
       Cluster: default
       ExecutionRoleArn: !Ref ExecutionRoleArn
       InfrastructureRoleArn: !Ref InfrastructureRoleArn
-      Cpu: "512"
-      Memory: "1024"
+      Cpu: "256"
+      Memory: "512"
       HealthCheckPath: /healthz
       PrimaryContainer:
         Image: !Ref SearchImageUri
@@ -267,8 +267,8 @@ Resources:
       ExecutionRoleArn: !Ref ExecutionRoleArn
       TaskRoleArn: !Ref TaskRoleArn
       InfrastructureRoleArn: !Ref InfrastructureRoleArn
-      Cpu: "1024"
-      Memory: "2048"
+      Cpu: "512"
+      Memory: !If [IsProduction, "2048", "1024"]
       HealthCheckPath: /health
       PrimaryContainer:
         Image: !Ref ImageUri
